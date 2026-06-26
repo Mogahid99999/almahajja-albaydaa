@@ -1,0 +1,60 @@
+@import url("https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap");
+@import "./_ds_bundle.css";
+
+/* رواق العلم — Design Tokens */
+:root {
+  /* Backgrounds */
+  --bg-sand: #f3ecdd;
+  --bg-sand-raised: #f8f3e8;
+
+  /* Surfaces */
+  --surface-card: #fbf7ed;
+  --surface-white: #ffffff;
+  --surface-inset: #e9e0cd;
+  --surface-track: #ece3cf;
+
+  /* Brand */
+  --primary-teal: #1f4a42;
+  --primary-teal-deep: #16352f;
+  --primary-teal-600: #2c6157;
+  --accent-brass: #c9a463;
+  --accent-brass-muted: #b0894f;
+  --accent-brass-soft: #cbb98e;
+
+  /* Text */
+  --text-ink: #2b2723;
+  --text-slate: #5c5343;
+  --text-muted: #6b6253;
+  --text-faint: #897a5d;
+  --text-ghost: #9a8f7c;
+
+  /* Borders */
+  --border-sand: #e8ddc6;
+  --border-sand-2: #ddd1b7;
+  --border-hair: #ece3cf;
+
+  /* State */
+  --state-success: #1f8a5b;
+  --state-danger: #b85c4a;
+
+  /* On-teal text */
+  --on-teal-primary: #f6f0e2;
+  --on-teal-secondary: #a9bdb6;
+  --on-teal-stroke: #dfe7e3;
+
+  /* Typography */
+  --font-display: 'Amiri', serif;
+  --font-ui: 'IBM Plex Sans Arabic', sans-serif;
+
+  /* Radius */
+  --radius-sm: 11px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --radius-pill: 50%;
+
+  /* Shadows */
+  --shadow-feature: 0 14px 30px -14px rgba(31,74,66,.7);
+  --shadow-miniplayer: 0 16px 34px -14px rgba(22,53,47,.85);
+  --shadow-button: 0 8px 18px -8px rgba(31,74,66,.6);
+}

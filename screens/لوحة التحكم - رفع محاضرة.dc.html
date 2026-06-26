@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { -webkit-tap-highlight-color: transparent; box-sizing:border-box; }
+  .scroll-y::-webkit-scrollbar { width:8px; }
+  .scroll-y::-webkit-scrollbar-thumb { background:#d8cdb5; border-radius:8px; }
+  .adm-input:focus { outline:none; border-color:#2c6157 !important; box-shadow:0 0 0 3px rgba(31,74,66,.1); }
+</style>
+</helmet>
+<div dir="rtl" style="display:flex; width:1440px; height:900px; margin:0 auto; background:#f3ecdd; font-family:'IBM Plex Sans Arabic',sans-serif; color:#2b2723; overflow:hidden;">
+
+  <!-- sidebar (right in RTL) -->
+  <aside style="flex-shrink:0; width:252px; background:#1f4a42; display:flex; flex-direction:column; padding:22px 16px;">
+    <div style="display:flex; align-items:center; gap:11px; padding:6px 8px 22px;">
+      <div style="width:38px; height:38px; border:1.5px solid #c9a463; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+        <div style="width:13px; height:13px; background:#c9a463; transform:rotate(45deg);"></div>
+      </div>
+      <div>
+        <div style="font-family:'Amiri',serif; font-size:19px; font-weight:700; color:#f6f0e2; line-height:1;">رِواق العِلم</div>
+        <div style="font-size:10px; color:#8aa39b; margin-top:3px;">لوحة الإدارة</div>
+      </div>
+    </div>
+
+    <nav style="display:flex; flex-direction:column; gap:3px; margin-top:8px;">
+      <div style="display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:11px; color:#a9bdb6; font-size:13.5px; cursor:pointer;"><span style="width:7px;height:7px;border:1.5px solid #6f8b83;transform:rotate(45deg);display:inline-block;"></span>لوحة المعلومات</div>
+      <div style="display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:11px; background:rgba(201,164,99,.16); color:#f6f0e2; font-size:13.5px; font-weight:600; cursor:pointer;"><span style="width:7px;height:7px;background:#c9a463;transform:rotate(45deg);display:inline-block;"></span>المحاضرات</div>
+      <div style="display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:11px; color:#a9bdb6; font-size:13.5px; cursor:pointer;"><span style="width:7px;height:7px;border:1.5px solid #6f8b83;transform:rotate(45deg);display:inline-block;"></span>الأقسام والشجرة</div>
+      <div style="display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:11px; color:#a9bdb6; font-size:13.5px; cursor:pointer;"><span style="width:7px;height:7px;border:1.5px solid #6f8b83;transform:rotate(45deg);display:inline-block;"></span>المشايخ</div>
+      <div style="display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:11px; color:#a9bdb6; font-size:13.5px; cursor:pointer;"><span style="width:7px;height:7px;border:1.5px solid #6f8b83;transform:rotate(45deg);display:inline-block;"></span>التعليقات</div>
+      <div style="display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:11px; color:#a9bdb6; font-size:13.5px; cursor:pointer;"><span style="width:7px;height:7px;border:1.5px solid #6f8b83;transform:rotate(45deg);display:inline-block;"></span>الإعدادات</div>
+    </nav>
+
+    <div style="margin-top:auto; display:flex; align-items:center; gap:11px; padding:11px 10px; border-top:1px solid rgba(255,255,255,.08);">
+      <div style="width:36px; height:36px; border-radius:50%; background:#16352f; border:1px solid rgba(201,164,99,.4); display:flex; align-items:center; justify-content:center; font-family:'Amiri',serif; color:#c9a463; font-weight:700;">م</div>
+      <div style="flex:1;">
+        <div style="font-size:12.5px; color:#f6f0e2; font-weight:600;">محمد المشرف</div>
+        <div style="font-size:10px; color:#8aa39b;">مدير المحتوى</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- main -->
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
+
+    <!-- topbar -->
+    <header style="flex-shrink:0; height:64px; background:#f8f3e8; border-bottom:1px solid #e4d9c2; display:flex; align-items:center; justify-content:space-between; padding:0 30px;">
+      <div style="display:flex; align-items:center; gap:8px; font-size:13px; color:#9a8f7c;">
+        <span>المحاضرات</span>
+        <span style="color:#cbbfa6;">/</span>
+        <span style="color:#2b2723; font-weight:600;">رفع محاضرة جديدة</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <button style="width:38px; height:38px; border:1px solid #e4d9c2; background:#fff; border-radius:11px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6253" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M10.5 21a1.8 1.8 0 0 0 3 0"></path></svg>
+        </button>
+        <div style="width:38px; height:38px; border-radius:50%; background:#1f4a42; display:flex; align-items:center; justify-content:center; font-family:'Amiri',serif; color:#c9a463; font-weight:700;">م</div>
+      </div>
+    </header>
+
+    <!-- content -->
+    <div class="scroll-y" style="flex:1; overflow-y:auto; padding:28px 30px 40px;">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:22px;">
+        <div>
+          <h1 style="font-family:'Amiri',serif; font-size:27px; font-weight:700; color:#1f4a42; margin:0;">رفع محاضرة جديدة</h1>
+          <p style="font-size:13px; color:#897a5d; margin:6px 0 0;">أضف محاضرة صوتية جديدة وأدرجها ضمن شجرة الأقسام العِلمية.</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button style="border:1px solid #d8cdb5; background:#fff; color:#6b6253; font-size:13.5px; font-weight:600; padding:10px 18px; border-radius:11px; cursor:pointer; font-family:inherit;">إلغاء</button>
+          <button style="border:none; background:#1f4a42; color:#f6f0e2; font-size:13.5px; font-weight:600; padding:10px 22px; border-radius:11px; cursor:pointer; font-family:inherit; box-shadow:0 8px 18px -8px rgba(31,74,66,.6);">حفظ المحاضرة</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 320px; gap:22px; align-items:start;">
+
+        <!-- main form column -->
+        <div style="display:flex; flex-direction:column; gap:18px;">
+
+          <!-- basic info card -->
+          <div style="background:#fbf7ed; border:1px solid #e8ddc6; border-radius:18px; padding:24px;">
+            <div style="font-size:14px; font-weight:700; color:#2b2723; margin-bottom:20px; display:flex; align-items:center; gap:9px;"><span style="width:8px;height:8px;background:#c9a463;transform:rotate(45deg);"></span>المعلومات الأساسية</div>
+
+            <!-- title -->
+            <div style="margin-bottom:18px;">
+              <label style="display:block; font-size:13px; font-weight:600; color:#5c5343; margin-bottom:8px;">عنوان المحاضرة <span style="color:#b0894f;">*</span></label>
+              <input class="adm-input" type="text" value="باب الأصل الأول: معرفة الله" style="width:100%; height:46px; border:1px solid #ddd1b7; background:#fff; border-radius:12px; padding:0 16px; font-size:14px; font-family:inherit; color:#2b2723; transition:.15s;">
+            </div>
+
+            <!-- audio dropzone -->
+            <div style="margin-bottom:4px;">
+              <label style="display:block; font-size:13px; font-weight:600; color:#5c5343; margin-bottom:8px;">ملف الصوت <span style="color:#b0894f;">*</span></label>
+              <div style="border:1.5px solid #1f4a42; background:rgba(31,74,66,.04); border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px;">
+                <div style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#1f4a42; display:flex; align-items:center; justify-content:center;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c9a463" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                </div>
+                <div style="flex:1;">
+                  <div style="font-size:13.5px; font-weight:600; color:#2b2723;">الأصل-الأول-معرفة-الله.mp3</div>
+                  <div style="font-size:11.5px; color:#9a8f7c; margin-top:3px;">٢٤٫٨ ميجابايت · ٣٠:١٥ دقيقة · تم الرفع</div>
+                </div>
+                <button style="border:none; background:transparent; cursor:pointer; padding:6px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b85c4a" stroke-width="1.8" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="6" y1="18" x2="18" y2="6"></line></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- categorization card -->
+          <div style="background:#fbf7ed; border:1px solid #e8ddc6; border-radius:18px; padding:24px; position:relative; z-index:5;">
+            <div style="font-size:14px; font-weight:700; color:#2b2723; margin-bottom:20px; display:flex; align-items:center; gap:9px;"><span style="width:8px;height:8px;background:#c9a463;transform:rotate(45deg);"></span>التصنيف والترتيب</div>
+
+            <!-- searchable tree dropdown -->
+            <div style="margin-bottom:18px; position:relative;">
+              <label style="display:block; font-size:13px; font-weight:600; color:#5c5343; margin-bottom:8px;">القسم / العنصر الأب <span style="color:#b0894f;">*</span></label>
+              <div onClick="{{ toggleTree }}" style="width:100%; min-height:46px; border:1px solid {{ treeBorder }}; background:#fff; border-radius:12px; padding:7px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; gap:10px;">
+                <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:13.5px; color:#2b2723;">
+                  <sc-for list="{{ selectedCrumbs }}" as="cr" hint-placeholder-count="3">
+                    <span style="display:flex; align-items:center; gap:7px;">
+                      <span style="{{ cr.style }}">{{ cr.name }}</span>
+                      <sc-if value="{{ cr.sep }}" hint-placeholder-val="{{ false }}"><span style="color:#c0b495; font-size:12px;">›</span></sc-if>
+                    </span>
+                  </sc-for>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a8f7c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+
+              <sc-if value="{{ treeOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute; top:calc(100% + 6px); left:0; right:0; background:#fff; border:1px solid #e0d4ba; border-radius:14px; box-shadow:0 18px 40px -14px rgba(40,40,30,.32); overflow:hidden; z-index:30;">
+                  <div style="padding:12px; border-bottom:1px solid #f0e8d6;">
+                    <div style="display:flex; align-items:center; gap:9px; background:#f6f0e2; border-radius:10px; padding:9px 12px;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a8f7c" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>
+                      <input class="adm-input" value="{{ query }}" onInput="{{ onSearch }}" placeholder="ابحث في شجرة الأقسام..." style="border:none; background:transparent; font-size:13px; font-family:inherit; color:#2b2723; flex:1; outline:none;">
+                    </div>
+                  </div>
+                  <div class="scroll-y" style="max-height:248px; overflow-y:auto; padding:6px;">
+                    <sc-for list="{{ visibleNodes }}" as="node" hint-placeholder-count="7">
+                      <div onClick="{{ node.pick }}" style="display:flex; align-items:center; gap:9px; padding:9px 12px; padding-right:{{ node.pad }}; border-radius:9px; cursor:pointer; background:{{ node.bg }};">
+                        <span style="{{ node.dot }}"></span>
+                        <span style="font-size:13.5px; color:#2b2723; font-weight:{{ node.weight }};">{{ node.name }}</span>
+                        <span style="font-size:11px; color:#a99e88; margin-right:auto; font-variant-numeric:tabular-nums;">{{ node.meta }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <!-- order + sheikh row -->
+            <div style="display:grid; grid-template-columns:140px 1fr; gap:16px;">
+              <div>
+                <label style="display:block; font-size:13px; font-weight:600; color:#5c5343; margin-bottom:8px;">رقم الترتيب</label>
+                <input class="adm-input" type="text" value="٥" style="width:100%; height:46px; border:1px solid #ddd1b7; background:#fff; border-radius:12px; padding:0 16px; font-size:14px; font-family:inherit; color:#2b2723; text-align:center; font-variant-numeric:tabular-nums; transition:.15s;">
+              </div>
+              <div>
+                <label style="display:block; font-size:13px; font-weight:600; color:#5c5343; margin-bottom:8px;">اسم الشيخ <span style="color:#b0894f;">*</span></label>
+                <div class="adm-input" style="width:100%; height:46px; border:1px solid #ddd1b7; background:#fff; border-radius:12px; padding:0 16px; font-size:14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; transition:.15s;">
+                  <span style="color:#2b2723;">الشيخ عبد الله بن سالم</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a8f7c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- attachments card -->
+          <div style="background:#fbf7ed; border:1px solid #e8ddc6; border-radius:18px; padding:24px;">
+            <div style="font-size:14px; font-weight:700; color:#2b2723; margin-bottom:20px; display:flex; align-items:center; gap:9px;"><span style="width:8px;height:8px;background:#c9a463;transform:rotate(45deg);"></span>المرفقات</div>
+            <div style="border:1.5px dashed #cbb98e; background:rgba(176,137,79,.04); border-radius:14px; padding:26px; text-align:center; cursor:pointer;">
+              <div style="width:48px; height:48px; margin:0 auto 12px; border-radius:13px; background:#f0e8d6; display:flex; align-items:center; justify-content:center;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#b0894f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><polyline points="7 8 12 3 17 8"></polyline><path d="M5 21h14"></path></svg>
+              </div>
+              <div style="font-size:13.5px; font-weight:600; color:#5c5343;">اسحب الملفات هنا أو <span style="color:#1f4a42;">تصفّح الجهاز</span></div>
+              <div style="font-size:11.5px; color:#9a8f7c; margin-top:5px;">PDF، Word، صور · بحد أقصى ١٠ ميجابايت للملف</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px; margin-top:14px; background:#fff; border:1px solid #ece3cf; border-radius:12px; padding:12px 14px;">
+              <div style="width:38px; height:38px; border-radius:10px; background:#f0e8d6; display:flex; align-items:center; justify-content:center;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b85c4a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="14 3 14 9 20 9"></polyline></svg>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:13px; font-weight:600; color:#2b2723;">تفريغ-المحاضرة.pdf</div>
+                <div style="font-size:11px; color:#9a8f7c; margin-top:2px;">١٫٢ ميجابايت</div>
+              </div>
+              <button style="border:none; background:transparent; cursor:pointer; padding:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a8f7c" stroke-width="1.8" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="6" y1="18" x2="18" y2="6"></line></svg></button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- side rail -->
+        <div style="display:flex; flex-direction:column; gap:18px; position:sticky; top:0;">
+          <!-- publish card -->
+          <div style="background:#fbf7ed; border:1px solid #e8ddc6; border-radius:18px; padding:22px;">
+            <div style="font-size:14px; font-weight:700; color:#2b2723; margin-bottom:16px;">حالة النشر</div>
+            <div style="display:flex; background:#ece3cf; border-radius:13px; padding:4px; gap:4px;">
+              <button onClick="{{ setDraft }}" style="flex:1; border:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:600; padding:10px 0; border-radius:10px; background:{{ draftBg }}; color:{{ draftColor }}; box-shadow:{{ draftShadow }}; transition:.15s;">مسودة</button>
+              <button onClick="{{ setPublished }}" style="flex:1; border:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:600; padding:10px 0; border-radius:10px; background:{{ pubBg }}; color:{{ pubColor }}; box-shadow:{{ pubShadow }}; transition:.15s;">منشورة</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:9px; margin-top:14px; padding:11px 13px; background:{{ noteBg }}; border-radius:11px;">
+              <span style="width:9px; height:9px; border-radius:50%; background:{{ noteDot }}; flex-shrink:0;"></span>
+              <span style="font-size:12px; color:#6b6253; line-height:1.5;">{{ statusNote }}</span>
+            </div>
+
+            <div style="height:1px; background:#ece3cf; margin:18px 0;"></div>
+
+            <div style="display:flex; flex-direction:column; gap:9px; font-size:12.5px; color:#897a5d;">
+              <div style="display:flex; justify-content:space-between;"><span>تاريخ الإنشاء</span><span style="color:#2b2723; font-variant-numeric:tabular-nums;">٢٥ / ٠٦ / ١٤٤٧</span></div>
+              <div style="display:flex; justify-content:space-between;"><span>آخر تعديل</span><span style="color:#2b2723;">الآن</span></div>
+            </div>
+
+            <button style="width:100%; margin-top:18px; border:none; background:#1f4a42; color:#f6f0e2; font-size:14px; font-weight:700; padding:13px 0; border-radius:13px; cursor:pointer; font-family:inherit; box-shadow:0 10px 22px -10px rgba(31,74,66,.6);">{{ submitLabel }}</button>
+            <button style="width:100%; margin-top:10px; border:1px solid #d8cdb5; background:transparent; color:#6b6253; font-size:13px; font-weight:600; padding:11px 0; border-radius:13px; cursor:pointer; font-family:inherit;">معاينة</button>
+          </div>
+
+          <!-- tip -->
+          <div style="border:1px dashed #cbb98e; background:rgba(176,137,79,.06); border-radius:16px; padding:15px 17px; display:flex; gap:11px;">
+            <div style="flex-shrink:0; width:8px; height:8px; border:1.5px solid #b0894f; transform:rotate(45deg); margin-top:4px;"></div>
+            <div style="font-size:11.5px; color:#897a5d; line-height:1.6;">تأكد من أن رقم الترتيب يطابق تسلسل الدروس داخل القسم لضمان عرضها للطالب بترتيبها الصحيح.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = { treeOpen: false, query: '', published: false, selectedId: 'usul' };
+
+  tree = [
+    { id:'aqeedah', name:'العقيدة', depth:0, meta:'٤٢', path:['العقيدة'] },
+    { id:'tawhid', name:'التوحيد', depth:1, meta:'١٨', path:['العقيدة','التوحيد'] },
+    { id:'usul', name:'الأصول الثلاثة', depth:2, meta:'٩', path:['العقيدة','التوحيد','الأصول الثلاثة'] },
+    { id:'ktab', name:'كتاب التوحيد', depth:1, meta:'١٥', path:['العقيدة','كتاب التوحيد'] },
+    { id:'fiqh', name:'الفقه', depth:0, meta:'٦٨', path:['الفقه'] },
+    { id:'tahara', name:'الطهارة', depth:1, meta:'١٢', path:['الفقه','الطهارة'] },
+    { id:'salah', name:'الصلاة', depth:1, meta:'٢٤', path:['الفقه','الصلاة'] },
+    { id:'sirah', name:'السيرة', depth:0, meta:'٢٩', path:['السيرة'] },
+    { id:'tafsir', name:'التفسير', depth:0, meta:'٣٥', path:['التفسير'] }
+  ];
+
+  renderVals() {
+    const q = this.state.query.trim();
+    const selected = this.tree.find(n => n.id === this.state.selectedId) || this.tree[0];
+
+    const selectedCrumbs = selected.path.map((p, i) => ({
+      name: p,
+      sep: i < selected.path.length - 1,
+      style: i === selected.path.length - 1
+        ? 'background:rgba(31,74,66,.1); color:#1f4a42; font-weight:600; padding:3px 11px; border-radius:8px;'
+        : 'color:#897a5d;'
+    }));
+
+    const visibleNodes = this.tree
+      .filter(n => !q || n.name.includes(q) || n.path.join(' ').includes(q))
+      .map(n => {
+        const isSel = n.id === this.state.selectedId;
+        const dotStyle = n.depth === 0
+          ? 'width:8px;height:8px;background:#1f4a42;transform:rotate(45deg);display:inline-block;flex-shrink:0;'
+          : 'width:6px;height:6px;border:1.5px solid #b0894f;border-radius:50%;display:inline-block;flex-shrink:0;';
+        return {
+          name: n.name,
+          meta: n.meta + ' محاضرة',
+          pad: (12 + n.depth * 20) + 'px',
+          bg: isSel ? 'rgba(31,74,66,.08)' : 'transparent',
+          weight: isSel ? 700 : (n.depth === 0 ? 600 : 400),
+          dot: dotStyle,
+          pick: () => this.setState({ selectedId: n.id, treeOpen: false, query: '' })
+        };
+      });
+
+    const pub = this.state.published;
+    return {
+      treeOpen: this.state.treeOpen,
+      treeBorder: this.state.treeOpen ? '#2c6157' : '#ddd1b7',
+      toggleTree: () => this.setState(s => ({ treeOpen: !s.treeOpen })),
+      query: this.state.query,
+      onSearch: (e) => this.setState({ query: e.target.value }),
+      selectedCrumbs,
+      visibleNodes,
+
+      setDraft: () => this.setState({ published: false }),
+      setPublished: () => this.setState({ published: true }),
+      draftBg: !pub ? '#fff' : 'transparent',
+      draftColor: !pub ? '#1f4a42' : '#9a8f7c',
+      draftShadow: !pub ? '0 2px 6px rgba(40,40,30,.1)' : 'none',
+      pubBg: pub ? '#1f4a42' : 'transparent',
+      pubColor: pub ? '#f6f0e2' : '#9a8f7c',
+      pubShadow: pub ? '0 2px 8px rgba(31,74,66,.35)' : 'none',
+      noteBg: pub ? 'rgba(31,138,91,.08)' : 'rgba(176,137,79,.08)',
+      noteDot: pub ? '#1f8a5b' : '#b0894f',
+      statusNote: pub ? 'ستظهر المحاضرة للطلاب فور حفظها.' : 'محفوظة كمسودة ولن تظهر للطلاب بعد.',
+      submitLabel: pub ? 'نشر المحاضرة' : 'حفظ كمسودة'
+    };
+  }
+}
+</script>
+</body>
+</html>

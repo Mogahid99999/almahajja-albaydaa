@@ -1,0 +1,18 @@
+{
+  "shape": "reference",
+  "version": "1.0.0",
+  "styleSha": "2f89872d5f6a",
+  "bundleSha12": "38e49a1e1ffc",
+  "renderHashes": {
+    "Home": "50e0b42e7155",
+    "SectionPage": "7eddbcfbb51f",
+    "AudioPlayer": "6a8c03a6eb15",
+    "UploadLecture": "a0f04f5fc66d"
+  },
+  "sourceKeys": {
+    "Home": "screens/رواق العلم.dc.html",
+    "SectionPage": "screens/صفحة القسم.dc.html",
+    "AudioPlayer": "screens/مشغل الصوت.dc.html",
+    "UploadLecture": "screens/لوحة التحكم - رفع محاضرة.dc.html"
+  }
+}
