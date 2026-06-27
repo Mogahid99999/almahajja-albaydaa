@@ -18,6 +18,7 @@ import { Txt, Screen, IconButton, RhombusEmblem, ConcentricMotif } from '@/compo
 import { Waveform } from '@/components/player/Waveform';
 import { TransportControls } from '@/components/player/TransportControls';
 import { PlayerUtilityBar } from '@/components/player/PlayerUtilityBar';
+import { PlayerAttachmentsStrip } from '@/components/attachments/PlayerAttachmentsStrip';
 import { playLecture, seekTo } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useLecturePlayback } from '@/hooks/useLecture';
@@ -156,6 +157,9 @@ export default function PlayerScreen() {
       <View style={styles.transportWrapper}>
         <TransportControls isPlaying={isPlaying} />
       </View>
+
+      {/* ── Lecture attachments strip (absolute, above the utility bar) ── */}
+      <PlayerAttachmentsStrip attachments={data?.attachments ?? []} />
 
       {/* ── Pinned utility bar (absolute) ── */}
       <PlayerUtilityBar lectureId={id} rate={rate} />

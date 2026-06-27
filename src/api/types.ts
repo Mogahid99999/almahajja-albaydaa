@@ -8,6 +8,40 @@ import type { AppLectureStatus } from '@/config';
 
 export type LectureProgressStatus = 'new' | 'in_progress' | 'completed';
 
+// --- Attachments (Phase 2 · feature A) ---------------------------------------
+/** PDF · كتاب · تفريغ · صورة · رابط. */
+export type AttachmentType = 'pdf' | 'book' | 'transcript' | 'image' | 'link';
+
+/** Identifies the owner of an attachment — a section node OR a lecture. */
+export type AttachmentOwnerRef =
+  | { kind: 'section'; id: string }
+  | { kind: 'lecture'; id: string };
+
+/** UI-facing attachment, source-agnostic (mock now / Supabase later). */
+export type Attachment = {
+  id: string;
+  type: AttachmentType;
+  title: string;
+  description: string | null;
+  /** Signed URL (storage) or external_url (link/book); null for transcript. */
+  url: string | null;
+  /** Transcript text — populated only by `getAttachment` for the in-app reader. */
+  body: string | null;
+  order: number;
+};
+
+/** Admin create payload (file already uploaded → url, or external link). */
+export type CreateAttachmentInput = {
+  owner: AttachmentOwnerRef;
+  type: AttachmentType;
+  title: string;
+  description?: string | null;
+  /** external_url for link/book, or the resolved storage URL for file types. */
+  url?: string | null;
+  /** transcript text (in-app reader). */
+  body?: string | null;
+};
+
 /** Section card on Home grid + subsection scrollers. */
 export type SectionCard = {
   id: string;
@@ -70,6 +104,8 @@ export type SectionPageData = {
   rollup: { total: number; completed: number; progressPct: number };
   subsections: SectionCard[];
   lectures: LectureRow[];
+  /** Attachments owned by this section node (PRD §13). */
+  attachments: Attachment[];
 };
 
 /** Everything the player needs for one lecture. */
@@ -82,6 +118,8 @@ export type LecturePlayback = {
   durationSec: number;
   audioUrl: string;
   positionSec: number;
+  /** Attachments owned by this lecture (PRD §13). */
+  attachments: Attachment[];
 };
 
 // --- Admin -------------------------------------------------------------------

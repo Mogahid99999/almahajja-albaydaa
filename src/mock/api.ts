@@ -6,6 +6,8 @@
 import { arNum } from '@/lib/format';
 import type {
   AdminLectureRow,
+  Attachment,
+  CreateAttachmentInput,
   FlatSectionNode,
   HomeData,
   LectureCard,
@@ -54,6 +56,19 @@ function lectureCard(l: db.DLecture): LectureCard {
 
 function eyebrowFor(l: db.DLecture): string {
   return `الدرس ${arNum(l.order + 1)}`;
+}
+
+/** Map a stored attachment → UI DTO. `body` is only included for the reader. */
+function toAttachment(a: db.DAttachment, includeBody = false): Attachment {
+  return {
+    id: a.id,
+    type: a.type,
+    title: a.title,
+    description: a.description,
+    url: a.url,
+    body: includeBody ? a.body : null,
+    order: a.order,
+  };
 }
 
 // --- Home --------------------------------------------------------------------
@@ -129,6 +144,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
     },
     subsections,
     lectures,
+    attachments: db.attachmentsForSection(sectionId).map((a) => toAttachment(a)),
   };
 }
 
@@ -147,7 +163,45 @@ export async function getLecturePlayback(lectureId: string): Promise<LecturePlay
     durationSec: l.duration_sec ?? 0,
     audioUrl: l.audio_path,
     positionSec: db.progress[l.id]?.position_sec ?? 0,
+    attachments: db.attachmentsForLecture(l.id).map((a) => toAttachment(a)),
   };
+}
+
+// --- Attachments -------------------------------------------------------------
+export async function listSectionAttachments(sectionId: string): Promise<Attachment[]> {
+  await delay();
+  return db.attachmentsForSection(sectionId).map((a) => toAttachment(a));
+}
+
+export async function listLectureAttachments(lectureId: string): Promise<Attachment[]> {
+  await delay();
+  return db.attachmentsForLecture(lectureId).map((a) => toAttachment(a));
+}
+
+export async function getAttachment(id: string): Promise<Attachment> {
+  await delay();
+  const a = db.getAttachmentById(id);
+  if (!a) throw new Error(`attachment not found: ${id}`);
+  return toAttachment(a, true);
+}
+
+export async function createAttachment(input: CreateAttachmentInput): Promise<Attachment> {
+  await delay();
+  const created = db.addAttachment({
+    type: input.type,
+    title: input.title,
+    description: input.description ?? null,
+    url: input.url ?? null,
+    body: input.body ?? null,
+    section_id: input.owner.kind === 'section' ? input.owner.id : null,
+    lecture_id: input.owner.kind === 'lecture' ? input.owner.id : null,
+  });
+  return toAttachment(created, true);
+}
+
+export async function deleteAttachment(id: string): Promise<void> {
+  await delay();
+  db.removeAttachment(id);
 }
 
 export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {

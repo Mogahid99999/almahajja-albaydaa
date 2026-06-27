@@ -13,6 +13,7 @@
 import { Asset } from 'expo-asset';
 
 import type { AppLectureStatus } from '@/config';
+import type { AttachmentType } from '@/api/types';
 
 const now = '2026-06-26T00:00:00.000Z';
 
@@ -57,6 +58,24 @@ export type DLecture = {
 export type DProgress = {
   position_sec: number;
   completed: boolean;
+  updated_at: string;
+};
+
+export type DAttachment = {
+  id: string;
+  type: AttachmentType;
+  title: string;
+  description: string | null;
+  /** In mock mode the resolved/displayable URL lives here (DB splits it across
+   *  storage_path / external_url). null for transcripts. */
+  url: string | null;
+  /** Transcript text — only for type='transcript', shown in the in-app reader. */
+  body: string | null;
+  order: number;
+  /** Exactly one of section_id / lecture_id is set (mirrors the CHECK). */
+  section_id: string | null;
+  lecture_id: string | null;
+  created_at: string;
   updated_at: string;
 };
 
@@ -187,6 +206,67 @@ export const progress: Record<string, DProgress> = {
 /** The lecture the student should resume (most recently touched, incomplete). */
 export let lastPlayedLectureId: string | null = 'l-real';
 
+// --- Attachments (PRD §13) ----------------------------------------------------
+// Owned by a section node OR a lecture. Sample public URLs so view/download work
+// on the emulator; transcript carries inline `body` for the in-app reader.
+const SAMPLE_PDF = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+const SAMPLE_IMG = 'https://picsum.photos/seed/almahajja/800/560';
+const SAMPLE_BOOK = 'https://shamela.ws/book/12286';
+const SAMPLE_LINK = 'https://binbaz.org.sa';
+
+const TRANSCRIPT_BODY = [
+  'بسم الله الرحمن الرحيم، الحمد لله رب العالمين، وصلى الله وسلم على نبينا محمد وعلى آله وصحبه أجمعين، أما بعد:',
+  'فإن أول واجب على العبد معرفة الله جل وعلا، ومعرفة دينه، ومعرفة نبيه ﷺ، فهذه هي الأصول الثلاثة التي يُسأل عنها كل أحد في قبره.',
+  'قال المصنف رحمه الله: «اعلم أرشدك الله لطاعته أن الحنيفية ملة إبراهيم: أن تعبد الله وحده مخلصاً له الدين»، وفي هذا بيان أن التوحيد هو الغاية التي خلق الله الخلق من أجلها.',
+  'ومن لطائف هذا الباب: أن العلم قبل القول والعمل، كما بوّب البخاري رحمه الله، فلا يصح قولٌ ولا عملٌ إلا بعلمٍ يسبقه.',
+].join('\n\n');
+
+function att(
+  id: string,
+  type: AttachmentType,
+  title: string,
+  order: number,
+  owner: { section_id: string } | { lecture_id: string },
+  opts: { description?: string | null; url?: string | null; body?: string | null } = {},
+): DAttachment {
+  return {
+    id,
+    type,
+    title,
+    description: opts.description ?? null,
+    url: opts.url ?? null,
+    body: opts.body ?? null,
+    order,
+    section_id: 'section_id' in owner ? owner.section_id : null,
+    lecture_id: 'lecture_id' in owner ? owner.lecture_id : null,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+export const attachments: DAttachment[] = [
+  // On the section كتاب التوحيد — a PDF متن, a كتاب reference, and a رابط.
+  att('at-s-1', 'pdf', 'متن كتاب التوحيد (PDF)', 0, { section_id: 'kitab-tawheed' }, {
+    description: 'النص الكامل للمتن', url: SAMPLE_PDF,
+  }),
+  att('at-s-2', 'book', 'كتاب التوحيد — المكتبة الشاملة', 1, { section_id: 'kitab-tawheed' }, {
+    description: 'للإمام محمد بن عبد الوهاب', url: SAMPLE_BOOK,
+  }),
+  att('at-s-3', 'link', 'موقع الشيخ — مادة مساندة', 2, { section_id: 'kitab-tawheed' }, {
+    description: 'دروس وفتاوى ذات صلة', url: SAMPLE_LINK,
+  }),
+
+  // On the lecture باب الأصل الأول — a transcript (تفريغ) + a صورة (شرح مبسّط).
+  att('at-l-1', 'transcript', 'تفريغ الدرس', 0, { lecture_id: 'l-kt-1' }, {
+    description: 'نص الدرس مكتوباً', body: TRANSCRIPT_BODY,
+  }),
+  att('at-l-2', 'image', 'خريطة الأصول الثلاثة', 1, { lecture_id: 'l-kt-1' }, {
+    description: 'مخطط توضيحي', url: SAMPLE_IMG,
+  }),
+];
+
+let attachmentSeq = 0;
+
 // =============================================================================
 // Query helpers (mirror the SQL + recursive rollups)
 // =============================================================================
@@ -244,6 +324,22 @@ export function getLectureById(id: string): DLecture | undefined {
 
 export function getSectionById(id: string): DSection | undefined {
   return sections.find((s) => s.id === id);
+}
+
+export function attachmentsForSection(sectionId: string): DAttachment[] {
+  return attachments
+    .filter((a) => a.section_id === sectionId)
+    .sort((a, b) => a.order - b.order);
+}
+
+export function attachmentsForLecture(lectureId: string): DAttachment[] {
+  return attachments
+    .filter((a) => a.lecture_id === lectureId)
+    .sort((a, b) => a.order - b.order);
+}
+
+export function getAttachmentById(id: string): DAttachment | undefined {
+  return attachments.find((a) => a.id === id);
 }
 
 // --- Mutations ----------------------------------------------------------------
@@ -319,4 +415,40 @@ export function addSection(input: {
   );
   sections.push(created);
   return created;
+}
+
+export function addAttachment(input: {
+  type: AttachmentType;
+  title: string;
+  description?: string | null;
+  url?: string | null;
+  body?: string | null;
+  section_id: string | null;
+  lecture_id: string | null;
+}): DAttachment {
+  const siblings = input.section_id
+    ? attachmentsForSection(input.section_id)
+    : input.lecture_id
+      ? attachmentsForLecture(input.lecture_id)
+      : [];
+  const created: DAttachment = {
+    id: `at-new-${Date.now()}-${++attachmentSeq}`,
+    type: input.type,
+    title: input.title,
+    description: input.description ?? null,
+    url: input.url ?? null,
+    body: input.body ?? null,
+    order: siblings.length,
+    section_id: input.section_id,
+    lecture_id: input.lecture_id,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  attachments.push(created);
+  return created;
+}
+
+export function removeAttachment(id: string) {
+  const idx = attachments.findIndex((a) => a.id === id);
+  if (idx >= 0) attachments.splice(idx, 1);
 }

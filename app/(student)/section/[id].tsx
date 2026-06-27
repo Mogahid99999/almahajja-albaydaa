@@ -34,6 +34,7 @@ import { ProgressCard } from '@/components/section/ProgressCard';
 import { SectionHeaderBadge } from '@/components/section/SectionHeaderBadge';
 import { SectionNavBar } from '@/components/section/SectionNavBar';
 import { SubsectionsScroller } from '@/components/section/SubsectionsScroller';
+import { AttachmentList } from '@/components/attachments/AttachmentList';
 
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -68,7 +69,7 @@ export default function SectionScreen() {
     );
   }
 
-  const { section, parentTitle, sheikhNames, rollup, subsections, lectures } = data;
+  const { section, parentTitle, sheikhNames, rollup, subsections, lectures, attachments } = data;
 
   // The nav bar label is the parent title (breadcrumb context), or the section
   // title itself when this is a root-level section (parentTitle is null).
@@ -168,6 +169,13 @@ export default function SectionScreen() {
           </Card>
         )}
       </View>
+
+      {/* ── Attachments (PRD §13) ────────────────────────────────────────────── */}
+      {attachments.length > 0 ? (
+        <View style={{ paddingHorizontal: spacing.screenH, marginTop: 26 }}>
+          <AttachmentList attachments={attachments} />
+        </View>
+      ) : null}
     </Screen>
   );
 }

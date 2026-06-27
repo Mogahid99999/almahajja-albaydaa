@@ -13,6 +13,11 @@ export const queryKeys = {
   lecturesByIds: (ids: string[]) => ['lectures', 'byIds', ...ids] as const,
   lectureProgress: (lectureId: string) => ['progress', 'lecture', lectureId] as const,
 
+  // Attachments (Phase 2 · feature A)
+  sectionAttachments: (sectionId: string) => ['attachments', 'section', sectionId] as const,
+  lectureAttachments: (lectureId: string) => ['attachments', 'lecture', lectureId] as const,
+  attachment: (id: string) => ['attachment', id] as const,
+
   // Admin
   adminLectures: ['admin', 'lectures'] as const,
   unclassified: ['admin', 'unclassified'] as const,
