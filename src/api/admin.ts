@@ -3,6 +3,12 @@
  * review queue (PRD §14, §15). The Telegram bot (deferred) will feed the same
  * unclassified queue, so nothing here changes when it lands.
  */
+/**
+ * Admin data access — lecture upload, the section tree, and the unclassified
+ * review queue (PRD §14, §15). The Telegram bot (deferred) will feed the same
+ * unclassified queue, so nothing here changes when it lands.
+ */
+
 import { USE_MOCK } from '@/config';
 import type { AppLectureStatus } from '@/config';
 import * as mock from '@/mock/api';
