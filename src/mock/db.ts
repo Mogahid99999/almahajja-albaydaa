@@ -470,6 +470,17 @@ export function removeAttachment(id: string) {
   if (idx >= 0) attachments.splice(idx, 1);
 }
 
+/** Reassign `order` for one owner's attachments to match `orderedIds`. */
+export function reorderAttachments(orderedIds: string[]) {
+  orderedIds.forEach((id, index) => {
+    const a = attachments.find((x) => x.id === id);
+    if (a) {
+      a.order = index;
+      a.updated_at = new Date().toISOString();
+    }
+  });
+}
+
 // =============================================================================
 // Journey · رحلتي العلمية (Phase 2 · feature C)
 // Personal-only: weekly goal, مداومة/streak, milestone badges. Mirrors the SQL

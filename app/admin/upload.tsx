@@ -28,6 +28,7 @@ import {
 } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
+import { AttachmentManager } from '@/components/admin/AttachmentManager';
 import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
@@ -83,6 +84,8 @@ export default function UploadScreen() {
   const [titleFocused, setTitleFocused] = useState(false);
   const [orderFocused, setOrderFocused] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  // Set once the lecture is saved — attachments hang off the created lecture id.
+  const [createdLectureId, setCreatedLectureId] = useState<string | null>(null);
 
   // Sheikh picker open
   const [sheikhOpen, setSheikhOpen] = useState(false);
@@ -100,12 +103,13 @@ export default function UploadScreen() {
         status: publishStatus,
       },
       {
-        onSuccess: () => {
+        onSuccess: (created) => {
           setSuccessMsg(
             publishStatus === 'published'
               ? 'تم نشر المحاضرة بنجاح.'
               : 'تم حفظ المحاضرة كمسودة.',
           );
+          setCreatedLectureId(created.id);
           setTitle('');
           setSectionId(null);
           setOrder('');
@@ -252,34 +256,40 @@ export default function UploadScreen() {
           </View>
         </CardSection>
 
-        {/* Card 3: Attachments */}
+        {/* Card 3: Attachments — bound to the lecture once it's saved. */}
         <CardSection title="المرفقات">
-          {/* Dropzone */}
-          <View style={styles.dropzone}>
-            <Feather name="upload-cloud" size={28} color={colors.accentBrassMuted} />
-            <Txt size={13} weight="semibold" color={colors.textMuted} style={{ marginTop: 10 }}>
-              اسحب الملفات هنا أو تصفّح الجهاز
-            </Txt>
-            <Txt size={11} color={colors.textGhost} style={{ marginTop: 4 }}>
-              PDF، Word، صور · بحد أقصى ١٠ ميجابايت للملف
-            </Txt>
-          </View>
-
-          {/* Fake attached file */}
-          <View style={styles.attachRow}>
-            <Feather name="file-text" size={16} color={colors.textMuted} style={{ marginLeft: 10 }} />
-            <View style={{ flex: 1 }}>
-              <Txt size={13} color={colors.textInk} weight="semibold">
-                تفريغ-المحاضرة.pdf
+          {createdLectureId ? (
+            <>
+              <View style={styles.attachSavedHint}>
+                <Feather
+                  name="check-circle"
+                  size={15}
+                  color={colors.stateSuccess}
+                  style={{ marginLeft: 8 }}
+                />
+                <Txt size={12} color={colors.textMuted} style={{ flex: 1 }}>
+                  أضف مرفقات إلى المحاضرة التي تم حفظها.
+                </Txt>
+              </View>
+              <AttachmentManager owner={{ kind: 'lecture', id: createdLectureId }} />
+            </>
+          ) : (
+            <View style={styles.attachPlaceholder}>
+              <Feather name="paperclip" size={26} color={colors.accentBrassMuted} />
+              <Txt
+                size={13}
+                weight="semibold"
+                color={colors.textMuted}
+                align="center"
+                style={{ marginTop: 10 }}
+              >
+                احفظ المحاضرة أولاً لإضافة المرفقات
               </Txt>
-              <Txt size={11} color={colors.textGhost} tabular>
-                {arFileSize(842000)}
+              <Txt size={11} color={colors.textGhost} align="center" style={{ marginTop: 4 }}>
+                بعد الحفظ يمكنك إرفاق ملفات PDF أو كتب أو روابط أو تفريغ.
               </Txt>
             </View>
-            <Pressable accessibilityLabel="إزالة المرفق">
-              <Feather name="x" size={15} color={colors.stateDanger} />
-            </Pressable>
-          </View>
+          )}
         </CardSection>
       </View>
 
@@ -582,7 +592,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(31,74,66,0.05)',
   } as ViewStyle,
 
-  dropzone: {
+  attachPlaceholder: {
     borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: colors.accentBrassSoft,
@@ -592,14 +602,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 32,
     paddingHorizontal: 20,
-    marginBottom: 12,
   } as ViewStyle,
 
-  attachRow: {
+  attachSavedHint: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+    backgroundColor: 'rgba(31,138,91,0.09)',
+    borderRadius: radius.sm,
+    padding: 10,
+    marginBottom: 14,
   } as ViewStyle,
 
   // ── Right rail ──

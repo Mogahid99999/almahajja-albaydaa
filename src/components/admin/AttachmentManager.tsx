@@ -16,22 +16,20 @@ import { AttachmentRow } from '@/components/attachments/AttachmentRow';
 import { ATTACHMENT_META } from '@/components/attachments/attachmentMeta';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
+  useAdminAttachments,
   useCreateAttachment,
   useDeleteAttachment,
-  useLectureAttachments,
-  useSectionAttachments,
+  useReorderAttachments,
 } from '@/hooks/useAttachments';
 
 const TYPES: AttachmentType[] = ['pdf', 'book', 'transcript', 'image', 'link'];
 
 export function AttachmentManager({ owner }: { owner: AttachmentOwnerRef }) {
-  // Both hooks always run (rules of hooks); the non-matching one is disabled.
-  const sectionQ = useSectionAttachments(owner.kind === 'section' ? owner.id : '');
-  const lectureQ = useLectureAttachments(owner.kind === 'lecture' ? owner.id : '');
-  const attachments = (owner.kind === 'section' ? sectionQ.data : lectureQ.data) ?? [];
+  const { data: attachments = [] } = useAdminAttachments(owner);
 
   const createAttachment = useCreateAttachment();
   const deleteAttachment = useDeleteAttachment();
+  const reorderAttachments = useReorderAttachments();
 
   const [type, setType] = useState<AttachmentType>('pdf');
   const [title, setTitle] = useState('');
@@ -40,6 +38,14 @@ export function AttachmentManager({ owner }: { owner: AttachmentOwnerRef }) {
 
   const isTranscript = type === 'transcript';
   const canSubmit = title.trim().length > 0 && payload.trim().length > 0;
+
+  /** Move an attachment between positions and persist the new order. */
+  function move(from: number, to: number) {
+    const orderedIds = attachments.map((a) => a.id);
+    const [moved] = orderedIds.splice(from, 1);
+    orderedIds.splice(to, 0, moved);
+    reorderAttachments.mutate({ owner, orderedIds });
+  }
 
   function handleAdd() {
     if (!canSubmit) return;
@@ -77,6 +83,10 @@ export function AttachmentManager({ owner }: { owner: AttachmentOwnerRef }) {
               <AttachmentRow
                 attachment={attachment}
                 onRemove={() => deleteAttachment.mutate({ id: attachment.id, owner })}
+                onMoveUp={index > 0 ? () => move(index, index - 1) : undefined}
+                onMoveDown={
+                  index < attachments.length - 1 ? () => move(index, index + 1) : undefined
+                }
               />
             </View>
           ))}

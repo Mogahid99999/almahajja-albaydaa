@@ -9,7 +9,7 @@
  */
 import { USE_MOCK } from '@/config';
 import * as mock from '@/mock/api';
-import type { Attachment, CreateAttachmentInput } from './types';
+import type { Attachment, AttachmentOwnerRef, CreateAttachmentInput } from './types';
 
 export type {
   Attachment,
@@ -49,4 +49,13 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
 export async function deleteAttachment(id: string): Promise<void> {
   if (USE_MOCK) return mock.deleteAttachment(id);
   throw NOT_LIVE('deleteAttachment');
+}
+
+/** Admin: persist a new order for one owner's attachments. */
+export async function reorderAttachments(
+  owner: AttachmentOwnerRef,
+  orderedIds: string[],
+): Promise<void> {
+  if (USE_MOCK) return mock.reorderAttachments(owner, orderedIds);
+  throw NOT_LIVE('reorderAttachments');
 }

@@ -3,8 +3,9 @@
  *
  * Layout (RTL): rhombus-framed type icon · title + type/description · action.
  * Tap opens the attachment (transcript → in-app reader, others → URL).
- * When `onRemove` is provided (admin), a trailing delete control is shown
- * instead of the open chevron.
+ * Student view shows a download control for file types (pdf/image/تفريغ). When
+ * `onRemove` is provided (admin), trailing reorder + delete controls are shown
+ * instead of the open/download affordance.
  */
 import { Feather } from '@expo/vector-icons';
 import { Pressable, View } from 'react-native';
@@ -13,14 +14,22 @@ import { useRouter } from 'expo-router';
 import type { Attachment } from '@/api/types';
 import { Rhombus, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
+import { isDownloadable } from '@/lib/attachmentDownloads';
+import { AttachmentDownloadButton } from './AttachmentDownloadButton';
 import { ATTACHMENT_META, openAttachment } from './attachmentMeta';
 
 export function AttachmentRow({
   attachment,
   onRemove,
+  onMoveUp,
+  onMoveDown,
 }: {
   attachment: Attachment;
   onRemove?: () => void;
+  /** Admin-only: move this attachment one step earlier (omit at the top). */
+  onMoveUp?: () => void;
+  /** Admin-only: move this attachment one step later (omit at the bottom). */
+  onMoveDown?: () => void;
 }) {
   const router = useRouter();
   const meta = ATTACHMENT_META[attachment.type];
@@ -73,15 +82,41 @@ export function AttachmentRow({
 
       {/* Trailing action */}
       {onRemove ? (
-        <Pressable
-          onPress={onRemove}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="إزالة المرفق"
-          style={{ padding: 4 }}
-        >
-          <Feather name="trash-2" size={17} color={colors.stateDanger} />
-        </Pressable>
+        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 2 }}>
+          {onMoveUp ? (
+            <Pressable
+              onPress={onMoveUp}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="نقل لأعلى"
+              style={{ padding: 4 }}
+            >
+              <Feather name="chevron-up" size={17} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
+          {onMoveDown ? (
+            <Pressable
+              onPress={onMoveDown}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="نقل لأسفل"
+              style={{ padding: 4 }}
+            >
+              <Feather name="chevron-down" size={17} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={onRemove}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="إزالة المرفق"
+            style={{ padding: 4 }}
+          >
+            <Feather name="trash-2" size={17} color={colors.stateDanger} />
+          </Pressable>
+        </View>
+      ) : isDownloadable(attachment) ? (
+        <AttachmentDownloadButton attachment={attachment} />
       ) : (
         <Feather
           name={attachment.type === 'transcript' ? 'chevron-left' : 'external-link'}

@@ -11,6 +11,7 @@ import {
 import type {
   AdminLectureRow,
   Attachment,
+  AttachmentOwnerRef,
   Badge,
   CreateAttachmentInput,
   FlatSectionNode,
@@ -229,6 +230,14 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
 export async function deleteAttachment(id: string): Promise<void> {
   await delay();
   db.removeAttachment(id);
+}
+
+export async function reorderAttachments(
+  _owner: AttachmentOwnerRef,
+  orderedIds: string[],
+): Promise<void> {
+  await delay();
+  db.reorderAttachments(orderedIds);
 }
 
 export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {

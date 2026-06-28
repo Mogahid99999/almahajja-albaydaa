@@ -1,3 +1,5 @@
+import type { AttachmentOwnerRef } from '@/api/types';
+
 /**
  * Central registry of TanStack Query keys.
  * Keeping them in one place makes targeted invalidation predictable.
@@ -17,6 +19,8 @@ export const queryKeys = {
   sectionAttachments: (sectionId: string) => ['attachments', 'section', sectionId] as const,
   lectureAttachments: (lectureId: string) => ['attachments', 'lecture', lectureId] as const,
   attachment: (id: string) => ['attachment', id] as const,
+  adminAttachments: (owner: AttachmentOwnerRef) =>
+    ['attachments', 'admin', owner.kind, owner.id] as const,
 
   // Notifications (Phase 2 · feature B)
   notifications: ['notifications', 'list'] as const,

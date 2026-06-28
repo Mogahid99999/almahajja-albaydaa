@@ -6,6 +6,7 @@ import {
   getAttachment,
   listLectureAttachments,
   listSectionAttachments,
+  reorderAttachments,
 } from '@/api/attachments';
 import type { AttachmentOwnerRef, CreateAttachmentInput } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
@@ -37,10 +38,27 @@ export function useAttachment(id: string) {
   });
 }
 
+/**
+ * Admin view of an owner's attachments. Keyed separately from the student-facing
+ * section/lecture lists so the manager has its own cache entry (and, live, can
+ * surface draft-only rows the student lists hide).
+ */
+export function useAdminAttachments(owner: AttachmentOwnerRef) {
+  return useQuery({
+    queryKey: queryKeys.adminAttachments(owner),
+    queryFn: () =>
+      owner.kind === 'section'
+        ? listSectionAttachments(owner.id)
+        : listLectureAttachments(owner.id),
+    enabled: !!owner.id,
+  });
+}
+
 /** Invalidate every view that embeds an owner's attachments. */
 function useInvalidateOwner() {
   const qc = useQueryClient();
   return (owner: AttachmentOwnerRef) => {
+    qc.invalidateQueries({ queryKey: queryKeys.adminAttachments(owner) });
     if (owner.kind === 'section') {
       qc.invalidateQueries({ queryKey: queryKeys.sectionAttachments(owner.id) });
       qc.invalidateQueries({ queryKey: queryKeys.section(owner.id) });
@@ -66,6 +84,16 @@ export function useDeleteAttachment() {
   return useMutation({
     mutationFn: (vars: { id: string; owner: AttachmentOwnerRef }) =>
       deleteAttachment(vars.id),
+    onSuccess: (_data, vars) => invalidateOwner(vars.owner),
+  });
+}
+
+/** Admin: persist a reordered list for one owner, then refresh its views. */
+export function useReorderAttachments() {
+  const invalidateOwner = useInvalidateOwner();
+  return useMutation({
+    mutationFn: (vars: { owner: AttachmentOwnerRef; orderedIds: string[] }) =>
+      reorderAttachments(vars.owner, vars.orderedIds),
     onSuccess: (_data, vars) => invalidateOwner(vars.owner),
   });
 }
