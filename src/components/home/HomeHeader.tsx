@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
 import { colors } from '@/constants/theme';
+import { useUnreadCount } from '@/hooks/useNotifications';
 import { IconButton, Logo, Txt } from '@/components/ui';
 
 /**
@@ -11,6 +12,7 @@ import { IconButton, Logo, Txt } from '@/components/ui';
  */
 export function HomeHeader() {
   const router = useRouter();
+  const unread = useUnreadCount();
 
   return (
     <View
@@ -37,6 +39,32 @@ export function HomeHeader() {
 
       {/* Left (RTL end): action buttons */}
       <View style={{ flexDirection: 'row', gap: 8 }}>
+        {/* Notifications bell with a single quiet brass unread dot — no count */}
+        <View>
+          <IconButton
+            icon="bell"
+            variant="inset"
+            size={40}
+            iconSize={18}
+            accessibilityLabel="الإشعارات"
+            onPress={() => router.push('/(student)/notifications')}
+          />
+          {unread > 0 ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 7,
+                left: 7,
+                width: 9,
+                height: 9,
+                borderRadius: 5,
+                backgroundColor: colors.accentBrass,
+                borderWidth: 1.5,
+                borderColor: colors.bgSand,
+              }}
+            />
+          ) : null}
+        </View>
         <IconButton
           icon="search"
           variant="inset"

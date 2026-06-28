@@ -42,6 +42,96 @@ export type CreateAttachmentInput = {
   body?: string | null;
 };
 
+// --- Journey · رحلتي العلمية (Phase 2 · feature C) ---------------------------
+/** Weekly goal metric: lectures studied OR minutes listened. */
+export type GoalMetric = 'lectures' | 'minutes';
+
+/** The student's active weekly goal. */
+export type WeeklyGoal = {
+  metric: GoalMetric;
+  target: number;
+};
+
+/** This week's progress toward the active goal (Sat→Fri week). */
+export type WeekProgress = {
+  metric: GoalMetric;
+  target: number;
+  /** Lectures studied this week, or whole minutes listened — per `metric`. */
+  current: number;
+};
+
+/** مداومة — consecutive listening days. Longest is kept so it's never lost. */
+export type Streak = {
+  current: number;
+  longest: number;
+};
+
+/** Everything the رحلتي العلمية page header needs, in one round-trip. */
+export type JourneySummary = {
+  completedLectures: number;
+  totalSeconds: number;
+  streak: Streak;
+  /** Distinct days with any listening. */
+  activeDays: number;
+  week: WeekProgress;
+};
+
+/** A milestone badge: completed-lectures count or streak-days. */
+export type BadgeKind = 'completed' | 'streak';
+
+/** A badge catalog entry merged with this user's earned state. */
+export type Badge = {
+  key: string;
+  titleAr: string;
+  descAr: string;
+  threshold: number;
+  kind: BadgeKind;
+  earned: boolean;
+  earnedAt: string | null;
+};
+
+// --- Notifications (Phase 2 · feature B) -------------------------------------
+/**
+ * درس جديد · مرفق جديد · اختبار جديد · تذكير بالمتابعة. `new_quiz` ships now even
+ * though quizzes are deferred, so the pref + payload light up later with no
+ * migration.
+ */
+export type NotificationType =
+  | 'new_lecture'
+  | 'new_attachment'
+  | 'new_quiz'
+  | 'resume_reminder';
+
+/** Deep-link payload carried on a notification (exactly one target is set). */
+export type NotificationData = {
+  lectureId?: string;
+  sectionId?: string;
+  attachmentId?: string;
+};
+
+/** One row in the الإشعارات inbox. `read` derives from the DB's `read_at`. */
+export type NotificationItem = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: NotificationData;
+  read: boolean;
+  createdAt: string;
+};
+
+/**
+ * Per-type on/off, keyed by every {@link NotificationType}. Absence of a DB row
+ * means ON, so the api layer always resolves this to a complete map.
+ */
+export type NotificationPrefs = Record<NotificationType, boolean>;
+
+/** Whether the current user follows a given section. */
+export type FollowState = {
+  sectionId: string;
+  followed: boolean;
+};
+
 /** Section card on Home grid + subsection scrollers. */
 export type SectionCard = {
   id: string;

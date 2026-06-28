@@ -22,6 +22,7 @@ import { Logo } from '@/components/ui/Logo';
 import { Rhombus } from '@/components/ui/Rhombus';
 import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
+import { PrefsToggles } from '@/components/notifications/PrefsToggles';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -159,6 +160,12 @@ export default function ProfileScreen() {
       {/* ── Links card ───────────────────────────────────────────────────────── */}
       <Card padded={false} style={{ overflow: 'hidden', marginBottom: 16 }}>
         <LinkRow
+          icon="compass"
+          label="رحلتي العلمية"
+          onPress={() => router.push('/(student)/journey')}
+        />
+        <Divider />
+        <LinkRow
           icon="download"
           label="المحاضرات المحمّلة"
           onPress={() => router.push('/(student)/downloads')}
@@ -170,6 +177,11 @@ export default function ProfileScreen() {
           onPress={() => router.push('/(student)/about')}
         />
       </Card>
+
+      {/* ── Notification preferences (feature B) ─────────────────────────────── */}
+      <View style={{ marginBottom: 16 }}>
+        <PrefsToggles />
+      </View>
 
       {/* ── Sign-out card ────────────────────────────────────────────────────── */}
       <Card padded={false} style={{ overflow: 'hidden' }}>

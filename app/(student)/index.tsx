@@ -8,6 +8,7 @@ import { DuaCard } from '@/components/home/DuaCard';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { NewlyAddedRail } from '@/components/home/NewlyAddedRail';
 import { SectionsGrid } from '@/components/home/SectionsGrid';
+import { JourneyHomeCard } from '@/components/journey/JourneyHomeCard';
 
 /**
  * Home — student landing screen.
@@ -49,6 +50,9 @@ export default function HomeScreen() {
       {/* Sections grid — 22px padding */}
       <View style={{ paddingHorizontal: 22 }}>
         <SectionsGrid sections={data?.sections ?? []} />
+
+        {/* رحلتي العلمية — quiet personal-progress entry */}
+        <JourneyHomeCard />
 
         {/* Dua card */}
         <DuaCard />

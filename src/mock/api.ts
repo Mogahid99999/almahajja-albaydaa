@@ -4,24 +4,51 @@
  * this module.
  */
 import { arNum } from '@/lib/format';
+import {
+  cancelResumeReminder,
+  scheduleResumeReminder,
+} from '@/lib/notifications';
 import type {
   AdminLectureRow,
   Attachment,
+  Badge,
   CreateAttachmentInput,
   FlatSectionNode,
+  GoalMetric,
   HomeData,
+  JourneySummary,
   LectureCard,
   LecturePlayback,
   LectureProgressStatus,
   LectureRow,
+  NotificationItem,
+  NotificationPrefs,
+  NotificationType,
   ResumeLecture,
   SectionCard,
   SectionPageData,
   SheikhOption,
   UnclassifiedItem,
+  WeeklyGoal,
 } from '@/api/types';
+import { BADGES, type BadgeDef } from '@/constants/badges';
 import type { AppLectureStatus } from '@/config';
 import * as db from './db';
+
+/** Every notification type — keeps the resolved prefs map exhaustive. */
+const NOTIFICATION_TYPES: NotificationType[] = [
+  'new_lecture',
+  'new_attachment',
+  'new_quiz',
+  'resume_reminder',
+];
+
+/**
+ * Max listening credited per save tick, to stop a forward-scrub from inflating
+ * the daily total. Saves fire ~5s apart (audioController), so a real tick is
+ * small; the cap also absorbs the position→duration jump on completion.
+ */
+const MAX_LISTEN_TICK_SEC = 90;
 
 const delay = () => new Promise<void>((r) => setTimeout(r, 120));
 
@@ -222,8 +249,169 @@ export async function saveLectureProgress(args: {
   lectureId: string;
   positionSec: number;
   durationSec: number;
-}) {
+}): Promise<Badge[]> {
+  // Listened delta = forward movement since the last saved position, capped so a
+  // scrub forward doesn't count as listening. (Single integration point for the
+  // رحلتي العلمية daily feed — the player UI is untouched.)
+  const prevPos = db.progress[args.lectureId]?.position_sec ?? 0;
   db.setProgress(args.lectureId, args.positionSec, args.durationSec);
+  const delta = Math.max(0, Math.min(args.positionSec - prevPos, MAX_LISTEN_TICK_SEC));
+
+  // Resume reminder (feature B) — same single save seam feature C feeds. Gated on
+  // the resume_reminder pref; in-progress → schedule +24h, completed → cancel.
+  // Fire-and-forget so a scheduling error never blocks the save or badge return.
+  // (The lib no-ops on web / without permission, so the emulator never blocks.)
+  if (db.prefEnabled('resume_reminder')) {
+    const completed = db.progress[args.lectureId]?.completed;
+    if (completed) {
+      void cancelResumeReminder(args.lectureId);
+    } else {
+      const title = db.getLectureById(args.lectureId)?.title ?? 'تابع درسك';
+      void scheduleResumeReminder(args.lectureId, title);
+    }
+  }
+
+  return recordListening({ lectureId: args.lectureId, deltaSec: delta });
+}
+
+// --- Journey · رحلتي العلمية -------------------------------------------------
+/** Merge a catalog definition with this user's earned state. */
+function toBadge(def: BadgeDef): Badge {
+  const earned = db.userBadges.find((b) => b.badge_key === def.key);
+  return {
+    key: def.key,
+    titleAr: def.titleAr,
+    descAr: def.descAr,
+    threshold: def.threshold,
+    kind: def.kind,
+    earned: !!earned,
+    earnedAt: earned?.earned_at ?? null,
+  };
+}
+
+/** Earn any newly-qualified badges; return only the ones just earned. */
+function evaluateBadges(): Badge[] {
+  const completed = db.completedLecturesCount();
+  const longest = db.longestStreak();
+  const newly: Badge[] = [];
+  for (const def of BADGES) {
+    if (db.hasBadge(def.key)) continue;
+    const qualifies =
+      def.kind === 'completed' ? completed >= def.threshold : longest >= def.threshold;
+    if (qualifies) {
+      db.earnBadge(def.key);
+      newly.push(toBadge(def));
+    }
+  }
+  return newly;
+}
+
+export async function getJourneySummary(): Promise<JourneySummary> {
+  await delay();
+  const metric = db.weeklyGoal.metric;
+  return {
+    completedLectures: db.completedLecturesCount(),
+    totalSeconds: db.totalSecondsListened(),
+    streak: { current: db.currentStreak(), longest: db.longestStreak() },
+    activeDays: db.activeDaysCount(),
+    week: {
+      metric,
+      target: db.weeklyGoal.target,
+      current: db.weekProgressCurrent(metric),
+    },
+  };
+}
+
+export async function getWeeklyGoal(): Promise<WeeklyGoal> {
+  await delay();
+  return { metric: db.weeklyGoal.metric, target: db.weeklyGoal.target };
+}
+
+export async function setWeeklyGoal(metric: GoalMetric, target: number): Promise<void> {
+  await delay();
+  db.setWeeklyGoal(metric, target);
+}
+
+export async function getBadges(): Promise<Badge[]> {
+  await delay();
+  return BADGES.map(toBadge);
+}
+
+/** Upsert today's listening + re-evaluate badges. Returns newly-earned badges. */
+export async function recordListening(args: {
+  lectureId: string | null;
+  deltaSec: number;
+}): Promise<Badge[]> {
+  db.recordDailyListening(args.lectureId, args.deltaSec);
+  return evaluateBadges();
+}
+
+// --- Notifications · الإشعارات -----------------------------------------------
+function toNotificationItem(n: db.DNotification): NotificationItem {
+  return {
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    data: n.data,
+    read: n.read_at !== null,
+    createdAt: n.created_at,
+  };
+}
+
+/** In mock mode the token is fake; we just record that registration ran. */
+export async function registerPushToken(_token: string, _platform: string): Promise<void> {
+  await delay();
+  // No-op store in mock — the live path upserts public.push_tokens.
+}
+
+export async function getNotificationPrefs(): Promise<NotificationPrefs> {
+  await delay();
+  // Absence of an override = ON, so the resolved map is always exhaustive.
+  return NOTIFICATION_TYPES.reduce((acc, type) => {
+    acc[type] = db.prefEnabled(type);
+    return acc;
+  }, {} as NotificationPrefs);
+}
+
+export async function setNotificationPref(
+  type: NotificationType,
+  enabled: boolean,
+): Promise<void> {
+  await delay();
+  db.setNotificationPref(type, enabled);
+}
+
+export async function listNotifications(): Promise<NotificationItem[]> {
+  await delay();
+  return [...db.notifications]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map(toNotificationItem);
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await delay();
+  db.markNotificationRead(id);
+}
+
+export async function markAllRead(): Promise<void> {
+  await delay();
+  db.markAllNotificationsRead();
+}
+
+export async function isSectionFollowed(sectionId: string): Promise<boolean> {
+  await delay();
+  return db.isFollowed(sectionId);
+}
+
+export async function followSection(sectionId: string): Promise<void> {
+  await delay();
+  db.addFollow(sectionId);
+}
+
+export async function unfollowSection(sectionId: string): Promise<void> {
+  await delay();
+  db.removeFollow(sectionId);
 }
 
 // --- Admin -------------------------------------------------------------------

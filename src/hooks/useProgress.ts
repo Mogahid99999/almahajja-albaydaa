@@ -12,7 +12,7 @@ export function useLectureProgress(lectureId: string) {
   });
 }
 
-/** Persist playback position; invalidates the affected progress/section/home views. */
+/** Persist playback position; invalidates progress/home + the journey rollups. */
 export function useSaveProgress() {
   const qc = useQueryClient();
   return useMutation({
@@ -20,6 +20,9 @@ export function useSaveProgress() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.lectureProgress(vars.lectureId) });
       qc.invalidateQueries({ queryKey: queryKeys.home });
+      // The same save feeds daily_listening + badge evaluation (رحلتي العلمية).
+      qc.invalidateQueries({ queryKey: queryKeys.journey });
+      qc.invalidateQueries({ queryKey: queryKeys.badges });
     },
   });
 }

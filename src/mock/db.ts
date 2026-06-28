@@ -13,7 +13,12 @@
 import { Asset } from 'expo-asset';
 
 import type { AppLectureStatus } from '@/config';
-import type { AttachmentType } from '@/api/types';
+import type {
+  AttachmentType,
+  GoalMetric,
+  NotificationData,
+  NotificationType,
+} from '@/api/types';
 
 const now = '2026-06-26T00:00:00.000Z';
 
@@ -196,9 +201,14 @@ export const progress: Record<string, DProgress> = {
   'l-real': { position_sec: 30, completed: false, updated_at: now },
   // Resume / "continue listening" card — 62% through, matches the design.
   'l-kt-1': { position_sec: 1122, completed: false, updated_at: now },
-  // Completed lessons
+  // Completed lessons — seeded to 7 so رحلتي العلمية has a believable history.
   'l-aq-1': { position_sec: 1320, completed: true, updated_at: now },
+  'l-aq-2': { position_sec: 1410, completed: true, updated_at: now },
   'l-ut-1': { position_sec: 1490, completed: true, updated_at: now },
+  'l-ut-2': { position_sec: 1560, completed: true, updated_at: now },
+  'l-kt-2': { position_sec: 1700, completed: true, updated_at: now },
+  'l-kt-3': { position_sec: 1920, completed: true, updated_at: now },
+  'l-th-2': { position_sec: 1450, completed: true, updated_at: now },
   // Lightly started
   'l-th-1': { position_sec: 240, completed: false, updated_at: now },
 };
@@ -376,14 +386,19 @@ export function addLecture(input: {
     updated_at: new Date().toISOString(),
   };
   lectures.push(created);
+  // Faked fan-out: a published lecture in a followed subtree → inbox row.
+  fanOutNewLecture(created);
   return created;
 }
 
 export function setLectureStatus(id: string, status: AppLectureStatus) {
   const l = getLectureById(id);
   if (l) {
+    const wasPublished = l.status === 'published';
     l.status = status;
     l.updated_at = new Date().toISOString();
+    // Only fan out on the draft/unclassified → published transition.
+    if (!wasPublished && status === 'published') fanOutNewLecture(l);
   }
 }
 
@@ -445,10 +460,349 @@ export function addAttachment(input: {
     updated_at: new Date().toISOString(),
   };
   attachments.push(created);
+  // Faked fan-out: a new attachment on a followed section/lecture → inbox row.
+  fanOutNewAttachment(created);
   return created;
 }
 
 export function removeAttachment(id: string) {
   const idx = attachments.findIndex((a) => a.id === id);
   if (idx >= 0) attachments.splice(idx, 1);
+}
+
+// =============================================================================
+// Journey · رحلتي العلمية (Phase 2 · feature C)
+// Personal-only: weekly goal, مداومة/streak, milestone badges. Mirrors the SQL
+// semantics in supabase/migrations/0004_journey.sql so behavior matches when the
+// USE_MOCK flag flips. Streak/week/totals are computed here the same way the
+// rollup RPCs compute them server-side (never via UI tree-walking).
+// =============================================================================
+
+const MS_DAY = 86400000;
+
+/** Local date key 'YYYY-MM-DD' — streak/week use the student's own day. */
+export function dayKey(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function daysAgoKey(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return dayKey(d);
+}
+
+/** Midnight-local timestamp for a 'YYYY-MM-DD' key (for day arithmetic). */
+function parseDay(key: string): number {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+/** One row per (user, day). `lecture_ids` = distinct lectures heard that day. */
+export type DDailyListening = {
+  day: string;
+  seconds_listened: number;
+  lecture_ids: Set<string>;
+};
+
+// Seeded RELATIVE to runtime "today" so the demo always reads as a current,
+// unbroken 5-day streak (a hardcoded past date would read as a broken streak).
+export const dailyListening: Record<string, DDailyListening> = {
+  [daysAgoKey(4)]: { day: daysAgoKey(4), seconds_listened: 1320, lecture_ids: new Set(['l-aq-1']) },
+  [daysAgoKey(3)]: { day: daysAgoKey(3), seconds_listened: 1490, lecture_ids: new Set(['l-ut-1', 'l-ut-2']) },
+  [daysAgoKey(2)]: { day: daysAgoKey(2), seconds_listened: 900,  lecture_ids: new Set(['l-kt-2']) },
+  [daysAgoKey(1)]: { day: daysAgoKey(1), seconds_listened: 1610, lecture_ids: new Set(['l-kt-3', 'l-th-2']) },
+  [daysAgoKey(0)]: { day: daysAgoKey(0), seconds_listened: 600,  lecture_ids: new Set(['l-kt-1']) },
+};
+
+/** The active weekly goal (one per user). Default mirrors the DB default. */
+export const weeklyGoal: { metric: GoalMetric; target: number } = {
+  metric: 'lectures',
+  target: 3,
+};
+
+export type DUserBadge = { badge_key: string; earned_at: string };
+
+// Pre-earned to match the seeded history (7 completed, longest streak 5) so the
+// grid is coherent on first run: completed_1/_5 + streak_3 earned, rest locked.
+export const userBadges: DUserBadge[] = [
+  { badge_key: 'completed_1', earned_at: `${daysAgoKey(4)}T09:00:00.000Z` },
+  { badge_key: 'completed_5', earned_at: `${daysAgoKey(2)}T09:00:00.000Z` },
+  { badge_key: 'streak_3', earned_at: `${daysAgoKey(2)}T09:00:00.000Z` },
+];
+
+// --- Journey rollups (mirror the SQL RPCs) ------------------------------------
+
+/** Days (keys) with any listening. */
+function activeDayKeys(): Set<string> {
+  return new Set(
+    Object.values(dailyListening)
+      .filter((r) => r.seconds_listened > 0)
+      .map((r) => r.day),
+  );
+}
+
+/** Run of consecutive listening days ending today or yesterday (else 0). */
+export function currentStreak(): number {
+  const active = activeDayKeys();
+  if (active.size === 0) return 0;
+
+  const cursor = new Date();
+  if (active.has(dayKey(cursor))) {
+    // anchor = today
+  } else {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!active.has(dayKey(cursor))) return 0; // last activity older than yesterday
+  }
+
+  let count = 0;
+  while (active.has(dayKey(cursor))) {
+    count += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return count;
+}
+
+/** Longest run of consecutive listening days, ever (kept so it's never lost). */
+export function longestStreak(): number {
+  const days = [...activeDayKeys()].map(parseDay).sort((a, b) => a - b);
+  if (days.length === 0) return 0;
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < days.length; i += 1) {
+    run = days[i] - days[i - 1] === MS_DAY ? run + 1 : 1;
+    if (run > best) best = run;
+  }
+  return best;
+}
+
+/** Most recent Saturday (inclusive) — start of the Sat→Fri week. */
+function weekStartKey(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7));
+  return dayKey(d);
+}
+
+/** Daily rows falling inside the current Sat→Fri week. */
+function weekRows(): DDailyListening[] {
+  const start = parseDay(weekStartKey());
+  const end = start + 6 * MS_DAY;
+  return Object.values(dailyListening).filter((r) => {
+    const t = parseDay(r.day);
+    return t >= start && t <= end;
+  });
+}
+
+/** Progress toward the active goal this week (minutes or distinct lectures). */
+export function weekProgressCurrent(metric: GoalMetric): number {
+  const rows = weekRows();
+  if (metric === 'minutes') {
+    return Math.floor(rows.reduce((s, r) => s + r.seconds_listened, 0) / 60);
+  }
+  const set = new Set<string>();
+  rows.forEach((r) => r.lecture_ids.forEach((id) => set.add(id)));
+  return set.size;
+}
+
+export function totalSecondsListened(): number {
+  return Object.values(dailyListening).reduce((s, r) => s + r.seconds_listened, 0);
+}
+
+export function activeDaysCount(): number {
+  return activeDayKeys().size;
+}
+
+export function completedLecturesCount(): number {
+  return Object.values(progress).filter((p) => p.completed).length;
+}
+
+// --- Journey mutations --------------------------------------------------------
+
+/** Upsert today's row: add the listened delta + union the lecture into the set. */
+export function recordDailyListening(lectureId: string | null, deltaSec: number) {
+  const key = dayKey();
+  const row =
+    dailyListening[key] ??
+    (dailyListening[key] = { day: key, seconds_listened: 0, lecture_ids: new Set() });
+  row.seconds_listened += Math.max(0, deltaSec);
+  if (lectureId) row.lecture_ids.add(lectureId);
+}
+
+export function hasBadge(key: string): boolean {
+  return userBadges.some((b) => b.badge_key === key);
+}
+
+export function earnBadge(key: string) {
+  if (!hasBadge(key)) {
+    userBadges.push({ badge_key: key, earned_at: new Date().toISOString() });
+  }
+}
+
+export function setWeeklyGoal(metric: GoalMetric, target: number) {
+  weeklyGoal.metric = metric;
+  weeklyGoal.target = target;
+}
+
+// =============================================================================
+// Notifications · الإشعارات (Phase 2 · feature B)
+// All personal to the single mock student. Mirrors supabase/migrations/0003:
+//   * follows                 — sections the student follows (follow ⇒ subtree)
+//   * notificationPrefOverrides — per-type on/off; ABSENCE of a key = ON
+//   * notifications           — the in-app inbox rows
+// The server-side cross-user fan-out is faked locally here: when an admin
+// publishes a lecture / adds an attachment in a FOLLOWED subtree, we insert an
+// in-app notification row (honoring prefs). No Expo Push, no Edge Function.
+// =============================================================================
+
+export type DNotification = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: NotificationData;
+  read_at: string | null;
+  created_at: string;
+};
+
+/** Sections the student follows (a follow implies the whole subtree). */
+export const follows = new Set<string>(['kitab-tawheed', 'fiqh']);
+
+/**
+ * Per-type pref overrides. A type ABSENT from this map defaults to ON (mirrors
+ * "absence of a notification_prefs row = enabled"). Seeded empty → all ON.
+ */
+export const notificationPrefOverrides: Partial<Record<NotificationType, boolean>> = {};
+
+function hoursAgoIso(h: number): string {
+  return new Date(Date.now() - h * 3600000).toISOString();
+}
+
+/** Inbox rows, newest first. Seeded coherent with the follows above. */
+export const notifications: DNotification[] = [
+  {
+    id: 'nt-1',
+    type: 'new_lecture',
+    title: 'درس جديد في كتاب التوحيد',
+    body: 'باب الدعاء إلى شهادة أن لا إله إلا الله',
+    data: { lectureId: 'l-kt-5', sectionId: 'kitab-tawheed' },
+    read_at: null,
+    created_at: hoursAgoIso(3),
+  },
+  {
+    id: 'nt-2',
+    type: 'new_attachment',
+    title: 'مرفق جديد في كتاب التوحيد',
+    body: 'متن كتاب التوحيد (PDF)',
+    data: { attachmentId: 'at-s-1', sectionId: 'kitab-tawheed' },
+    read_at: null,
+    created_at: hoursAgoIso(20),
+  },
+  {
+    id: 'nt-3',
+    type: 'new_lecture',
+    title: 'درس جديد في الفقه',
+    body: 'مكانة الصلاة في الإسلام',
+    data: { lectureId: 'l-sl-1', sectionId: 'salah' },
+    read_at: hoursAgoIso(40),
+    created_at: hoursAgoIso(48),
+  },
+];
+
+let notificationSeq = 0;
+
+/** Section ids from `sectionId` up to the root (inclusive). */
+export function ancestorsInclusive(sectionId: string): string[] {
+  const out: string[] = [];
+  let cur: string | null = sectionId;
+  while (cur) {
+    out.push(cur);
+    cur = getSectionById(cur)?.parent_id ?? null;
+  }
+  return out;
+}
+
+/** True if the student follows this section directly. */
+export function isFollowed(sectionId: string): boolean {
+  return follows.has(sectionId);
+}
+
+/** True if a follow on this section OR any ancestor covers it (subtree rule). */
+export function followCoversSection(sectionId: string): boolean {
+  return ancestorsInclusive(sectionId).some((id) => follows.has(id));
+}
+
+export function addFollow(sectionId: string) {
+  follows.add(sectionId);
+}
+
+export function removeFollow(sectionId: string) {
+  follows.delete(sectionId);
+}
+
+/** Resolved on/off for a type (absence of an override = ON). */
+export function prefEnabled(type: NotificationType): boolean {
+  return notificationPrefOverrides[type] ?? true;
+}
+
+export function setNotificationPref(type: NotificationType, enabled: boolean) {
+  notificationPrefOverrides[type] = enabled;
+}
+
+export function markNotificationRead(id: string) {
+  const n = notifications.find((x) => x.id === id);
+  if (n && !n.read_at) n.read_at = new Date().toISOString();
+}
+
+export function markAllNotificationsRead() {
+  const now = new Date().toISOString();
+  notifications.forEach((n) => {
+    if (!n.read_at) n.read_at = now;
+  });
+}
+
+function pushNotification(row: Omit<DNotification, 'id' | 'created_at' | 'read_at'>) {
+  notifications.unshift({
+    ...row,
+    id: `nt-new-${Date.now()}-${++notificationSeq}`,
+    read_at: null,
+    created_at: new Date().toISOString(),
+  });
+}
+
+/**
+ * Faked fan-out for a freshly-published lecture: if the student follows the
+ * lecture's section (or an ancestor) and the `new_lecture` pref is on, drop an
+ * inbox row. The live path runs this server-side for ALL followers.
+ */
+export function fanOutNewLecture(lecture: DLecture) {
+  if (lecture.status !== 'published' || !lecture.section_id) return;
+  if (!followCoversSection(lecture.section_id)) return;
+  if (!prefEnabled('new_lecture')) return;
+  const section = getSectionById(lecture.section_id);
+  pushNotification({
+    type: 'new_lecture',
+    title: `درس جديد في ${section?.title ?? 'قسم متابَع'}`,
+    body: lecture.title,
+    data: { lectureId: lecture.id, sectionId: lecture.section_id },
+  });
+}
+
+/** Faked fan-out for a new attachment on a followed section/lecture. */
+export function fanOutNewAttachment(att: DAttachment) {
+  const sectionId =
+    att.section_id ??
+    (att.lecture_id ? getLectureById(att.lecture_id)?.section_id ?? null : null);
+  if (!sectionId || !followCoversSection(sectionId)) return;
+  if (!prefEnabled('new_attachment')) return;
+  const section = getSectionById(sectionId);
+  pushNotification({
+    type: 'new_attachment',
+    title: `مرفق جديد في ${section?.title ?? 'قسم متابَع'}`,
+    body: att.title,
+    data: att.section_id
+      ? { attachmentId: att.id, sectionId }
+      : { attachmentId: att.id, lectureId: att.lecture_id ?? undefined, sectionId },
+  });
 }

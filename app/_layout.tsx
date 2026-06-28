@@ -14,9 +14,17 @@ import { useEffect } from 'react';
 import { ActivityIndicator, I18nManager, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { registerPushToken } from '@/api/notifications';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { colors } from '@/constants/theme';
+import {
+  addResponseListener,
+  configureNotificationHandler,
+  ensurePermission,
+  getToken,
+} from '@/lib/notifications';
 import { queryClient } from '@/lib/queryClient';
+import { useNotificationsStore } from '@/stores/notificationsStore';
 
 // Arabic-first: force RTL across the whole app.
 I18nManager.allowRTL(true);
@@ -40,6 +48,60 @@ function AuthGate() {
     }
     if (inAuth) router.replace(user.role === 'admin' ? '/admin' : '/');
   }, [user, isLoading, segments, router, navState?.key]);
+
+  return null;
+}
+
+/**
+ * Notifications bootstrap (Phase 2 · feature B): set the foreground handler,
+ * resolve permission + the Expo push token (registering it once), and deep-link
+ * notification taps via Expo Router. Everything here no-ops on web / simulator /
+ * mock so emulator testing never blocks. Renders nothing.
+ */
+function NotificationsBootstrap() {
+  const router = useRouter();
+  const { data: user } = useCurrentUser();
+  const setPermission = useNotificationsStore((s) => s.setPermission);
+  const setToken = useNotificationsStore((s) => s.setToken);
+  const setRegistered = useNotificationsStore((s) => s.setRegistered);
+  const registered = useNotificationsStore((s) => s.registered);
+
+  // Foreground presentation handler — set once, independent of auth.
+  useEffect(() => {
+    configureNotificationHandler();
+  }, []);
+
+  // Permission + token registration, once we have a signed-in user.
+  useEffect(() => {
+    if (!user || registered) return;
+    let cancelled = false;
+    (async () => {
+      const status = await ensurePermission();
+      if (cancelled) return;
+      setPermission(status as 'granted' | 'denied' | 'undetermined');
+      if (status !== 'granted') return;
+      const token = await getToken();
+      if (cancelled || !token) return;
+      setToken(token);
+      try {
+        await registerPushToken(token, 'android');
+        if (!cancelled) setRegistered(true);
+      } catch {
+        // Registration failure is non-fatal — the inbox still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, registered, setPermission, setToken, setRegistered]);
+
+  // Deep-link notification taps (lecture → player, section → section page).
+  useEffect(() => {
+    return addResponseListener((data) => {
+      if (data.lectureId) router.push(`/player/${data.lectureId}`);
+      else if (data.sectionId) router.push(`/(student)/section/${data.sectionId}`);
+    });
+  }, [router]);
 
   return null;
 }
@@ -75,6 +137,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <AuthGate />
+        <NotificationsBootstrap />
         <Stack
           screenOptions={{
             headerShown: false,

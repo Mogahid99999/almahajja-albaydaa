@@ -4,6 +4,7 @@
  */
 import { USE_MOCK } from '@/config';
 import * as mock from '@/mock/api';
+import type { Badge } from './types';
 
 export type LectureProgress = { position_sec: number; completed: boolean } | null;
 
@@ -19,12 +20,18 @@ export async function getLectureProgress(lectureId: string): Promise<LectureProg
 /**
  * Upsert playback position; flips `completed` once {@link COMPLETE_THRESHOLD}
  * (90%) is reached. Called debounced (~5s) during playback and on completion.
+ *
+ * This is also the single integration point for the رحلتي العلمية daily feed
+ * (PLAN_PHASE2.md §3.3): it credits the listened delta to today's
+ * `daily_listening` and re-evaluates badges, returning any newly-earned ones so
+ * a caller may surface a calm toast. The player calls this fire-and-forget and
+ * ignores the result; the journey screen refetches its own rollups.
  */
 export async function saveLectureProgress(args: {
   lectureId: string;
   positionSec: number;
   durationSec: number;
-}): Promise<void> {
+}): Promise<Badge[]> {
   if (USE_MOCK) return mock.saveLectureProgress(args);
   throw NOT_LIVE('saveLectureProgress');
 }

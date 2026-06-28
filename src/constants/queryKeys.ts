@@ -18,6 +18,16 @@ export const queryKeys = {
   lectureAttachments: (lectureId: string) => ['attachments', 'lecture', lectureId] as const,
   attachment: (id: string) => ['attachment', id] as const,
 
+  // Notifications (Phase 2 · feature B)
+  notifications: ['notifications', 'list'] as const,
+  notificationPrefs: ['notifications', 'prefs'] as const,
+  sectionFollow: (sectionId: string) => ['notifications', 'follow', sectionId] as const,
+
+  // Journey · رحلتي العلمية (Phase 2 · feature C)
+  journey: ['journey', 'summary'] as const,
+  weeklyGoal: ['journey', 'goal'] as const,
+  badges: ['journey', 'badges'] as const,
+
   // Admin
   adminLectures: ['admin', 'lectures'] as const,
   unclassified: ['admin', 'unclassified'] as const,
