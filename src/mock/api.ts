@@ -33,7 +33,7 @@ import type {
   WeeklyGoal,
 } from '@/api/types';
 import { BADGES, type BadgeDef } from '@/constants/badges';
-import type { AppLectureStatus } from '@/config';
+import { MAX_LISTEN_TICK_SEC, type AppLectureStatus } from '@/config';
 import * as db from './db';
 
 /** Every notification type — keeps the resolved prefs map exhaustive. */
@@ -43,13 +43,6 @@ const NOTIFICATION_TYPES: NotificationType[] = [
   'new_quiz',
   'resume_reminder',
 ];
-
-/**
- * Max listening credited per save tick, to stop a forward-scrub from inflating
- * the daily total. Saves fire ~5s apart (audioController), so a real tick is
- * small; the cap also absorbs the position→duration jump on completion.
- */
-const MAX_LISTEN_TICK_SEC = 90;
 
 const delay = () => new Promise<void>((r) => setTimeout(r, 120));
 
@@ -476,6 +469,8 @@ export async function createLecture(input: {
   order: number;
   durationSec?: number | null;
   status: AppLectureStatus;
+  /** Ignored in mock — the live path uploads it to the `lectures` bucket. */
+  audioFile?: { uri: string; name: string; mimeType?: string | null } | null;
 }) {
   await delay();
   return db.addLecture({

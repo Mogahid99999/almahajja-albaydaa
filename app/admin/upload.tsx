@@ -16,6 +16,7 @@
  *   - Tip card
  */
 import { Feather } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -34,14 +35,16 @@ import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows, spacing } from '@/constants/theme';
 import { useCreateLecture, useSheikhs } from '@/hooks/useAdmin';
-import { arDuration, arFileSize, arNum, toArabicDigits } from '@/lib/format';
+import { arFileSize, toArabicDigits } from '@/lib/format';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const MOCK_AUDIO = {
-  filename: 'محاضرة-الأصول-الثلاثة.mp3',
-  bytes: 26007756, // ~24.8 MB
-  durationSec: 1815, // 30:15
+/** The audio file the admin picked, held until the lecture is saved. */
+type PickedAudio = {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+  size: number | null;
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -84,6 +87,7 @@ export default function UploadScreen() {
   const [titleFocused, setTitleFocused] = useState(false);
   const [orderFocused, setOrderFocused] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [audioFile, setAudioFile] = useState<PickedAudio | null>(null);
   // Set once the lecture is saved — attachments hang off the created lecture id.
   const [createdLectureId, setCreatedLectureId] = useState<string | null>(null);
 
@@ -91,6 +95,22 @@ export default function UploadScreen() {
   const [sheikhOpen, setSheikhOpen] = useState(false);
 
   const selectedSheikh = sheikhId ? sheikhs.find((s) => s.id === sheikhId) ?? null : null;
+
+  async function handlePickAudio() {
+    const res = await DocumentPicker.getDocumentAsync({
+      type: 'audio/*',
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (res.canceled) return;
+    const asset = res.assets[0];
+    setAudioFile({
+      uri: asset.uri,
+      name: asset.name,
+      mimeType: asset.mimeType,
+      size: asset.size ?? null,
+    });
+  }
 
   function handleSubmit() {
     if (!title.trim()) return;
@@ -101,6 +121,7 @@ export default function UploadScreen() {
         sheikhId,
         order: order ? Number(order) : 0,
         status: publishStatus,
+        audioFile,
       },
       {
         onSuccess: (created) => {
@@ -115,6 +136,7 @@ export default function UploadScreen() {
           setOrder('');
           setSheikhId(null);
           setPublishStatus('draft');
+          setAudioFile(null);
         },
       },
     );
@@ -153,36 +175,58 @@ export default function UploadScreen() {
             style={[styles.titleInput, titleFocused && styles.titleInputFocused]}
           />
 
-          {/* Mock audio uploaded row */}
+          {/* Audio file picker / picked row */}
           <FieldLabel>ملف الصوت</FieldLabel>
-          <View style={styles.audioRow}>
-            {/* Waveform tile */}
-            <View style={styles.waveformTile}>
-              {Array.from({ length: 12 }).map((_, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.waveBar,
-                    {
-                      height: 8 + Math.sin(i * 0.8) * 6,
-                      opacity: i < 7 ? 1 : 0.35,
-                    },
-                  ]}
-                />
-              ))}
+          {audioFile ? (
+            <View style={styles.audioRow}>
+              {/* Waveform tile */}
+              <View style={styles.waveformTile}>
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.waveBar,
+                      {
+                        height: 8 + Math.sin(i * 0.8) * 6,
+                        opacity: i < 7 ? 1 : 0.35,
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Txt size={13} weight="semibold" color={colors.textInk} numberOfLines={1}>
+                  {audioFile.name}
+                </Txt>
+                <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
+                  {audioFile.size != null
+                    ? `${arFileSize(audioFile.size)} · جاهز للرفع`
+                    : 'جاهز للرفع'}
+                </Txt>
+              </View>
+              <Pressable
+                style={styles.removeBtn}
+                accessibilityLabel="إزالة الملف"
+                onPress={() => setAudioFile(null)}
+              >
+                <Feather name="x" size={15} color={colors.stateDanger} />
+              </Pressable>
             </View>
-            <View style={{ flex: 1, marginRight: 12 }}>
-              <Txt size={13} weight="semibold" color={colors.textInk} numberOfLines={1}>
-                {MOCK_AUDIO.filename}
+          ) : (
+            <Pressable
+              onPress={handlePickAudio}
+              style={({ pressed }) => [styles.audioPicker, pressed && { opacity: 0.7 }]}
+              accessibilityRole="button"
+            >
+              <Feather name="upload-cloud" size={24} color={colors.primaryTeal} />
+              <Txt size={13} weight="semibold" color={colors.primaryTeal} style={{ marginTop: 8 }}>
+                اختر ملف الصوت
               </Txt>
-              <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
-                {`${arFileSize(MOCK_AUDIO.bytes)} · ${arDuration(MOCK_AUDIO.durationSec)} دقيقة · تم الرفع`}
+              <Txt size={11} color={colors.textGhost} style={{ marginTop: 3 }}>
+                MP3 أو M4A أو أي صيغة صوتية
               </Txt>
-            </View>
-            <Pressable style={styles.removeBtn} accessibilityLabel="إزالة الملف">
-              <Feather name="x" size={15} color={colors.stateDanger} />
             </Pressable>
-          </View>
+          )}
         </CardSection>
 
         {/* Card 2: Classification */}
@@ -497,6 +541,18 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: colors.borderHair,
+  } as ViewStyle,
+
+  audioPicker: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.primaryTeal,
+    borderRadius: radius.card,
+    backgroundColor: 'rgba(31,74,66,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 26,
+    paddingHorizontal: 20,
   } as ViewStyle,
 
   waveformTile: {

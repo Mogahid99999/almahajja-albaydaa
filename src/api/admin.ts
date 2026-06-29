@@ -16,6 +16,35 @@ import type { AdminLectureRow, UnclassifiedItem } from './types';
 
 export type { AdminLectureRow, UnclassifiedItem } from './types';
 
+/** A picked audio file (from expo-document-picker) ready to upload. */
+export type PickedAudio = {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+};
+
+/**
+ * Upload a picked audio file into the private `lectures` storage bucket and
+ * return its storage path (what `lectures.audio_path` stores). The player mints
+ * a signed URL from this path at playback time. Web (the admin surface) returns
+ * a blob: uri from the picker; fetch→arrayBuffer works there and on native.
+ */
+async function uploadLectureAudio(file: PickedAudio): Promise<string> {
+  const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();
+  const safeBase = file.name.replace(/\.[^.]*$/, '').replace(/[^\w-]/g, '_').slice(0, 40);
+  const path = `${Date.now()}-${safeBase || 'audio'}.${ext}`;
+
+  const bytes = await fetch(file.uri).then((r) => r.arrayBuffer());
+  const { error } = await supabase.storage
+    .from('lectures')
+    .upload(path, bytes, {
+      contentType: file.mimeType ?? 'audio/mpeg',
+      upsert: false,
+    });
+  if (error) throw error;
+  return path;
+}
+
 /** Lectures awaiting classification (manual upload or, later, the bot). */
 export async function getUnclassifiedLectures(): Promise<UnclassifiedItem[]> {
   if (USE_MOCK) return mock.getUnclassifiedLectures();
@@ -73,9 +102,12 @@ export async function createLecture(input: {
   order: number;
   durationSec?: number | null;
   status: AppLectureStatus;
+  /** Audio file picked in the upload form; uploaded to the `lectures` bucket. */
+  audioFile?: PickedAudio | null;
 }): Promise<{ id: string }> {
   if (USE_MOCK) return mock.createLecture(input);
   const dbStatus = input.status === 'unclassified' ? 'draft' : input.status;
+  const audioPath = input.audioFile ? await uploadLectureAudio(input.audioFile) : null;
   const { data, error } = await supabase
     .from('lectures')
     .insert({
@@ -85,7 +117,7 @@ export async function createLecture(input: {
       order: input.order,
       duration_sec: input.durationSec ?? null,
       status: dbStatus,
-      audio_path: null,
+      audio_path: audioPath,
     })
     .select('id')
     .single();

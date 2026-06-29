@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "764333879068",
+    "project_id": "almahajjah-e3c12",
+    "storage_bucket": "almahajjah-e3c12.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:764333879068:android:44686841858422a59d54d9",
+        "android_client_info": {
+          "package_name": "com.riwaqalilm.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcskIM8znCnXlWRku0XnjnVgcpUFHGAf0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

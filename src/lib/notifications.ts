@@ -25,6 +25,15 @@ const isWeb = Platform.OS === 'web';
 /** Deterministic per-lecture identifier so scheduling/cancel is stateless. */
 const resumeId = (lectureId: string) => `resume-${lectureId}`;
 
+/**
+ * Whether local reminders can fire on this platform at all (real device, not
+ * web). Callers use it to skip the pref/title lookups that would otherwise run
+ * on web / simulator only to no-op inside scheduleResumeReminder.
+ */
+export function remindersSupported(): boolean {
+  return !isWeb && Device.isDevice;
+}
+
 let handlerConfigured = false;
 
 /**

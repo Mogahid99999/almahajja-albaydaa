@@ -34,6 +34,12 @@ yarn-error.*
 .env
 .env*.local
 
+# secrets — Firebase Admin SDK service-account key (full project access; never commit)
+*firebase-adminsdk*.json
+
+# supabase CLI local cache/state
+supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 
