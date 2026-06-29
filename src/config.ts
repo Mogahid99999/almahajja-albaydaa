@@ -9,7 +9,7 @@
  * email password-reset works. In mock mode, sign-in additionally accepts the two
  * demo accounts locally so emulator testing never blocks on email delivery.
  */
-export const USE_MOCK = true;
+export const USE_MOCK = false;
 
 /** A lecture is marked complete once this fraction has been listened. (PRD §9) */
 export const COMPLETE_THRESHOLD = 0.9;
