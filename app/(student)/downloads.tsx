@@ -11,8 +11,7 @@
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { useDownloadedIds } from '@/hooks/useDownloads';
-import { useLecturesByIds } from '@/hooks/useLecture';
+import { useDownloadedLectures } from '@/hooks/useDownloads';
 import { colors } from '@/constants/theme';
 
 import { Card } from '@/components/ui/Card';
@@ -26,8 +25,7 @@ import { DownloadedLectureRow } from '@/components/downloads/DownloadedLectureRo
 
 export default function DownloadsScreen() {
   const router = useRouter();
-  const ids = useDownloadedIds();
-  const { data: lectures } = useLecturesByIds(ids);
+  const lectures = useDownloadedLectures();
 
   return (
     <Screen bottomPad={118} padded>
@@ -52,7 +50,7 @@ export default function DownloadsScreen() {
       </View>
 
       {/* ── Empty state ──────────────────────────────────────────────────────── */}
-      {ids.length === 0 ? (
+      {lectures.length === 0 ? (
         <View
           style={{
             flex: 1,
@@ -73,7 +71,7 @@ export default function DownloadsScreen() {
       ) : (
         /* ── Lecture list ───────────────────────────────────────────────────── */
         <Card padded={false} style={{ overflow: 'hidden' }}>
-          {(lectures ?? []).map((lecture, index) => (
+          {lectures.map((lecture, index) => (
             <View key={lecture.id}>
               {index > 0 ? <Divider /> : null}
               <DownloadedLectureRow lecture={lecture} />

@@ -15,6 +15,7 @@ import {
 
 import { getLecturePlayback } from '@/api/lectures';
 import { saveLectureProgress } from '@/api/progress';
+import { localUriFor, readDownloadMeta } from '@/lib/downloads';
 import { usePlayerStore, type PlaybackRate } from '@/stores/playerStore';
 
 let player: AudioPlayer | null = null;
@@ -71,6 +72,11 @@ function persist(positionSec: number, finished = false) {
 /**
  * Load (if needed) and play a lecture. Tapping the lecture that's already loaded
  * just toggles play/pause. Resumes from the saved position.
+ *
+ * Offline-first: a downloaded lecture plays from its local file rather than the
+ * (short-lived, signed) stream URL. Metadata still comes from the network when
+ * available — for the fresh resume position — but falls back to the cached
+ * sidecar when offline, so a downloaded lecture plays with no connection.
  */
 export async function playLecture(lectureId: string) {
   if (!lectureId) return;
@@ -79,30 +85,49 @@ export async function playLecture(lectureId: string) {
   }
   await ensureAudioMode();
 
-  const data = await getLecturePlayback(lectureId);
+  const localUri = localUriFor(lectureId);
+
+  let title: string;
+  let sheikhName: string | null;
+  let durationSec: number;
+  let positionSec: number;
+  let source: string;
+
+  try {
+    const data = await getLecturePlayback(lectureId);
+    title = data.title;
+    sheikhName = data.sheikhName;
+    durationSec = data.durationSec;
+    positionSec = data.positionSec;
+    source = localUri ?? data.audioUrl;
+  } catch (err) {
+    // Offline fallback: play from disk using the cached metadata sidecar.
+    const meta = localUri ? readDownloadMeta(lectureId) : null;
+    if (!localUri || !meta) throw err;
+    title = meta.title;
+    sheikhName = meta.sheikhName;
+    durationSec = meta.durationSec;
+    positionSec = 0; // resume position is server-side; offline starts over
+    source = localUri;
+  }
+
   currentId = lectureId;
-  currentDuration = data.durationSec;
+  currentDuration = durationSec;
   lastSavedAt = Date.now();
 
-  store().setTrack({
-    id: data.id,
-    title: data.title,
-    sheikhName: data.sheikhName,
-    durationSec: data.durationSec,
-    positionSec: data.positionSec,
-  });
+  store().setTrack({ id: lectureId, title, sheikhName, durationSec, positionSec });
   store().setLoading(true);
 
   if (!player) {
-    player = createAudioPlayer({ uri: data.audioUrl }, { updateInterval: 500 });
+    player = createAudioPlayer({ uri: source }, { updateInterval: 500 });
     player.addListener('playbackStatusUpdate', onStatus);
   } else {
-    player.replace({ uri: data.audioUrl });
+    player.replace({ uri: source });
   }
   player.setPlaybackRate(store().rate);
-  if (data.positionSec > 0) {
+  if (positionSec > 0) {
     try {
-      await player.seekTo(data.positionSec);
+      await player.seekTo(positionSec);
     } catch {
       /* seek before load can throw — ignored, status will catch up */
     }

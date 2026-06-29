@@ -1,7 +1,14 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { getLecturePlayback } from '@/api/lectures';
-import { deleteLecture, downloadLecture, localUriFor } from '@/lib/downloads';
+import type { LectureCard } from '@/api/types';
+import {
+  deleteLecture,
+  downloadLecture,
+  getDownloadedCards,
+  listDownloadedIds,
+  localUriFor,
+} from '@/lib/downloads';
 import { useDownloadsStore, type DownloadEntry } from '@/stores/downloadsStore';
 
 /**
@@ -27,8 +34,15 @@ export function useDownload(lectureId: string) {
   const download = useCallback(async () => {
     set(lectureId, { status: 'downloading', progress: 0 });
     try {
-      const { audioUrl } = await getLecturePlayback(lectureId);
-      const uri = await downloadLecture(lectureId, audioUrl);
+      const pb = await getLecturePlayback(lectureId);
+      if (!pb.audioUrl) throw new Error('لا يوجد ملف صوتي للتحميل');
+      const uri = await downloadLecture(lectureId, pb.audioUrl, {
+        id: pb.id,
+        title: pb.title,
+        sheikhName: pb.sheikhName,
+        durationSec: pb.durationSec,
+        sectionTitle: pb.sectionTitle,
+      });
       set(lectureId, { status: 'downloaded', progress: 1, localUri: uri });
     } catch (e) {
       set(lectureId, { status: 'error', error: (e as Error).message });
@@ -56,4 +70,30 @@ export function useDownloadedIds(): string[] {
       .filter(([, e]) => e.status === 'downloaded')
       .map(([id]) => id),
   );
+}
+
+/**
+ * Seed the downloads store from disk once on app entry, so the downloads page is
+ * correct immediately after a cold start (the store is in-memory; without this it
+ * only learns about a file when that lecture's DownloadButton mounts). No-ops on web.
+ */
+export function useHydrateDownloads(): void {
+  const set = useDownloadsStore((s) => s.set);
+  useEffect(() => {
+    for (const id of listDownloadedIds()) {
+      const uri = localUriFor(id);
+      if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });
+    }
+  }, [set]);
+}
+
+/**
+ * LectureCards for the downloads page, built from cached sidecars (offline-ok).
+ * Reactive to the store: deleting a row drops its id → the card disappears.
+ */
+export function useDownloadedLectures(): LectureCard[] {
+  const ids = useDownloadedIds();
+  // Recompute only when the set of downloaded ids changes (sidecars read from disk).
+  const key = ids.join(',');
+  return useMemo(() => getDownloadedCards(), [key]);
 }

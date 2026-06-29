@@ -16,7 +16,6 @@
  *   - Tip card
  */
 import { Feather } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -97,6 +96,10 @@ export default function UploadScreen() {
   const selectedSheikh = sheikhId ? sheikhs.find((s) => s.id === sheikhId) ?? null : null;
 
   async function handlePickAudio() {
+    // Loaded lazily (not at module top-level): expo-document-picker resolves its
+    // native module on import, which would crash the student app on Android/Expo
+    // Go at startup — even though picking only ever happens on the web admin.
+    const DocumentPicker = await import('expo-document-picker');
     const res = await DocumentPicker.getDocumentAsync({
       type: 'audio/*',
       copyToCacheDirectory: true,

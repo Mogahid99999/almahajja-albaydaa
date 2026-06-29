@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable } from 'react-native';
+import { ActivityIndicator, Platform, Pressable } from 'react-native';
 
 import { colors } from '@/constants/theme';
 import { useDownload } from '@/hooks/useDownloads';
@@ -8,6 +8,9 @@ import { useDownload } from '@/hooks/useDownloads';
  * Reusable per-lecture download control (PRD §10):
  *   idle → outline download · downloading → spinner · downloaded → filled check.
  * Tapping a downloaded item removes it. Used in section rows + the player.
+ *
+ * Hidden on web: offline download is a mobile feature (no persistent FS here),
+ * so the control would only ever land in the error state.
  */
 export function DownloadButton({
   lectureId,
@@ -19,6 +22,7 @@ export function DownloadButton({
   onTeal?: boolean;
 }) {
   const { status, download, remove } = useDownload(lectureId);
+  if (Platform.OS === 'web') return null;
   const stroke = onTeal ? colors.onTealIcon : colors.textMuted;
 
   return (
