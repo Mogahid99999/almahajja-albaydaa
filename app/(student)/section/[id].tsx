@@ -35,7 +35,6 @@ import { SectionHeaderBadge } from '@/components/section/SectionHeaderBadge';
 import { SectionNavBar } from '@/components/section/SectionNavBar';
 import { SubsectionsScroller } from '@/components/section/SubsectionsScroller';
 import { AttachmentList } from '@/components/attachments/AttachmentList';
-import { FollowButton } from '@/components/section/FollowButton';
 
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -116,17 +115,6 @@ export default function SectionScreen() {
         <Txt size={12} color={colors.textGhost} tabular>
           {arLectureCount(rollup.total)}
         </Txt>
-      </View>
-
-      {/* ── Follow this section (feature B) ──────────────────────────────────── */}
-      <View
-        style={{
-          flexDirection: 'row',
-          paddingHorizontal: spacing.screenH,
-          marginTop: 14,
-        }}
-      >
-        <FollowButton sectionId={section.id} />
       </View>
 
       {/* ── Progress card ───────────────────────────────────────────────────── */}

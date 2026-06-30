@@ -411,6 +411,62 @@ export function classifyLecture(id: string, sectionId: string, order: number) {
   }
 }
 
+export function updateLecture(
+  id: string,
+  input: {
+    title?: string;
+    section_id?: string | null;
+    sheikh_id?: string | null;
+    order?: number;
+    status?: AppLectureStatus;
+  },
+) {
+  const l = getLectureById(id);
+  if (!l) return;
+  const wasPublished = l.status === 'published';
+  if (input.title !== undefined) l.title = input.title;
+  if (input.section_id !== undefined) l.section_id = input.section_id;
+  if (input.sheikh_id !== undefined) l.sheikh_id = input.sheikh_id;
+  if (input.order !== undefined) l.order = input.order;
+  if (input.status !== undefined) l.status = input.status;
+  l.updated_at = new Date().toISOString();
+  if (!wasPublished && l.status === 'published' && l.section_id) fanOutNewLecture(l);
+}
+
+export function removeLecture(id: string) {
+  const idx = lectures.findIndex((l) => l.id === id);
+  if (idx >= 0) lectures.splice(idx, 1);
+  delete progress[id];
+  for (let i = attachments.length - 1; i >= 0; i -= 1) {
+    if (attachments[i].lecture_id === id) attachments.splice(i, 1);
+  }
+}
+
+// --- Sheikh mutations ---------------------------------------------------------
+export function addSheikh(name: string): DSheikh {
+  const created: DSheikh = {
+    id: `sh-new-${Date.now()}`,
+    name,
+    created_at: new Date().toISOString(),
+  };
+  sheikhs.push(created);
+  return created;
+}
+
+export function updateSheikh(id: string, name: string) {
+  const s = sheikhs.find((x) => x.id === id);
+  if (s) s.name = name;
+}
+
+export function removeSheikh(id: string) {
+  const idx = sheikhs.findIndex((s) => s.id === id);
+  if (idx >= 0) sheikhs.splice(idx, 1);
+  // Lectures keep playing — clear the dangling ref (DB: ON DELETE SET NULL).
+  lectures.forEach((l) => {
+    if (l.sheikh_id === id) l.sheikh_id = null;
+  });
+}
+
 export function addSection(input: {
   title: string;
   parent_id: string | null;
@@ -430,6 +486,50 @@ export function addSection(input: {
   );
   sections.push(created);
   return created;
+}
+
+export function updateSection(
+  id: string,
+  input: {
+    title?: string;
+    description?: string | null;
+    parent_id?: string | null;
+    order?: number;
+    show_header?: boolean;
+  },
+) {
+  const s = getSectionById(id);
+  if (!s) return;
+  if (input.title !== undefined) s.title = input.title;
+  if (input.description !== undefined) s.description = input.description;
+  if (input.parent_id !== undefined) s.parent_id = input.parent_id;
+  if (input.order !== undefined) s.order = input.order;
+  if (input.show_header !== undefined) s.show_header = input.show_header;
+  s.updated_at = new Date().toISOString();
+}
+
+/** Delete a section + its whole subtree (mirrors the DB ON DELETE CASCADE). */
+export function removeSection(id: string) {
+  const idSet = new Set(subtreeIds(id)); // inclusive of id
+  const removedLectureIds = new Set(
+    lectures.filter((l) => l.section_id && idSet.has(l.section_id)).map((l) => l.id),
+  );
+  for (let i = lectures.length - 1; i >= 0; i -= 1) {
+    const sid = lectures[i].section_id;
+    if (sid && idSet.has(sid)) lectures.splice(i, 1);
+  }
+  for (let i = attachments.length - 1; i >= 0; i -= 1) {
+    const a = attachments[i];
+    if (
+      (a.section_id && idSet.has(a.section_id)) ||
+      (a.lecture_id && removedLectureIds.has(a.lecture_id))
+    ) {
+      attachments.splice(i, 1);
+    }
+  }
+  for (let i = sections.length - 1; i >= 0; i -= 1) {
+    if (idSet.has(sections[i].id)) sections.splice(i, 1);
+  }
 }
 
 export function addAttachment(input: {

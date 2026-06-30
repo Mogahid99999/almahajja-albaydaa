@@ -23,10 +23,12 @@ interface StatCardProps {
   value: string;
   icon: keyof typeof Feather.glyphMap;
   accent?: boolean;
+  href?: string;
 }
 
-function StatCard({ label, value, icon, accent = false }: StatCardProps) {
-  return (
+function StatCard({ label, value, icon, accent = false, href }: StatCardProps) {
+  const router = useRouter();
+  const inner = (
     <Card style={styles.statCard}>
       <View
         style={[
@@ -47,6 +49,15 @@ function StatCard({ label, value, icon, accent = false }: StatCardProps) {
         {label}
       </Txt>
     </Card>
+  );
+  if (!href) return inner;
+  return (
+    <Pressable
+      onPress={() => router.push(href as Parameters<typeof router.push>[0])}
+      style={({ pressed }) => pressed && { opacity: 0.85 }}
+    >
+      {inner}
+    </Pressable>
   );
 }
 
@@ -111,11 +122,11 @@ export default function AdminHome() {
 
       {/* Stat cards */}
       <View style={styles.statsRow}>
-        <StatCard label="إجمالي المحاضرات" value={arNum(totalLectures)} icon="headphones" accent />
-        <StatCard label="منشورة" value={arNum(publishedCount)} icon="check-circle" />
-        <StatCard label="مسودة" value={arNum(draftCount)} icon="edit-3" />
-        <StatCard label="واردة للمراجعة" value={arNum(incomingCount)} icon="inbox" />
-        <StatCard label="الأقسام" value={arNum(sectionsCount)} icon="folder" />
+        <StatCard label="إجمالي المحاضرات" value={arNum(totalLectures)} icon="headphones" accent href="/admin/lectures" />
+        <StatCard label="منشورة" value={arNum(publishedCount)} icon="check-circle" href="/admin/lectures" />
+        <StatCard label="مسودة" value={arNum(draftCount)} icon="edit-3" href="/admin/lectures" />
+        <StatCard label="واردة للمراجعة" value={arNum(incomingCount)} icon="inbox" href="/admin/unclassified" />
+        <StatCard label="الأقسام" value={arNum(sectionsCount)} icon="folder" href="/admin/sections" />
       </View>
 
       {/* Quick links */}
@@ -123,6 +134,13 @@ export default function AdminHome() {
         إجراءات سريعة
       </Txt>
       <Card padded={false} style={styles.quickLinksCard}>
+        <QuickLink
+          title="إدارة المحاضرات"
+          desc="المنشورة والمسودات والواردة — شغّل وانشر وعدّل واحذف"
+          href="/admin/lectures"
+          icon="headphones"
+        />
+        <Divider />
         <QuickLink
           title="رفع محاضرة جديدة"
           desc="أضف محاضرة صوتية وصنّفها في الشجرة"

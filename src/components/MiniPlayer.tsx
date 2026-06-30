@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ProgressBar, RhombusEmblem, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
-import { toggle } from '@/lib/audioController';
+import { playNext, toggle } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 
 /**
@@ -17,7 +17,7 @@ import { usePlayerStore } from '@/stores/playerStore';
 export function MiniPlayer() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentLectureId, title, isPlaying, positionSec, durationSec } =
+  const { currentLectureId, title, isPlaying, positionSec, durationSec, nextLectureId } =
     usePlayerStore();
 
   if (!currentLectureId) return null;
@@ -61,8 +61,32 @@ export function MiniPlayer() {
           trackColor="rgba(223,231,227,0.22)"
         />
       </View>
+      {nextLectureId ? (
+        <Pressable
+          onPress={(e) => {
+            // Don't let the tap bubble up to the card (which opens the player).
+            e.stopPropagation?.();
+            playNext();
+          }}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="الدرس التالي"
+          style={{
+            width: 36,
+            height: 36,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {/* RTL: "next" skips left. */}
+          <Feather name="skip-back" size={18} color={colors.onTealSecondary} />
+        </Pressable>
+      ) : null}
       <Pressable
-        onPress={toggle}
+        onPress={(e) => {
+          e.stopPropagation?.();
+          toggle();
+        }}
         hitSlop={10}
         style={{
           width: 40,

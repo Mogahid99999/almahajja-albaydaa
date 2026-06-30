@@ -30,16 +30,18 @@ export type Attachment = {
   order: number;
 };
 
-/** Admin create payload (file already uploaded → url, or external link). */
+/** Admin create payload (file already uploaded → storagePath, or external link). */
 export type CreateAttachmentInput = {
   owner: AttachmentOwnerRef;
   type: AttachmentType;
   title: string;
   description?: string | null;
-  /** external_url for link/book, or the resolved storage URL for file types. */
+  /** external_url for link/book. */
   url?: string | null;
   /** transcript text (in-app reader). */
   body?: string | null;
+  /** storage_path of a file already uploaded to the `attachments` bucket. */
+  storagePath?: string | null;
 };
 
 // --- Journey · رحلتي العلمية (Phase 2 · feature C) ---------------------------
@@ -205,6 +207,9 @@ export type LecturePlayback = {
   sheikhName: string | null;
   eyebrow: string;
   sectionTitle: string | null;
+  /** Section + order drive "next lecture" (manual button + auto-advance). */
+  sectionId: string | null;
+  order: number;
   durationSec: number;
   audioUrl: string;
   positionSec: number;
@@ -222,6 +227,16 @@ export type FlatSectionNode = {
   path: string[];
 };
 
+/** Editable fields of a section node — used to pre-fill the admin editor. */
+export type SectionEditData = {
+  id: string;
+  title: string;
+  description: string | null;
+  parentId: string | null;
+  order: number;
+  showHeader: boolean;
+};
+
 export type UnclassifiedItem = {
   id: string;
   title: string;
@@ -234,6 +249,9 @@ export type AdminLectureRow = {
   id: string;
   title: string;
   sectionTitle: string | null;
+  /** Raw FKs so the admin editor can pre-fill section/sheikh pickers. */
+  sectionId: string | null;
+  sheikhId: string | null;
   sheikhName: string | null;
   status: AppLectureStatus;
   durationSec: number;

@@ -30,6 +30,36 @@ type RawAttRow = {
   order: number;
 };
 
+/** A picked attachment file (from expo-document-picker), ready to upload. */
+export type PickedAttachmentFile = {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+};
+
+/**
+ * Upload a picked file into the private `attachments` storage bucket and return
+ * its storage path (what `attachments.storage_path` stores). Read paths mint a
+ * signed URL from this path. Web (the admin surface) returns a blob: uri from
+ * the picker; fetch→arrayBuffer works there and on native. Mirrors
+ * `uploadLectureAudio` in admin.ts.
+ */
+export async function uploadAttachmentFile(file: PickedAttachmentFile): Promise<string> {
+  if (USE_MOCK) return mock.uploadAttachmentFile(file);
+  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+  const safeBase = file.name.replace(/\.[^.]*$/, '').replace(/[^\w-]/g, '_').slice(0, 40);
+  const path = `${Date.now()}-${safeBase || 'file'}.${ext}`;
+  const bytes = await fetch(file.uri).then((r) => r.arrayBuffer());
+  const { error } = await supabase.storage
+    .from('attachments')
+    .upload(path, bytes, {
+      contentType: file.mimeType ?? 'application/octet-stream',
+      upsert: false,
+    });
+  if (error) throw error;
+  return path;
+}
+
 /** Resolve storage_path → signed URL (60 min TTL). Used by all read paths. */
 async function signedUrl(path: string): Promise<string | null> {
   const { data, error } = await supabase.storage
@@ -121,9 +151,15 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
       type: input.type,
       title: input.title,
       description: input.description ?? null,
-      external_url: input.type !== 'transcript' ? (input.url ?? null) : null,
+      // A file-backed attachment carries storage_path; otherwise external_url
+      // (link/book) or inline body (transcript text).
+      external_url: input.storagePath
+        ? null
+        : input.type !== 'transcript'
+          ? (input.url ?? null)
+          : null,
       body: input.type === 'transcript' ? (input.body ?? null) : null,
-      storage_path: null,
+      storage_path: input.storagePath ?? null,
       order: count ?? 0,
       ...ownerFilter,
     })

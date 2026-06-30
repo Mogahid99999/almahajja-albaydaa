@@ -34,7 +34,7 @@ import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows, spacing } from '@/constants/theme';
 import { useCreateLecture, useSheikhs } from '@/hooks/useAdmin';
-import { arFileSize, toArabicDigits } from '@/lib/format';
+import { arDuration, arFileSize, toArabicDigits } from '@/lib/format';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,27 @@ type PickedAudio = {
   mimeType?: string | null;
   size: number | null;
 };
+
+/**
+ * Read an audio file's duration (seconds) from its metadata. Web-only (the admin
+ * surface) — uses an <audio> element; returns null elsewhere so the insert just
+ * stores a null duration. Lets `duration_sec` be filled at upload time.
+ */
+function extractDuration(uri: string): Promise<number | null> {
+  if (typeof document === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const audio = document.createElement('audio');
+    audio.preload = 'metadata';
+    const finish = (v: number | null) => {
+      audio.src = '';
+      resolve(v);
+    };
+    audio.onloadedmetadata = () =>
+      finish(Number.isFinite(audio.duration) ? Math.round(audio.duration) : null);
+    audio.onerror = () => finish(null);
+    audio.src = uri;
+  });
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -87,6 +108,7 @@ export default function UploadScreen() {
   const [orderFocused, setOrderFocused] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [audioFile, setAudioFile] = useState<PickedAudio | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number | null>(null);
   // Set once the lecture is saved — attachments hang off the created lecture id.
   const [createdLectureId, setCreatedLectureId] = useState<string | null>(null);
 
@@ -94,6 +116,14 @@ export default function UploadScreen() {
   const [sheikhOpen, setSheikhOpen] = useState(false);
 
   const selectedSheikh = sheikhId ? sheikhs.find((s) => s.id === sheikhId) ?? null : null;
+
+  const submitLabel = createLecture.isPending
+    ? 'جارٍ الرفع...'
+    : !sectionId
+      ? 'حفظ في الواردة'
+      : publishStatus === 'published'
+        ? 'نشر المحاضرة'
+        : 'حفظ كمسودة';
 
   async function handlePickAudio() {
     // Loaded lazily (not at module top-level): expo-document-picker resolves its
@@ -113,25 +143,35 @@ export default function UploadScreen() {
       mimeType: asset.mimeType,
       size: asset.size ?? null,
     });
+    setAudioDuration(null);
+    // Pull the duration from metadata so duration_sec is set on insert.
+    void extractDuration(asset.uri).then(setAudioDuration);
   }
 
   function handleSubmit() {
     if (!title.trim()) return;
+    // Without a section the lecture can't be shown to students even if
+    // "published" — so it lands in the واردة (unclassified) review queue
+    // instead, where it can be classified later. (Fixes the "lost upload" bug.)
+    const effectiveStatus = sectionId ? publishStatus : 'unclassified';
     createLecture.mutate(
       {
         title: title.trim(),
         sectionId,
         sheikhId,
         order: order ? Number(order) : 0,
-        status: publishStatus,
+        durationSec: audioDuration,
+        status: effectiveStatus,
         audioFile,
       },
       {
         onSuccess: (created) => {
           setSuccessMsg(
-            publishStatus === 'published'
-              ? 'تم نشر المحاضرة بنجاح.'
-              : 'تم حفظ المحاضرة كمسودة.',
+            effectiveStatus === 'published'
+              ? 'تم نشر المحاضرة بنجاح وستظهر للطلاب.'
+              : effectiveStatus === 'unclassified'
+                ? 'تم حفظ المحاضرة في قائمة الواردة (بدون قسم). صنّفها لاحقاً لنشرها.'
+                : 'تم حفظ المحاضرة كمسودة. انشرها من شاشة المحاضرات.',
           );
           setCreatedLectureId(created.id);
           setTitle('');
@@ -140,6 +180,7 @@ export default function UploadScreen() {
           setSheikhId(null);
           setPublishStatus('draft');
           setAudioFile(null);
+          setAudioDuration(null);
         },
       },
     );
@@ -202,10 +243,19 @@ export default function UploadScreen() {
                   {audioFile.name}
                 </Txt>
                 <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
-                  {audioFile.size != null
-                    ? `${arFileSize(audioFile.size)} · جاهز للرفع`
-                    : 'جاهز للرفع'}
+                  {[
+                    audioFile.size != null ? arFileSize(audioFile.size) : null,
+                    audioDuration ? arDuration(audioDuration) : null,
+                    'جاهز للرفع',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Txt>
+                {/\.ogg$/i.test(audioFile.name) ? (
+                  <Txt size={11} color={colors.accentBrassMuted} style={{ marginTop: 3 }}>
+                    ملاحظة: صيغة OGG تعمل على أندرويد والويب فقط (لا تعمل على iOS).
+                  </Txt>
+                ) : null}
               </View>
               <Pressable
                 style={styles.removeBtn}
@@ -226,7 +276,7 @@ export default function UploadScreen() {
                 اختر ملف الصوت
               </Txt>
               <Txt size={11} color={colors.textGhost} style={{ marginTop: 3 }}>
-                MP3 أو M4A أو أي صيغة صوتية
+                MP3 · M4A · OGG · WAV — صيغة OGG لأندرويد/الويب فقط
               </Txt>
             </Pressable>
           )}
@@ -349,6 +399,15 @@ export default function UploadScreen() {
           </Txt>
           <PublishToggle value={publishStatus} onChange={setPublishStatus} />
 
+          {!sectionId ? (
+            <View style={styles.noSectionNote}>
+              <Feather name="inbox" size={14} color={colors.accentBrassMuted} style={{ marginLeft: 8 }} />
+              <Txt size={12} color={colors.textMuted} style={{ flex: 1 }}>
+                لم تختر قسماً — ستُحفظ المحاضرة في «الواردة» ولن تظهر للطلاب حتى تُصنَّف وتُنشر.
+              </Txt>
+            </View>
+          ) : null}
+
           <View style={styles.metaDivider} />
 
           <View style={styles.metaRow}>
@@ -368,12 +427,12 @@ export default function UploadScreen() {
             disabled={createLecture.isPending || !title.trim()}
             style={({ pressed }) => [
               styles.submitBtn,
-              { opacity: pressed || !title.trim() ? 0.6 : 1 },
-              publishStatus === 'published' && styles.submitBtnPublished,
+              { opacity: pressed || !title.trim() || createLecture.isPending ? 0.6 : 1 },
+              sectionId && publishStatus === 'published' && styles.submitBtnPublished,
             ]}
           >
             <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
-              {publishStatus === 'published' ? 'نشر المحاضرة' : 'حفظ كمسودة'}
+              {submitLabel}
             </Txt>
           </Pressable>
 
@@ -418,7 +477,7 @@ export default function UploadScreen() {
             ]}
           >
             <Txt weight="semibold" size={13} color={colors.onTealPrimary}>
-              حفظ المحاضرة
+              {createLecture.isPending ? 'جارٍ الرفع...' : 'حفظ المحاضرة'}
             </Txt>
           </Pressable>
           <Pressable
@@ -670,6 +729,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     padding: 10,
     marginBottom: 14,
+  } as ViewStyle,
+
+  noSectionNote: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: 'rgba(176,137,79,0.1)',
+    borderRadius: radius.sm,
+    padding: 10,
+    marginTop: 12,
   } as ViewStyle,
 
   // ── Right rail ──

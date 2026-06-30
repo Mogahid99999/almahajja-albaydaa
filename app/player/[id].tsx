@@ -28,6 +28,14 @@ export default function PlayerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // Collapse the modal player. When it was opened as the entry screen (a
+  // notification deep-link, or a fast-refresh that landed here) there's no
+  // history to pop, so GO_BACK isn't handled — fall back to Home instead.
+  const collapse = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
   // Lecture metadata (eyebrow, sectionTitle) — loaded once from the API.
   const { data } = useLecturePlayback(id);
 
@@ -82,7 +90,7 @@ export default function PlayerScreen() {
         {/* Left: collapse (chevron-down) → router.back() */}
         <IconButton
           icon="chevron-down"
-          onPress={() => router.back()}
+          onPress={collapse}
           size={42}
           iconSize={20}
           color={colors.onTealIcon}

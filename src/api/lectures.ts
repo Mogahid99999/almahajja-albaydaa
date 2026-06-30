@@ -25,7 +25,7 @@ export async function getLecturePlayback(lectureId: string): Promise<LecturePlay
   const { data: l, error } = await supabase
     .from('lectures')
     .select(`
-      id, title, duration_sec, audio_path,
+      id, title, duration_sec, audio_path, section_id, order,
       sheikhs(name),
       sections(title),
       user_lecture_progress(position_sec)
@@ -52,11 +52,38 @@ export async function getLecturePlayback(lectureId: string): Promise<LecturePlay
     sheikhName: sheikh?.name ?? null,
     eyebrow: sec?.title ?? '',
     sectionTitle: sec?.title ?? null,
+    sectionId: l.section_id ?? null,
+    order: l.order ?? 0,
     durationSec: l.duration_sec ?? 0,
     audioUrl: await audioUrl(l.audio_path),
     positionSec: prog?.position_sec ?? 0,
     attachments: await resolveAttachmentRows(attRows as any),
   };
+}
+
+/**
+ * The next published lecture in the same section (the immediately-higher
+ * `order`). Drives the player's "next" button + auto-advance. Returns null at
+ * the end of a section, or for an unclassified lecture (no section). We sort by
+ * order and pick the first row past `currentOrder` client-side — filtering on
+ * the column literally named "order" collides with PostgREST's reserved `order`
+ * query param, and a section's lecture list is small.
+ */
+export async function getNextLecture(
+  sectionId: string | null,
+  currentOrder: number,
+): Promise<{ id: string } | null> {
+  if (USE_MOCK) return mock.getNextLecture(sectionId, currentOrder);
+  if (!sectionId) return null;
+  const { data, error } = await supabase
+    .from('lectures')
+    .select('id, order')
+    .eq('section_id', sectionId)
+    .eq('status', 'published')
+    .order('order', { ascending: true });
+  if (error) throw error;
+  const next = (data ?? []).find((l) => l.order > currentOrder);
+  return next ? { id: next.id } : null;
 }
 
 /** Lecture cards for a set of ids — used by the downloads page. */

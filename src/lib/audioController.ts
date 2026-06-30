@@ -13,14 +13,17 @@ import {
   type AudioStatus,
 } from 'expo-audio';
 
-import { getLecturePlayback } from '@/api/lectures';
+import { getLecturePlayback, getNextLecture } from '@/api/lectures';
 import { saveLectureProgress } from '@/api/progress';
 import { localUriFor, readDownloadMeta } from '@/lib/downloads';
 import { usePlayerStore, type PlaybackRate } from '@/stores/playerStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 let player: AudioPlayer | null = null;
 let currentId: string | null = null;
 let currentDuration = 0;
+let currentSectionId: string | null = null;
+let currentOrder = 0;
 let lastSavedAt = 0;
 let audioModeSet = false;
 
@@ -57,7 +60,39 @@ function onStatus(status: AudioStatus) {
     // Force completion (position = duration → ≥90% threshold).
     void persist(currentDuration || status.currentTime || 0, true);
     s.setPlaying(false);
+    // Auto-advance to the next lecture in the section, if enabled and one exists.
+    if (useSettingsStore.getState().autoAdvance && s.nextLectureId) {
+      void playLecture(s.nextLectureId);
+    }
   }
+}
+
+/**
+ * Resolve (async) the next lecture in the current section and publish its id to
+ * the store, so the "next" control + auto-advance know whether one exists. The
+ * `forId` guard discards a stale result if the track changed meanwhile.
+ */
+function resolveNext() {
+  const forId = currentId;
+  const sectionId = currentSectionId;
+  const order = currentOrder;
+  if (!sectionId) {
+    store().setNext(null);
+    return;
+  }
+  void getNextLecture(sectionId, order)
+    .then((next) => {
+      if (currentId === forId) store().setNext(next?.id ?? null);
+    })
+    .catch(() => {
+      if (currentId === forId) store().setNext(null);
+    });
+}
+
+/** Play the resolved next lecture (manual "next" button). No-op at the end. */
+export function playNext() {
+  const nextId = store().nextLectureId;
+  if (nextId) void playLecture(nextId);
 }
 
 function persist(positionSec: number, finished = false) {
@@ -92,6 +127,8 @@ export async function playLecture(lectureId: string) {
   let durationSec: number;
   let positionSec: number;
   let source: string;
+  let sectionId: string | null = null;
+  let order = 0;
 
   try {
     const data = await getLecturePlayback(lectureId);
@@ -100,6 +137,8 @@ export async function playLecture(lectureId: string) {
     durationSec = data.durationSec;
     positionSec = data.positionSec;
     source = localUri ?? data.audioUrl;
+    sectionId = data.sectionId;
+    order = data.order;
   } catch (err) {
     // Offline fallback: play from disk using the cached metadata sidecar.
     const meta = localUri ? readDownloadMeta(lectureId) : null;
@@ -109,14 +148,18 @@ export async function playLecture(lectureId: string) {
     durationSec = meta.durationSec;
     positionSec = 0; // resume position is server-side; offline starts over
     source = localUri;
+    // No section context offline → no "next" (resolveNext no-ops on null).
   }
 
   currentId = lectureId;
   currentDuration = durationSec;
+  currentSectionId = sectionId;
+  currentOrder = order;
   lastSavedAt = Date.now();
 
   store().setTrack({ id: lectureId, title, sheikhName, durationSec, positionSec });
   store().setLoading(true);
+  resolveNext();
 
   if (!player) {
     player = createAudioPlayer({ uri: source }, { updateInterval: 500 });

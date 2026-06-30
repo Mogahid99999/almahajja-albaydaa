@@ -23,6 +23,7 @@ import { Rhombus } from '@/components/ui/Rhombus';
 import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
 import { PrefsToggles } from '@/components/notifications/PrefsToggles';
+import { PlaybackSettings } from '@/components/settings/PlaybackSettings';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -177,6 +178,11 @@ export default function ProfileScreen() {
           onPress={() => router.push('/(student)/about')}
         />
       </Card>
+
+      {/* ── Playback settings (auto-advance) ─────────────────────────────────── */}
+      <View style={{ marginBottom: 16 }}>
+        <PlaybackSettings />
+      </View>
 
       {/* ── Notification preferences (feature B) ─────────────────────────────── */}
       <View style={{ marginBottom: 16 }}>

@@ -27,6 +27,7 @@ import type {
   NotificationType,
   ResumeLecture,
   SectionCard,
+  SectionEditData,
   SectionPageData,
   SheikhOption,
   UnclassifiedItem,
@@ -181,11 +182,28 @@ export async function getLecturePlayback(lectureId: string): Promise<LecturePlay
     sheikhName: db.sheikhName(l.sheikh_id),
     eyebrow: eyebrowFor(l),
     sectionTitle: parent?.title ?? null,
+    sectionId: l.section_id ?? null,
+    order: l.order,
     durationSec: l.duration_sec ?? 0,
     audioUrl: l.audio_path,
     positionSec: db.progress[l.id]?.position_sec ?? 0,
     attachments: db.attachmentsForLecture(l.id).map((a) => toAttachment(a)),
   };
+}
+
+/** The next published lecture in the same section (immediately-higher order). */
+export async function getNextLecture(
+  sectionId: string | null,
+  currentOrder: number,
+): Promise<{ id: string } | null> {
+  await delay();
+  if (!sectionId) return null;
+  const next = db.lectures
+    .filter(
+      (l) => l.section_id === sectionId && l.status === 'published' && l.order > currentOrder,
+    )
+    .sort((a, b) => a.order - b.order)[0];
+  return next ? { id: next.id } : null;
 }
 
 // --- Attachments -------------------------------------------------------------
@@ -206,13 +224,26 @@ export async function getAttachment(id: string): Promise<Attachment> {
   return toAttachment(a, true);
 }
 
+/** Mock file "upload": there's no bucket, so the local uri stands in for the
+ *  storage path (it's directly viewable). Live returns an `attachments` path. */
+export async function uploadAttachmentFile(file: {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+}): Promise<string> {
+  await delay();
+  return file.uri;
+}
+
 export async function createAttachment(input: CreateAttachmentInput): Promise<Attachment> {
   await delay();
   const created = db.addAttachment({
     type: input.type,
     title: input.title,
     description: input.description ?? null,
-    url: input.url ?? null,
+    // In mock the displayable url is either the external link or the local uri
+    // returned by uploadAttachmentFile (stored here as storagePath).
+    url: input.url ?? input.storagePath ?? null,
     body: input.body ?? null,
     section_id: input.owner.kind === 'section' ? input.owner.id : null,
     lecture_id: input.owner.kind === 'lecture' ? input.owner.id : null,
@@ -431,6 +462,18 @@ export async function getSectionsFlat(): Promise<FlatSectionNode[]> {
   return out;
 }
 
+export async function getSectionsEditData(): Promise<SectionEditData[]> {
+  await delay();
+  return db.sections.map((s) => ({
+    id: s.id,
+    title: s.title,
+    description: s.description,
+    parentId: s.parent_id,
+    order: s.order,
+    showHeader: s.show_header,
+  }));
+}
+
 export async function getUnclassifiedLectures(): Promise<UnclassifiedItem[]> {
   await delay();
   return db.lectures
@@ -450,6 +493,8 @@ export async function getAdminLectures(): Promise<AdminLectureRow[]> {
     id: l.id,
     title: l.title,
     sectionTitle: l.section_id ? db.getSectionById(l.section_id)?.title ?? null : null,
+    sectionId: l.section_id,
+    sheikhId: l.sheikh_id,
     sheikhName: db.sheikhName(l.sheikh_id),
     status: l.status,
     durationSec: l.duration_sec ?? 0,
@@ -460,6 +505,22 @@ export async function getAdminLectures(): Promise<AdminLectureRow[]> {
 export async function getSheikhs(): Promise<SheikhOption[]> {
   await delay();
   return db.sheikhs.map((s) => ({ id: s.id, name: s.name }));
+}
+
+export async function createSheikh(name: string): Promise<SheikhOption> {
+  await delay();
+  const s = db.addSheikh(name.trim());
+  return { id: s.id, name: s.name };
+}
+
+export async function updateSheikh(id: string, name: string): Promise<void> {
+  await delay();
+  db.updateSheikh(id, name.trim());
+}
+
+export async function deleteSheikh(id: string): Promise<void> {
+  await delay();
+  db.removeSheikh(id);
 }
 
 export async function createLecture(input: {
@@ -493,6 +554,32 @@ export async function classifyLecture(id: string, sectionId: string, order: numb
   db.classifyLecture(id, sectionId, order);
 }
 
+export async function updateLecture(
+  id: string,
+  input: {
+    title?: string;
+    sectionId?: string | null;
+    sheikhId?: string | null;
+    order?: number;
+    status?: AppLectureStatus;
+  },
+): Promise<void> {
+  await delay();
+  db.updateLecture(id, {
+    title: input.title,
+    // `unclassified` ⇒ no section (mirrors the live status mapping).
+    section_id: input.status === 'unclassified' ? null : input.sectionId,
+    sheikh_id: input.sheikhId,
+    order: input.order,
+    status: input.status,
+  });
+}
+
+export async function deleteLecture(id: string): Promise<void> {
+  await delay();
+  db.removeLecture(id);
+}
+
 export async function createSection(input: {
   title: string;
   parentId: string | null;
@@ -508,4 +595,29 @@ export async function createSection(input: {
     cover_letter: input.coverLetter,
     show_header: input.showHeader,
   });
+}
+
+export async function updateSection(
+  id: string,
+  input: {
+    title?: string;
+    description?: string | null;
+    parentId?: string | null;
+    order?: number;
+    showHeader?: boolean;
+  },
+): Promise<void> {
+  await delay();
+  db.updateSection(id, {
+    title: input.title,
+    description: input.description,
+    parent_id: input.parentId,
+    order: input.order,
+    show_header: input.showHeader,
+  });
+}
+
+export async function deleteSection(id: string): Promise<void> {
+  await delay();
+  db.removeSection(id);
 }

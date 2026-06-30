@@ -8,13 +8,16 @@ import { Pressable, View } from 'react-native';
 import { colors, shadows } from '@/constants/theme';
 import { Txt } from '@/components/ui';
 import { toArabicDigits } from '@/lib/format';
-import { seekBy, toggle } from '@/lib/audioController';
+import { playNext, seekBy, toggle } from '@/lib/audioController';
+import { usePlayerStore } from '@/stores/playerStore';
 
 type Props = {
   isPlaying: boolean;
 };
 
 export function TransportControls({ isPlaying }: Props) {
+  const hasNext = usePlayerStore((s) => s.nextLectureId !== null);
+
   return (
     <View
       style={{
@@ -24,6 +27,25 @@ export function TransportControls({ isPlaying }: Props) {
         gap: 22,
       }}
     >
+      {/* Next lecture (RTL: skip points left). Dim when there's no next. */}
+      <Pressable
+        onPress={() => playNext()}
+        disabled={!hasNext}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="الدرس التالي"
+        accessibilityState={{ disabled: !hasNext }}
+        style={({ pressed }) => ({
+          width: 54,
+          height: 54,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: !hasNext ? 0.3 : pressed ? 0.6 : 1,
+        })}
+      >
+        <Feather name="skip-back" size={26} color={colors.onTealIcon} />
+      </Pressable>
+
       {/* Back 10s */}
       <Pressable
         onPress={() => seekBy(-10)}

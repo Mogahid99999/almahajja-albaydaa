@@ -9,6 +9,7 @@ export const queryKeys = {
 
   home: ['home'] as const,
   sectionsFlat: ['sections', 'flat'] as const,
+  sectionsEdit: ['sections', 'edit'] as const,
   section: (sectionId: string) => ['section', sectionId] as const,
 
   lecture: (lectureId: string) => ['lecture', lectureId] as const,

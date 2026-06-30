@@ -12,9 +12,9 @@ import { USE_MOCK } from '@/config';
 import type { AppLectureStatus } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
-import type { AdminLectureRow, UnclassifiedItem } from './types';
+import type { AdminLectureRow, SectionEditData, UnclassifiedItem } from './types';
 
-export type { AdminLectureRow, UnclassifiedItem } from './types';
+export type { AdminLectureRow, SectionEditData, UnclassifiedItem } from './types';
 
 /** A picked audio file (from expo-document-picker) ready to upload. */
 export type PickedAudio = {
@@ -29,16 +29,36 @@ export type PickedAudio = {
  * a signed URL from this path at playback time. Web (the admin surface) returns
  * a blob: uri from the picker; fetch→arrayBuffer works there and on native.
  */
+/** Map a file extension → audio content-type (so ogg/wav land correctly). */
+const AUDIO_CONTENT_TYPE: Record<string, string> = {
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  mp4: 'audio/mp4',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  opus: 'audio/ogg',
+  wav: 'audio/wav',
+  webm: 'audio/webm',
+  flac: 'audio/flac',
+};
+
 async function uploadLectureAudio(file: PickedAudio): Promise<string> {
   const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();
   const safeBase = file.name.replace(/\.[^.]*$/, '').replace(/[^\w-]/g, '_').slice(0, 40);
   const path = `${Date.now()}-${safeBase || 'audio'}.${ext}`;
 
+  // Prefer a known type for the extension; the picker's mimeType is sometimes
+  // generic (application/octet-stream) which would break in-browser playback.
+  const contentType =
+    AUDIO_CONTENT_TYPE[ext] ??
+    (file.mimeType && file.mimeType.startsWith('audio/') ? file.mimeType : 'audio/mpeg');
+
   const bytes = await fetch(file.uri).then((r) => r.arrayBuffer());
   const { error } = await supabase.storage
     .from('lectures')
     .upload(path, bytes, {
-      contentType: file.mimeType ?? 'audio/mpeg',
+      contentType,
       upsert: false,
     });
   if (error) throw error;
@@ -72,7 +92,7 @@ export async function getAdminLectures(): Promise<AdminLectureRow[]> {
   if (USE_MOCK) return mock.getAdminLectures();
   const { data: raw, error } = await supabase
     .from('lectures')
-    .select('id, title, status, duration_sec, order, sections(title), sheikhs(name)')
+    .select('id, title, status, duration_sec, order, section_id, sheikh_id, sections(title), sheikhs(name)')
     .order('created_at', { ascending: false });
   if (error) throw error;
   const data = raw ?? [];
@@ -81,11 +101,13 @@ export async function getAdminLectures(): Promise<AdminLectureRow[]> {
     const sheikh = Array.isArray(l.sheikhs) ? l.sheikhs[0] : (l.sheikhs as any);
     const dbStatus = l.status as 'draft' | 'published';
     const appStatus: AppLectureStatus =
-      sec === null ? 'unclassified' : dbStatus;
+      l.section_id === null ? 'unclassified' : dbStatus;
     return {
       id: l.id,
       title: l.title,
       sectionTitle: sec?.title ?? null,
+      sectionId: l.section_id ?? null,
+      sheikhId: l.sheikh_id ?? null,
       sheikhName: sheikh?.name ?? null,
       status: appStatus,
       durationSec: l.duration_sec ?? 0,
@@ -154,6 +176,81 @@ export async function classifyLecture(id: string, sectionId: string, order: numb
   if (error) throw error;
 }
 
+/** Edit a lecture's metadata (title/section/sheikh/order/status). */
+export async function updateLecture(
+  id: string,
+  input: {
+    title?: string;
+    sectionId?: string | null;
+    sheikhId?: string | null;
+    order?: number;
+    status?: AppLectureStatus;
+  },
+): Promise<void> {
+  if (USE_MOCK) return mock.updateLecture(id, input);
+  const patch: {
+    title?: string;
+    section_id?: string | null;
+    sheikh_id?: string | null;
+    order?: number;
+    status?: 'draft' | 'published';
+  } = {};
+  if (input.title !== undefined) patch.title = input.title;
+  if (input.sectionId !== undefined) patch.section_id = input.sectionId;
+  if (input.sheikhId !== undefined) patch.sheikh_id = input.sheikhId;
+  if (input.order !== undefined) patch.order = input.order;
+  if (input.status !== undefined) {
+    // `unclassified` is the app-level "draft + no section" state (see config).
+    if (input.status === 'unclassified') {
+      patch.status = 'draft';
+      patch.section_id = null;
+    } else {
+      patch.status = input.status;
+    }
+  }
+  const { error } = await supabase.from('lectures').update(patch).eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Delete a lecture: remove the DB row (progress + attachments cascade via FK)
+ * then best-effort delete its audio object from the `lectures` bucket.
+ */
+export async function deleteLecture(id: string): Promise<void> {
+  if (USE_MOCK) return mock.deleteLecture(id);
+  const { data: row } = await supabase
+    .from('lectures')
+    .select('audio_path')
+    .eq('id', id)
+    .single();
+  const { error } = await supabase.from('lectures').delete().eq('id', id);
+  if (error) throw error;
+  if (row?.audio_path) {
+    await supabase.storage.from('lectures').remove([row.audio_path]);
+  }
+}
+
+/**
+ * Editable fields for every section (description/order/show_header/parent),
+ * keyed by id by the caller. The flat-tree RPC (get_sections_flat) intentionally
+ * returns only display fields, so the admin editor reads these separately.
+ */
+export async function getSectionsEditData(): Promise<SectionEditData[]> {
+  if (USE_MOCK) return mock.getSectionsEditData();
+  const { data, error } = await supabase
+    .from('sections')
+    .select('id, title, description, order, show_header, parent_id');
+  if (error) throw error;
+  return (data ?? []).map((s) => ({
+    id: s.id,
+    title: s.title,
+    description: s.description ?? null,
+    parentId: s.parent_id ?? null,
+    order: s.order,
+    showHeader: s.show_header,
+  }));
+}
+
 /** Create a section / inner item under a parent (null = top-level). */
 export async function createSection(input: {
   title: string;
@@ -181,4 +278,45 @@ export async function createSection(input: {
     .single();
   if (error || !data) throw error ?? new Error('create section failed');
   return { id: data.id };
+}
+
+/** Edit a section node (title/description/parent/order/show_header). */
+export async function updateSection(
+  id: string,
+  input: {
+    title?: string;
+    description?: string | null;
+    parentId?: string | null;
+    order?: number;
+    showHeader?: boolean;
+  },
+): Promise<void> {
+  if (USE_MOCK) return mock.updateSection(id, input);
+  const patch: {
+    title?: string;
+    description?: string | null;
+    parent_id?: string | null;
+    order?: number;
+    show_header?: boolean;
+  } = {};
+  if (input.title !== undefined) patch.title = input.title;
+  if (input.description !== undefined) patch.description = input.description;
+  if (input.parentId !== undefined) patch.parent_id = input.parentId;
+  if (input.order !== undefined) patch.order = input.order;
+  if (input.showHeader !== undefined) patch.show_header = input.showHeader;
+  const { error } = await supabase.from('sections').update(patch).eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Delete a section. ⚠️ The `parent_id` and `lectures.section_id` FKs are
+ * `ON DELETE CASCADE`, so this removes ALL descendant sections AND their
+ * lectures (and those lectures' progress/attachments). The caller must confirm.
+ * Orphaned audio objects in storage are left behind (harmless); per-lecture
+ * deletes clean storage, but a subtree cascade does not walk it.
+ */
+export async function deleteSection(id: string): Promise<void> {
+  if (USE_MOCK) return mock.deleteSection(id);
+  const { error } = await supabase.from('sections').delete().eq('id', id);
+  if (error) throw error;
 }

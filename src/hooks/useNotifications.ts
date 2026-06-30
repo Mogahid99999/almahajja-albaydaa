@@ -1,14 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
-  followSection,
   getNotificationPrefs,
-  isSectionFollowed,
   listNotifications,
   markAllRead,
   markNotificationRead,
   setNotificationPref,
-  unfollowSection,
 } from '@/api/notifications';
 import type { NotificationType } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
@@ -67,22 +64,7 @@ export function useSetNotificationPref() {
   });
 }
 
-/** Whether the current user follows a section (follow implies the subtree). */
-export function useSectionFollow(sectionId: string) {
-  return useQuery({
-    queryKey: queryKeys.sectionFollow(sectionId),
-    queryFn: () => isSectionFollowed(sectionId),
-    enabled: !!sectionId,
-  });
-}
-
-/** Follow / unfollow a section; refresh this section's follow state. */
-export function useToggleFollow(sectionId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (followed: boolean) =>
-      followed ? unfollowSection(sectionId) : followSection(sectionId),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.sectionFollow(sectionId) }),
-  });
-}
+// The "follow a section" feature was removed — new-lecture / new-attachment
+// notifications now fan out to ALL students (gated by per-type prefs), so
+// following is no longer needed. The section_follows table + its api functions
+// remain in place but unused (migration 0007). See PLAN_ADMIN_FIXES item B.

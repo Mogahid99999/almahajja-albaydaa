@@ -26,12 +26,14 @@ import { useSignOut } from '@/hooks/useAuth';
 
 // ─── Nav item config ─────────────────────────────────────────────────────────
 
-type NavKey = 'dashboard' | 'upload' | 'sections' | 'unclassified';
+type NavKey = 'dashboard' | 'lectures' | 'upload' | 'sections' | 'sheikhs' | 'unclassified';
 
 const NAV_ITEMS: { key: NavKey; label: string; href: string; icon: keyof typeof Feather.glyphMap }[] = [
   { key: 'dashboard', label: 'لوحة المعلومات', href: '/admin', icon: 'grid' },
+  { key: 'lectures', label: 'المحاضرات', href: '/admin/lectures', icon: 'headphones' },
   { key: 'upload', label: 'رفع محاضرة', href: '/admin/upload', icon: 'upload' },
   { key: 'sections', label: 'الأقسام والشجرة', href: '/admin/sections', icon: 'folder' },
+  { key: 'sheikhs', label: 'المشايخ', href: '/admin/sheikhs', icon: 'users' },
   { key: 'unclassified', label: 'المحاضرات الواردة', href: '/admin/unclassified', icon: 'inbox' },
 ];
 

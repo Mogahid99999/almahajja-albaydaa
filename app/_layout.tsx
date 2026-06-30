@@ -42,11 +42,19 @@ function AuthGate() {
     // expo-router warns about updating navigation state too early.
     if (!navState?.key || isLoading) return;
     const inAuth = segments[0] === '(auth)';
+    const inAdmin = segments[0] === 'admin';
     if (!user) {
       if (!inAuth) router.replace('/sign-in');
       return;
     }
-    if (inAuth) router.replace(user.role === 'admin' ? '/admin' : '/');
+    // Signed in: keep each role in its own area so an admin always lands on the
+    // dashboard (even after a web refresh at "/") and students can't reach it.
+    // The modal player / attachment routes live at the root and are left alone.
+    if (user.role === 'admin') {
+      if (!inAdmin) router.replace('/admin');
+    } else if (inAuth || inAdmin) {
+      router.replace('/');
+    }
   }, [user, isLoading, segments, router, navState?.key]);
 
   return null;
