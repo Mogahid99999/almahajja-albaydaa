@@ -52,16 +52,20 @@ Deno.serve(async (req) => {
   if (error) return json({ error: error.message }, 500);
   if (!tokens?.length) return json({ skipped: "no device tokens" }, 200);
 
-  // Calm by design: no sound, no badge count — matches the in-app handler and
-  // the Android 'default' channel from src/lib/notifications.ts.
+  // Gently audible (the §14 silent choice was reversed — user-approved). Route to
+  // the SAME 'default-v2' channel the local notifications use (importance HIGH +
+  // default system sound, no vibration) so a new-content push reaches every
+  // install — guest or registered — audibly and consistently. The old 'default'
+  // channel id no longer exists on fresh installs (only 'default-v2' is created),
+  // so FCM would otherwise fall back to its silent fcm_fallback channel.
   const messages = tokens.map((t) => ({
     to: t.token,
     title: row.title,
     body: row.body,
     data: row.data ?? {},
-    sound: null,
-    channelId: "default",
-    priority: "default",
+    sound: "default",
+    channelId: "default-v2",
+    priority: "high",
   }));
 
   const res = await fetch(EXPO_PUSH_URL, {

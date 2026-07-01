@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
@@ -8,9 +8,16 @@ import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignIn } from '@/hooks/useAuth';
 
 export default function SignInScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const signIn = useSignIn();
+
+  // Guest-first removed AuthGate's "bounce out of (auth)" for signed-in users (so
+  // guests can stay here to register), so a returning sign-in must navigate itself.
+  // Land on Home; AuthGate then redirects to /admin if the account is an admin.
+  const onSubmit = () =>
+    signIn.mutate({ email, password }, { onSuccess: () => router.replace('/') });
 
   return (
     <Screen scroll={false} contentStyle={{ justifyContent: 'center' }}>
@@ -18,7 +25,7 @@ export default function SignInScreen() {
       <View style={{ alignItems: 'center', marginBottom: 28 }}>
         <Logo size={56} />
         <Txt weight="display" size={26} color={colors.primaryTeal} style={{ marginTop: 14 }}>
-          رِواق العِلم
+          المَحجّة البَيْضَاء
         </Txt>
         <Txt size={12} color={colors.textGhost} style={{ marginTop: 4 }}>
           مجالس الدروس الشرعية
@@ -61,7 +68,7 @@ export default function SignInScreen() {
         ) : null}
 
         <Pressable
-          onPress={() => signIn.mutate({ email, password })}
+          onPress={onSubmit}
           disabled={signIn.isPending}
           style={[
             {
@@ -87,6 +94,18 @@ export default function SignInScreen() {
           </Pressable>
         </Link>
       </Card>
+
+      {/* New users → register (links name+email+password onto the guest account) */}
+      <Link href="/register" asChild>
+        <Pressable hitSlop={8} style={{ alignItems: 'center', marginTop: 18 }}>
+          <Txt size={12.5} color={colors.textMuted}>
+            ليس لديك حساب؟{' '}
+            <Txt size={12.5} weight="semibold" color={colors.accentBrassMuted}>
+              إنشاء حساب
+            </Txt>
+          </Txt>
+        </Pressable>
+      </Link>
 
       {/* Demo accounts hint (mock mode) */}
       <Card style={{ marginTop: 16, backgroundColor: 'rgba(176,137,79,0.06)', borderStyle: 'dashed', borderColor: colors.accentBrassSoft }}>

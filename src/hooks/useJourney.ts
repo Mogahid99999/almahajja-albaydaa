@@ -4,27 +4,34 @@ import { getBadges, getJourneySummary, getWeeklyGoal, setWeeklyGoal } from '@/ap
 import type { GoalMetric } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 
-/** Page-header stats: totals, streak (مداومة), this-week goal progress. */
-export function useJourneySummary() {
+/**
+ * Page-header stats: totals, streak (مداومة), this-week goal progress.
+ * `enabled` is off for guests — the journey is gated behind registration (Task 3),
+ * so we don't fetch a guest's progress just to hide it.
+ */
+export function useJourneySummary(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.journey,
     queryFn: getJourneySummary,
+    enabled: options?.enabled ?? true,
   });
 }
 
 /** The active weekly goal (for the editor sheet). */
-export function useWeeklyGoal() {
+export function useWeeklyGoal(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.weeklyGoal,
     queryFn: getWeeklyGoal,
+    enabled: options?.enabled ?? true,
   });
 }
 
 /** Full badge catalog merged with earned state (earned + locked seals). */
-export function useBadges() {
+export function useBadges(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.badges,
     queryFn: getBadges,
+    enabled: options?.enabled ?? true,
   });
 }
 

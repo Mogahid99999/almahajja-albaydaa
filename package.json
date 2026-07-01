@@ -8,7 +8,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "doctor": "npx expo-doctor"
+    "doctor": "npx expo-doctor",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo-google-fonts/amiri": "^0.4.1",
@@ -35,6 +36,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
+    "react-native-restart": "^0.0.28",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-url-polyfill": "^3.0.0",
@@ -43,7 +45,16 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "patch-package": "^8.0.1",
     "typescript": "~6.0.3"
+  },
+  "expo": {
+    "autolinking": {
+      "//": "expo-audio is patched (media notification prev/next, deep-link, duration) — build it from source so node_modules edits/patch-package apply instead of the prebuilt AAR.",
+      "buildFromSource": [
+        "expo-audio"
+      ]
+    }
   },
   "private": true
 }

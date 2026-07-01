@@ -8,7 +8,7 @@ import { Pressable, View } from 'react-native';
 import { colors, shadows } from '@/constants/theme';
 import { Txt } from '@/components/ui';
 import { toArabicDigits } from '@/lib/format';
-import { playNext, seekBy, toggle } from '@/lib/audioController';
+import { playNext, playPrev, seekBy, toggle } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 
 type Props = {
@@ -17,6 +17,7 @@ type Props = {
 
 export function TransportControls({ isPlaying }: Props) {
   const hasNext = usePlayerStore((s) => s.nextLectureId !== null);
+  const hasPrev = usePlayerStore((s) => s.prevLectureId !== null);
 
   return (
     <View
@@ -112,6 +113,25 @@ export function TransportControls({ isPlaying }: Props) {
         <Txt size={9} color={colors.onTealSecondary} weight="semibold" align="center">
           {toArabicDigits('10')}
         </Txt>
+      </Pressable>
+
+      {/* Previous lecture (RTL: skip points right, opposite the "next" icon). Dim when none. */}
+      <Pressable
+        onPress={() => playPrev()}
+        disabled={!hasPrev}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="الدرس السابق"
+        accessibilityState={{ disabled: !hasPrev }}
+        style={({ pressed }) => ({
+          width: 54,
+          height: 54,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: !hasPrev ? 0.3 : pressed ? 0.6 : 1,
+        })}
+      >
+        <Feather name="skip-forward" size={26} color={colors.onTealIcon} />
       </Pressable>
     </View>
   );

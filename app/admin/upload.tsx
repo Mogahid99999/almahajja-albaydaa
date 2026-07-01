@@ -17,7 +17,7 @@
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -33,7 +33,14 @@ import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows, spacing } from '@/constants/theme';
-import { useCreateLecture, useSheikhs } from '@/hooks/useAdmin';
+import { useCreateLecture, useNextLectureOrder, useSheikhs } from '@/hooks/useAdmin';
+import {
+  isAudioFile,
+  transcodeToMp3,
+  TranscodeError,
+  type TranscodeResult,
+} from '@/lib/audioTranscode';
+import { getDocumentAsync } from '@/lib/documentPicker';
 import { arDuration, arFileSize, toArabicDigits } from '@/lib/format';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -109,6 +116,16 @@ export default function UploadScreen() {
   const [successMsg, setSuccessMsg] = useState('');
   const [audioFile, setAudioFile] = useState<PickedAudio | null>(null);
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
+  // Every picked file is compressed to a speech MP3 in the browser before upload
+  // (only the compressed result is ever stored). This tracks that conversion.
+  const [convert, setConvert] = useState<{
+    state: 'idle' | 'converting' | 'done' | 'error';
+    progress: number;
+    result: TranscodeResult | null;
+    error: string | null;
+  }>({ state: 'idle', progress: 0, result: null, error: null });
+  // Monotonic job id so a re-pick / removal supersedes an in-flight conversion.
+  const jobRef = useRef(0);
   // Set once the lecture is saved — attachments hang off the created lecture id.
   const [createdLectureId, setCreatedLectureId] = useState<string | null>(null);
 
@@ -117,39 +134,137 @@ export default function UploadScreen() {
 
   const selectedSheikh = sheikhId ? sheikhs.find((s) => s.id === sheikhId) ?? null : null;
 
+  // Auto-fill رقم الترتيب with the next order (max in the section + 1) once per
+  // section selection, so lessons append in sequence instead of everyone landing
+  // at 0. The admin can still edit it; re-selecting the same section won't clobber
+  // a manual change (the ref guards a single auto-fill per section).
+  const { data: nextOrder } = useNextLectureOrder(sectionId);
+  const autoOrderSectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sectionId || nextOrder == null) return;
+    if (autoOrderSectionRef.current !== sectionId) {
+      autoOrderSectionRef.current = sectionId;
+      setOrder(String(nextOrder));
+    }
+  }, [sectionId, nextOrder]);
+
+  const converting = convert.state === 'converting';
+  const busy = createLecture.isPending || converting;
+  // Audio (if picked) must finish compressing before it can be saved.
+  const audioBlocksSubmit = audioFile != null && convert.state !== 'done';
+
   const submitLabel = createLecture.isPending
     ? 'جارٍ الرفع...'
-    : !sectionId
-      ? 'حفظ في الواردة'
-      : publishStatus === 'published'
-        ? 'نشر المحاضرة'
-        : 'حفظ كمسودة';
+    : converting
+      ? 'جارٍ ضغط الصوت...'
+      : !sectionId
+        ? 'حفظ في الواردة'
+        : publishStatus === 'published'
+          ? 'نشر المحاضرة'
+          : 'حفظ كمسودة';
+
+  /** Kick off the in-browser MP3 compression; supersedes any earlier job. */
+  function startConversion(picked: PickedAudio) {
+    const job = ++jobRef.current;
+    setConvert((prev) => {
+      if (prev.result) URL.revokeObjectURL(prev.result.uri);
+      return { state: 'converting', progress: 0, result: null, error: null };
+    });
+    transcodeToMp3(
+      { uri: picked.uri, name: picked.name },
+      {
+        onProgress: (r) =>
+          setConvert((p) =>
+            jobRef.current === job && p.state === 'converting' ? { ...p, progress: r } : p,
+          ),
+      },
+    ).then(
+      (result) => {
+        if (jobRef.current !== job) {
+          URL.revokeObjectURL(result.uri); // superseded — drop the orphan
+          return;
+        }
+        setConvert({ state: 'done', progress: 1, result, error: null });
+        // mp3 output is always decodable — fill duration if the original didn't.
+        void extractDuration(result.uri).then((d) => {
+          if (d != null) setAudioDuration((cur) => cur ?? d);
+        });
+      },
+      (err) => {
+        if (jobRef.current !== job) return;
+        const msg =
+          err instanceof TranscodeError
+            ? err.message
+            : 'تعذّر ضغط الملف الصوتي. حاول مرة أخرى.';
+        setConvert({ state: 'error', progress: 0, result: null, error: msg });
+      },
+    );
+  }
 
   async function handlePickAudio() {
-    // Loaded lazily (not at module top-level): expo-document-picker resolves its
-    // native module on import, which would crash the student app on Android/Expo
-    // Go at startup — even though picking only ever happens on the web admin.
-    const DocumentPicker = await import('expo-document-picker');
-    const res = await DocumentPicker.getDocumentAsync({
+    // getDocumentAsync is platform-resolved (src/lib/documentPicker): a static
+    // import on web (no fragile async chunk) and a lazy require on native (so the
+    // student app never resolves the native module at startup).
+    const res = await getDocumentAsync({
       type: 'audio/*',
       copyToCacheDirectory: true,
       multiple: false,
     });
     if (res.canceled) return;
     const asset = res.assets[0];
-    setAudioFile({
+    // Audio MIME validation — reject anything that isn't a sound file.
+    if (!isAudioFile(asset.mimeType, asset.name)) {
+      setAudioFile(null);
+      setAudioDuration(null);
+      jobRef.current++;
+      setConvert({
+        state: 'error',
+        progress: 0,
+        result: null,
+        error: 'الملف المختار ليس ملفًا صوتيًا. اختر ملف صوت صالح.',
+      });
+      return;
+    }
+    const picked: PickedAudio = {
       uri: asset.uri,
       name: asset.name,
       mimeType: asset.mimeType,
       size: asset.size ?? null,
-    });
+    };
+    setAudioFile(picked);
     setAudioDuration(null);
     // Pull the duration from metadata so duration_sec is set on insert.
     void extractDuration(asset.uri).then(setAudioDuration);
+    // Compress in the background while the admin fills the rest of the form.
+    startConversion(picked);
+  }
+
+  /** Remove the picked audio and cancel any in-flight conversion. */
+  function handleRemoveAudio() {
+    jobRef.current++;
+    setConvert((prev) => {
+      if (prev.result) URL.revokeObjectURL(prev.result.uri);
+      return { state: 'idle', progress: 0, result: null, error: null };
+    });
+    setAudioFile(null);
+    setAudioDuration(null);
   }
 
   function handleSubmit() {
     if (!title.trim()) return;
+    // Never upload an unconverted file: if audio was picked it must have finished
+    // compressing (the row + disabled button communicate the converting/error state).
+    if (audioBlocksSubmit) return;
+    // The compressed MP3 is the only thing that goes to storage; the original is
+    // never uploaded (so "delete original after conversion" is satisfied for free).
+    const uploadAudio: PickedAudio | null = convert.result
+      ? {
+          uri: convert.result.uri,
+          name: convert.result.name,
+          mimeType: convert.result.mimeType,
+          size: convert.result.size,
+        }
+      : null;
     // Without a section the lecture can't be shown to students even if
     // "published" — so it lands in the واردة (unclassified) review queue
     // instead, where it can be classified later. (Fixes the "lost upload" bug.)
@@ -162,7 +277,7 @@ export default function UploadScreen() {
         order: order ? Number(order) : 0,
         durationSec: audioDuration,
         status: effectiveStatus,
-        audioFile,
+        audioFile: uploadAudio,
       },
       {
         onSuccess: (created) => {
@@ -177,10 +292,17 @@ export default function UploadScreen() {
           setTitle('');
           setSectionId(null);
           setOrder('');
+          // Allow the next section pick to auto-fill الترتيب again.
+          autoOrderSectionRef.current = null;
           setSheikhId(null);
           setPublishStatus('draft');
           setAudioFile(null);
           setAudioDuration(null);
+          jobRef.current++;
+          setConvert((prev) => {
+            if (prev.result) URL.revokeObjectURL(prev.result.uri);
+            return { state: 'idle', progress: 0, result: null, error: null };
+          });
         },
       },
     );
@@ -224,7 +346,7 @@ export default function UploadScreen() {
           {audioFile ? (
             <View style={styles.audioRow}>
               {/* Waveform tile */}
-              <View style={styles.waveformTile}>
+              <View style={[styles.waveformTile, converting && { opacity: 0.6 }]}>
                 {Array.from({ length: 12 }).map((_, i) => (
                   <View
                     key={i}
@@ -242,43 +364,95 @@ export default function UploadScreen() {
                 <Txt size={13} weight="semibold" color={colors.textInk} numberOfLines={1}>
                   {audioFile.name}
                 </Txt>
-                <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
-                  {[
-                    audioFile.size != null ? arFileSize(audioFile.size) : null,
-                    audioDuration ? arDuration(audioDuration) : null,
-                    'جاهز للرفع',
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Txt>
-                {/\.ogg$/i.test(audioFile.name) ? (
-                  <Txt size={11} color={colors.accentBrassMuted} style={{ marginTop: 3 }}>
-                    ملاحظة: صيغة OGG تعمل على أندرويد والويب فقط (لا تعمل على iOS).
-                  </Txt>
-                ) : null}
+
+                {convert.state === 'converting' ? (
+                  <>
+                    <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
+                      {[
+                        audioFile.size != null ? arFileSize(audioFile.size) : null,
+                        `جارٍ الضغط… ${toArabicDigits(Math.round(convert.progress * 100))}٪`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Txt>
+                    <View style={styles.progressTrack}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          { width: `${Math.max(4, Math.round(convert.progress * 100))}%` },
+                        ]}
+                      />
+                    </View>
+                  </>
+                ) : convert.state === 'error' ? (
+                  <>
+                    <Txt size={11} color={colors.stateDanger} style={{ marginTop: 3 }}>
+                      {convert.error ?? 'تعذّر ضغط الملف.'}
+                    </Txt>
+                    <Pressable
+                      onPress={() => startConversion(audioFile)}
+                      style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+                      accessibilityRole="button"
+                    >
+                      <Feather name="refresh-cw" size={12} color={colors.primaryTeal} />
+                      <Txt size={11} weight="semibold" color={colors.primaryTeal} style={{ marginRight: 6 }}>
+                        إعادة المحاولة
+                      </Txt>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
+                      {[
+                        convert.result ? arFileSize(convert.result.size) : null,
+                        audioDuration ? arDuration(audioDuration) : null,
+                        'جاهز للرفع · MP3',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Txt>
+                    {convert.result &&
+                    audioFile.size != null &&
+                    audioFile.size > convert.result.size ? (
+                      <Txt size={11} color={colors.stateSuccess} style={{ marginTop: 2 }} tabular>
+                        {`تم الضغط من ${arFileSize(audioFile.size)}`}
+                      </Txt>
+                    ) : null}
+                  </>
+                )}
               </View>
               <Pressable
                 style={styles.removeBtn}
                 accessibilityLabel="إزالة الملف"
-                onPress={() => setAudioFile(null)}
+                onPress={handleRemoveAudio}
               >
                 <Feather name="x" size={15} color={colors.stateDanger} />
               </Pressable>
             </View>
           ) : (
-            <Pressable
-              onPress={handlePickAudio}
-              style={({ pressed }) => [styles.audioPicker, pressed && { opacity: 0.7 }]}
-              accessibilityRole="button"
-            >
-              <Feather name="upload-cloud" size={24} color={colors.primaryTeal} />
-              <Txt size={13} weight="semibold" color={colors.primaryTeal} style={{ marginTop: 8 }}>
-                اختر ملف الصوت
-              </Txt>
-              <Txt size={11} color={colors.textGhost} style={{ marginTop: 3 }}>
-                MP3 · M4A · OGG · WAV — صيغة OGG لأندرويد/الويب فقط
-              </Txt>
-            </Pressable>
+            <>
+              {convert.state === 'error' && convert.error ? (
+                <View style={styles.audioErrorBanner}>
+                  <Feather name="alert-triangle" size={14} color={colors.stateDanger} />
+                  <Txt size={12} color={colors.stateDanger} style={{ flex: 1, marginRight: 8 }}>
+                    {convert.error}
+                  </Txt>
+                </View>
+              ) : null}
+              <Pressable
+                onPress={handlePickAudio}
+                style={({ pressed }) => [styles.audioPicker, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+              >
+                <Feather name="upload-cloud" size={24} color={colors.primaryTeal} />
+                <Txt size={13} weight="semibold" color={colors.primaryTeal} style={{ marginTop: 8 }}>
+                  اختر ملف الصوت
+                </Txt>
+                <Txt size={11} color={colors.textGhost} style={{ marginTop: 3 }}>
+                  أي صيغة صوتية — يُضغط الملف تلقائيًا إلى MP3 خفيف للكلام
+                </Txt>
+              </Pressable>
+            </>
           )}
         </CardSection>
 
@@ -424,10 +598,10 @@ export default function UploadScreen() {
           {/* Submit button */}
           <Pressable
             onPress={handleSubmit}
-            disabled={createLecture.isPending || !title.trim()}
+            disabled={busy || !title.trim() || audioBlocksSubmit}
             style={({ pressed }) => [
               styles.submitBtn,
-              { opacity: pressed || !title.trim() || createLecture.isPending ? 0.6 : 1 },
+              { opacity: pressed || !title.trim() || busy || audioBlocksSubmit ? 0.6 : 1 },
               sectionId && publishStatus === 'published' && styles.submitBtnPublished,
             ]}
           >
@@ -470,14 +644,18 @@ export default function UploadScreen() {
         <View style={styles.topActions}>
           <Pressable
             onPress={handleSubmit}
-            disabled={createLecture.isPending || !title.trim()}
+            disabled={busy || !title.trim() || audioBlocksSubmit}
             style={({ pressed }) => [
               styles.topSaveBtn,
-              { opacity: pressed || !title.trim() ? 0.6 : 1 },
+              { opacity: pressed || !title.trim() || busy || audioBlocksSubmit ? 0.6 : 1 },
             ]}
           >
             <Txt weight="semibold" size={13} color={colors.onTealPrimary}>
-              {createLecture.isPending ? 'جارٍ الرفع...' : 'حفظ المحاضرة'}
+              {createLecture.isPending
+                ? 'جارٍ الرفع...'
+                : converting
+                  ? 'جارٍ ضغط الصوت...'
+                  : 'حفظ المحاضرة'}
             </Txt>
           </Pressable>
           <Pressable
@@ -641,6 +819,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 4,
+  } as ViewStyle,
+
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderSand2,
+    marginTop: 6,
+    overflow: 'hidden',
+  } as ViewStyle,
+
+  progressFill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.primaryTeal,
+  } as ViewStyle,
+
+  retryBtn: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 5,
+  } as ViewStyle,
+
+  audioErrorBanner: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: 'rgba(193,58,58,0.08)',
+    borderRadius: radius.sm,
+    padding: 10,
+    marginBottom: 10,
   } as ViewStyle,
 
   twoCol: {

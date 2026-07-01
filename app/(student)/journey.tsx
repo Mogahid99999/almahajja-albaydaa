@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import type { GoalMetric } from '@/api/types';
 import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
+import { useCurrentUser } from '@/hooks/useAuth';
 import { useBadges, useJourneySummary, useSetWeeklyGoal, useWeeklyGoal } from '@/hooks/useJourney';
 
 import { Card } from '@/components/ui/Card';
@@ -25,6 +26,7 @@ import { Txt } from '@/components/ui/Txt';
 import { BadgeSeal } from '@/components/journey/BadgeSeal';
 import { GoalCard } from '@/components/journey/GoalCard';
 import { GoalEditorSheet } from '@/components/journey/GoalEditorSheet';
+import { JourneyGate } from '@/components/journey/JourneyGate';
 import { StreakRing } from '@/components/journey/StreakRing';
 
 /** One lifetime-total stat tile. */
@@ -43,9 +45,11 @@ function StatCard({ value, label }: { value: string; label: string }) {
 
 export default function JourneyScreen() {
   const router = useRouter();
-  const { data: summary, isLoading } = useJourneySummary();
-  const { data: goal } = useWeeklyGoal();
-  const { data: badges } = useBadges();
+  const { data: user } = useCurrentUser();
+  const isGuest = user?.isGuest ?? true;
+  const { data: summary, isLoading } = useJourneySummary({ enabled: !isGuest });
+  const { data: goal } = useWeeklyGoal({ enabled: !isGuest });
+  const { data: badges } = useBadges({ enabled: !isGuest });
   const setGoal = useSetWeeklyGoal();
 
   const [editing, setEditing] = useState(false);
@@ -75,7 +79,9 @@ export default function JourneyScreen() {
         />
       </View>
 
-      {isLoading || !summary ? (
+      {isGuest ? (
+        <JourneyGate />
+      ) : isLoading || !summary ? (
         <View style={{ paddingVertical: 80, alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
         </View>

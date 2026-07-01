@@ -6,44 +6,40 @@
 import { arNum } from '@/lib/format';
 import {
   cancelResumeReminder,
-  scheduleResumeReminder,
+  cancelSeriesReminder,
+  presentCompletionPraise,
+  scheduleResumeReminders,
+  scheduleSeriesReminder,
 } from '@/lib/notifications';
-import type {
-  AdminLectureRow,
-  Attachment,
-  AttachmentOwnerRef,
-  Badge,
-  CreateAttachmentInput,
-  FlatSectionNode,
-  GoalMetric,
-  HomeData,
-  JourneySummary,
-  LectureCard,
-  LecturePlayback,
-  LectureProgressStatus,
-  LectureRow,
-  NotificationItem,
-  NotificationPrefs,
-  NotificationType,
-  ResumeLecture,
-  SectionCard,
-  SectionEditData,
-  SectionPageData,
-  SheikhOption,
-  UnclassifiedItem,
-  WeeklyGoal,
+import {
+  NOTIFICATION_TYPES,
+  type AdminLectureRow,
+  type Attachment,
+  type AttachmentOwnerRef,
+  type Badge,
+  type CreateAttachmentInput,
+  type FlatSectionNode,
+  type GoalMetric,
+  type HomeData,
+  type JourneySummary,
+  type LectureCard,
+  type LecturePlayback,
+  type LectureProgressStatus,
+  type LectureRow,
+  type NotificationItem,
+  type NotificationPrefs,
+  type NotificationType,
+  type ResumeLecture,
+  type SectionCard,
+  type SectionEditData,
+  type SectionPageData,
+  type SheikhOption,
+  type UnclassifiedItem,
+  type WeeklyGoal,
 } from '@/api/types';
 import { BADGES, type BadgeDef } from '@/constants/badges';
 import { MAX_LISTEN_TICK_SEC, type AppLectureStatus } from '@/config';
 import * as db from './db';
-
-/** Every notification type — keeps the resolved prefs map exhaustive. */
-const NOTIFICATION_TYPES: NotificationType[] = [
-  'new_lecture',
-  'new_attachment',
-  'new_quiz',
-  'resume_reminder',
-];
 
 const delay = () => new Promise<void>((r) => setTimeout(r, 120));
 
@@ -206,6 +202,21 @@ export async function getNextLecture(
   return next ? { id: next.id } : null;
 }
 
+/** The previous published lecture in the same section (immediately-lower order). */
+export async function getPreviousLecture(
+  sectionId: string | null,
+  currentOrder: number,
+): Promise<{ id: string } | null> {
+  await delay();
+  if (!sectionId) return null;
+  const prev = db.lectures
+    .filter(
+      (l) => l.section_id === sectionId && l.status === 'published' && l.order < currentOrder,
+    )
+    .sort((a, b) => b.order - a.order)[0];
+  return prev ? { id: prev.id } : null;
+}
+
 // --- Attachments -------------------------------------------------------------
 export async function listSectionAttachments(sectionId: string): Promise<Attachment[]> {
   await delay();
@@ -273,6 +284,28 @@ export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {
 }
 
 // --- Progress ----------------------------------------------------------------
+/** Any in-progress (not completed, position > 0) lesson? (§7 dispatcher). */
+export async function hasResumableLesson(): Promise<boolean> {
+  return Object.values(db.progress).some((p) => !p.completed && p.position_sec > 0);
+}
+
+/** Most-recent in-progress lesson as a resume target (bubble). */
+export async function getResumeTarget(): Promise<
+  { lectureId: string; positionSec: number; title: string; durationSec: number; updatedAt: string } | null
+> {
+  const entry = Object.entries(db.progress).find(([, p]) => !p.completed && p.position_sec > 0);
+  if (!entry) return null;
+  const [lectureId, p] = entry;
+  const lec = db.getLectureById(lectureId);
+  return {
+    lectureId,
+    positionSec: p.position_sec,
+    title: lec?.title ?? 'تابع درسك',
+    durationSec: lec?.duration_sec ?? 0,
+    updatedAt: p.updated_at,
+  };
+}
+
 export async function getLectureProgress(lectureId: string) {
   const p = db.progress[lectureId];
   return p ? { position_sec: p.position_sec, completed: p.completed } : null;
@@ -287,21 +320,50 @@ export async function saveLectureProgress(args: {
   // scrub forward doesn't count as listening. (Single integration point for the
   // رحلتي العلمية daily feed — the player UI is untouched.)
   const prevPos = db.progress[args.lectureId]?.position_sec ?? 0;
+  const wasCompleted = db.progress[args.lectureId]?.completed ?? false;
+  const firstTouch = db.progress[args.lectureId] === undefined;
   db.setProgress(args.lectureId, args.positionSec, args.durationSec);
+  const completed = db.progress[args.lectureId]?.completed ?? false;
+  const justCompleted = completed && !wasCompleted;
   const delta = Math.max(0, Math.min(args.positionSec - prevPos, MAX_LISTEN_TICK_SEC));
 
-  // Resume reminder (feature B) — same single save seam feature C feeds. Gated on
-  // the resume_reminder pref; in-progress → schedule +24h, completed → cancel.
+  // Local notifications (feature B) — same single save seam feature C feeds.
   // Fire-and-forget so a scheduling error never blocks the save or badge return.
   // (The lib no-ops on web / without permission, so the emulator never blocks.)
-  if (db.prefEnabled('resume_reminder')) {
-    const completed = db.progress[args.lectureId]?.completed;
-    if (completed) {
-      void cancelResumeReminder(args.lectureId);
+  const title = db.getLectureById(args.lectureId)?.title ?? 'تابع درسك';
+
+  // Resume ladder: in-progress → schedule the nudge ladder, completed → cancel.
+  if (completed) {
+    void cancelResumeReminder(args.lectureId);
+  } else if (db.prefEnabled('resume_reminder')) {
+    void scheduleResumeReminders({
+      lectureId: args.lectureId,
+      lectureTitle: title,
+      positionSec: args.positionSec,
+      durationSec: args.durationSec,
+      noncompletionEnabled: db.prefEnabled('noncompletion_gentle'),
+    });
+  }
+
+  // Unfinished-series reminder — any started-but-unfinished section, re-evaluated
+  // on first-touch or completion (the moments the remaining count changes).
+  const sectionId = db.getLectureById(args.lectureId)?.section_id ?? null;
+  if (sectionId && (firstTouch || justCompleted)) {
+    const { total, completed: done } = db.rollup(sectionId);
+    const remaining = Math.max(0, total - done);
+    if (remaining > 0) {
+      if (db.prefEnabled('resume_series')) {
+        const sectionTitle = db.getSectionById(sectionId)?.title ?? 'سلسلتك العلمية';
+        void scheduleSeriesReminder(sectionId, sectionTitle, remaining);
+      }
     } else {
-      const title = db.getLectureById(args.lectureId)?.title ?? 'تابع درسك';
-      void scheduleResumeReminder(args.lectureId, title);
+      void cancelSeriesReminder(sectionId); // section finished
     }
+  }
+
+  // Completion praise — immediate, only on the crossing into completed.
+  if (justCompleted && db.prefEnabled('completion_praise')) {
+    void presentCompletionPraise(title);
   }
 
   return recordListening({ lectureId: args.lectureId, deltaSec: delta });
@@ -547,6 +609,14 @@ export async function createLecture(input: {
 export async function setLectureStatus(id: string, status: AppLectureStatus) {
   await delay();
   db.setLectureStatus(id, status);
+}
+
+export async function getNextLectureOrder(sectionId: string): Promise<number> {
+  await delay();
+  const orders = db.lectures
+    .filter((l) => l.section_id === sectionId)
+    .map((l) => l.order ?? 0);
+  return (orders.length ? Math.max(...orders) : 0) + 1;
 }
 
 export async function classifyLecture(id: string, sectionId: string, order: number) {

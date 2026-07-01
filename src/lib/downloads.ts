@@ -21,6 +21,12 @@ export type DownloadMeta = {
   sheikhName: string | null;
   durationSec: number;
   sectionTitle: string | null;
+  /**
+   * Last known resume position (seconds), mirrored from the player on each save
+   * so a downloaded lecture resumes where it left off even with NO connection —
+   * the server progress row is unreachable offline. Absent on older sidecars.
+   */
+  positionSec?: number;
 };
 
 function lecturesDir(): Directory {
@@ -70,6 +76,23 @@ function saveDownloadMeta(meta: DownloadMeta): void {
     if (f.exists) f.delete();
     f.create();
     f.write(JSON.stringify(meta));
+  } catch {
+    /* metadata is best-effort */
+  }
+}
+
+/**
+ * Update ONLY the resume position on an already-downloaded lecture's sidecar
+ * (no-op if it isn't downloaded / has no sidecar). Called on every progress save
+ * so offline resume tracks online resume. Best-effort — never throws into the
+ * playback save path.
+ */
+export function updateDownloadPosition(lectureId: string, positionSec: number): void {
+  if (isWeb) return;
+  try {
+    const meta = readDownloadMeta(lectureId);
+    if (!meta) return;
+    saveDownloadMeta({ ...meta, positionSec: Math.max(0, Math.round(positionSec)) });
   } catch {
     /* metadata is best-effort */
   }

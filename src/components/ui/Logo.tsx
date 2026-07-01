@@ -1,24 +1,18 @@
-import { View } from 'react-native';
+import { Image } from 'react-native';
 
-import { colors } from '@/constants/theme';
-import { Rhombus } from './Rhombus';
-
-/** App logo: brass ring around a teal circle with a brass rhombus. */
+/**
+ * App logo: the brand mark (brass open-book chevron over the white path on a
+ * deep-teal tile), exported from the source artwork (assets/logo.pdf) as
+ * assets/logo-mark.png. Rendered as a rounded-square chip so it reads as the
+ * app icon everywhere it appears (home header, admin sidebar, sign-in).
+ */
 export function Logo({ size = 40 }: { size?: number }) {
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: 1.5,
-        borderColor: colors.accentBrass,
-        backgroundColor: colors.primaryTeal,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Rhombus size={size * 0.34} color={colors.accentBrass} />
-    </View>
+    <Image
+      source={require('../../../assets/logo-mark.png')}
+      style={{ width: size, height: size, borderRadius: size * 0.22 }}
+      resizeMode="cover"
+      accessibilityLabel="شعار المَحجّة البَيْضَاء"
+    />
   );
 }

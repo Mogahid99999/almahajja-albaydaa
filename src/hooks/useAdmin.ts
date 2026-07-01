@@ -7,6 +7,7 @@ import {
   deleteLecture,
   deleteSection,
   getAdminLectures,
+  getNextLectureOrder,
   getSectionsEditData,
   getUnclassifiedLectures,
   setLectureStatus,
@@ -38,6 +39,19 @@ export function useSheikhs() {
   return useQuery({ queryKey: queryKeys.sheikhs, queryFn: getSheikhs });
 }
 
+/**
+ * The next order number for a new lecture in `sectionId` (max existing + 1), so
+ * the upload form auto-fills الترتيب. Disabled (no fetch) until a section is
+ * chosen; unclassified uploads don't use an order.
+ */
+export function useNextLectureOrder(sectionId: string | null) {
+  return useQuery({
+    queryKey: ['nextLectureOrder', sectionId],
+    queryFn: () => getNextLectureOrder(sectionId as string),
+    enabled: !!sectionId,
+  });
+}
+
 function useAdminInvalidate() {
   const qc = useQueryClient();
   return () => {
@@ -49,6 +63,8 @@ function useAdminInvalidate() {
     qc.invalidateQueries({ queryKey: queryKeys.home });
     // Any section page may now show different lectures/headers.
     qc.invalidateQueries({ queryKey: ['section'] });
+    // A newly-created lecture shifts the next auto-order for its section.
+    qc.invalidateQueries({ queryKey: ['nextLectureOrder'] });
   };
 }
 

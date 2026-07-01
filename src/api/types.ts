@@ -94,21 +94,61 @@ export type Badge = {
 
 // --- Notifications (Phase 2 · feature B) -------------------------------------
 /**
- * درس جديد · مرفق جديد · اختبار جديد · تذكير بالمتابعة. `new_quiz` ships now even
- * though quizzes are deferred, so the pref + payload light up later with no
- * migration.
+ * درس جديد · مرفق جديد · اختبار جديد · تذكير بالمتابعة · متابعة السلسلة · تشجيع
+ * بعد الإكمال · تذكير يومي.
+ *
+ * `new_quiz` ships even though quizzes are deferred, so the pref + payload light
+ * up later with no migration. The last three are LOCAL-only (scheduled/presented
+ * on-device, never stored as inbox rows): `resume_series` continues a started
+ * series, `completion_praise` is the calm word after finishing a lesson, and
+ * `daily_reminder` is an opt-in once-a-day remembrance (default OFF).
  */
 export type NotificationType =
   | 'new_lecture'
   | 'new_attachment'
   | 'new_quiz'
-  | 'resume_reminder';
+  | 'resume_reminder'
+  | 'noncompletion_gentle'
+  | 'resume_series'
+  | 'completion_praise'
+  | 'daily_reminder'
+  | 'weekly_goal';
+
+/**
+ * Every notification type, in a stable order. Single source of truth for the
+ * api/mock prefs resolvers (kept exhaustive — a missing DB row resolves to its
+ * default) so the two never drift.
+ */
+export const NOTIFICATION_TYPES: NotificationType[] = [
+  'new_lecture',
+  'new_attachment',
+  'new_quiz',
+  'resume_reminder',
+  'noncompletion_gentle',
+  'resume_series',
+  'completion_praise',
+  'daily_reminder',
+  'weekly_goal',
+];
+
+/**
+ * Default on/off when no stored pref row exists. Everything is ON by convention
+ * except `daily_reminder`, which stays OFF to keep the tone calm (the student
+ * opts in). Used by both the live and mock prefs resolvers.
+ */
+export function defaultNotificationEnabled(type: NotificationType): boolean {
+  return type !== 'daily_reminder';
+}
 
 /** Deep-link payload carried on a notification (exactly one target is set). */
 export type NotificationData = {
   lectureId?: string;
   sectionId?: string;
   attachmentId?: string;
+  /** Resume notifications carry the paused second → player opens there (§8). */
+  positionSec?: number;
+  /** An explicit route to push (e.g. weekly-goal → '/(student)/journey'). */
+  route?: string;
 };
 
 /** One row in the الإشعارات inbox. `read` derives from the DB's `read_at`. */

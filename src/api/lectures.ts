@@ -86,6 +86,30 @@ export async function getNextLecture(
   return next ? { id: next.id } : null;
 }
 
+/**
+ * The previous published lecture in the same section (the immediately-lower
+ * `order`). Mirror of {@link getNextLecture} — drives the player's "previous"
+ * button. Returns null at the start of a section, or for an unclassified lecture
+ * (no section). Sort by order descending and pick the first row below
+ * `currentOrder` client-side (same reserved-`order` PostgREST caveat).
+ */
+export async function getPreviousLecture(
+  sectionId: string | null,
+  currentOrder: number,
+): Promise<{ id: string } | null> {
+  if (USE_MOCK) return mock.getPreviousLecture(sectionId, currentOrder);
+  if (!sectionId) return null;
+  const { data, error } = await supabase
+    .from('lectures')
+    .select('id, order')
+    .eq('section_id', sectionId)
+    .eq('status', 'published')
+    .order('order', { ascending: false });
+  if (error) throw error;
+  const prev = (data ?? []).find((l) => l.order < currentOrder);
+  return prev ? { id: prev.id } : null;
+}
+
 /** Lecture cards for a set of ids — used by the downloads page. */
 export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {
   if (USE_MOCK) return mock.getLecturesByIds(ids);

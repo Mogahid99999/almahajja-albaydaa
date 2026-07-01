@@ -24,7 +24,8 @@ import { usePlayerStore } from '@/stores/playerStore';
 import { useLecturePlayback } from '@/hooks/useLecture';
 
 export default function PlayerScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `t` (seconds) is set by a resume-notification deep-link → open at that second.
+  const { id, t } = useLocalSearchParams<{ id: string; t?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -49,13 +50,16 @@ export default function PlayerScreen() {
     rate,
   } = usePlayerStore();
 
-  // On mount: if a different lecture (or nothing) is loaded, start this one.
+  // On mount: if a different lecture (or nothing) is loaded, start this one. A
+  // deep-link `t` overrides the saved resume position (guarded so it never
+  // rewinds a student who has since listened further — see playLecture).
   useEffect(() => {
     if (id && usePlayerStore.getState().currentLectureId !== id) {
-      void playLecture(id);
+      const startAtSec = t != null ? Number(t) : NaN;
+      void playLecture(id, Number.isFinite(startAtSec) ? { startAtSec } : undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, t]);
 
   // Title / sheikh: prefer live store values (already loaded by playLecture),
   // fall back to API response while the store is being populated.

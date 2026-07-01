@@ -9,6 +9,7 @@ import {
 } from '@/api/notifications';
 import type { NotificationType } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
+import { cancelDailyReminder, scheduleDailyReminder } from '@/lib/notifications';
 
 /** The الإشعارات inbox, newest first. */
 export function useNotifications() {
@@ -54,12 +55,22 @@ export function useNotificationPrefs() {
   });
 }
 
-/** Toggle one notification type; refresh the prefs map. */
+/**
+ * Toggle one notification type; refresh the prefs map. `daily_reminder` is the
+ * one type with an on-device side-effect: the OS repeating reminder is scheduled
+ * when turned on and cancelled when turned off (both no-op on web / Expo Go /
+ * without permission, so this never blocks).
+ */
 export function useSetNotificationPref() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { type: NotificationType; enabled: boolean }) =>
-      setNotificationPref(vars.type, vars.enabled),
+    mutationFn: async (vars: { type: NotificationType; enabled: boolean }) => {
+      await setNotificationPref(vars.type, vars.enabled);
+      if (vars.type === 'daily_reminder') {
+        if (vars.enabled) await scheduleDailyReminder();
+        else await cancelDailyReminder();
+      }
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notificationPrefs }),
   });
 }

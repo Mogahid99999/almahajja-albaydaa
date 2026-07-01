@@ -94,6 +94,7 @@ function SectionGridCard({
             size={21}
             color={colors.primaryTeal}
             align="center"
+            centerGlyph
           >
             {section.coverLetter}
           </Txt>

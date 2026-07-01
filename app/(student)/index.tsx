@@ -5,6 +5,7 @@ import { useHome } from '@/hooks/useSections';
 import { Screen } from '@/components/ui';
 import { ContinueCard } from '@/components/home/ContinueCard';
 import { DuaCard } from '@/components/home/DuaCard';
+import { GuestBanner } from '@/components/home/GuestBanner';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { NewlyAddedRail } from '@/components/home/NewlyAddedRail';
 import { SectionsGrid } from '@/components/home/SectionsGrid';
@@ -35,6 +36,11 @@ export default function HomeScreen() {
       {/* Header sits inside the screen padding manually so the rail can bleed edge-to-edge */}
       <View style={{ paddingHorizontal: 22 }}>
         <HomeHeader />
+      </View>
+
+      {/* Gentle, dismissible register nudge (guests only) */}
+      <View style={{ paddingHorizontal: 22 }}>
+        <GuestBanner />
       </View>
 
       {/* Continue listening — full-width inside 22px padding */}

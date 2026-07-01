@@ -110,9 +110,15 @@ export default function NotificationsScreen() {
   const onOpen = (item: NotificationItem) => {
     if (!item.read) markRead.mutate(item.id);
     if (item.data.lectureId) {
-      router.push(`/player/${item.data.lectureId}`);
+      const t =
+        typeof item.data.positionSec === 'number' && item.data.positionSec > 0
+          ? `?t=${Math.round(item.data.positionSec)}`
+          : '';
+      router.push(`/player/${item.data.lectureId}${t}`);
     } else if (item.data.sectionId) {
       router.push(`/(student)/section/${item.data.sectionId}`);
+    } else if (item.data.route) {
+      router.push(item.data.route as Parameters<typeof router.push>[0]);
     }
   };
 

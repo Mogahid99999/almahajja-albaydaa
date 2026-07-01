@@ -35,6 +35,13 @@ export type TxtProps = Omit<TextProps, 'style'> & {
   /** Tabular figures (for times/counters that shouldn't jitter). */
   tabular?: boolean;
   align?: TextStyle['textAlign'];
+  /**
+   * Optically center a SINGLE glyph inside a fixed badge/circle (cover letters
+   * ف/ع, number circles). Android adds extra top/bottom padding from the font
+   * metrics (`includeFontPadding`) which pushes a lone glyph off-center; this
+   * removes it and centers within the line box. No effect on iOS. (Task 5)
+   */
+  centerGlyph?: boolean;
   /** Text styles; layout props (margins, width) are tolerated too. */
   style?: StyleProp<TextStyle | ViewStyle>;
 };
@@ -49,6 +56,7 @@ export function Txt({
   color = colors.textInk,
   tabular,
   align = 'right',
+  centerGlyph,
   style,
   ...rest
 }: TxtProps) {
@@ -62,6 +70,9 @@ export function Txt({
           textAlign: align,
           writingDirection: 'rtl',
           ...(tabular ? { fontVariant: ['tabular-nums'] as TextStyle['fontVariant'] } : null),
+          ...(centerGlyph
+            ? { includeFontPadding: false, textAlignVertical: 'center' as const }
+            : null),
         },
         style as StyleProp<TextStyle>,
       ]}

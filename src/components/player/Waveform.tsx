@@ -3,7 +3,7 @@
  * Played portion is brass (#c9a463); unplayed is faint white-teal.
  * Tap anywhere to seek: fraction computed from touch x / container width.
  */
-import { Pressable, View, type LayoutChangeEvent } from 'react-native';
+import { I18nManager, Pressable, View, type LayoutChangeEvent } from 'react-native';
 import { useRef, useState } from 'react';
 
 import { arDuration } from '@/lib/format';
@@ -38,7 +38,11 @@ export function Waveform({ positionSec, durationSec, onSeek }: Props) {
   function handlePress(e: { nativeEvent: { locationX: number } }) {
     const w = containerWidthRef.current;
     if (w <= 0 || durationSec <= 0) return;
-    const fraction = Math.min(1, Math.max(0, e.nativeEvent.locationX / w));
+    // `locationX` is measured from the physical left, but under global RTL the
+    // bars render right-to-left (0s on the right). Mirror so a tap lands on the
+    // time under the finger instead of its horizontal reflection.
+    const raw = Math.min(1, Math.max(0, e.nativeEvent.locationX / w));
+    const fraction = I18nManager.isRTL ? 1 - raw : raw;
     onSeek(fraction * durationSec);
   }
 

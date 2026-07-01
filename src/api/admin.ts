@@ -147,6 +147,24 @@ export async function createLecture(input: {
   return { id: data.id };
 }
 
+/**
+ * The order number a NEW lecture should take in a section = (highest existing
+ * `order` in that section) + 1, so lessons auto-append in sequence and the admin
+ * never has to hand-pick a number (which previously left everything at 0). An
+ * empty section returns 1. Counts drafts too — every classified lecture occupies
+ * an order slot regardless of publish state.
+ */
+export async function getNextLectureOrder(sectionId: string): Promise<number> {
+  if (USE_MOCK) return mock.getNextLectureOrder(sectionId);
+  const { data, error } = await supabase
+    .from('lectures')
+    .select('order')
+    .eq('section_id', sectionId);
+  if (error) throw error;
+  const maxOrder = (data ?? []).reduce((m, r) => Math.max(m, r.order ?? 0), 0);
+  return maxOrder + 1;
+}
+
 /** Toggle publish state (draft ↔ published) or send back to unclassified. */
 export async function setLectureStatus(id: string, status: AppLectureStatus) {
   if (USE_MOCK) return mock.setLectureStatus(id, status);

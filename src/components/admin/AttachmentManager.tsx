@@ -16,6 +16,7 @@ import { Card, Divider, Txt } from '@/components/ui';
 import { AttachmentRow } from '@/components/attachments/AttachmentRow';
 import { ATTACHMENT_META } from '@/components/attachments/attachmentMeta';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
+import { getDocumentAsync } from '@/lib/documentPicker';
 import {
   useAdminAttachments,
   useCreateAttachment,
@@ -84,10 +85,9 @@ export function AttachmentManager({ owner }: { owner: AttachmentOwnerRef }) {
 
   async function pickFile() {
     setError('');
-    // Lazy import — expo-document-picker resolves a native module on import that
-    // crashes the student app on startup; picking only happens on the web admin.
-    const DocumentPicker = await import('expo-document-picker');
-    const res = await DocumentPicker.getDocumentAsync({
+    // getDocumentAsync is platform-resolved (src/lib/documentPicker): static on
+    // web (no fragile async chunk → no "Failed to fetch"), lazy on native.
+    const res = await getDocumentAsync({
       type: pickerMime(type),
       copyToCacheDirectory: true,
       multiple: false,

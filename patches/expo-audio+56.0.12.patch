@@ -1,0 +1,282 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
+index c76a9fd..b7b6a7c 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
+@@ -144,6 +144,13 @@ class AudioPlayer(
+     }
+   }
+ 
++  // riwaq patch: forward a lock-screen/notification transport action ("next" /
++  // "prev") to JS. The service holds this player as currentPlayer, so it can emit
++  // through here; JS (audioController) resolves the actual section-aware neighbour.
++  fun emitControlAction(action: String) {
++    emit("mediaControlAction", mapOf("action" to action))
++  }
++
+   override fun onPlaybackStateUpdated(playbackState: Int, justFinished: Boolean) {
+     val updateMap = mutableMapOf<String, Any?>(
+       "playbackState" to playbackStateToString(playbackState)
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
+index 86880d9..15f9580 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
+@@ -55,7 +55,13 @@ class Metadata(
+   @Field val title: String?,
+   @Field val artist: String?,
+   @Field val albumTitle: String?,
+-  @Field val artworkUrl: URL?
++  @Field val artworkUrl: URL?,
++  // Total track length in ms — published as METADATA_KEY_DURATION so the system
++  // media control / lock-screen scrubber can render progress (riwaq patch).
++  @Field val durationMs: Long? = null,
++  // Deep-link URI (e.g. riwaqalilm:///player/<id>) opened when the media
++  // notification body is tapped, so it lands on the full player (riwaq patch).
++  @Field val deepLinkUri: String? = null
+ ) : Record
+ 
+ enum class AndroidOutputFormat(val value: String) : Enumerable {
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+index 196a5d5..78aff03 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+@@ -6,6 +6,7 @@ import android.app.NotificationManager
+ import android.app.PendingIntent
+ import android.content.Context
+ import android.content.Intent
++import android.net.Uri
+ import android.media.AudioManager
+ import android.content.pm.ServiceInfo
+ import android.graphics.Bitmap
+@@ -90,6 +91,8 @@ class AudioControlsService : MediaSessionService() {
+ 
+         ACTION_SEEK_FORWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition + SEEK_INTERVAL_MS)
+         ACTION_SEEK_BACKWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition - SEEK_INTERVAL_MS)
++        ACTION_SKIP_NEXT -> dispatchSkip("next")
++        ACTION_SKIP_PREV -> dispatchSkip("prev")
+       }
+     }
+ 
+@@ -151,8 +154,24 @@ class AudioControlsService : MediaSessionService() {
+     }
+   }
+ 
++  // riwaq patch: forward a transport skip ("next"/"prev") to JS via the active
++  // player. JS (audioController) resolves the section-aware neighbour + replays.
++  fun dispatchSkip(action: String) {
++    currentPlayer?.emitControlAction(action)
++  }
++
+   private fun buildContentIntent(): PendingIntent? {
+-    val appIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return null
++    // riwaq patch: if JS supplied a deep link (riwaqalilm:///player/<id>), tapping
++    // the notification lands on the full player; else fall back to the launcher.
++    val deepLink = currentMetadata?.deepLinkUri
++    val appIntent = if (!deepLink.isNullOrEmpty()) {
++      Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
++        setPackage(packageName)
++        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
++      }
++    } else {
++      packageManager.getLaunchIntentForPackage(packageName) ?: return null
++    }
+     return PendingIntent.getActivity(
+       this,
+       0,
+@@ -189,21 +208,15 @@ class AudioControlsService : MediaSessionService() {
+ 
+     // Older Android system UI expects explicit notification actions for transport controls.
+     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+-      val compactViewIndices = mutableListOf<Int>()
+-      var currentIndex = 0
+-
+-      if (currentOptions?.showSeekBackward == true) {
+-        builder.addAction(
+-          NotificationCompat.Action(
+-            androidx.media3.session.R.drawable.media3_icon_skip_back,
+-            "Seek Backward",
+-            buildActionPendingIntent(ACTION_SEEK_BACKWARD)
+-          )
++      // riwaq patch: previous / play-pause / next. (media3_icon_skip_* are the
++      // drawables shipped by media3-session; reused here as prev/next glyphs.)
++      builder.addAction(
++        NotificationCompat.Action(
++          androidx.media3.session.R.drawable.media3_icon_skip_back,
++          "Previous",
++          buildActionPendingIntent(ACTION_SKIP_PREV)
+         )
+-        compactViewIndices.add(currentIndex)
+-        currentIndex++
+-      }
+-
++      )
+       builder.addAction(
+         NotificationCompat.Action(
+           if (session.player.isPlaying) {
+@@ -215,21 +228,14 @@ class AudioControlsService : MediaSessionService() {
+           buildActionPendingIntent(if (session.player.isPlaying) ACTION_PAUSE else ACTION_PLAY)
+         )
+       )
+-      compactViewIndices.add(currentIndex)
+-      currentIndex++
+-
+-      if (currentOptions?.showSeekForward == true) {
+-        builder.addAction(
+-          NotificationCompat.Action(
+-            androidx.media3.session.R.drawable.media3_icon_skip_forward,
+-            "Seek Forward",
+-            buildActionPendingIntent(ACTION_SEEK_FORWARD)
+-          )
++      builder.addAction(
++        NotificationCompat.Action(
++          androidx.media3.session.R.drawable.media3_icon_skip_forward,
++          "Next",
++          buildActionPendingIntent(ACTION_SKIP_NEXT)
+         )
+-        compactViewIndices.add(currentIndex)
+-      }
+-
+-      style.setShowActionsInCompactView(*compactViewIndices.toIntArray())
++      )
++      style.setShowActionsInCompactView(0, 1, 2)
+     }
+ 
+     builder.setStyle(style)
+@@ -240,19 +246,19 @@ class AudioControlsService : MediaSessionService() {
+     val session = mediaSession ?: return
+     val mediaButtons = mutableListOf<CommandButton>()
+ 
+-    // Add seek backward button if enabled
+-    if (currentOptions?.showSeekBackward == true) {
+-      mediaButtons.add(
+-        CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
+-          .setDisplayName("Seek Backward")
+-          .setEnabled(true)
+-          .setSessionCommand(SessionCommand(ACTION_SEEK_BACKWARD, Bundle.EMPTY))
+-          .setSlots(CommandButton.SLOT_BACK)
+-          .build()
+-      )
+-    }
++    // riwaq patch: previous-lecture (forwarded to JS, which resolves the
++    // section-aware neighbour). Replaces the seek buttons on the compact
++    // controls; seeking stays available by dragging the progress scrubber.
++    mediaButtons.add(
++      CommandButton.Builder(CommandButton.ICON_PREVIOUS)
++        .setDisplayName("Previous")
++        .setEnabled(true)
++        .setSessionCommand(SessionCommand(ACTION_SKIP_PREV, Bundle.EMPTY))
++        .setSlots(CommandButton.SLOT_BACK)
++        .build()
++    )
+ 
+-    // Add play/pause button (always present)
++    // Play/pause (always present)
+     mediaButtons.add(
+       CommandButton.Builder(if (isPlaying) CommandButton.ICON_PAUSE else CommandButton.ICON_PLAY)
+         .setDisplayName(if (isPlaying) "Pause" else "Play")
+@@ -262,17 +268,15 @@ class AudioControlsService : MediaSessionService() {
+         .build()
+     )
+ 
+-    // Add seek forward button if enabled
+-    if (currentOptions?.showSeekForward == true) {
+-      mediaButtons.add(
+-        CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_10)
+-          .setDisplayName("Seek Forward")
+-          .setEnabled(true)
+-          .setSessionCommand(SessionCommand(ACTION_SEEK_FORWARD, Bundle.EMPTY))
+-          .setSlots(CommandButton.SLOT_FORWARD)
+-          .build()
+-      )
+-    }
++    // riwaq patch: next-lecture
++    mediaButtons.add(
++      CommandButton.Builder(CommandButton.ICON_NEXT)
++        .setDisplayName("Next")
++        .setEnabled(true)
++        .setSessionCommand(SessionCommand(ACTION_SKIP_NEXT, Bundle.EMPTY))
++        .setSlots(CommandButton.SLOT_FORWARD)
++        .build()
++    )
+ 
+     session.setCustomLayout(mediaButtons)
+     session.setMediaButtonPreferences(mediaButtons)
+@@ -371,7 +375,7 @@ class AudioControlsService : MediaSessionService() {
+           updateMetadata(metadata)
+         }
+         val session = MediaSession.Builder(context, sessionPlayer)
+-          .setCallback(AudioMediaSessionCallback())
++          .setCallback(AudioMediaSessionCallback(this@AudioControlsService))
+           .build()
+ 
+         // Replace the basic media session with a session connected to our playback service.
+@@ -452,7 +456,7 @@ class AudioControlsService : MediaSessionService() {
+           updateMetadata(metadata)
+         }
+         val session = MediaSession.Builder(context, sessionPlayer)
+-          .setCallback(AudioMediaSessionCallback())
++          .setCallback(AudioMediaSessionCallback(this@AudioControlsService))
+           .build()
+ 
+         player.mediaSession.release()
+@@ -559,6 +563,10 @@ class AudioControlsService : MediaSessionService() {
+     const val ACTION_SEEK_FORWARD = "expo.modules.audio.action.SEEK_FORWARD"
+     const val ACTION_SEEK_BACKWARD = "expo.modules.audio.action.SEEK_BACKWARD"
+ 
++    // riwaq patch: previous/next lecture — forwarded to JS, not handled natively.
++    const val ACTION_SKIP_NEXT = "expo.modules.audio.action.SKIP_NEXT"
++    const val ACTION_SKIP_PREV = "expo.modules.audio.action.SKIP_PREV"
++
+     const val SEEK_INTERVAL_MS = 10000L
+   }
+ }
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
+index 839aaef..053a940 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
+@@ -10,7 +10,10 @@ import androidx.media3.common.util.UnstableApi
+ import com.google.common.util.concurrent.ListenableFuture
+ 
+ @OptIn(UnstableApi::class)
+-class AudioMediaSessionCallback : MediaSession.Callback {
++class AudioMediaSessionCallback(
++  // riwaq patch: the owning service, so skip commands can be forwarded to JS.
++  private val service: AudioControlsService? = null
++) : MediaSession.Callback {
+   override fun onConnect(
+     session: MediaSession,
+     controller: MediaSession.ControllerInfo
+@@ -35,6 +38,9 @@ class AudioMediaSessionCallback : MediaSession.Callback {
+           MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+             .add(SessionCommand(AudioControlsService.ACTION_SEEK_BACKWARD, Bundle.EMPTY))
+             .add(SessionCommand(AudioControlsService.ACTION_SEEK_FORWARD, Bundle.EMPTY))
++            // riwaq patch: previous/next lecture custom commands (forwarded to JS).
++            .add(SessionCommand(AudioControlsService.ACTION_SKIP_PREV, Bundle.EMPTY))
++            .add(SessionCommand(AudioControlsService.ACTION_SKIP_NEXT, Bundle.EMPTY))
+             .build()
+         )
+         .build()
+@@ -56,6 +62,9 @@ class AudioMediaSessionCallback : MediaSession.Callback {
+       AudioControlsService.ACTION_SEEK_BACKWARD -> {
+         session.player.seekTo(session.player.currentPosition - AudioControlsService.SEEK_INTERVAL_MS)
+       }
++      // riwaq patch: forward previous/next to JS (section-aware neighbour resolved there).
++      AudioControlsService.ACTION_SKIP_NEXT -> service?.dispatchSkip("next")
++      AudioControlsService.ACTION_SKIP_PREV -> service?.dispatchSkip("prev")
+     }
+     return super.onCustomCommand(session, controller, command, args)
+   }
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt
+index 18203a3..c888de8 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt
+@@ -45,6 +45,10 @@ internal class MetadataInjectingPlayer(
+       .setAlbumTitle(metadata?.albumTitle)
+       .setArtworkUri(metadata?.artworkUrl?.toString()?.toUri())
+       .setArtworkData(null, null)
++      // riwaq patch: advertise the track length so the system scrubber shows
++      // progress. JS passes durationMs (streaming duration isn't known to the
++      // MediaItem, so METADATA_KEY_DURATION would otherwise be absent → empty bar).
++      .setDurationMs(metadata?.durationMs?.takeIf { it > 0 })
+       .build()
+   }
+ 

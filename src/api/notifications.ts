@@ -13,11 +13,13 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
-import type {
-  NotificationData,
-  NotificationItem,
-  NotificationPrefs,
-  NotificationType,
+import {
+  NOTIFICATION_TYPES,
+  defaultNotificationEnabled,
+  type NotificationData,
+  type NotificationItem,
+  type NotificationPrefs,
+  type NotificationType,
 } from './types';
 
 export type {
@@ -27,14 +29,6 @@ export type {
   NotificationType,
   FollowState,
 } from './types';
-
-/** Every type — keeps the resolved prefs map exhaustive (missing row = ON). */
-const NOTIFICATION_TYPES: NotificationType[] = [
-  'new_lecture',
-  'new_attachment',
-  'new_quiz',
-  'resume_reminder',
-];
 
 /** The signed-in user's id; personal tables all require it on write. */
 async function requireUserId(): Promise<string> {
@@ -57,6 +51,33 @@ export async function registerPushToken(token: string, platform: string): Promis
   if (error) throw error;
 }
 
+// --- Engagement / weekly goal ------------------------------------------------
+/**
+ * Stamp `profiles.last_opened_at = now()` for the signed-in user (drives the
+ * weekly-goal cron + dispatcher). SECURITY DEFINER RPC touches only that one
+ * column (profiles is otherwise admin-write). Best-effort; never blocks.
+ */
+export async function touchLastOpened(): Promise<void> {
+  if (USE_MOCK) return;
+  try {
+    await supabase.rpc('touch_last_opened');
+  } catch {
+    // Non-fatal.
+  }
+}
+
+/**
+ * Atomically claim this week's goal-completion congrats: returns true exactly
+ * once per week, the first time the target is met. The caller then presents the
+ * local goal_done praise. Returns false (no congrats) on any error / mock.
+ */
+export async function tryClaimGoalCongrats(): Promise<boolean> {
+  if (USE_MOCK) return false;
+  const { data, error } = await supabase.rpc('try_claim_goal_congrats');
+  if (error) return false;
+  return data === true;
+}
+
 // --- Preferences -------------------------------------------------------------
 /** Complete per-type map; a missing DB row resolves to ON (default). */
 export async function getNotificationPrefs(): Promise<NotificationPrefs> {
@@ -67,7 +88,8 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
   if (error) throw error;
   const overrides = new Map((data ?? []).map((r) => [r.type, r.enabled]));
   return NOTIFICATION_TYPES.reduce((acc, type) => {
-    acc[type] = overrides.has(type) ? overrides.get(type)! : true; // missing = ON
+    // missing row = the type's default (ON for all but daily_reminder).
+    acc[type] = overrides.has(type) ? overrides.get(type)! : defaultNotificationEnabled(type);
     return acc;
   }, {} as NotificationPrefs);
 }

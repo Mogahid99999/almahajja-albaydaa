@@ -490,6 +490,8 @@ export type Database = {
         Args: { p_lecture_id: string; p_seconds: number }
         Returns: undefined
       }
+      touch_last_opened: { Args: never; Returns: undefined }
+      try_claim_goal_congrats: { Args: never; Returns: boolean }
     }
     Enums: {
       app_role: "student" | "admin"
@@ -501,6 +503,11 @@ export type Database = {
         | "new_attachment"
         | "new_quiz"
         | "resume_reminder"
+        | "resume_series"
+        | "completion_praise"
+        | "daily_reminder"
+        | "noncompletion_gentle"
+        | "weekly_goal"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -640,6 +647,11 @@ export const Constants = {
         "new_attachment",
         "new_quiz",
         "resume_reminder",
+        "resume_series",
+        "completion_praise",
+        "daily_reminder",
+        "noncompletion_gentle",
+        "weekly_goal",
       ],
     },
   },

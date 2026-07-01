@@ -11,6 +11,23 @@
  */
 export const USE_MOCK = false;
 
+/**
+ * TESTING ONLY (PLAN_V3 §15): when true, the local reminder ladders collapse
+ * from hours to a few seconds so every notification type can be verified quickly
+ * on the device. MUST be `false` for any shipped build — flip back + rebuild
+ * after device verification. Has no effect on push/cron timing (server-side).
+ */
+export const NOTIF_TEST_MODE = false;
+
+/**
+ * Floating-bubble overlay (PLAN_V3 Phase 9) — EXPERIMENTAL, Android-only, OFF by
+ * default. The native overlay module (modules/floating-bubble) must be activated
+ * via `expo prebuild` and the user must grant SYSTEM_ALERT_WINDOW; until then the
+ * JS layer (`src/lib/bubble.ts`) gracefully no-ops. Flip on only once the native
+ * module is linked + device-verified.
+ */
+export const BUBBLE_ENABLED = true;
+
 /** A lecture is marked complete once this fraction has been listened. (PRD §9) */
 export const COMPLETE_THRESHOLD = 0.9;
 

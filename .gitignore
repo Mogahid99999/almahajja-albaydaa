@@ -50,3 +50,16 @@ supabase/.temp/
 # Original audio file copies (sample-lecture.mp3 in assets/ is the canonical copy)
 Voice 015*
 assets/Voice 015*
+
+# Large local test recordings — keep big media OUT of the project root. A 50MB+
+# file in the Metro-watched tree slows the web dev server's cold start, which can
+# trip expo-font's 12s fontfaceobserver timeout (→ boxed icons). Pick test files
+# from anywhere via the upload dialog; they don't need to live in the repo.
+/record.ogg
+/*.ogg
+/test-media/
+
+# Native module build artifacts (Gradle output — regenerated on build)
+modules/*/android/build/
+modules/*/ios/build/
+modules/*/build/

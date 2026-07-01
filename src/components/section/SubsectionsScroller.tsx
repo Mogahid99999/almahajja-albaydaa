@@ -99,6 +99,7 @@ export function SubsectionsScroller({ subsections }: Props) {
                   size={19}
                   color={colors.primaryTeal}
                   align="center"
+                  centerGlyph
                 >
                   {sub.coverLetter}
                 </Txt>

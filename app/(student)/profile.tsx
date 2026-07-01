@@ -24,12 +24,13 @@ import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
 import { PrefsToggles } from '@/components/notifications/PrefsToggles';
 import { PlaybackSettings } from '@/components/settings/PlaybackSettings';
+import { BubbleConsent } from '@/components/settings/BubbleConsent';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** First character of the email address (before @) for the avatar fallback. */
-function avatarInitial(email: string): string {
-  return email.charAt(0).toUpperCase();
+/** First character of the name (falling back to the email) for the avatar. */
+function avatarInitial(source: string): string {
+  return source.trim().charAt(0).toUpperCase();
 }
 
 // ── Link row ─────────────────────────────────────────────────────────────────
@@ -80,8 +81,13 @@ export default function ProfileScreen() {
   const { data: user } = useCurrentUser();
   const signOut = useSignOut();
 
+  const isGuest = user?.isGuest ?? true;
   const email = user?.email ?? '';
-  const roleLabel = user?.role === 'admin' ? 'مدير' : 'طالب علم';
+  const name = user?.displayName?.trim() || '';
+  // The heading shows the NAME (not the email). Guests are simply "ضيف".
+  const heading = name || (isGuest ? 'ضيف' : email || 'طالب علم');
+  const roleLabel = user?.role === 'admin' ? 'مدير' : isGuest ? 'ضيف' : 'طالب علم';
+  const avatarChar = name ? avatarInitial(name) : email ? avatarInitial(email) : '';
 
   return (
     <Screen bottomPad={118} padded>
@@ -106,41 +112,43 @@ export default function ProfileScreen() {
 
       {/* ── User identity card ───────────────────────────────────────────────── */}
       <Card style={[{ marginBottom: 16 }, shadows.feature]}>
-        <View style={{ alignItems: 'center', gap: 12 }}>
-          {/* Avatar: Logo circle with the email initial overlaid */}
-          <View style={{ position: 'relative' }}>
-            {/* Outer brass-ring teal circle (same as Logo but larger) */}
-            <View
-              style={{
-                width: 68,
-                height: 68,
-                borderRadius: 34,
-                borderWidth: 2,
-                borderColor: colors.accentBrass,
-                backgroundColor: colors.primaryTeal,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {email ? (
-                <Txt size={26} weight="display" color={colors.onTealPrimary} align="center">
-                  {avatarInitial(email)}
-                </Txt>
-              ) : (
-                /* Fallback to rhombus when no email yet */
-                <Rhombus size={22} color={colors.accentBrass} />
-              )}
-            </View>
+        <View style={{ alignItems: 'center', gap: 10 }}>
+          {/* Avatar: brass-ring teal circle with the name initial overlaid */}
+          <View
+            style={{
+              width: 68,
+              height: 68,
+              borderRadius: 34,
+              borderWidth: 2,
+              borderColor: colors.accentBrass,
+              backgroundColor: colors.primaryTeal,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {avatarChar ? (
+              <Txt size={26} weight="display" color={colors.onTealPrimary} align="center" centerGlyph>
+                {avatarChar}
+              </Txt>
+            ) : (
+              /* Guest with no name yet → calm rhombus, not an initial */
+              <Rhombus size={22} color={colors.accentBrass} />
+            )}
           </View>
 
-          {/* Email */}
-          {email ? (
-            <Txt size={13} color={colors.textMuted} align="center" numberOfLines={1}>
+          {/* Name (never the email) */}
+          <Txt size={18} weight="display" color={colors.primaryTeal} align="center">
+            {heading}
+          </Txt>
+
+          {/* Email only for registered users, quietly under the name */}
+          {!isGuest && email ? (
+            <Txt size={12.5} color={colors.textMuted} align="center" numberOfLines={1}>
               {email}
             </Txt>
           ) : null}
 
-          {/* Role pill */}
+          {/* Role / guest pill */}
           <View
             style={{
               paddingHorizontal: 14,
@@ -155,6 +163,50 @@ export default function ProfileScreen() {
               {roleLabel}
             </Txt>
           </View>
+
+          {isGuest ? (
+            /* Guests: a calm register CTA — the only thing gated is رحلتي العلمية */
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="إنشاء حساب"
+              onPress={() => router.push('/(auth)/register')}
+              style={({ pressed }) => [
+                {
+                  marginTop: 6,
+                  alignSelf: 'stretch',
+                  backgroundColor: colors.primaryTeal,
+                  borderRadius: radius.input,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  opacity: pressed ? 0.85 : 1,
+                },
+                shadows.button,
+              ]}
+            >
+              <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+                سجّل لتتبّع رحلتك العلمية
+              </Txt>
+            </Pressable>
+          ) : (
+            /* Registered: edit name / email */
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="تعديل الملف الشخصي"
+              onPress={() => router.push('/(student)/edit-profile')}
+              style={({ pressed }) => ({
+                marginTop: 4,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Feather name="edit-2" size={13} color={colors.accentBrassMuted} />
+              <Txt size={12.5} weight="medium" color={colors.accentBrassMuted}>
+                تعديل الملف الشخصي
+              </Txt>
+            </Pressable>
+          )}
         </View>
       </Card>
 
@@ -189,15 +241,25 @@ export default function ProfileScreen() {
         <PrefsToggles />
       </View>
 
+      {/* ── Floating-bubble consent (Phase 9, hidden until linked) ───────────── */}
+      <View style={{ marginBottom: 16 }}>
+        <BubbleConsent />
+      </View>
+
       {/* ── Sign-out card ────────────────────────────────────────────────────── */}
-      <Card padded={false} style={{ overflow: 'hidden' }}>
-        <LinkRow
-          icon="log-out"
-          label="تسجيل الخروج"
-          onPress={() => signOut.mutate()}
-          destructive
-        />
-      </Card>
+      {/* Guests have nothing to sign out of — doing so would orphan their (still
+          unregistered) progress under a new anon account. Only registered users
+          see it; after sign-out a fresh guest session boots automatically. */}
+      {!isGuest ? (
+        <Card padded={false} style={{ overflow: 'hidden' }}>
+          <LinkRow
+            icon="log-out"
+            label="تسجيل الخروج"
+            onPress={() => signOut.mutate()}
+            destructive
+          />
+        </Card>
+      ) : null}
     </Screen>
   );
 }

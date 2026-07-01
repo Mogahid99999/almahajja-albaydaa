@@ -6,14 +6,73 @@ import { COMPLETE_THRESHOLD, MAX_LISTEN_TICK_SEC, USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import {
   cancelResumeReminder,
+  cancelSeriesReminder,
+  presentCompletionPraise,
+  presentGoalCongrats,
   remindersSupported,
-  scheduleResumeReminder,
+  scheduleResumeReminders,
+  scheduleSeriesReminder,
 } from '@/lib/notifications';
+import { tryClaimGoalCongrats } from './notifications';
 import * as mock from '@/mock/api';
 import { recordListening } from './journey';
-import type { Badge } from './types';
+import { defaultNotificationEnabled, type Badge, type NotificationType } from './types';
 
 export type LectureProgress = { position_sec: number; completed: boolean } | null;
+
+/**
+ * Whether the user has any in-progress (not completed, position > 0) lesson —
+ * i.e. a resume reminder is the relevant nudge. Used by the §7 priority
+ * dispatcher to let resume outrank the daily remembrance (when true, the daily
+ * defers). Cheap existence check (limit 1).
+ */
+export async function hasResumableLesson(): Promise<boolean> {
+  if (USE_MOCK) return mock.hasResumableLesson();
+  const { data } = await supabase
+    .from('user_lecture_progress')
+    .select('lecture_id')
+    .eq('completed', false)
+    .gt('position_sec', 0)
+    .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+/**
+ * The most-recent in-progress lesson as a resume target — what the floating
+ * bubble nudges toward. Returns lectureId + paused second (for the deep-link),
+ * the lesson `title`, plus `durationSec` and `updatedAt` so the caller can pick
+ * the resume phrase variant (general / near-completion / long-gap) the same way
+ * the resume reminder ladder does. Null if none.
+ */
+export type ResumeTarget = {
+  lectureId: string;
+  positionSec: number;
+  title: string;
+  durationSec: number;
+  updatedAt: string;
+};
+
+export async function getResumeTarget(): Promise<ResumeTarget | null> {
+  if (USE_MOCK) return mock.getResumeTarget();
+  const { data } = await supabase
+    .from('user_lecture_progress')
+    .select('lecture_id, position_sec, updated_at, lectures(title, duration_sec)')
+    .eq('completed', false)
+    .gt('position_sec', 0)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  const lec = Array.isArray(data.lectures) ? data.lectures[0] : data.lectures;
+  const l = lec as { title?: string; duration_sec?: number | null } | null;
+  return {
+    lectureId: data.lecture_id,
+    positionSec: data.position_sec,
+    title: l?.title ?? 'تابع درسك',
+    durationSec: l?.duration_sec ?? 0,
+    updatedAt: data.updated_at,
+  };
+}
 
 /** The current user's progress for a lecture, if any (for resume). */
 export async function getLectureProgress(lectureId: string): Promise<LectureProgress> {
@@ -66,19 +125,33 @@ export async function saveLectureProgress(args: {
   const completed = reachedThreshold || wasCompleted;
   const justCompleted = completed && !wasCompleted;
 
+  // position_sec is an INTEGER column — expo-audio reports a fractional
+  // currentTime, so round (else PostgREST rejects "16.532" with a 22P02 and the
+  // in-progress save is silently lost, breaking resume-from-position).
+  const posInt = Math.max(0, Math.round(positionSec));
   const { error } = await supabase
     .from('user_lecture_progress')
     .upsert(
-      { user_id: user.id, lecture_id: lectureId, position_sec: positionSec, completed },
+      { user_id: user.id, lecture_id: lectureId, position_sec: posInt, completed },
       { onConflict: 'user_id,lecture_id' },
     );
   if (error) throw error;
 
   // Forward movement only, capped — a scrub-forward can't inflate listening time.
-  const delta = Math.max(0, Math.min(positionSec - prevPos, MAX_LISTEN_TICK_SEC));
+  // Rounded: record_daily_listening's p_seconds is an INTEGER column too.
+  const delta = Math.max(0, Math.round(Math.min(positionSec - prevPos, MAX_LISTEN_TICK_SEC)));
 
-  // Resume reminder (fire-and-forget; a scheduling error never blocks the save).
-  void maybeUpdateResumeReminder(lectureId, completed);
+  // Local notifications (fire-and-forget; a scheduling error never blocks the save).
+  // `firstTouch` (no prior progress row) marks "just started a lesson" — the other
+  // moment (besides completion) the unfinished-series reminder is (re)evaluated.
+  void maybeUpdateReminders(
+    lectureId,
+    completed,
+    justCompleted,
+    posInt,
+    durationSec,
+    !prev,
+  );
 
   // Re-evaluate badges only when state can actually change: a new listened
   // delta (streak/active-days) or a fresh completion (completed-count badges).
@@ -89,36 +162,98 @@ export async function saveLectureProgress(args: {
 }
 
 /**
- * Schedule (in-progress) or cancel (completed) the local resume reminder for a
- * lecture, gated on the `resume_reminder` pref (a missing row = ON). Fully
- * best-effort: short-circuits on platforms where reminders can't fire so we
- * don't run the pref/title lookups on web / simulator, and swallows all errors.
+ * Drive every local notification off the single save seam (all gated by their
+ * per-type pref, a missing row = the type's default):
+ *  - resume reminder  — in-progress → schedule +24h; completed → cancel.
+ *  - completion praise — immediate, only on the crossing into completed.
+ *  - series reminder  — on completion, continue the section if more remain;
+ *    otherwise cancel it (the student finished the last lesson).
+ *
+ * Fully best-effort: short-circuits on platforms where reminders can't fire so
+ * we don't run the pref/title lookups on web / simulator, and swallows all
+ * errors — a missed notification must never break a playback save.
  */
-async function maybeUpdateResumeReminder(
+async function maybeUpdateReminders(
   lectureId: string,
   completed: boolean,
+  justCompleted: boolean,
+  positionSec: number,
+  durationSec: number,
+  firstTouch: boolean,
 ): Promise<void> {
   if (!remindersSupported()) return;
   try {
-    const { data: pref } = await supabase
+    // Relevant prefs in one round-trip (missing row = the type's default).
+    const { data: prefRows } = await supabase
       .from('notification_prefs')
-      .select('enabled')
-      .eq('type', 'resume_reminder')
-      .maybeSingle();
-    const enabled = pref ? pref.enabled : true; // missing row = ON
-    if (!enabled) return;
+      .select('type, enabled')
+      .in('type', [
+        'resume_reminder',
+        'noncompletion_gentle',
+        'completion_praise',
+        'resume_series',
+        'weekly_goal',
+      ]);
+    const overrides = new Map((prefRows ?? []).map((r) => [r.type, r.enabled]));
+    const prefOn = (type: NotificationType) =>
+      overrides.has(type) ? overrides.get(type)! : defaultNotificationEnabled(type);
 
-    if (completed) {
-      await cancelResumeReminder(lectureId);
-      return;
-    }
+    // Lecture title + section context in one round-trip.
     const { data: lec } = await supabase
       .from('lectures')
-      .select('title')
+      .select('title, section_id, order, sections(title)')
       .eq('id', lectureId)
       .maybeSingle();
-    await scheduleResumeReminder(lectureId, lec?.title ?? 'تابع درسك');
+    const title = lec?.title ?? 'تابع درسك';
+    const sectionId = lec?.section_id ?? null;
+    const section = Array.isArray(lec?.sections) ? lec?.sections[0] : lec?.sections;
+    const sectionTitle = (section as { title?: string } | null)?.title ?? 'سلسلتك العلمية';
+
+    // 1) Resume ladder (per lecture): first nudge + long-gap + non-completion.
+    if (completed) {
+      await cancelResumeReminder(lectureId);
+    } else if (prefOn('resume_reminder')) {
+      await scheduleResumeReminders({
+        lectureId,
+        lectureTitle: title,
+        positionSec,
+        durationSec,
+        noncompletionEnabled: prefOn('noncompletion_gentle'),
+      });
+    }
+
+    // 2) Unfinished-series reminder — for ANY started-but-unfinished section in
+    //    this lecture's subtree, not only on completion. Re-evaluated when a
+    //    lesson is just started or just completed (the moments the remaining
+    //    count changes) to avoid an RPC on every 5s in-progress tick.
+    if (sectionId && (firstTouch || justCompleted)) {
+      const { data: roll } = await supabase
+        .rpc('get_section_rollup', { p_section_id: sectionId })
+        .maybeSingle();
+      const total = Number(roll?.total_lectures ?? 0);
+      const done = Number(roll?.completed_lectures ?? 0);
+      const remaining = Math.max(0, total - done);
+      if (remaining > 0) {
+        if (prefOn('resume_series')) {
+          await scheduleSeriesReminder(sectionId, sectionTitle, remaining);
+        }
+      } else {
+        await cancelSeriesReminder(sectionId); // section finished
+      }
+    }
+
+    // 3) Completion praise (immediate, only on the crossing into completed).
+    if (justCompleted && prefOn('completion_praise')) {
+      await presentCompletionPraise(title);
+    }
+
+    // 4) Weekly-goal completion-congrats — local & immediate the first time the
+    //    week's target is crossed (server claims it once/week; the time-based
+    //    midweek/2-days nudges are cron-push, not here).
+    if (justCompleted && prefOn('weekly_goal')) {
+      if (await tryClaimGoalCongrats()) await presentGoalCongrats();
+    }
   } catch {
-    // Non-fatal — a missed reminder must never break playback saves.
+    // Non-fatal — a missed notification must never break playback saves.
   }
 }

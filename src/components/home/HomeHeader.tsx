@@ -29,7 +29,7 @@ export function HomeHeader() {
         <Logo size={40} />
         <View>
           <Txt weight="display" size={22} color={colors.primaryTeal} style={{ lineHeight: 26 }}>
-            رِواق العِلم
+            المَحجّة البَيْضَاء
           </Txt>
           <Txt size={11} color={colors.textGhost} style={{ marginTop: 3, letterSpacing: 0.2 }}>
             مجالس الدروس الشرعية

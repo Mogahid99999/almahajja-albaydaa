@@ -43,7 +43,7 @@ export function StreakRing({
           color="rgba(201,164,99,0.16)"
           style={{ top: 0, left: 0 }}
         />
-        <Txt weight="display" size={44} color={colors.onTealPrimary} align="center">
+        <Txt weight="display" size={44} color={colors.onTealPrimary} align="center" centerGlyph>
           {arNum(current)}
         </Txt>
         <Txt size={12} color={colors.onTealSecondary} align="center">

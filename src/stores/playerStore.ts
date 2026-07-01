@@ -20,6 +20,8 @@ type PlayerState = {
   rate: PlaybackRate;
   /** The next lecture in the section, resolved after a track loads (null = none). */
   nextLectureId: string | null;
+  /** The previous lecture in the section, resolved after a track loads (null = none). */
+  prevLectureId: string | null;
 };
 
 type PlayerActions = {
@@ -36,6 +38,7 @@ type PlayerActions = {
   setDuration: (durationSec: number) => void;
   setRate: (rate: PlaybackRate) => void;
   setNext: (nextLectureId: string | null) => void;
+  setPrev: (prevLectureId: string | null) => void;
   reset: () => void;
 };
 
@@ -49,6 +52,7 @@ const initial: PlayerState = {
   durationSec: 0,
   rate: 1.0,
   nextLectureId: null,
+  prevLectureId: null,
 };
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
@@ -60,8 +64,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
       sheikhName: t.sheikhName,
       durationSec: t.durationSec,
       positionSec: t.positionSec ?? 0,
-      // A new track's "next" is unknown until resolved by the controller.
+      // A new track's neighbours are unknown until resolved by the controller.
       nextLectureId: null,
+      prevLectureId: null,
     }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setLoading: (isLoading) => set({ isLoading }),
@@ -69,5 +74,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
   setDuration: (durationSec) => set({ durationSec }),
   setRate: (rate) => set({ rate }),
   setNext: (nextLectureId) => set({ nextLectureId }),
+  setPrev: (prevLectureId) => set({ prevLectureId }),
   reset: () => set(initial),
 }));
