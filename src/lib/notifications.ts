@@ -127,9 +127,10 @@ export function remindersSupported(): boolean {
 let handlerConfigured = false;
 
 /**
- * Foreground presentation behavior. Calm: show the banner + list entry, but no
- * sound and no app-icon badge (no count-shouting — see the inbox's single quiet
- * brass dot). Safe to call repeatedly; no-ops where notifications are unsupported.
+ * Foreground presentation behavior. Calm: show the banner + list entry, no
+ * sound. `shouldSetBadge` is ON so a new-lesson push carries its unread count to
+ * the launcher icon (Issue 8); the count is cleared when the app is opened.
+ * Safe to call repeatedly; no-ops where notifications are unsupported.
  */
 export function configureNotificationHandler(): void {
   const N = nm();
@@ -140,9 +141,25 @@ export function configureNotificationHandler(): void {
       shouldShowBanner: true,
       shouldShowList: true,
       shouldPlaySound: false,
-      shouldSetBadge: false,
+      shouldSetBadge: true,
     }),
   });
+}
+
+/**
+ * Clear the launcher app-icon badge (Issue 8) — called when the app is opened /
+ * foregrounded, so the "new lessons" count resets once the student is in. On
+ * One UI (the Samsung test device) this drops the numeric badge; some launchers
+ * only show a dot. No-ops where notifications are unsupported.
+ */
+export async function clearBadge(): Promise<void> {
+  const N = nm();
+  if (!N) return;
+  try {
+    await N.setBadgeCountAsync(0);
+  } catch {
+    // Non-fatal — a stuck badge must never block the app.
+  }
 }
 
 /**

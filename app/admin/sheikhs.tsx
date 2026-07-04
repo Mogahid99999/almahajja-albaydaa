@@ -16,6 +16,7 @@ import { Card, Divider, Rhombus, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useCreateSheikh,
+  useCreateSheikhAccount,
   useDeleteSheikh,
   useSheikhs,
   useUpdateSheikh,
@@ -101,6 +102,104 @@ function SheikhRow({
   );
 }
 
+/** V6: provision a sheikh LOGIN (email + password, role sheikh → /sheikh inbox). */
+function SheikhAccountCard() {
+  const createAccount = useCreateSheikhAccount();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [created, setCreated] = useState('');
+
+  function handleCreate() {
+    const n = name.trim();
+    const e = email.trim().toLowerCase();
+    if (!n || !e || password.length < 6) {
+      setError('أكمل الاسم والبريد وكلمة مرور من ٦ أحرف فأكثر.');
+      return;
+    }
+    setError('');
+    setCreated('');
+    createAccount.mutate(
+      { name: n, email: e, password },
+      {
+        onSuccess: () => {
+          setCreated(`أُنشئ حساب الشيخ «${n}» — يدخل بالبريد ${e} إلى صندوق الأسئلة.`);
+          setName('');
+          setEmail('');
+          setPassword('');
+        },
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : 'تعذّر إنشاء الحساب.'),
+      },
+    );
+  }
+
+  return (
+    <Card style={styles.addCard}>
+      <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
+        إضافة حساب شيخ
+      </Txt>
+      <Txt size={12} color={colors.textMuted} style={{ marginBottom: 12, lineHeight: 19 }}>
+        حساب دخول يستقبل أسئلة الدارسين ويجيب عنها (صندوق الأسئلة). يُربط تلقائياً باسم
+        الشيخ في قائمة المشايخ.
+      </Txt>
+      <View style={styles.accountFields}>
+        <TextInput
+          value={name}
+          onChangeText={setName}
+          placeholder="اسم الشيخ"
+          placeholderTextColor={colors.textGhost}
+          textAlign="right"
+          style={styles.input}
+        />
+        <TextInput
+          value={email}
+          onChangeText={setEmail}
+          placeholder="البريد الإلكتروني"
+          placeholderTextColor={colors.textGhost}
+          textAlign="right"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          style={styles.input}
+        />
+        <TextInput
+          value={password}
+          onChangeText={setPassword}
+          placeholder="كلمة المرور (٦ أحرف فأكثر)"
+          placeholderTextColor={colors.textGhost}
+          textAlign="right"
+          autoCapitalize="none"
+          style={styles.input}
+        />
+      </View>
+      {error ? (
+        <Txt size={12} color={colors.stateDanger} style={{ marginTop: 8 }}>
+          {error}
+        </Txt>
+      ) : null}
+      {created ? (
+        <Txt size={12} color={colors.stateSuccess} style={{ marginTop: 8, lineHeight: 19 }}>
+          {created}
+        </Txt>
+      ) : null}
+      <Pressable
+        onPress={handleCreate}
+        disabled={createAccount.isPending}
+        style={({ pressed }) => [
+          styles.addBtn,
+          { marginTop: 12, alignSelf: 'flex-start', opacity: pressed || createAccount.isPending ? 0.6 : 1 },
+        ]}
+      >
+        <Feather name="user-plus" size={16} color={colors.onTealPrimary} style={{ marginLeft: 6 }} />
+        <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+          {createAccount.isPending ? 'جارٍ الإنشاء...' : 'إنشاء الحساب'}
+        </Txt>
+      </Pressable>
+    </Card>
+  );
+}
+
 export default function SheikhsScreen() {
   const { data: sheikhs = [], isLoading } = useSheikhs();
   const createSheikh = useCreateSheikh();
@@ -169,6 +268,9 @@ export default function SheikhsScreen() {
         ) : null}
       </Card>
 
+      {/* Sheikh LOGIN account (V6 Q&A) */}
+      <SheikhAccountCard />
+
       {/* List */}
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.listHeading}>
         قائمة المشايخ
@@ -225,6 +327,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     gap: 10,
     alignItems: 'center',
+  } as ViewStyle,
+
+  accountFields: {
+    gap: 10,
   } as ViewStyle,
 
   input: {

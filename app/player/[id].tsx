@@ -18,6 +18,7 @@ import { Txt, Screen, IconButton, RhombusEmblem, ConcentricMotif } from '@/compo
 import { Waveform } from '@/components/player/Waveform';
 import { TransportControls } from '@/components/player/TransportControls';
 import { PlayerUtilityBar } from '@/components/player/PlayerUtilityBar';
+import { LessonToolsRow } from '@/components/player/LessonToolsRow';
 import { PlayerAttachmentsStrip } from '@/components/attachments/PlayerAttachmentsStrip';
 import { playLecture, seekTo } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
@@ -68,6 +69,14 @@ export default function PlayerScreen() {
   const eyebrow = data?.eyebrow ?? '';
   const sectionTitle = data?.sectionTitle ?? eyebrow;
 
+  // The waveform + transport are pinned just above the «أدوات الدرس» row (and
+  // the attachments strip when present), so a long, multi-line title can wrap
+  // freely in the top region without ever pushing the controls into overlap.
+  const hasAttachments = (data?.attachments?.length ?? 0) > 0;
+  const controlsBottom = (hasAttachments ? 208 : 150) + insets.bottom;
+  // Keep the title clear of the pinned controls (≈176px waveform+transport block).
+  const titleAreaReserve = (hasAttachments ? 208 : 150) + 176;
+
   return (
     <Screen scroll={false} background={colors.primaryTeal} bottomPad={0} padded={false}>
       {/* Faint concentric-circle motif behind the artwork */}
@@ -84,13 +93,8 @@ export default function PlayerScreen() {
         style={{ top: -40, left: '50%', marginLeft: -110 }}
       />
 
-      {/* ── Top bar ── */}
-      <View
-        style={[
-          styles.topBar,
-          { paddingTop: insets.top + 10 },
-        ]}
-      >
+      {/* ── Top bar ── (the Screen container already applies the safe-area top) */}
+      <View style={[styles.topBar, { paddingTop: 10 }]}>
         {/* Left: collapse (chevron-down) → router.back() */}
         <IconButton
           icon="chevron-down"
@@ -125,53 +129,64 @@ export default function PlayerScreen() {
         />
       </View>
 
-      {/* ── Artwork emblem ── */}
-      <View style={styles.emblemWrapper}>
-        {/* Brass border + soft shadow wrap the shared RhombusEmblem. */}
-        <View style={styles.emblemBorder}>
-          <RhombusEmblem size={148} radius={radius.artwork} tile={colors.primaryTealDeep} />
+      {/* ── Emblem + title — top-anchored; a long title wraps into the whole
+             region above the pinned controls (paddingBottom keeps it clear). ── */}
+      <View style={[styles.flow, { paddingBottom: titleAreaReserve }]}>
+        {/* ── Artwork emblem ── */}
+        <View style={styles.emblemWrapper}>
+          {/* Brass border + soft shadow wrap the shared RhombusEmblem. */}
+          <View style={styles.emblemBorder}>
+            <RhombusEmblem size={148} radius={radius.artwork} tile={colors.primaryTealDeep} />
+          </View>
+        </View>
+
+        {/* ── Title block ── */}
+        <View style={styles.titleBlock}>
+          {eyebrow ? (
+            <Txt size={11} color={colors.accentBrass} weight="medium" align="center">
+              {eyebrow}
+            </Txt>
+          ) : null}
+          <Txt
+            size={25}
+            weight="display"
+            color={colors.onTealPrimary}
+            align="center"
+            style={styles.titleText}
+            numberOfLines={6}
+          >
+            {title}
+          </Txt>
+          {sheikhName ? (
+            <Txt size={13} color={colors.onTealSecondary} align="center" style={styles.sheikhText}>
+              {sheikhName}
+            </Txt>
+          ) : null}
         </View>
       </View>
 
-      {/* ── Title block ── */}
-      <View style={styles.titleBlock}>
-        {eyebrow ? (
-          <Txt size={11} color={colors.accentBrass} weight="medium" align="center">
-            {eyebrow}
-          </Txt>
-        ) : null}
-        <Txt
-          size={25}
-          weight="display"
-          color={colors.onTealPrimary}
-          align="center"
-          style={styles.titleText}
-        >
-          {title}
-        </Txt>
-        {sheikhName ? (
-          <Txt size={13} color={colors.onTealSecondary} align="center" style={styles.sheikhText}>
-            {sheikhName}
-          </Txt>
-        ) : null}
+      {/* ── Waveform + transport — pinned just above the «أدوات الدرس» row ── */}
+      <View style={[styles.controls, { bottom: controlsBottom }]}>
+        {/* ── Waveform + time ── */}
+        <View style={styles.waveformWrapper}>
+          <Waveform
+            positionSec={positionSec}
+            durationSec={durationSec}
+            onSeek={(sec) => void seekTo(sec)}
+          />
+        </View>
+
+        {/* ── Transport controls ── */}
+        <View style={styles.transportWrapper}>
+          <TransportControls isPlaying={isPlaying} />
+        </View>
       </View>
 
-      {/* ── Waveform + time ── */}
-      <View style={styles.waveformWrapper}>
-        <Waveform
-          positionSec={positionSec}
-          durationSec={durationSec}
-          onSeek={(sec) => void seekTo(sec)}
-        />
-      </View>
-
-      {/* ── Transport controls ── */}
-      <View style={styles.transportWrapper}>
-        <TransportControls isPlaying={isPlaying} />
-      </View>
-
-      {/* ── Lecture attachments strip (absolute, above the utility bar) ── */}
+      {/* ── Lecture attachments strip (absolute, above the tools row) ── */}
       <PlayerAttachmentsStrip attachments={data?.attachments ?? []} />
+
+      {/* ── «أدوات الدرس» — note · benefits · questions (absolute) ── */}
+      {id ? <LessonToolsRow lectureId={id} /> : null}
 
       {/* ── Pinned utility bar (absolute) ── */}
       <PlayerUtilityBar lectureId={id} rate={rate} />
@@ -195,9 +210,21 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 8,
   },
+  // Emblem + title fill the space between the top bar and the pinned controls
+  // and are centered in it; the inline paddingBottom marks the controls' top so
+  // a long title stays centered above the (absolute) waveform without overlap.
+  flow: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  // Waveform + transport, pinned above the «أدوات الدرس» row (bottom set inline).
+  controls: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
   emblemWrapper: {
     alignItems: 'center',
-    marginTop: 42,
   },
   emblemBorder: {
     borderRadius: radius.artwork,
@@ -210,8 +237,13 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   titleBlock: {
-    alignItems: 'center',
-    marginTop: 34,
+    // `stretch` (not `center`) gives each line the full width to lay out in;
+    // a content-sized RTL Text with textAlign:'center' clips its trailing word
+    // on Android (e.g. «المجلس السابع عشر» → «المجلس السابع»). Glyphs still
+    // center via each Txt's align="center".
+    alignSelf: 'stretch',
+    alignItems: 'stretch',
+    marginTop: 22,
     paddingHorizontal: 32,
     gap: 8,
   },
@@ -223,10 +255,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   waveformWrapper: {
-    marginTop: 30,
     paddingHorizontal: 28,
   },
   transportWrapper: {
-    marginTop: 24,
+    marginTop: 16,
   },
 });

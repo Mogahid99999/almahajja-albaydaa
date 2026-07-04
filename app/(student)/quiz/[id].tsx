@@ -1,0 +1,282 @@
+/**
+ * Quiz intro screen — /quiz/[id] (PRD §12.2).
+ *
+ * Pre-quiz summary: title, section, question count, total/pass score, time
+ * limit, attempts allowed/left, personal status. Primary action starts (or
+ * resumes) an attempt; guests see a calm register nudge instead — quiz-taking
+ * requires a registered account (results are personal & synced).
+ */
+import { Feather } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, View } from 'react-native';
+
+import { Card, Divider, Rhombus, Screen, Txt } from '@/components/ui';
+import { QuizStatusPill } from '@/components/quiz/QuizStatusPill';
+import { SectionNavBar } from '@/components/section/SectionNavBar';
+import { colors, radius, shadows } from '@/constants/theme';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { useQuizIntro, useStartAttempt } from '@/hooks/useQuizzes';
+import { arAttemptCount, arMinuteCount, arNum, arQuestionCount } from '@/lib/format';
+
+function StatRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 11,
+      }}
+    >
+      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+        <Rhombus size={6} color={colors.accentBrassMuted} />
+        <Txt size={13} color={colors.textMuted}>
+          {label}
+        </Txt>
+      </View>
+      <Txt size={13} weight="semibold" color={colors.textInk} tabular>
+        {value}
+      </Txt>
+    </View>
+  );
+}
+
+export default function QuizIntroScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const { data: user } = useCurrentUser();
+  const isGuest = user?.isGuest ?? true;
+  const { data: quiz, isLoading } = useQuizIntro(id ?? '');
+  const startAttempt = useStartAttempt();
+  const [startError, setStartError] = useState('');
+
+  if (isLoading) {
+    return (
+      <Screen scroll={false} padded bottomPad={40}>
+        <SectionNavBar contextLabel={null} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={colors.primaryTeal} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!quiz) {
+    return (
+      <Screen scroll={false} padded bottomPad={40}>
+        <SectionNavBar contextLabel={null} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <Txt size={15} weight="semibold" color={colors.textMuted} align="center">
+            الاختبار غير متاح
+          </Txt>
+          <Txt size={12} color={colors.textGhost} align="center">
+            لا يمكن تحميل بيانات هذا الاختبار
+          </Txt>
+        </View>
+      </Screen>
+    );
+  }
+
+  const exhausted = quiz.status === 'exhausted';
+  const inProgress = quiz.status === 'in_progress';
+  const canViewLastResult = quiz.lastResultAttemptId != null;
+
+  const primaryLabel = startAttempt.isPending
+    ? 'جارٍ التحضير...'
+    : inProgress
+      ? 'تابع الاختبار'
+      : exhausted
+        ? 'استنفدت المحاولات'
+        : quiz.attemptsUsed > 0
+          ? 'إعادة المحاولة'
+          : 'ابدأ الاختبار';
+
+  function handleStart() {
+    setStartError('');
+    startAttempt.mutate(quiz!.id, {
+      onSuccess: (attemptId) =>
+        router.push(`/quiz-attempt/${attemptId}` as Parameters<typeof router.push>[0]),
+      onError: (err) =>
+        setStartError(err instanceof Error ? err.message : 'تعذّر بدء الاختبار. حاول مرة أخرى.'),
+    });
+  }
+
+  return (
+    <Screen scroll padded bottomPad={40}>
+      <SectionNavBar contextLabel={quiz.sectionTitle} />
+
+      {/* Header */}
+      <View style={{ alignItems: 'center', marginTop: 18, gap: 10 }}>
+        <View
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: radius.card,
+            backgroundColor: colors.primaryTeal,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Feather name="check-square" size={24} color={colors.accentBrass} />
+        </View>
+        <Txt weight="display" size={22} color={colors.primaryTeal} align="center">
+          {quiz.title}
+        </Txt>
+        {quiz.description ? (
+          <Txt size={13} color={colors.textMuted} align="center" style={{ lineHeight: 22 }}>
+            {quiz.description}
+          </Txt>
+        ) : null}
+        <QuizStatusPill status={quiz.status} />
+      </View>
+
+      {/* Stats card */}
+      <Card style={{ marginTop: 22, paddingVertical: 6 }}>
+        <StatRow label="عدد الأسئلة" value={arQuestionCount(quiz.questionCount)} />
+        <Divider />
+        <StatRow label="الدرجة الكلية" value={arNum(quiz.totalScore)} />
+        <Divider />
+        <StatRow label="درجة النجاح" value={arNum(quiz.passScore)} />
+        <Divider />
+        <StatRow
+          label="زمن الاختبار"
+          value={
+            quiz.timeLimitSec ? arMinuteCount(Math.round(quiz.timeLimitSec / 60)) : 'بدون تحديد'
+          }
+        />
+        <Divider />
+        <StatRow
+          label="المحاولات المسموحة"
+          value={quiz.maxAttempts != null ? arAttemptCount(quiz.maxAttempts) : 'غير محدودة'}
+        />
+        {quiz.maxAttempts != null ? (
+          <>
+            <Divider />
+            <StatRow label="المحاولات المتبقية" value={arNum(quiz.attemptsLeft ?? 0)} />
+          </>
+        ) : null}
+        {quiz.bestScore != null ? (
+          <>
+            <Divider />
+            <StatRow
+              label="أفضل نتيجة"
+              value={`${arNum(quiz.bestScore)} من ${arNum(quiz.totalScore)}`}
+            />
+          </>
+        ) : null}
+      </Card>
+
+      {/* Actions */}
+      <View style={{ marginTop: 24, gap: 12 }}>
+        {startError ? (
+          <View
+            style={{
+              flexDirection: 'row-reverse',
+              alignItems: 'center',
+              backgroundColor: 'rgba(184,92,74,0.09)',
+              borderRadius: radius.sm,
+              padding: 12,
+              gap: 8,
+            }}
+          >
+            <Feather name="alert-circle" size={15} color={colors.stateDanger} />
+            <Txt size={12.5} color={colors.stateDanger} style={{ flex: 1 }}>
+              {startError}
+            </Txt>
+          </View>
+        ) : null}
+
+        {isGuest ? (
+          <>
+            <View
+              style={{
+                flexDirection: 'row-reverse',
+                alignItems: 'center',
+                backgroundColor: 'rgba(176,137,79,0.1)',
+                borderRadius: radius.sm,
+                padding: 12,
+                gap: 8,
+              }}
+            >
+              <Feather name="user-plus" size={15} color={colors.accentBrassMuted} />
+              <Txt size={12.5} color={colors.textMuted} style={{ flex: 1, lineHeight: 20 }}>
+                أداء الاختبار يتطلب حسابًا — حتى تُحفظ نتائجك وتبقى معك.
+              </Txt>
+            </View>
+            <Pressable
+              onPress={() => router.push('/(auth)/register')}
+              style={({ pressed }) => [
+                {
+                  backgroundColor: colors.primaryTeal,
+                  height: 50,
+                  borderRadius: radius.sm,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.85 : 1,
+                  ...shadows.button,
+                },
+              ]}
+              accessibilityRole="button"
+            >
+              <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
+                إنشاء حساب
+              </Txt>
+            </Pressable>
+          </>
+        ) : (
+          <Pressable
+            onPress={handleStart}
+            disabled={exhausted || startAttempt.isPending}
+            style={({ pressed }) => [
+              {
+                backgroundColor: exhausted ? colors.surfaceInset : colors.primaryTeal,
+                height: 50,
+                borderRadius: radius.sm,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed || startAttempt.isPending ? 0.85 : 1,
+                ...(exhausted ? null : shadows.button),
+              },
+            ]}
+            accessibilityRole="button"
+          >
+            <Txt
+              weight="semibold"
+              size={15}
+              color={exhausted ? colors.textMuted : colors.onTealPrimary}
+            >
+              {primaryLabel}
+            </Txt>
+          </Pressable>
+        )}
+
+        {canViewLastResult ? (
+          <Pressable
+            onPress={() =>
+              router.push(
+                `/quiz-result/${quiz.lastResultAttemptId}` as Parameters<typeof router.push>[0],
+              )
+            }
+            style={({ pressed }) => [
+              {
+                height: 44,
+                borderRadius: radius.sm,
+                borderWidth: 1.5,
+                borderColor: colors.primaryTeal,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+          >
+            <Txt weight="semibold" size={14} color={colors.primaryTeal}>
+              عرض آخر نتيجة
+            </Txt>
+          </Pressable>
+        ) : null}
+      </View>
+    </Screen>
+  );
+}

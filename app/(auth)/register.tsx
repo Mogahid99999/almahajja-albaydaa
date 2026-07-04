@@ -2,7 +2,9 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
+import type { Gender } from '@/api/types';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
+import { GenderPills } from '@/components/ui/GenderPills';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useRegister } from '@/hooks/useAuth';
 
@@ -20,6 +22,8 @@ export default function RegisterScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [genderError, setGenderError] = useState(false);
   const register = useRegister();
 
   const trimmedName = name.trim();
@@ -29,8 +33,12 @@ export default function RegisterScreen() {
 
   const onSubmit = () => {
     if (!canSubmit) return;
+    if (!gender) {
+      setGenderError(true);
+      return;
+    }
     register.mutate(
-      { name: trimmedName, email: trimmedEmail, password },
+      { name: trimmedName, email: trimmedEmail, password, gender },
       // Land on the profile so the new name/identity is confirmed — coherent from
       // every entry point (profile CTA, sign-in link, journey gate, Home banner).
       { onSuccess: () => router.replace('/(student)/profile') },
@@ -57,7 +65,7 @@ export default function RegisterScreen() {
           <TextInput
             value={name}
             onChangeText={setName}
-            placeholder="اسمك الكريم"
+            placeholder="اسمك"
             placeholderTextColor={colors.textGhost}
             style={inputStyle}
           />
@@ -84,6 +92,22 @@ export default function RegisterScreen() {
             secureTextEntry
             style={inputStyle}
           />
+        </Field>
+
+        {/* Required for رفيق الدراسة (26.2) — the buddy pairing is gender-segregated */}
+        <Field label="النوع">
+          <GenderPills
+            value={gender}
+            onChange={(g) => {
+              setGender(g);
+              setGenderError(false);
+            }}
+          />
+          {genderError ? (
+            <Txt size={12} color={colors.stateDanger} style={{ marginTop: 6 }}>
+              يرجى تحديد الجنس
+            </Txt>
+          ) : null}
         </Field>
 
         {register.isError ? (

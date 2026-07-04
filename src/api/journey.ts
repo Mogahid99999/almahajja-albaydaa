@@ -12,13 +12,14 @@ import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import { BADGES } from '@/constants/badges';
-import type { Badge, GoalMetric, JourneySummary, WeeklyGoal } from './types';
+import type { Badge, GoalMetric, JourneySummary, StreakStatus, WeeklyGoal } from './types';
 
 export type {
   Badge,
   GoalMetric,
   JourneySummary,
   Streak,
+  StreakStatus,
   WeeklyGoal,
   WeekProgress,
 } from './types';
@@ -55,6 +56,25 @@ export async function getJourneySummary(): Promise<JourneySummary> {
       target: row.week_target ?? 3,
       current: row.week_current ?? 0,
     },
+  };
+}
+
+/**
+ * Home StreakCard state in one round-trip (feature 26.1): current streak,
+ * whether today already counted, and whether the 3-day recovery window is open.
+ */
+export async function getStreakStatus(): Promise<StreakStatus> {
+  if (USE_MOCK) {
+    return { current: 0, todayCounted: false, recoveryAvailable: false, recoveryDaysLeft: 0 };
+  }
+  const { data, error } = await supabase.rpc('get_streak_status');
+  if (error) throw error;
+  const row = data?.[0];
+  return {
+    current: row?.current_streak ?? 0,
+    todayCounted: row?.today_counted ?? false,
+    recoveryAvailable: row?.recovery_available ?? false,
+    recoveryDaysLeft: row?.recovery_days_left ?? 0,
   };
 }
 
@@ -104,19 +124,24 @@ export async function getBadges(): Promise<Badge[]> {
 /**
  * Record a listening delta against today + re-evaluate badges; returns the
  * newly-earned badges. Called from the save-progress seam, not from the player
- * UI. Live: rpc('record_daily_listening') (idempotent daily upsert), then
+ * UI. Live: rpc('record_meaningful_activity') — accumulates the daily upsert
+ * AND server-side decides when the day starts counting toward the streak
+ * (≥120s accumulated or a completion; the 26.1 threshold + recovery live in
+ * 0014's SQL, never per-tick JS — tick deltas are ~5s, capped at 90). Then
  * compare the badge catalog against get_journey_summary and insert-on-conflict
  * any new earns (badge rules stay in TS — PLAN_PHASE2.md §3.2).
  */
 export async function recordListening(args: {
   lectureId: string | null;
   deltaSec: number;
+  completed?: boolean;
 }): Promise<Badge[]> {
   if (USE_MOCK) return mock.recordListening(args);
 
-  const { error: recErr } = await supabase.rpc('record_daily_listening', {
+  const { error: recErr } = await supabase.rpc('record_meaningful_activity', {
     p_lecture_id: args.lectureId as string, // SQL fn accepts null; arg typed string
     p_seconds: args.deltaSec,
+    p_completed: args.completed ?? false,
   });
   if (recErr) throw recErr;
 

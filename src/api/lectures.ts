@@ -5,9 +5,9 @@ import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import { resolveAttachmentRows } from './attachments';
-import type { LectureCard, LecturePlayback } from './types';
+import type { LectureCard, LecturePlayback, LectureRow } from './types';
 
-export type { LectureCard, LecturePlayback } from './types';
+export type { LectureCard, LecturePlayback, LectureRow } from './types';
 
 async function audioUrl(path: string | null): Promise<string> {
   if (!path) return '';
@@ -108,6 +108,67 @@ export async function getPreviousLecture(
   if (error) throw error;
   const prev = (data ?? []).find((l) => l.order < currentOrder);
   return prev ? { id: prev.id } : null;
+}
+
+/**
+ * Newly-added published lectures across the whole app, newest first — backs the
+ * "أحدث الدروس" screen behind Home's «عرض الكل» next to أُضيف حديثاً. Classified
+ * only (section_id not null), with the caller's own progress folded in.
+ */
+export async function getRecentLectures(limit = 40): Promise<LectureRow[]> {
+  if (USE_MOCK) return mock.getRecentLectures(limit);
+  const { data, error } = await supabase
+    .from('lectures')
+    .select(
+      'id, title, duration_sec, order, sheikhs(name), user_lecture_progress(position_sec, completed)',
+    )
+    .eq('status', 'published')
+    .not('section_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((l) => {
+    const sheikh = Array.isArray(l.sheikhs) ? l.sheikhs[0] : (l.sheikhs as any);
+    const prog = Array.isArray(l.user_lecture_progress)
+      ? l.user_lecture_progress[0]
+      : (l.user_lecture_progress as any);
+    const isDone = prog?.completed ?? false;
+    const pos = prog?.position_sec ?? 0;
+    return {
+      id: l.id,
+      title: l.title,
+      durationSec: l.duration_sec ?? 0,
+      sheikhName: sheikh?.name ?? null,
+      status: isDone ? 'completed' : pos > 0 ? 'in_progress' : 'new',
+      positionSec: pos,
+      order: l.order ?? 0,
+    };
+  });
+}
+
+/**
+ * The curated «المختارات» list — staff-picked published lectures, in their
+ * chosen order — backs the full-list screen behind Home's «عرض الكل». The
+ * caller's own progress is folded in server-side (get_featured_lectures) so
+ * each row shows its status. The whole curated set is returned (no limit).
+ */
+export async function getFeaturedLectures(): Promise<LectureRow[]> {
+  if (USE_MOCK) return mock.getFeaturedLectures();
+  const { data, error } = await supabase.rpc('get_featured_lectures');
+  if (error) throw error;
+  return (data ?? []).map((l) => {
+    const isDone = l.completed ?? false;
+    const pos = l.position_sec ?? 0;
+    return {
+      id: l.lecture_id,
+      title: l.title,
+      durationSec: l.duration_sec ?? 0,
+      sheikhName: l.sheikh_name ?? null,
+      status: isDone ? 'completed' : pos > 0 ? 'in_progress' : 'new',
+      positionSec: pos,
+      order: l.order ?? 0,
+    };
+  });
 }
 
 /** Lecture cards for a set of ids — used by the downloads page. */

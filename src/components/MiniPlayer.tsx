@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ProgressBar, RhombusEmblem, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
-import { playNext, toggle } from '@/lib/audioController';
+import { playNext, stop, toggle } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 
 /**
@@ -44,6 +44,24 @@ export function MiniPlayer() {
         shadows.miniPlayer,
       ]}
     >
+      <Pressable
+        onPress={(e) => {
+          e.stopPropagation?.();
+          stop();
+        }}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel="إغلاق المشغل"
+        style={{
+          width: 28,
+          height: 28,
+          marginEnd: -6,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Feather name="x" size={16} color={colors.onTealSecondary} />
+      </Pressable>
       <RhombusEmblem size={40} radius={12} />
       <View style={{ flex: 1, gap: 6 }}>
         <Txt

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "المَحجّة البَيْضَاء",
+    "name": "المحجة البيضاء",
     "slug": "riwaq-al-ilm",
     "scheme": "riwaqalilm",
     "version": "1.0.0",
@@ -80,7 +80,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/android-icon-monochrome.png",
+          "icon": "./assets/notification-icon.png",
           "color": "#C9A463"
         }
       ]

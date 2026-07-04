@@ -2,24 +2,28 @@
  * LectureRowItem — one row in the lectures card inside a section page.
  *
  * RTL layout (right → left):
- *   [34px status circle] [title + meta (flex:1)] [DownloadButton]
+ *   [34px status circle] [title + meta (flex:1)] [DownloadButton] [tools menu]
  *
  * Status variants:
  *   new         → surfaceInset bg + ghost Rhombus dot; label "لم تبدأ" (ghost)
  *   in_progress → teal bg + brass play triangle; label "قيد الاستماع · {time}" (brassMuted)
  *   completed   → teal-tint bg + green check; label "مكتملة" (success); title dimmed
  *
- * Tapping the row (not the download button) → playLecture(id).
+ * Tapping the row (not the buttons) → opens the full player page for the lesson
+ * (the player route auto-starts playback on mount). The tools menu (V6) opens
+ * ملاحظاتي / فوائد الدارسين / أسئلة الدرس for the lesson without playing it.
  *
  * Design ref: screens/صفحة القسم.dc.html › lectures block + Component class.
  */
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { arDuration } from '@/lib/format';
-import { playLecture } from '@/lib/audioController';
 import { colors } from '@/constants/theme';
 import { DownloadButton } from '@/components/DownloadButton';
+import { LessonToolsSheet } from '@/components/player/LessonToolsSheet';
 import { Rhombus } from '@/components/ui/Rhombus';
 import { Txt } from '@/components/ui/Txt';
 import type { LectureRow } from '@/api/types';
@@ -30,6 +34,8 @@ type Props = {
 
 export function LectureRowItem({ lecture }: Props) {
   const { id, title, durationSec, status, positionSec } = lecture;
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const router = useRouter();
 
   // ── Status circle styles & content ──────────────────────────────────────────
   let circleBg: string;
@@ -84,7 +90,7 @@ export function LectureRowItem({ lecture }: Props) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
-      onPress={() => void playLecture(id)}
+      onPress={() => router.push(`/player/${id}`)}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -150,10 +156,34 @@ export function LectureRowItem({ lecture }: Props) {
         </View>
       </View>
 
-      {/* Download button on the left edge (RTL) */}
+      {/* Download button (RTL left side) */}
       <View onStartShouldSetResponder={() => true}>
         <DownloadButton lectureId={id} size={18} />
       </View>
+
+      {/* Lesson tools (V6) — ملاحظاتي / فوائد الدارسين / أسئلة الدرس */}
+      <View onStartShouldSetResponder={() => true}>
+        <Pressable
+          onPress={() => setToolsOpen(true)}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="أدوات الدرس"
+          style={({ pressed }) => ({
+            width: 34,
+            height: 34,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <Feather name="more-vertical" size={17} color={colors.textGhost} />
+        </Pressable>
+      </View>
+      <LessonToolsSheet
+        lectureId={id}
+        visible={toolsOpen}
+        onClose={() => setToolsOpen(false)}
+      />
     </Pressable>
   );
 }

@@ -19,10 +19,12 @@ import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/
 import { getResumeTarget, hasResumableLesson } from '@/api/progress';
 import { useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
 import { Logo } from '@/components/ui/Logo';
+import { UpdateGate } from '@/components/UpdateGate';
 import { colors } from '@/constants/theme';
 import {
   addResponseListener,
   cancelDailyReminder,
+  clearBadge,
   configureNotificationHandler,
   ensurePermission,
   getInitialDeepLink,
@@ -86,6 +88,10 @@ function SessionGate({ children }: { children: ReactNode }) {
   const bootedRef = useRef(false);
 
   useEffect(() => {
+    // Web is the admin dashboard, not the guest student app — never create a
+    // silent anonymous session there; admins sign in explicitly (AuthGate routes
+    // an unauthenticated web visitor to /sign-in).
+    if (Platform.OS === 'web') return;
     if (isLoading || user || bootedRef.current) return;
     bootedRef.current = true;
     ensure.mutate();
@@ -93,7 +99,8 @@ function SessionGate({ children }: { children: ReactNode }) {
 
   // Ready once we have a session; if the anon sign-in fails (e.g. offline on a
   // brand-new install) fall through anyway so the app is never stuck on a loader.
-  const ready = !!user || ensure.isError;
+  // On web there's no silent session, so readiness is just "auth check finished".
+  const ready = Platform.OS === 'web' ? !isLoading : !!user || ensure.isError;
   if (!ready) return <BootLoader />;
   return <>{children}</>;
 }
@@ -113,11 +120,42 @@ function AuthGate() {
   useEffect(() => {
     // Wait until the root navigator is mounted before redirecting, otherwise
     // expo-router warns about updating navigation state too early.
-    if (!navState?.key || !user) return;
+    if (!navState?.key) return;
     const inAdmin = segments[0] === 'admin';
-    if (user.role === 'admin') {
-      if (!inAdmin) router.replace('/admin');
-    } else if (inAdmin) {
+    const inAuth = segments[0] === '(auth)';
+    const inSheikh = segments[0] === 'sheikh';
+
+    // A publisher (ناشر) is content staff — routed into the admin panel like an
+    // admin, but their landing is /admin/lectures (no dashboard) and the shell
+    // hides admin-only sections. A sheikh (شيخ) lives in /sheikh (the questions
+    // inbox) — never in /admin and never in the student tabs.
+    const isStaff = user?.role === 'admin' || user?.role === 'publisher';
+    const isSheikh = user?.role === 'sheikh';
+    const staffHome = user?.role === 'publisher' ? '/admin/lectures' : '/admin';
+
+    // Web is the admin dashboard (CLAUDE.md): require a real (non-guest) staff
+    // session, otherwise steer to sign-in. There is no silent guest on web.
+    // A real sheikh login may reach /sheikh on web too.
+    if (Platform.OS === 'web') {
+      if (isSheikh && !user!.isGuest) {
+        if (!inSheikh) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
+      } else if (isStaff && !user!.isGuest) {
+        if (!inAdmin) router.replace(staffHome);
+      } else if (!inAuth) {
+        router.replace('/sign-in');
+      }
+      return;
+    }
+
+    // Native: guest-first student app. Steer staff into /admin, sheikhs into
+    // /sheikh, others out of both; the (auth) screens stay reachable so a guest
+    // can register / sign in.
+    if (!user) return;
+    if (isSheikh) {
+      if (!inSheikh) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
+    } else if (isStaff) {
+      if (!inAdmin) router.replace(staffHome);
+    } else if (inAdmin || inSheikh) {
       router.replace('/');
     }
   }, [user, segments, router, navState?.key]);
@@ -212,6 +250,7 @@ function NotificationsBootstrap() {
     if (!user) return;
     const onActive = () => {
       void recordAppOpen();
+      void clearBadge(); // reset the launcher "new lessons" count on open (Issue 8)
       void touchLastOpened(); // server stamp for the weekly-goal cron
       void (async () => {
         try {
@@ -320,17 +359,19 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <SessionGate>
-          <AuthGate />
-          <NotificationsBootstrap />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: colors.bgSand },
-            }}
-          >
-            {/* Full-screen player presented modally over the student app. */}
-            <Stack.Screen name="player/[id]" options={{ presentation: 'modal' }} />
-          </Stack>
+          <UpdateGate>
+            <AuthGate />
+            <NotificationsBootstrap />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.bgSand },
+              }}
+            >
+              {/* Full-screen player presented modally over the student app. */}
+              <Stack.Screen name="player/[id]" options={{ presentation: 'modal' }} />
+            </Stack>
+          </UpdateGate>
         </SessionGate>
       </SafeAreaProvider>
     </QueryClientProvider>

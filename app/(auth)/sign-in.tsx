@@ -1,17 +1,22 @@
+import { Feather, FontAwesome } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Linking, Pressable, TextInput, View } from 'react-native';
 
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { DEMO_ACCOUNTS } from '@/config';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignIn } from '@/hooks/useAuth';
+import { useSupportContact } from '@/hooks/useAppContent';
 
 export default function SignInScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const signIn = useSignIn();
+  const { data: support } = useSupportContact();
+  const supportUrl = support?.whatsappUrl ?? '';
 
   // Guest-first removed AuthGate's "bounce out of (auth)" for signed-in users (so
   // guests can stay here to register), so a returning sign-in must navigate itself.
@@ -51,14 +56,25 @@ export default function SignInScreen() {
         </Field>
 
         <Field label="كلمة المرور">
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            placeholderTextColor={colors.textGhost}
-            secureTextEntry
-            style={inputStyle}
-          />
+          <View style={pwWrapStyle}>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              placeholderTextColor={colors.textGhost}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              style={pwInputStyle}
+            />
+            <Pressable
+              onPress={() => setShowPassword((v) => !v)}
+              hitSlop={8}
+              style={{ paddingHorizontal: 12, height: '100%', justifyContent: 'center' }}
+              accessibilityLabel={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+            >
+              <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color={colors.textFaint} />
+            </Pressable>
+          </View>
         </Field>
 
         {signIn.isError ? (
@@ -113,6 +129,32 @@ export default function SignInScreen() {
           حسابات تجريبية:{'\n'}مدير: {DEMO_ACCOUNTS.admin.email}{'\n'}طالب: {DEMO_ACCOUNTS.student.email}{'\n'}كلمة المرور: {DEMO_ACCOUNTS.admin.password}
         </Txt>
       </Card>
+
+      {/* Support contact — only when an admin has set a WhatsApp link (empty = hidden) */}
+      {supportUrl ? (
+        <Pressable
+          onPress={() => Linking.openURL(supportUrl)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="تواصل مع الدعم الفني عبر واتساب"
+          style={({ pressed }) => [
+            {
+              flexDirection: 'row-reverse',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 7,
+              marginTop: 22,
+              paddingVertical: 6,
+            },
+            pressed && { opacity: 0.6 },
+          ]}
+        >
+          <FontAwesome name="whatsapp" size={15} color={colors.accentBrassMuted} />
+          <Txt size={12} color={colors.textMuted}>
+            هل لديك مشكلة؟ تواصل مع الدعم الفني للمنصة
+          </Txt>
+        </Pressable>
+      ) : null}
     </Screen>
   );
 }
@@ -134,6 +176,29 @@ const inputStyle = {
   borderColor: colors.borderSand2,
   borderRadius: radius.input,
   backgroundColor: colors.surfaceWhite,
+  paddingHorizontal: 14,
+  textAlign: 'right' as const,
+  writingDirection: 'rtl' as const,
+  fontFamily: fonts.body,
+  fontSize: 14,
+  color: colors.textInk,
+};
+
+// Password field: same box as inputStyle, but a row so the show/hide eye sits
+// inside it (on the left in RTL).
+const pwWrapStyle = {
+  flexDirection: 'row-reverse' as const,
+  alignItems: 'center' as const,
+  height: 46,
+  borderWidth: 1,
+  borderColor: colors.borderSand2,
+  borderRadius: radius.input,
+  backgroundColor: colors.surfaceWhite,
+};
+
+const pwInputStyle = {
+  flex: 1,
+  height: '100%' as const,
   paddingHorizontal: 14,
   textAlign: 'right' as const,
   writingDirection: 'rtl' as const,

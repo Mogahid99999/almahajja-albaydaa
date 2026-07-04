@@ -1,9 +1,19 @@
 /**
  * Waveform — ~48 thin vertical bars representing the audio waveform.
  * Played portion is brass (#c9a463); unplayed is faint white-teal.
- * Tap anywhere to seek: fraction computed from touch x / container width.
+ *
+ * Draggable scrubber (Issue 7): tap anywhere to seek, OR press-and-drag for fine
+ * seeking. While dragging, the bars + the time label track the finger live and
+ * the actual `onSeek` is committed on release (so we don't fire dozens of seeks
+ * mid-drag). Fraction is computed from touch x / container width, mirrored under
+ * global RTL so a tap lands on the time under the finger.
  */
-import { I18nManager, Pressable, View, type LayoutChangeEvent } from 'react-native';
+import {
+  I18nManager,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useRef, useState } from 'react';
 
 import { arDuration } from '@/lib/format';
@@ -24,33 +34,55 @@ type Props = {
 
 export function Waveform({ positionSec, durationSec, onSeek }: Props) {
   const containerWidthRef = useRef<number>(0);
-  const [containerWidth, setContainerWidth] = useState(0);
+  // Live fraction while a drag is in progress (null = not dragging → follow
+  // playback position). Keeps the bars + time label under the finger.
+  const [dragFraction, setDragFraction] = useState<number | null>(null);
 
-  const playedFraction = durationSec > 0 ? Math.min(1, positionSec / durationSec) : 0;
-  const playedCount = Math.round(BAR_HEIGHTS.length * playedFraction);
+  const playFraction = durationSec > 0 ? Math.min(1, positionSec / durationSec) : 0;
+  const shownFraction = dragFraction ?? playFraction;
+  const playedCount = Math.round(BAR_HEIGHTS.length * shownFraction);
+  const shownPositionSec = dragFraction != null ? dragFraction * durationSec : positionSec;
 
   function handleLayout(e: LayoutChangeEvent) {
-    const w = e.nativeEvent.layout.width;
-    containerWidthRef.current = w;
-    setContainerWidth(w);
+    containerWidthRef.current = e.nativeEvent.layout.width;
   }
 
-  function handlePress(e: { nativeEvent: { locationX: number } }) {
+  /** Touch x → playback fraction [0,1], mirrored under global RTL (0s on right). */
+  function fractionFromX(x: number): number {
     const w = containerWidthRef.current;
-    if (w <= 0 || durationSec <= 0) return;
-    // `locationX` is measured from the physical left, but under global RTL the
-    // bars render right-to-left (0s on the right). Mirror so a tap lands on the
-    // time under the finger instead of its horizontal reflection.
-    const raw = Math.min(1, Math.max(0, e.nativeEvent.locationX / w));
-    const fraction = I18nManager.isRTL ? 1 - raw : raw;
+    if (w <= 0) return 0;
+    const raw = Math.min(1, Math.max(0, x / w));
+    return I18nManager.isRTL ? 1 - raw : raw;
+  }
+
+  function onGrant(e: GestureResponderEvent) {
+    if (durationSec <= 0) return;
+    setDragFraction(fractionFromX(e.nativeEvent.locationX));
+  }
+  function onMove(e: GestureResponderEvent) {
+    if (durationSec <= 0) return;
+    setDragFraction(fractionFromX(e.nativeEvent.locationX));
+  }
+  function onRelease(e: GestureResponderEvent) {
+    if (durationSec <= 0) {
+      setDragFraction(null);
+      return;
+    }
+    const fraction = fractionFromX(e.nativeEvent.locationX);
+    setDragFraction(null);
     onSeek(fraction * durationSec);
   }
 
   return (
     <View>
-      <Pressable
+      <View
         onLayout={handleLayout}
-        onPress={handlePress}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={onGrant}
+        onResponderMove={onMove}
+        onResponderRelease={onRelease}
+        onResponderTerminate={() => setDragFraction(null)}
         accessibilityRole="adjustable"
         accessibilityLabel="شريط التقدم"
         style={{
@@ -58,6 +90,8 @@ export function Waveform({ positionSec, durationSec, onSeek }: Props) {
           alignItems: 'center',
           gap: 2.5,
           height: 48,
+          // Taller invisible touch zone so fine dragging is comfortable.
+          paddingVertical: 10,
         }}
       >
         {BAR_HEIGHTS.map((h, i) => (
@@ -73,7 +107,7 @@ export function Waveform({ positionSec, durationSec, onSeek }: Props) {
             }}
           />
         ))}
-      </Pressable>
+      </View>
 
       {/* Time row below bars */}
       <View
@@ -97,7 +131,7 @@ export function Waveform({ positionSec, durationSec, onSeek }: Props) {
           tabular
           weight="semibold"
         >
-          {arDuration(positionSec)}
+          {arDuration(shownPositionSec)}
         </Txt>
       </View>
     </View>

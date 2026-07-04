@@ -23,6 +23,8 @@ export function useSaveProgress() {
       // The same save feeds daily_listening + badge evaluation (رحلتي العلمية).
       qc.invalidateQueries({ queryKey: queryKeys.journey });
       qc.invalidateQueries({ queryKey: queryKeys.badges });
+      // ...and may flip today's streak state (26.1) — refresh the home card.
+      qc.invalidateQueries({ queryKey: queryKeys.streak });
     },
   });
 }

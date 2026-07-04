@@ -9,8 +9,9 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
-import type { HomeData, FlatSectionNode, SectionPageData, SectionCard, LectureRow } from './types';
+import type { HomeData, FlatSectionNode, SectionPageData, SectionCard, LectureRow, LectureCard } from './types';
 import { resolveAttachmentRows } from './attachments';
+import { getSectionQuizzes } from './quizzes';
 
 export type { HomeData, FlatSectionNode, SectionPageData } from './types';
 
@@ -20,7 +21,7 @@ function coverLetter(stored: string, title: string): string {
   return title.replace(/^ال/, '')[0] ?? title[0] ?? '◆';
 }
 
-/** Home screen: resume card + newly-added rail + sections grid. */
+/** Home screen: resume card + أُضيف حديثاً rail + مختارات rail + sections grid. */
 export async function getHomeData(): Promise<HomeData> {
   if (USE_MOCK) return mock.getHomeData();
 
@@ -53,16 +54,15 @@ export async function getHomeData(): Promise<HomeData> {
     });
   }
 
+  // «أُضيف حديثاً» — newest published lectures, auto-sorted by created_at.
   const { data: newData } = await supabase
     .from('lectures')
     .select('id, title, duration_sec, sheikhs(name), sections(title)')
     .eq('status', 'published')
     .not('section_id', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(5);
-  const newRows = newData ?? [];
-
-  const newlyAdded = newRows.map((l) => {
+    .limit(8);
+  const newlyAdded: LectureCard[] = (newData ?? []).map((l) => {
     const sheikh = Array.isArray(l.sheikhs) ? l.sheikhs[0] : (l.sheikhs as any);
     const sec = Array.isArray(l.sections) ? l.sections[0] : (l.sections as any);
     return {
@@ -70,9 +70,19 @@ export async function getHomeData(): Promise<HomeData> {
       title: l.title,
       sheikhName: sheikh?.name ?? null,
       durationSec: l.duration_sec ?? 0,
-      coverLetter: (sec?.title?.[0]) ?? '◆',
+      coverLetter: sec?.title?.[0] ?? '◆',
     };
   });
+
+  // «مختارات» — the staff-curated ordered list.
+  const { data: featuredData } = await supabase.rpc('get_featured_lectures');
+  const featured: LectureCard[] = (featuredData ?? []).map((l) => ({
+    id: l.lecture_id,
+    title: l.title,
+    sheikhName: l.sheikh_name ?? null,
+    durationSec: l.duration_sec ?? 0,
+    coverLetter: l.section_title?.[0] ?? '◆',
+  }));
 
   const { data: prog } = await supabase
     .from('user_lecture_progress')
@@ -100,7 +110,7 @@ export async function getHomeData(): Promise<HomeData> {
     }
   }
 
-  return { continueListening, newlyAdded, sections };
+  return { continueListening, newlyAdded, featured, sections };
 }
 
 /** Generic section page (rendered at every level of the tree). Student view. */
@@ -191,7 +201,10 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
     .eq('section_id', sectionId)
     .order('order');
 
-  const attachments = await resolveAttachmentRows(attRows as any);
+  const [attachments, quizzes] = await Promise.all([
+    resolveAttachmentRows(attRows as any),
+    getSectionQuizzes(sectionId),
+  ]);
 
   return {
     section: {
@@ -212,6 +225,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
     subsections,
     lectures,
     attachments,
+    quizzes,
   };
 }
 

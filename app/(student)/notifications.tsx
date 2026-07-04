@@ -50,6 +50,8 @@ function NotificationRow({
   item: NotificationItem;
   onPress: () => void;
 }) {
+  // التذكيرات النافعة read apart from activity rows: brass icon + a quiet tag.
+  const isBeneficial = item.type === 'beneficial_reminder';
   return (
     <Pressable
       accessibilityRole="button"
@@ -67,13 +69,25 @@ function NotificationRow({
     >
       {/* Rhombus-framed type icon */}
       <View style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-        <Rhombus size={34} color="rgba(31,74,66,0.08)" />
+        <Rhombus
+          size={34}
+          color={isBeneficial ? 'rgba(201,164,99,0.16)' : 'rgba(31,74,66,0.08)'}
+        />
         <View style={{ position: 'absolute' }}>
-          <Feather name={notificationTypeIcon[item.type]} size={16} color={colors.primaryTeal} />
+          <Feather
+            name={notificationTypeIcon[item.type]}
+            size={16}
+            color={isBeneficial ? colors.accentBrass : colors.primaryTeal}
+          />
         </View>
       </View>
 
       <View style={{ flex: 1 }}>
+        {isBeneficial ? (
+          <Txt size={10.5} weight="semibold" color={colors.accentBrass}>
+            تذكير نافع
+          </Txt>
+        ) : null}
         <Txt size={14} weight="semibold" color={colors.textInk} numberOfLines={1}>
           {item.title}
         </Txt>

@@ -4,15 +4,15 @@
  * RTL layout (right → left):
  *   [RhombusEmblem 40px] [title + sheikh + duration (flex:1)] [DownloadButton]
  *
- * Tapping the row → playLecture(id) to start playback.
+ * Tapping the row → opens the full player page (which auto-starts playback).
  * The DownloadButton in downloaded state lets the user delete the file.
  *
  * Design tokens: manuscript-warm palette, IBM Plex Sans Arabic body, Amiri titles.
  */
 import { Pressable, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { arDuration } from '@/lib/format';
-import { playLecture } from '@/lib/audioController';
 import { colors } from '@/constants/theme';
 import { DownloadButton } from '@/components/DownloadButton';
 import { RhombusEmblem } from '@/components/ui/Rhombus';
@@ -25,12 +25,13 @@ type Props = {
 
 export function DownloadedLectureRow({ lecture }: Props) {
   const { id, title, sheikhName, durationSec } = lecture;
+  const router = useRouter();
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
-      onPress={() => void playLecture(id)}
+      onPress={() => router.push(`/player/${id}`)}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',

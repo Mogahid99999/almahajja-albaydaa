@@ -2,6 +2,7 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
+import { createUser } from './adminUsers';
 import type { SheikhOption } from './types';
 
 export type { SheikhOption } from './types';
@@ -46,4 +47,40 @@ export async function deleteSheikh(id: string): Promise<void> {
   if (USE_MOCK) return mock.deleteSheikh(id);
   const { error } = await supabase.from('sheikhs').delete().eq('id', id);
   if (error) throw error;
+}
+
+/**
+ * Admin (V6): provision a sheikh LOGIN — an auth account with role 'sheikh'
+ * (via the admin-users Edge Function, service-role side) linked to a `sheikhs`
+ * metadata row through `sheikhs.user_id` (created when no row carries the same
+ * name yet). The account lands on /sheikh — the questions inbox.
+ */
+export async function createSheikhAccount(input: {
+  name: string;
+  email: string;
+  password: string;
+}): Promise<void> {
+  if (USE_MOCK) throw new Error('غير متاح في الوضع التجريبي');
+  const name = input.name.trim();
+  const res = await createUser({
+    email: input.email,
+    password: input.password,
+    displayName: name,
+    role: 'sheikh',
+  });
+  const userId = (res?.userId as string | undefined) ?? undefined;
+  if (!userId) return;
+  const { data: existing, error: exErr } = await supabase
+    .from('sheikhs')
+    .select('id')
+    .eq('name', name)
+    .maybeSingle();
+  if (exErr) throw exErr;
+  if (existing) {
+    const { error } = await supabase.from('sheikhs').update({ user_id: userId }).eq('id', existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('sheikhs').insert({ name, user_id: userId });
+    if (error) throw error;
+  }
 }

@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import React, { type ReactNode, useState } from 'react';
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Divider, IconButton, Logo, Rhombus, Txt } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
@@ -27,15 +29,45 @@ import { useSignOut } from '@/hooks/useAuth';
 
 // ─── Nav item config ─────────────────────────────────────────────────────────
 
-type NavKey = 'dashboard' | 'lectures' | 'upload' | 'sections' | 'sheikhs' | 'unclassified';
+type NavKey =
+  | 'dashboard'
+  | 'lectures'
+  | 'upload'
+  | 'sections'
+  | 'sheikhs'
+  | 'featured'
+  | 'unclassified'
+  | 'quizzes'
+  | 'reminders'
+  | 'questions'
+  | 'contributions'
+  | 'analytics'
+  | 'users'
+  | 'settings';
 
-const NAV_ITEMS: { key: NavKey; label: string; href: string; icon: keyof typeof Feather.glyphMap }[] = [
-  { key: 'dashboard', label: 'لوحة المعلومات', href: '/admin', icon: 'grid' },
+// `adminOnly` items are hidden from a ناشر (publisher): analytics, users, and
+// settings touch student data / platform config, which publishers never see.
+const NAV_ITEMS: {
+  key: NavKey;
+  label: string;
+  href: string;
+  icon: keyof typeof Feather.glyphMap;
+  adminOnly?: boolean;
+}[] = [
+  { key: 'dashboard', label: 'لوحة المعلومات', href: '/admin', icon: 'grid', adminOnly: true },
   { key: 'lectures', label: 'المحاضرات', href: '/admin/lectures', icon: 'headphones' },
   { key: 'upload', label: 'رفع محاضرة', href: '/admin/upload', icon: 'upload' },
   { key: 'sections', label: 'الأقسام والشجرة', href: '/admin/sections', icon: 'folder' },
   { key: 'sheikhs', label: 'المشايخ', href: '/admin/sheikhs', icon: 'users' },
+  { key: 'featured', label: 'المختارات', href: '/admin/featured', icon: 'bookmark' },
+  { key: 'quizzes', label: 'الاختبارات', href: '/admin/quizzes', icon: 'check-square' },
   { key: 'unclassified', label: 'المحاضرات الواردة', href: '/admin/unclassified', icon: 'inbox' },
+  { key: 'reminders', label: 'التذكيرات النافعة', href: '/admin/reminders', icon: 'star' },
+  { key: 'questions', label: 'مساحة الأسئلة', href: '/admin/questions', icon: 'help-circle', adminOnly: true },
+  { key: 'contributions', label: 'مشاركات الدارسين', href: '/admin/contributions', icon: 'message-square', adminOnly: true },
+  { key: 'analytics', label: 'تحليلات التقدم', href: '/admin/analytics', icon: 'trending-up', adminOnly: true },
+  { key: 'users', label: 'إدارة المستخدمين', href: '/admin/users', icon: 'user-check', adminOnly: true },
+  { key: 'settings', label: 'الإعدادات وعن المنصة', href: '/admin/settings', icon: 'settings', adminOnly: true },
 ];
 
 /** Below this width the sidebar collapses into a drawer + single-column content. */
@@ -61,11 +93,15 @@ function SidebarBody({
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const signOut = useSignOut();
+  const insets = useSafeAreaInsets();
+
+  const isPublisher = user?.role === 'publisher';
+  const navItems = NAV_ITEMS.filter((item) => !item.adminOnly || !isPublisher);
 
   return (
     <>
       {/* Logo + title */}
-      <View style={styles.sidebarHeader}>
+      <View style={[styles.sidebarHeader, { paddingTop: 20 + insets.top }]}>
         <Logo size={36} />
         <View style={{ marginRight: 10, flex: 1 }}>
           <Txt weight="display" size={16} color={colors.onTealPrimary}>
@@ -79,9 +115,13 @@ function SidebarBody({
 
       <Divider />
 
-      {/* Nav items */}
-      <View style={styles.nav}>
-        {NAV_ITEMS.map((item) => {
+      {/* Nav items — scrollable so a long list never hides behind the nav bar */}
+      <ScrollView
+        style={styles.nav}
+        contentContainerStyle={styles.navContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {navItems.map((item) => {
           const isActive = item.key === active;
           return (
             <Pressable
@@ -114,14 +154,31 @@ function SidebarBody({
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
-      {/* User chip pinned at bottom */}
-      <View style={styles.userChip}>
+      {/* User chip pinned at bottom (clears the Android nav bar via safe inset) */}
+      <View style={[styles.userChip, { paddingBottom: 20 + insets.bottom }]}>
         <Divider />
         <View style={styles.userRow}>
           <Pressable
-            onPress={() => signOut.mutate()}
+            onPress={async () => {
+              // Close the drawer first so navigation isn't hidden under the Modal,
+              // then navigate EXPLICITLY once the session flip completes — the
+              // drawer unmounts this button, so nothing here may rely on
+              // component lifetime (mutateAsync's promise survives unmount).
+              onNavigate?.();
+              try {
+                await signOut.mutateAsync();
+              } catch {
+                // Session is cleared locally even on server errors.
+              }
+              router.replace(
+                (Platform.OS === 'web' ? '/sign-in' : '/') as Parameters<
+                  typeof router.replace
+                >[0],
+              );
+            }}
+            disabled={signOut.isPending}
             accessibilityRole="button"
             accessibilityLabel="تسجيل الخروج"
             style={({ pressed }) => [styles.signOutBtn, pressed && { opacity: 0.7 }]}
@@ -133,7 +190,7 @@ function SidebarBody({
               {user?.email ?? '—'}
             </Txt>
             <Txt weight="regular" size={11} color={colors.onTealSecondary}>
-              مدير
+              {isPublisher ? 'ناشر' : 'مدير'}
             </Txt>
           </View>
           <View style={styles.userAvatar}>
@@ -151,13 +208,14 @@ export function AdminShell({ active, breadcrumb, children }: AdminShellProps) {
   const { width } = useWindowDimensions();
   const compact = width < COMPACT_BREAKPOINT;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.root}>
       {/* ── Left content area (fills remaining space) ── */}
       <View style={styles.main}>
         {/* Topbar */}
-        <View style={styles.topbar}>
+        <View style={[styles.topbar, { height: TOPBAR_H + insets.top, paddingTop: insets.top }]}>
           <View style={styles.topbarStart}>
             {compact ? (
               <IconButton
@@ -183,7 +241,11 @@ export function AdminShell({ active, breadcrumb, children }: AdminShellProps) {
         {/* Scrollable content */}
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            compact && styles.scrollContentCompact,
+            { paddingBottom: 60 + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {children}
@@ -249,8 +311,12 @@ const styles = StyleSheet.create({
 
   nav: {
     flex: 1,
+  } as ViewStyle,
+
+  navContent: {
     paddingTop: 8,
     paddingHorizontal: 12,
+    paddingBottom: 8,
     gap: 2,
   } as ViewStyle,
 
@@ -345,6 +411,12 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.adminContent,
     paddingBottom: 60,
+  } as ViewStyle,
+
+  // Phone: tighter gutters so wide content (rails, cards) never clips sideways.
+  scrollContentCompact: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
   } as ViewStyle,
 
   // ── Compact drawer ──

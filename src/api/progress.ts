@@ -10,7 +10,6 @@ import {
   presentCompletionPraise,
   presentGoalCongrats,
   remindersSupported,
-  scheduleResumeReminders,
   scheduleSeriesReminder,
 } from '@/lib/notifications';
 import { tryClaimGoalCongrats } from './notifications';
@@ -155,19 +154,25 @@ export async function saveLectureProgress(args: {
 
   // Re-evaluate badges only when state can actually change: a new listened
   // delta (streak/active-days) or a fresh completion (completed-count badges).
+  // The server decides whether the day becomes streak-meaningful (26.1):
+  // today's accumulated seconds ≥ 120 or a completion — never per-tick JS.
   if (delta > 0 || justCompleted) {
-    return recordListening({ lectureId, deltaSec: delta });
+    return recordListening({ lectureId, deltaSec: delta, completed: justCompleted });
   }
   return [];
 }
 
 /**
- * Drive every local notification off the single save seam (all gated by their
+ * Drive the local notifications off the single save seam (all gated by their
  * per-type pref, a missing row = the type's default):
- *  - resume reminder  — in-progress → schedule +24h; completed → cancel.
  *  - completion praise — immediate, only on the crossing into completed.
  *  - series reminder  — on completion, continue the section if more remain;
  *    otherwise cancel it (the student finished the last lesson).
+ *
+ * The resume ladder is NO LONGER scheduled here: device TIME_INTERVAL alarms
+ * are dropped by Samsung Doze, so V7 moved it server-side (migration 0035,
+ * dispatch_resume_nudges → push). This seam only CANCELS any pending device
+ * ladder (from this or older app versions) so stale local reminders die out.
  *
  * Fully best-effort: short-circuits on platforms where reminders can't fire so
  * we don't run the pref/title lookups on web / simulator, and swallows all
@@ -187,13 +192,7 @@ async function maybeUpdateReminders(
     const { data: prefRows } = await supabase
       .from('notification_prefs')
       .select('type, enabled')
-      .in('type', [
-        'resume_reminder',
-        'noncompletion_gentle',
-        'completion_praise',
-        'resume_series',
-        'weekly_goal',
-      ]);
+      .in('type', ['completion_praise', 'resume_series', 'weekly_goal']);
     const overrides = new Map((prefRows ?? []).map((r) => [r.type, r.enabled]));
     const prefOn = (type: NotificationType) =>
       overrides.has(type) ? overrides.get(type)! : defaultNotificationEnabled(type);
@@ -209,18 +208,10 @@ async function maybeUpdateReminders(
     const section = Array.isArray(lec?.sections) ? lec?.sections[0] : lec?.sections;
     const sectionTitle = (section as { title?: string } | null)?.title ?? 'سلسلتك العلمية';
 
-    // 1) Resume ladder (per lecture): first nudge + long-gap + non-completion.
-    if (completed) {
-      await cancelResumeReminder(lectureId);
-    } else if (prefOn('resume_reminder')) {
-      await scheduleResumeReminders({
-        lectureId,
-        lectureTitle: title,
-        positionSec,
-        durationSec,
-        noncompletionEnabled: prefOn('noncompletion_gentle'),
-      });
-    }
+    // 1) Clear any pending DEVICE resume ladder for this lecture — the server
+    //    cron (0035) owns resume nudges now, and touching the lecture resets
+    //    its idle clock server-side automatically (updated_at).
+    await cancelResumeReminder(lectureId);
 
     // 2) Unfinished-series reminder — for ANY started-but-unfinished section in
     //    this lecture's subtree, not only on completion. Re-evaluated when a

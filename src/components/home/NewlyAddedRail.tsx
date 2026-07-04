@@ -1,9 +1,9 @@
 import { Pressable, ScrollView, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import type { LectureCard } from '@/api/types';
 import { colors, radius, spacing } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
-import { playLecture } from '@/lib/audioController';
 import { SectionTitle, Txt } from '@/components/ui';
 
 /** Cover tints matching the design reference — cycled by index. */
@@ -19,16 +19,22 @@ type Props = {
 };
 
 /**
- * "أُضيف حديثاً" — horizontally scrolling rail of newly-added lecture cards.
- * Each card is 158px wide. Tapping a card starts/toggles playback.
+ * "أُضيف حديثاً" — horizontally scrolling rail of the newest published lectures
+ * (auto-sorted by created_at). Each card is 158px wide; tapping opens the player.
+ * Renders nothing when the list is empty.
  */
 export function NewlyAddedRail({ lectures }: Props) {
+  const router = useRouter();
   if (lectures.length === 0) return null;
 
   return (
     <View style={{ marginTop: 28 }}>
       <View style={{ paddingHorizontal: spacing.screenH }}>
-        <SectionTitle title="أُضيف حديثاً" actionLabel="عرض الكل" />
+        <SectionTitle
+          title="أُضيف حديثاً"
+          actionLabel="عرض الكل"
+          onAction={() => router.push('/(student)/recent')}
+        />
       </View>
 
       <ScrollView
@@ -44,9 +50,7 @@ export function NewlyAddedRail({ lectures }: Props) {
       >
         {lectures.map((lecture, idx) => {
           const tint = COVER_TINTS[idx % COVER_TINTS.length]!;
-          return (
-            <NewlyAddedCard key={lecture.id} lecture={lecture} tint={tint} />
-          );
+          return <NewlyAddedCard key={lecture.id} lecture={lecture} tint={tint} />;
         })}
       </ScrollView>
     </View>
@@ -60,13 +64,11 @@ function NewlyAddedCard({
   lecture: LectureCard;
   tint: { from: string; to: string };
 }) {
-  function handlePress() {
-    void playLecture(lecture.id);
-  }
+  const router = useRouter();
 
   return (
     <Pressable
-      onPress={handlePress}
+      onPress={() => router.push(`/player/${lecture.id}`)}
       accessibilityRole="button"
       accessibilityLabel={`تشغيل: ${lecture.title}`}
       style={({ pressed }) => ({ width: 158, opacity: pressed ? 0.85 : 1 })}

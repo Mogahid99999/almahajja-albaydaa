@@ -8,9 +8,10 @@
 import { Feather } from '@expo/vector-icons';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
-import { Txt, IconButton } from '@/components/ui';
+import { Txt } from '@/components/ui';
 import { DownloadButton } from '@/components/DownloadButton';
 import { toArabicDigits } from '@/lib/format';
 import { setRate } from '@/lib/audioController';
@@ -35,6 +36,7 @@ type Props = {
 
 export function PlayerUtilityBar({ lectureId, rate }: Props) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   function cycleRate() {
     const idx = PLAYBACK_RATES.indexOf(rate);
@@ -48,7 +50,8 @@ export function PlayerUtilityBar({ lectureId, rate }: Props) {
         position: 'absolute',
         left: 18,
         right: 18,
-        bottom: 26,
+        // Sit above the system nav bar / gesture area (Issue 2).
+        bottom: 26 + insets.bottom,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',

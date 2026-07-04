@@ -1,9 +1,9 @@
 import { Pressable, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import type { ResumeLecture } from '@/api/types';
 import { colors, radius, shadows } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
-import { playLecture } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 import { ConcentricMotif, ProgressBar, RhombusEmblem, Txt } from '@/components/ui';
 
@@ -17,6 +17,7 @@ type Props = {
  */
 export function ContinueCard({ continueListening }: Props) {
   const { currentLectureId, isPlaying } = usePlayerStore();
+  const router = useRouter();
 
   if (!continueListening) return null;
 
@@ -25,7 +26,7 @@ export function ContinueCard({ continueListening }: Props) {
   const progress = durationSec > 0 ? positionSec / durationSec : 0;
 
   function handlePress() {
-    void playLecture(id);
+    router.push(`/player/${id}`);
   }
 
   return (

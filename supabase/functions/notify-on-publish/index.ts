@@ -52,6 +52,21 @@ Deno.serve(async (req) => {
   if (error) return json({ error: error.message }, 500);
   if (!tokens?.length) return json({ skipped: "no device tokens" }, 200);
 
+  // Launcher badge (Issue 8): a "new lesson" push carries the recipient's unread
+  // new_lecture count, so the app icon shows how many new lessons await. The row
+  // is already inserted (webhook fires post-INSERT), so this count includes it.
+  // Other notification types omit `badge`, leaving the existing count untouched.
+  let badge: number | undefined;
+  if (row.type === "new_lecture") {
+    const { count } = await supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", row.user_id)
+      .eq("type", "new_lecture")
+      .is("read_at", null);
+    if (typeof count === "number") badge = count;
+  }
+
   // Gently audible (the §14 silent choice was reversed — user-approved). Route to
   // the SAME 'default-v2' channel the local notifications use (importance HIGH +
   // default system sound, no vibration) so a new-content push reaches every
@@ -66,6 +81,7 @@ Deno.serve(async (req) => {
     sound: "default",
     channelId: "default-v2",
     priority: "high",
+    ...(badge !== undefined ? { badge } : {}),
   }));
 
   const res = await fetch(EXPO_PUSH_URL, {

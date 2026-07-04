@@ -1,8 +1,10 @@
 /**
- * Admin dashboard landing — /admin
+ * Admin dashboard landing — /admin  (admin only; publishers are redirected).
  *
- * Stat cards from live hooks, quick-link cards, latest lectures list.
- * All numerals via arNum. Calm, no charts.
+ * Calm number tiles from live SECURITY DEFINER RPCs (no charts, no competitive
+ * framing) + two short "top" lists, then quick links and the latest lectures.
+ * All numerals via arNum. Cards flex-wrap so the page never scrolls sideways
+ * on a phone.
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -10,13 +12,18 @@ import React from 'react';
 import { Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
-import { Card, Divider, Rhombus, Txt } from '@/components/ui';
-import { colors, fonts, radius, shadows, spacing } from '@/constants/theme';
+import { Card, Divider, Txt } from '@/components/ui';
+import { colors, radius } from '@/constants/theme';
 import { useAdminLectures, useUnclassifiedLectures } from '@/hooks/useAdmin';
-import { useSectionsFlat } from '@/hooks/useSections';
-import { arDuration, arNum } from '@/lib/format';
+import { useAdminStats } from '@/hooks/useAdminStats';
+import { useAdminOnly } from '@/hooks/useAdminGuard';
+import { arDuration, arNum, toArabicDigits } from '@/lib/format';
 
-// ─── Stat card ───────────────────────────────────────────────────────────────
+function arHours(h: number): string {
+  return `${toArabicDigits(String(h).replace('.', '٫'))} ساعة`;
+}
+
+// ─── Stat tile ────────────────────────────────────────────────────────────────
 
 interface StatCardProps {
   label: string;
@@ -36,13 +43,9 @@ function StatCard({ label, value, icon, accent = false, href }: StatCardProps) {
           { backgroundColor: accent ? colors.primaryTeal : colors.surfaceInset },
         ]}
       >
-        <Feather
-          name={icon}
-          size={18}
-          color={accent ? colors.onTealPrimary : colors.textMuted}
-        />
+        <Feather name={icon} size={18} color={accent ? colors.onTealPrimary : colors.textMuted} />
       </View>
-      <Txt weight="display" size={28} color={colors.primaryTeal} style={styles.statValue}>
+      <Txt weight="display" size={26} color={colors.primaryTeal} style={styles.statValue}>
         {value}
       </Txt>
       <Txt size={12} color={colors.textMuted}>
@@ -54,23 +57,71 @@ function StatCard({ label, value, icon, accent = false, href }: StatCardProps) {
   return (
     <Pressable
       onPress={() => router.push(href as Parameters<typeof router.push>[0])}
-      style={({ pressed }) => pressed && { opacity: 0.85 }}
+      style={({ pressed }) => [styles.statPressable, pressed && { opacity: 0.85 }]}
     >
       {inner}
     </Pressable>
   );
 }
 
-// ─── Quick link card ─────────────────────────────────────────────────────────
+// ─── Top list card ────────────────────────────────────────────────────────────
 
-interface QuickLinkProps {
+function TopList({
+  title,
+  icon,
+  rows,
+  empty,
+}: {
+  title: string;
+  icon: keyof typeof Feather.glyphMap;
+  rows: { label: string; value: string }[];
+  empty: string;
+}) {
+  return (
+    <Card padded={false} style={styles.topCard}>
+      <View style={styles.topHeader}>
+        <Feather name={icon} size={16} color={colors.primaryTeal} />
+        <Txt weight="semibold" size={14} color={colors.textInk} style={{ marginRight: 8 }}>
+          {title}
+        </Txt>
+      </View>
+      <Divider />
+      {rows.length === 0 ? (
+        <Txt size={12} color={colors.textMuted} align="center" style={{ padding: 16 }}>
+          {empty}
+        </Txt>
+      ) : (
+        rows.map((r, i) => (
+          <React.Fragment key={`${r.label}-${i}`}>
+            <View style={styles.topRow}>
+              <Txt size={12} color={colors.textFaint} tabular>
+                {r.value}
+              </Txt>
+              <Txt size={13} color={colors.textInk} numberOfLines={1} style={{ flex: 1 }}>
+                {r.label}
+              </Txt>
+            </View>
+            {i < rows.length - 1 && <Divider />}
+          </React.Fragment>
+        ))
+      )}
+    </Card>
+  );
+}
+
+// ─── Quick link ───────────────────────────────────────────────────────────────
+
+function QuickLink({
+  title,
+  desc,
+  href,
+  icon,
+}: {
   title: string;
   desc: string;
   href: string;
   icon: keyof typeof Feather.glyphMap;
-}
-
-function QuickLink({ title, desc, href, icon }: QuickLinkProps) {
+}) {
   const router = useRouter();
   return (
     <Pressable
@@ -93,40 +144,75 @@ function QuickLink({ title, desc, href, icon }: QuickLinkProps) {
   );
 }
 
-// ─── Main screen ─────────────────────────────────────────────────────────────
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
+const DASH = '—';
 
 export default function AdminHome() {
+  useAdminOnly();
+  const { data: stats } = useAdminStats();
   const { data: lectures = [] } = useAdminLectures();
   const { data: unclassified = [] } = useUnclassifiedLectures();
-  const { data: sections = [] } = useSectionsFlat();
 
-  const totalLectures = lectures.length;
   const draftCount = lectures.filter((l) => l.status === 'draft').length;
-  const publishedCount = lectures.filter((l) => l.status === 'published').length;
   const incomingCount = unclassified.length;
-  const sectionsCount = sections.length;
+  const latest = lectures.filter((l) => l.status === 'published').slice(0, 5);
 
-  const latest = [...lectures]
-    .filter((l) => l.status === 'published')
-    .slice(0, 5);
+  const n = (v: number | undefined) => (v === undefined ? DASH : arNum(v));
+  const h = (v: number | undefined) => (v === undefined ? DASH : arHours(v));
 
   return (
     <AdminShell active="dashboard" breadcrumb="لوحة المعلومات">
-      {/* Page heading */}
       <Txt weight="display" size={27} color={colors.primaryTeal} style={styles.pageTitle}>
         لوحة المعلومات
       </Txt>
       <Txt size={13} color={colors.textMuted} style={styles.pageSubtitle}>
-        نظرة عامة على محتوى المنصة
+        نظرة عامة على المنصة والطلاب
       </Txt>
 
-      {/* Stat cards */}
+      {/* People */}
+      <Txt weight="semibold" size={14} color={colors.textInk} style={styles.groupHeading}>
+        الطلاب
+      </Txt>
       <View style={styles.statsRow}>
-        <StatCard label="إجمالي المحاضرات" value={arNum(totalLectures)} icon="headphones" accent href="/admin/lectures" />
-        <StatCard label="منشورة" value={arNum(publishedCount)} icon="check-circle" href="/admin/lectures" />
+        <StatCard label="إجمالي الطلاب" value={n(stats?.totalUsers)} icon="users" accent href="/admin/users" />
+        <StatCard label="المسجّلون" value={n(stats?.registeredUsers)} icon="user-check" href="/admin/users" />
+        <StatCard label="النشطون اليوم" value={n(stats?.activeToday)} icon="activity" href="/admin/users" />
+        <StatCard label="الجدد هذا الأسبوع" value={n(stats?.newUsersWeek)} icon="user-plus" href="/admin/users" />
+        <StatCard label="الجدد هذا الشهر" value={n(stats?.newUsersMonth)} icon="calendar" href="/admin/users" />
+      </View>
+
+      {/* Content + listening */}
+      <Txt weight="semibold" size={14} color={colors.textInk} style={styles.groupHeading}>
+        المحتوى والاستماع
+      </Txt>
+      <View style={styles.statsRow}>
+        <StatCard label="محاضرات منشورة" value={n(stats?.lecturesPublished)} icon="headphones" href="/admin/lectures" />
+        <StatCard label="الأقسام" value={n(stats?.sectionsCount)} icon="folder" href="/admin/sections" />
+        <StatCard label="اختبارات منشورة" value={n(stats?.publishedQuizzes)} icon="check-square" href="/admin/quizzes" />
         <StatCard label="مسودة" value={arNum(draftCount)} icon="edit-3" href="/admin/lectures" />
         <StatCard label="واردة للمراجعة" value={arNum(incomingCount)} icon="inbox" href="/admin/unclassified" />
-        <StatCard label="الأقسام" value={arNum(sectionsCount)} icon="folder" href="/admin/sections" />
+        <StatCard label="ساعات الاستماع" value={h(stats?.listenHoursTotal)} icon="clock" />
+        <StatCard label="الاستماع هذا الشهر" value={h(stats?.listenHoursMonth)} icon="trending-up" />
+      </View>
+
+      {/* Top lists */}
+      <View style={styles.topGrid}>
+        <TopList
+          title="أكثر الأقسام استماعًا"
+          icon="bar-chart-2"
+          empty="لا استماع بعد."
+          rows={(stats?.topSections ?? []).map((s) => ({ label: s.title, value: arHours(s.hours) }))}
+        />
+        <TopList
+          title="أكثر الاختبارات حلًّا"
+          icon="award"
+          empty="لا محاولات بعد."
+          rows={(stats?.topQuizzes ?? []).map((q) => ({
+            label: q.title,
+            value: `${arNum(q.attempts)} محاولة`,
+          }))}
+        />
       </View>
 
       {/* Quick links */}
@@ -134,33 +220,15 @@ export default function AdminHome() {
         إجراءات سريعة
       </Txt>
       <Card padded={false} style={styles.quickLinksCard}>
-        <QuickLink
-          title="إدارة المحاضرات"
-          desc="المنشورة والمسودات والواردة — شغّل وانشر وعدّل واحذف"
-          href="/admin/lectures"
-          icon="headphones"
-        />
+        <QuickLink title="إدارة المحاضرات" desc="المنشورة والمسودات والواردة" href="/admin/lectures" icon="headphones" />
         <Divider />
-        <QuickLink
-          title="رفع محاضرة جديدة"
-          desc="أضف محاضرة صوتية وصنّفها في الشجرة"
-          href="/admin/upload"
-          icon="upload"
-        />
+        <QuickLink title="رفع محاضرة جديدة" desc="أضف محاضرة صوتية وصنّفها في الشجرة" href="/admin/upload" icon="upload" />
         <Divider />
-        <QuickLink
-          title="الأقسام والشجرة"
-          desc="استعرض وأضف أقساماً للمحتوى"
-          href="/admin/sections"
-          icon="folder"
-        />
+        <QuickLink title="تحليلات التقدم العلمي" desc="إكمال الطلاب ومتوسط التقدم في الأقسام" href="/admin/analytics" icon="trending-up" />
         <Divider />
-        <QuickLink
-          title="المحاضرات الواردة"
-          desc={`${arNum(incomingCount)} محاضرة تنتظر التصنيف`}
-          href="/admin/unclassified"
-          icon="inbox"
-        />
+        <QuickLink title="مساحة الأسئلة" desc="أسئلة الطلاب: أجب أو أخفِ أو احذف أو احظر" href="/admin/questions" icon="help-circle" />
+        <Divider />
+        <QuickLink title="إدارة المستخدمين" desc="الحسابات والحالة وكلمات السر" href="/admin/users" icon="user-check" />
       </Card>
 
       {/* Latest lectures */}
@@ -191,23 +259,9 @@ export default function AdminHome() {
                     </Txt>
                   )}
                 </View>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    {
-                      backgroundColor:
-                        lec.status === 'published'
-                          ? 'rgba(31,138,91,0.1)'
-                          : 'rgba(176,137,79,0.12)',
-                    },
-                  ]}
-                >
-                  <Txt
-                    size={11}
-                    color={lec.status === 'published' ? colors.stateSuccess : colors.accentBrassMuted}
-                    weight="semibold"
-                  >
-                    {lec.status === 'published' ? 'منشورة' : 'مسودة'}
+                <View style={[styles.statusBadge, { backgroundColor: 'rgba(31,138,91,0.1)' }]}>
+                  <Txt size={11} color={colors.stateSuccess} weight="semibold">
+                    منشورة
                   </Txt>
                 </View>
               </View>
@@ -223,23 +277,31 @@ export default function AdminHome() {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  pageTitle: {
-    marginBottom: 4,
-  } as TextStyle,
+  pageTitle: { marginBottom: 4 } as TextStyle,
+  pageSubtitle: { marginBottom: 24 } as TextStyle,
 
-  pageSubtitle: {
-    marginBottom: 28,
-  } as TextStyle,
+  groupHeading: { marginBottom: 12, marginTop: 4 } as TextStyle,
 
   statsRow: {
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
-    gap: 14,
-    marginBottom: 32,
+    gap: 12,
+    marginBottom: 24,
+  } as ViewStyle,
+
+  // Responsive: 2-up on a phone, more per row on wide — never a fixed width.
+  statPressable: {
+    flexBasis: 150,
+    flexGrow: 1,
+    minWidth: 140,
+    maxWidth: 260,
   } as ViewStyle,
 
   statCard: {
-    width: 160,
+    flexBasis: 150,
+    flexGrow: 1,
+    minWidth: 140,
+    maxWidth: 260,
     gap: 8,
     alignItems: 'flex-end',
   } as ViewStyle,
@@ -252,19 +314,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   } as ViewStyle,
 
-  statValue: {
-    lineHeight: 34,
-  } as TextStyle,
+  statValue: { lineHeight: 32 } as TextStyle,
 
-  sectionHeading: {
-    marginBottom: 12,
-    marginTop: 4,
-  } as TextStyle,
-
-  quickLinksCard: {
+  topGrid: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: 14,
     marginBottom: 28,
+  } as ViewStyle,
+
+  topCard: {
+    flexBasis: 260,
+    flexGrow: 1,
+    minWidth: 240,
     overflow: 'hidden',
   } as ViewStyle,
+
+  topHeader: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    padding: 14,
+  } as ViewStyle,
+
+  topRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  } as ViewStyle,
+
+  sectionHeading: { marginBottom: 12, marginTop: 4 } as TextStyle,
+
+  quickLinksCard: { marginBottom: 28, overflow: 'hidden' } as ViewStyle,
 
   quickLink: {
     flexDirection: 'row-reverse',
@@ -289,10 +371,7 @@ const styles = StyleSheet.create({
     gap: 12,
   } as ViewStyle,
 
-  lectureDuration: {
-    width: 52,
-    textAlign: 'left',
-  } as TextStyle,
+  lectureDuration: { width: 52, textAlign: 'left' } as TextStyle,
 
   statusBadge: {
     borderRadius: radius.pill,

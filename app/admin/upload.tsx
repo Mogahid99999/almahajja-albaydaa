@@ -19,6 +19,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -40,6 +41,7 @@ import {
   TranscodeError,
   type TranscodeResult,
 } from '@/lib/audioTranscode';
+import { extractAudioDuration } from '@/lib/audioDuration';
 import { getDocumentAsync } from '@/lib/documentPicker';
 import { arDuration, arFileSize, toArabicDigits } from '@/lib/format';
 
@@ -52,27 +54,6 @@ type PickedAudio = {
   mimeType?: string | null;
   size: number | null;
 };
-
-/**
- * Read an audio file's duration (seconds) from its metadata. Web-only (the admin
- * surface) — uses an <audio> element; returns null elsewhere so the insert just
- * stores a null duration. Lets `duration_sec` be filled at upload time.
- */
-function extractDuration(uri: string): Promise<number | null> {
-  if (typeof document === 'undefined') return Promise.resolve(null);
-  return new Promise((resolve) => {
-    const audio = document.createElement('audio');
-    audio.preload = 'metadata';
-    const finish = (v: number | null) => {
-      audio.src = '';
-      resolve(v);
-    };
-    audio.onloadedmetadata = () =>
-      finish(Number.isFinite(audio.duration) ? Math.round(audio.duration) : null);
-    audio.onerror = () => finish(null);
-    audio.src = uri;
-  });
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -101,6 +82,9 @@ export default function UploadScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const narrow = width < 900;
+  // Client-side MP3 compression (ffmpeg.wasm) is web-only. On a phone the admin
+  // uploads the picked file as-is — no transcode, no submit-block (Issue 6).
+  const isWeb = Platform.OS === 'web';
 
   const { data: sheikhs = [] } = useSheikhs();
   const createLecture = useCreateLecture();
@@ -150,8 +134,10 @@ export default function UploadScreen() {
 
   const converting = convert.state === 'converting';
   const busy = createLecture.isPending || converting;
-  // Audio (if picked) must finish compressing before it can be saved.
-  const audioBlocksSubmit = audioFile != null && convert.state !== 'done';
+  // Web only: a picked file must finish compressing before it can be saved. On
+  // native there's no compression step, so nothing blocks submit but the upload
+  // itself (createLecture.isPending) — see Issue 6.
+  const audioBlocksSubmit = isWeb && audioFile != null && convert.state !== 'done';
 
   const submitLabel = createLecture.isPending
     ? 'جارٍ الرفع...'
@@ -186,7 +172,7 @@ export default function UploadScreen() {
         }
         setConvert({ state: 'done', progress: 1, result, error: null });
         // mp3 output is always decodable — fill duration if the original didn't.
-        void extractDuration(result.uri).then((d) => {
+        void extractAudioDuration(result.uri).then((d) => {
           if (d != null) setAudioDuration((cur) => cur ?? d);
         });
       },
@@ -234,9 +220,10 @@ export default function UploadScreen() {
     setAudioFile(picked);
     setAudioDuration(null);
     // Pull the duration from metadata so duration_sec is set on insert.
-    void extractDuration(asset.uri).then(setAudioDuration);
-    // Compress in the background while the admin fills the rest of the form.
-    startConversion(picked);
+    void extractAudioDuration(asset.uri).then(setAudioDuration);
+    // Compress in the background while the admin fills the rest of the form —
+    // web only; on native the original file is uploaded as-is (Issue 6).
+    if (isWeb) startConversion(picked);
   }
 
   /** Remove the picked audio and cancel any in-flight conversion. */
@@ -255,16 +242,26 @@ export default function UploadScreen() {
     // Never upload an unconverted file: if audio was picked it must have finished
     // compressing (the row + disabled button communicate the converting/error state).
     if (audioBlocksSubmit) return;
-    // The compressed MP3 is the only thing that goes to storage; the original is
-    // never uploaded (so "delete original after conversion" is satisfied for free).
-    const uploadAudio: PickedAudio | null = convert.result
-      ? {
-          uri: convert.result.uri,
-          name: convert.result.name,
-          mimeType: convert.result.mimeType,
-          size: convert.result.size,
-        }
-      : null;
+    // Web: the compressed MP3 is the only thing that goes to storage (the
+    // original is never uploaded). Native: no compression — upload the picked
+    // file as-is (Issue 6).
+    const uploadAudio: PickedAudio | null = isWeb
+      ? convert.result
+        ? {
+            uri: convert.result.uri,
+            name: convert.result.name,
+            mimeType: convert.result.mimeType,
+            size: convert.result.size,
+          }
+        : null
+      : audioFile
+        ? {
+            uri: audioFile.uri,
+            name: audioFile.name,
+            mimeType: audioFile.mimeType,
+            size: audioFile.size,
+          }
+        : null;
     // Without a section the lecture can't be shown to students even if
     // "published" — so it lands in the واردة (unclassified) review queue
     // instead, where it can be classified later. (Fixes the "lost upload" bug.)
@@ -404,9 +401,11 @@ export default function UploadScreen() {
                   <>
                     <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
                       {[
-                        convert.result ? arFileSize(convert.result.size) : null,
+                        (convert.result ? convert.result.size : audioFile.size) != null
+                          ? arFileSize((convert.result ? convert.result.size : audioFile.size)!)
+                          : null,
                         audioDuration ? arDuration(audioDuration) : null,
-                        'جاهز للرفع · MP3',
+                        isWeb ? 'جاهز للرفع · MP3' : 'جاهز للرفع',
                       ]
                         .filter(Boolean)
                         .join(' · ')}
@@ -449,7 +448,9 @@ export default function UploadScreen() {
                   اختر ملف الصوت
                 </Txt>
                 <Txt size={11} color={colors.textGhost} style={{ marginTop: 3 }}>
-                  أي صيغة صوتية — يُضغط الملف تلقائيًا إلى MP3 خفيف للكلام
+                  {isWeb
+                    ? 'أي صيغة صوتية — يُضغط الملف تلقائيًا إلى MP3 خفيف للكلام'
+                    : 'أي صيغة صوتية — تُرفع كما هي'}
                 </Txt>
               </Pressable>
             </>
@@ -565,7 +566,7 @@ export default function UploadScreen() {
       </View>
 
       {/* ── Right rail ── */}
-      <View style={[styles.rightRail, !narrow && styles.rightRailSticky]}>
+      <View style={[styles.rightRail, narrow && styles.rightRailNarrow, !narrow && styles.rightRailSticky]}>
         {/* Publish status card */}
         <Card style={styles.railCard}>
           <Txt weight="semibold" size={14} color={colors.textInk} style={styles.cardTitle}>
@@ -732,6 +733,10 @@ const styles = StyleSheet.create({
   rightRail: {
     width: 320,
     gap: 16,
+  } as ViewStyle,
+
+  rightRailNarrow: {
+    width: '100%',
   } as ViewStyle,
 
   rightRailSticky: {

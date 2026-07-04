@@ -27,6 +27,10 @@ let currentSectionId: string | null = null;
 let currentOrder = 0;
 let lastSavedAt = 0;
 let audioModeSet = false;
+// A programmatic seek can make the player emit `didJustFinish` (e.g. it clamps a
+// past-the-end target to the end). Finishes within this window are ignored so a
+// seek never trips completion / auto-advance (Issue 7).
+let seekGuardUntil = 0;
 
 const store = () => usePlayerStore.getState();
 
@@ -96,9 +100,23 @@ function syncLockScreen() {
 
 function onStatus(status: AudioStatus) {
   const s = store();
-  if (status.duration && status.duration > 0) {
-    currentDuration = status.duration;
-    s.setDuration(status.duration);
+  // Duration truth (Issue 7): for a STREAMING source `status.duration` is often
+  // 0/absent, so also fall back to the player's own known duration. Whichever is
+  // a real (>0) value is the single source of truth — the DB `duration_sec` is
+  // only a seed and is frequently inaccurate, which would otherwise make the
+  // waveform map a tap to the wrong absolute second (and over-seek past the end).
+  const reported =
+    status.duration && status.duration > 0
+      ? status.duration
+      : player?.duration && player.duration > 0
+        ? player.duration
+        : 0;
+  if (reported > 0 && reported !== currentDuration) {
+    const wasSeed = currentDuration <= 0 || Math.abs(reported - currentDuration) > 1;
+    currentDuration = reported;
+    s.setDuration(reported);
+    // Refresh the lock-screen scrubber max the first time the real length lands.
+    if (wasSeed) syncLockScreen();
   }
   s.setPosition(status.currentTime ?? 0);
   s.setPlaying(status.playing);
@@ -112,6 +130,9 @@ function onStatus(status: AudioStatus) {
   }
 
   if (status.didJustFinish && currentId) {
+    // Ignore a finish that a just-issued seek produced (Issue 7) — it is not a
+    // real end-of-lecture, so it must not mark complete or auto-advance.
+    if (Date.now() < seekGuardUntil) return;
     // Force completion (position = duration → ≥90% threshold).
     void persist(currentDuration || status.currentTime || 0, true);
     s.setPlaying(false);
@@ -354,11 +375,47 @@ export function pause() {
   }
 }
 
+/**
+ * Close the player entirely (the MiniPlayer ×): persist the final position,
+ * stop audio, drop the lock-screen/notification controls, and reset the store
+ * so `currentLectureId` becomes null and the MiniPlayer unmounts. The player
+ * instance is kept for reuse — the next playLecture() replaces its source.
+ */
+export function stop() {
+  if (player) {
+    void persist(player.currentTime ?? store().positionSec);
+    try {
+      player.pause();
+    } catch {
+      /* ignored */
+    }
+    try {
+      player.setActiveForLockScreen(false);
+    } catch {
+      /* ignored */
+    }
+  }
+  currentId = null;
+  currentDuration = 0;
+  currentSectionId = null;
+  currentOrder = 0;
+  store().reset();
+}
+
 export async function seekTo(positionSec: number) {
   if (!player) return;
-  store().setPosition(positionSec);
+  // Clamp to the player's REAL timeline (Issue 7). `player.duration` is the
+  // authoritative length once known; `currentDuration` is the best-known value
+  // (real once a status carried it, else the DB seed). Staying a hair short of
+  // the end keeps a seek from landing exactly at the end and firing
+  // `didJustFinish` → unwanted auto-advance.
+  const max = player.duration && player.duration > 0 ? player.duration : currentDuration;
+  const target =
+    max > 0 ? Math.min(Math.max(0, positionSec), Math.max(0, max - 0.25)) : Math.max(0, positionSec);
+  seekGuardUntil = Date.now() + 1200;
+  store().setPosition(target);
   try {
-    await player.seekTo(Math.max(0, positionSec));
+    await player.seekTo(target);
   } catch {
     /* ignored */
   }

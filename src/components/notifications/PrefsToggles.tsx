@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 
 import type { NotificationType } from '@/api/types';
 import { colors } from '@/constants/theme';
+import { useCurrentUser } from '@/hooks/useAuth';
 import { useNotificationPrefs, useSetNotificationPref } from '@/hooks/useNotifications';
 
 import { Card } from '@/components/ui/Card';
@@ -27,10 +28,12 @@ function ToggleRow({
   type,
   enabled,
   onToggle,
+  description,
 }: {
   type: NotificationType;
   enabled: boolean;
   onToggle: (next: boolean) => void;
+  description?: string;
 }) {
   return (
     <View
@@ -62,7 +65,7 @@ function ToggleRow({
           {notificationTypeLabel[type]}
         </Txt>
         <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 2 }}>
-          {notificationTypeDescription[type]}
+          {description ?? notificationTypeDescription[type]}
         </Txt>
       </View>
 
@@ -79,19 +82,32 @@ function ToggleRow({
 
 export function PrefsToggles() {
   const { data: prefs } = useNotificationPrefs();
+  const { data: user } = useCurrentUser();
   const setPref = useSetNotificationPref();
+
+  // `question_received` is the sheikh's «سؤال جديد» pref — irrelevant to
+  // students, so it's hidden here (sheikhs control it from their own screen).
+  const types =
+    user?.role === 'sheikh'
+      ? NOTIFICATION_TYPE_ORDER
+      : NOTIFICATION_TYPE_ORDER.filter((type) => type !== 'question_received');
+
+  // Buddy matching is same-gender (0015): a female user's buddy is female.
+  const buddyDesc =
+    user?.gender === 'female' ? 'عند إتمام رفيقتك درساً' : undefined;
 
   return (
     <View>
       <SectionTitle title="الإشعارات" />
       <Card padded={false} style={{ overflow: 'hidden' }}>
-        {NOTIFICATION_TYPE_ORDER.map((type, index) => (
+        {types.map((type, index) => (
           <View key={type}>
             {index > 0 ? <Divider /> : null}
             <ToggleRow
               type={type}
               enabled={prefs?.[type] ?? true}
               onToggle={(next) => setPref.mutate({ type, enabled: next })}
+              description={type === 'buddy_activity' ? buddyDesc : undefined}
             />
           </View>
         ))}

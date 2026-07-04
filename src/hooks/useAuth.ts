@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Platform } from 'react-native';
 
 import {
   ensureSession,
@@ -9,6 +10,7 @@ import {
   signOut,
   updateProfile,
 } from '@/api/auth';
+import type { Gender } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 
 /** Current signed-in user (with role + isGuest). `null` only before the anon session boots. */
@@ -44,21 +46,22 @@ export function useSignIn() {
   });
 }
 
-/** Register: link name+email+password onto the current anon account (Task 2). */
+/** Register: link name+email+password+gender onto the current anon account (Task 2 / 26.2). */
 export function useRegister() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { name: string; email: string; password: string }) =>
-      register(vars.name, vars.email, vars.password),
+    mutationFn: (vars: { name: string; email: string; password: string; gender: Gender }) =>
+      register(vars.name, vars.email, vars.password, vars.gender),
     onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
   });
 }
 
-/** Edit display name and/or email of the signed-in account (Task 2). */
+/** Edit display name / email / gender of the signed-in account (Task 2 / 26.2). */
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (fields: { displayName?: string; email?: string }) => updateProfile(fields),
+    mutationFn: (fields: { displayName?: string; email?: string; gender?: Gender }) =>
+      updateProfile(fields),
     onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
   });
 }
@@ -66,13 +69,21 @@ export function useUpdateProfile() {
 export function useSignOut() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: signOut,
-    // Guest-first: signing out drops the registered session and immediately boots
-    // a fresh anonymous one, so the app stays usable (browse as a guest) instead
-    // of landing on a dead null-session state.
-    onSuccess: async () => {
+    // Guest-first: signing out drops the registered session and returns to the
+    // DEVICE guest (signOut restores it; a brand-new anon user is created only
+    // when there is nothing to restore) so إجمالي الطلاب isn't inflated by
+    // sign-out cycles. Web (staff dashboard) never gets a guest session.
+    // Everything lives in mutationFn ON PURPOSE: observer callbacks (onSettled)
+    // die with the component, and the admin drawer unmounts its button when it
+    // closes — the cache reset must survive that. Order also matters: the guest
+    // session must exist BEFORE qc.clear(), otherwise a refetch triggered by the
+    // clear reads the dying session and writes the stale user back into the cache.
+    mutationFn: async () => {
+      const restored = await signOut();
+      const guest =
+        restored ??
+        (Platform.OS === 'web' ? null : await ensureSession().catch(() => null));
       qc.clear();
-      const guest = await ensureSession();
       qc.setQueryData(queryKeys.currentUser, guest ?? null);
     },
   });

@@ -117,8 +117,11 @@ export async function getHomeData(): Promise<HomeData> {
     .slice(0, 8)
     .map(lectureCard);
 
+  // Mock has no featured table — reuse the same placeholder list.
+  const featured = newlyAdded;
+
   const sections = db.childrenOf(null).map(sectionCard);
-  return { continueListening, newlyAdded, sections };
+  return { continueListening, newlyAdded, featured, sections };
 }
 
 // --- Section page ------------------------------------------------------------
@@ -163,6 +166,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
     subsections,
     lectures,
     attachments: db.attachmentsForSection(sectionId).map((a) => toAttachment(a)),
+    quizzes: [],
   };
 }
 
@@ -281,6 +285,42 @@ export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {
     .map((id) => db.getLectureById(id))
     .filter((l): l is db.DLecture => !!l)
     .map(lectureCard);
+}
+
+/** Newly-added published lectures, newest first — backs the أحدث الدروس screen. */
+export async function getRecentLectures(limit = 40): Promise<LectureRow[]> {
+  await delay();
+  return db.lectures
+    .filter((l) => l.status === 'published' && l.section_id != null)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, limit)
+    .map((l) => ({
+      id: l.id,
+      title: l.title,
+      durationSec: l.duration_sec ?? 0,
+      sheikhName: db.sheikhName(l.sheikh_id),
+      status: progressStatus(l.id),
+      positionSec: db.progress[l.id]?.position_sec ?? 0,
+      order: l.order,
+    }));
+}
+
+/** Curated «المختارات» list — mock keeps returning recent published lectures. */
+export async function getFeaturedLectures(): Promise<LectureRow[]> {
+  await delay();
+  return db.lectures
+    .filter((l) => l.status === 'published' && l.section_id != null)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, 40)
+    .map((l) => ({
+      id: l.id,
+      title: l.title,
+      durationSec: l.duration_sec ?? 0,
+      sheikhName: db.sheikhName(l.sheikh_id),
+      status: progressStatus(l.id),
+      positionSec: db.progress[l.id]?.position_sec ?? 0,
+      order: l.order,
+    }));
 }
 
 // --- Progress ----------------------------------------------------------------

@@ -7,12 +7,13 @@
  * are seeded there (scripts/seed-auth.mjs) so the email actually sends.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
 
 import { DEMO_ACCOUNTS, USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
+import type { Gender } from './types';
 
-export type AppRole = 'admin' | 'student';
+export type AppRole = 'admin' | 'student' | 'publisher' | 'sheikh';
 /**
  * `isGuest` is true for the silent anonymous account every install gets on boot
  * (Supabase anonymous sign-in). It flips to false the moment the user registers
@@ -23,6 +24,11 @@ export type AppRole = 'admin' | 'student';
  * auth user's `user_metadata` — user-owned, updatable via `updateUser`, and synced
  * across devices — so no extra query and no `profiles` RLS write is needed (the
  * `profiles` table only permits admin writes).
+ *
+ * `gender` (26.2) is read from the same metadata for instant client access, but
+ * the authoritative copy lives in `profiles.gender` (written via the
+ * set_own_profile SECURITY DEFINER RPC) — the buddy SQL enforces the gender
+ * segregation server-side against profiles, never against metadata.
  */
 export type CurrentUser = {
   id: string;
@@ -30,9 +36,94 @@ export type CurrentUser = {
   role: AppRole;
   isGuest: boolean;
   displayName: string | null;
+  gender: Gender | null;
 };
 
+/**
+ * Sync gender/name into `profiles` (SECURITY DEFINER; students may set only
+ * these two columns). Best-effort — an auth update must never fail on it; the
+ * next profile save retries the sync.
+ */
+async function syncOwnProfile(fields: { gender?: Gender; displayName?: string }): Promise<void> {
+  try {
+    await supabase.rpc('set_own_profile', {
+      ...(fields.gender ? { p_gender: fields.gender } : {}),
+      ...(fields.displayName ? { p_display_name: fields.displayName } : {}),
+    });
+  } catch {
+    // Non-fatal.
+  }
+}
+
 const MOCK_SESSION_KEY = 'mock-auth-session';
+
+/**
+ * Device-bound guest (V6 fix): ONE anonymous account per device, ever. Signing
+ * out of a registered account used to mint a brand-new anonymous user each
+ * time, silently inflating إجمالي الطلاب with phantom "new users". Instead the
+ * guest session's tokens are kept here and RESTORED on sign-out, so the same
+ * anon uid serves the device for life (cleared only when that uid upgrades to
+ * a real account via register, or on reinstall).
+ */
+const DEVICE_GUEST_KEY = 'device-guest-session';
+
+type StoredGuestSession = { access_token: string; refresh_token: string };
+
+async function storeGuestSession(session: {
+  access_token: string;
+  refresh_token: string;
+} | null): Promise<void> {
+  try {
+    if (!session) return;
+    await AsyncStorage.setItem(
+      DEVICE_GUEST_KEY,
+      JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      }),
+    );
+  } catch {
+    // Best-effort — worst case a new guest is created on the next sign-out.
+  }
+}
+
+async function clearStoredGuestSession(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(DEVICE_GUEST_KEY);
+  } catch {
+    // Non-fatal.
+  }
+}
+
+/**
+ * Bring the device's guest session back after a sign-out. Returns false when
+ * there is nothing valid to restore (caller then creates a fresh guest).
+ * SAFETY: if the stored uid has since become a REGISTERED account (register()
+ * links in place), restoring it would silently log the user back in — so a
+ * non-anonymous restore is discarded and the session dropped again.
+ */
+async function restoreGuestSession(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(DEVICE_GUEST_KEY);
+    if (!raw) return false;
+    const stored = JSON.parse(raw) as StoredGuestSession;
+    const { data, error } = await supabase.auth.setSession(stored);
+    if (error || !data.session || !data.user) {
+      await clearStoredGuestSession();
+      return false;
+    }
+    if (!(data.user.is_anonymous ?? false)) {
+      await clearStoredGuestSession();
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+      return false;
+    }
+    // setSession rotates the tokens — keep the fresh pair for the next cycle.
+    await storeGuestSession(data.session);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function roleForEmail(email: string): AppRole {
   return email.trim().toLowerCase() === DEMO_ACCOUNTS.admin.email ? 'admin' : 'student';
@@ -44,7 +135,12 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     const raw = await AsyncStorage.getItem(MOCK_SESSION_KEY);
     if (!raw) return null;
     const u = JSON.parse(raw) as CurrentUser;
-    return { ...u, isGuest: u.isGuest ?? false, displayName: u.displayName ?? null };
+    return {
+      ...u,
+      isGuest: u.isGuest ?? false,
+      displayName: u.displayName ?? null,
+      gender: u.gender ?? null,
+    };
   }
   const { data } = await supabase.auth.getUser();
   const u = data.user;
@@ -56,6 +152,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) ?? null,
+    gender: (u.user_metadata?.gender as Gender) ?? null,
   };
 }
 
@@ -81,14 +178,23 @@ export async function signInAnonymously(): Promise<CurrentUser> {
       role: 'student',
       isGuest: true,
       displayName: null,
+      gender: null,
     };
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
     return user;
   }
   const { data, error } = await supabase.auth.signInAnonymously();
   if (error) throw error;
+  await storeGuestSession(data.session);
   const u = data.user!;
-  return { id: u.id, email: u.email ?? '', role: 'student', isGuest: true, displayName: null };
+  return {
+    id: u.id,
+    email: u.email ?? '',
+    role: 'student',
+    isGuest: true,
+    displayName: null,
+    gender: null,
+  };
 }
 
 export async function signIn(email: string, password: string): Promise<CurrentUser> {
@@ -104,9 +210,16 @@ export async function signIn(email: string, password: string): Promise<CurrentUs
       role: match.role,
       isGuest: false,
       displayName: null,
+      gender: null,
     };
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
     return user;
+  }
+  // Capture the guest session's live tokens before it is replaced, so signing
+  // out later returns to the SAME device guest instead of minting a new one.
+  const { data: pre } = await supabase.auth.getSession();
+  if (pre.session && (pre.session.user.is_anonymous ?? false)) {
+    await storeGuestSession(pre.session);
   }
   const { data, error } = await supabase.auth.signInWithPassword({ email: e, password });
   if (error) throw error;
@@ -118,6 +231,7 @@ export async function signIn(email: string, password: string): Promise<CurrentUs
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) ?? null,
+    gender: (u.user_metadata?.gender as Gender) ?? null,
   };
 }
 
@@ -126,12 +240,14 @@ export async function signIn(email: string, password: string): Promise<CurrentUs
  * account so no progress is lost — same auth uid, so all `user_lecture_progress`
  * rows carry over and start syncing across devices. `is_anonymous` flips to false
  * immediately (email confirmation is disabled on the project), so رحلتي العلمية
- * unlocks right away. Data-minimisation: only name + email are collected.
+ * unlocks right away. Data-minimisation: only name + email + gender (26.2 —
+ * required for the gender-segregated study buddy) are collected.
  */
 export async function register(
   name: string,
   email: string,
   password: string,
+  gender: Gender,
 ): Promise<CurrentUser> {
   const e = email.trim().toLowerCase();
   const display = name.trim();
@@ -142,6 +258,7 @@ export async function register(
       role: 'student',
       isGuest: false,
       displayName: display || null,
+      gender,
     };
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
     return user;
@@ -149,9 +266,13 @@ export async function register(
   const { data, error } = await supabase.auth.updateUser({
     email: e,
     password,
-    data: { display_name: display },
+    data: { display_name: display, gender },
   });
   if (error) throw error;
+  // This uid is no longer a guest — restoring its stored tokens after a
+  // sign-out would silently log back into the registered account.
+  await clearStoredGuestSession();
+  await syncOwnProfile({ gender, displayName: display });
   const u = data.user;
   const role = (u.user_metadata?.role as AppRole) ?? roleForEmail(e);
   return {
@@ -160,16 +281,19 @@ export async function register(
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) || display || null,
+    gender: (u.user_metadata?.gender as Gender) ?? gender,
   };
 }
 
 /**
- * Edit the profile (Task 2): update the display name and/or email of the signed-in
- * account. Name lives in `user_metadata`; email uses Supabase's email-change flow.
+ * Edit the profile (Task 2): update the display name, email, and/or gender of
+ * the signed-in account. Name + gender live in `user_metadata` (and are synced
+ * into `profiles` for the buddy SQL); email uses Supabase's email-change flow.
  */
 export async function updateProfile(fields: {
   displayName?: string;
   email?: string;
+  gender?: Gender;
 }): Promise<CurrentUser> {
   if (USE_MOCK) {
     const raw = await AsyncStorage.getItem(MOCK_SESSION_KEY);
@@ -179,15 +303,22 @@ export async function updateProfile(fields: {
       ...cur,
       displayName: fields.displayName !== undefined ? fields.displayName.trim() || null : cur.displayName,
       email: fields.email !== undefined ? fields.email.trim().toLowerCase() : cur.email,
+      gender: fields.gender ?? cur.gender,
     };
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(next));
     return next;
   }
   const payload: Parameters<typeof supabase.auth.updateUser>[0] = {};
   if (fields.email !== undefined) payload.email = fields.email.trim().toLowerCase();
-  if (fields.displayName !== undefined) payload.data = { display_name: fields.displayName.trim() };
+  const meta: Record<string, string> = {};
+  if (fields.displayName !== undefined) meta.display_name = fields.displayName.trim();
+  if (fields.gender !== undefined) meta.gender = fields.gender;
+  if (Object.keys(meta).length) payload.data = meta;
   const { data, error } = await supabase.auth.updateUser(payload);
   if (error) throw error;
+  if (fields.displayName !== undefined || fields.gender !== undefined) {
+    await syncOwnProfile({ gender: fields.gender, displayName: fields.displayName });
+  }
   const u = data.user;
   const role = (u.user_metadata?.role as AppRole) ?? roleForEmail(u.email ?? '');
   return {
@@ -196,28 +327,63 @@ export async function updateProfile(fields: {
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) ?? null,
+    gender: (u.user_metadata?.gender as Gender) ?? null,
   };
 }
 
-export async function signOut(): Promise<void> {
+/**
+ * Sign out of the registered account and (on native) return to the device's
+ * guest session. Restoring — instead of creating a new anonymous user every
+ * time — keeps إجمالي الطلاب honest: one guest per device, ever.
+ * Returns the restored guest, or null when there is none (web, or nothing to
+ * restore — the caller then boots a fresh guest via ensureSession).
+ */
+export async function signOut(): Promise<CurrentUser | null> {
   if (USE_MOCK) {
     await AsyncStorage.removeItem(MOCK_SESSION_KEY);
-    return;
+    return null;
   }
-  const { error } = await supabase.auth.signOut();
+  // The global sign-out revokes server-side but fails on a network hiccup or a
+  // stale refresh token — which used to leave the button visibly dead. Fall
+  // back to clearing the LOCAL session so signing out always takes effect.
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  } catch {
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+  }
+  // Web is the staff dashboard — no guest sessions there.
+  if (Platform.OS === 'web') return null;
+  const restored = await restoreGuestSession();
+  if (!restored) return null;
+  return getCurrentUser();
+}
+
+/**
+ * Send a password-reset email (always real Supabase). The recovery email is an
+ * OTP CODE, not a link (Supabase recovery template renders `{{ .Token }}`), so
+ * the flow is identical on native and web — no deep link / recovery redirect.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
   if (error) throw error;
 }
 
-/** Send a password-reset email (always real Supabase). */
-export async function requestPasswordReset(email: string): Promise<void> {
-  const redirectTo = Linking.createURL('/reset-password');
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-    redirectTo,
+/**
+ * Verify the 6-digit code from the reset email. On success Supabase establishes
+ * a short-lived recovery session for that account, which updatePassword then
+ * writes against.
+ */
+export async function verifyPasswordResetCode(email: string, code: string): Promise<void> {
+  const { error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: code.trim(),
+    type: 'recovery',
   });
   if (error) throw error;
 }
 
-/** Set a new password after following the reset link (real Supabase session). */
+/** Set a new password (runs against the recovery session from verifyOtp). */
 export async function updatePassword(newPassword: string): Promise<void> {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw error;

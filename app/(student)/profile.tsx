@@ -25,6 +25,7 @@ import { Txt } from '@/components/ui/Txt';
 import { PrefsToggles } from '@/components/notifications/PrefsToggles';
 import { PlaybackSettings } from '@/components/settings/PlaybackSettings';
 import { BubbleConsent } from '@/components/settings/BubbleConsent';
+import { BuddySettings } from '@/components/settings/BuddySettings';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -246,6 +247,11 @@ export default function ProfileScreen() {
         <BubbleConsent />
       </View>
 
+      {/* ── Study buddy (26.2) — cancel action, shown only while paired ──────── */}
+      <View style={{ marginBottom: 16 }}>
+        <BuddySettings />
+      </View>
+
       {/* ── Sign-out card ────────────────────────────────────────────────────── */}
       {/* Guests have nothing to sign out of — doing so would orphan their (still
           unregistered) progress under a new anon account. Only registered users
@@ -255,7 +261,17 @@ export default function ProfileScreen() {
           <LinkRow
             icon="log-out"
             label="تسجيل الخروج"
-            onPress={() => signOut.mutate()}
+            onPress={async () => {
+              // Drop the registered session, then land on the login page (a fresh
+              // guest session boots behind it). mutateAsync so navigation waits for
+              // the session flip; errors still clear the session locally.
+              try {
+                await signOut.mutateAsync();
+              } catch {
+                // Session is cleared locally even on server errors.
+              }
+              router.replace('/sign-in');
+            }}
             destructive
           />
         </Card>

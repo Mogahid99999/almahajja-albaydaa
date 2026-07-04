@@ -17,6 +17,7 @@ import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useBadges, useJourneySummary, useSetWeeklyGoal, useWeeklyGoal } from '@/hooks/useJourney';
+import { useMyQuizStats } from '@/hooks/useQuizzes';
 
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
@@ -24,9 +25,11 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
 import { BadgeSeal } from '@/components/journey/BadgeSeal';
+import { BuddyCompareCard } from '@/components/journey/BuddyCompareCard';
 import { GoalCard } from '@/components/journey/GoalCard';
 import { GoalEditorSheet } from '@/components/journey/GoalEditorSheet';
 import { JourneyGate } from '@/components/journey/JourneyGate';
+import { StreakDetailCard } from '@/components/journey/StreakDetailCard';
 import { StreakRing } from '@/components/journey/StreakRing';
 
 /** One lifetime-total stat tile. */
@@ -50,6 +53,7 @@ export default function JourneyScreen() {
   const { data: summary, isLoading } = useJourneySummary({ enabled: !isGuest });
   const { data: goal } = useWeeklyGoal({ enabled: !isGuest });
   const { data: badges } = useBadges({ enabled: !isGuest });
+  const { data: quizStats } = useMyQuizStats({ enabled: !isGuest });
   const setGoal = useSetWeeklyGoal();
 
   const [editing, setEditing] = useState(false);
@@ -97,12 +101,41 @@ export default function JourneyScreen() {
             <GoalCard week={summary.week} onEdit={() => setEditing(true)} />
           </View>
 
+          {/* ── Daily streak detail (26.1) ────────────────────────────────────── */}
+          <View style={{ marginBottom: 16 }}>
+            <StreakDetailCard />
+          </View>
+
+          {/* ── Buddy weekly comparison (26.2) — renders only with a buddy ────── */}
+          <View style={{ marginBottom: 16 }}>
+            <BuddyCompareCard week={summary.week} />
+          </View>
+
           {/* ── Lifetime totals ──────────────────────────────────────────────── */}
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 24 }}>
             <StatCard value={arNum(summary.completedLectures)} label="دروس مكتملة" />
             <StatCard value={arNum(Math.round(summary.totalSeconds / 60))} label="دقائق الاستماع" />
             <StatCard value={arNum(summary.activeDays)} label="أيام النشاط" />
           </View>
+
+          {/* ── Quizzes — quiet personal line (§12.4), only once one was taken ── */}
+          {quizStats && quizStats.attempted > 0 ? (
+            <Card
+              style={{
+                flexDirection: 'row-reverse',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 24,
+              }}
+            >
+              <Txt size={13.5} weight="semibold" color={colors.textInk}>
+                اختباراتك
+              </Txt>
+              <Txt size={12.5} color={colors.textMuted} tabular>
+                {`أدّيت ${arNum(quizStats.attempted)} · اجتزت ${arNum(quizStats.passed)}`}
+              </Txt>
+            </Card>
+          ) : null}
 
           {/* ── Badges ───────────────────────────────────────────────────────── */}
           <SectionTitle title="الأوسمة" />

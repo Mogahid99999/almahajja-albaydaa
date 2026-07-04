@@ -8,9 +8,12 @@
  * app-layer concept (section_id null + status draft).
  */
 
+import { Platform } from 'react-native';
+
 import { USE_MOCK } from '@/config';
 import type { AppLectureStatus } from '@/config';
 import { supabase } from '@/lib/supabase';
+import { env } from '@/lib/env';
 import * as mock from '@/mock/api';
 import type { AdminLectureRow, SectionEditData, UnclassifiedItem } from './types';
 
@@ -54,14 +57,41 @@ async function uploadLectureAudio(file: PickedAudio): Promise<string> {
     AUDIO_CONTENT_TYPE[ext] ??
     (file.mimeType && file.mimeType.startsWith('audio/') ? file.mimeType : 'audio/mpeg');
 
-  const bytes = await fetch(file.uri).then((r) => r.arrayBuffer());
-  const { error } = await supabase.storage
-    .from('lectures')
-    .upload(path, bytes, {
-      contentType,
-      upsert: false,
-    });
-  if (error) throw error;
+  if (Platform.OS === 'web') {
+    // Web is a blob: uri from the picker; buffering it is fine (already in memory).
+    const bytes = await fetch(file.uri).then((r) => r.arrayBuffer());
+    const { error } = await supabase.storage
+      .from('lectures')
+      .upload(path, bytes, { contentType, upsert: false });
+    if (error) throw error;
+    return path;
+  }
+
+  // Native (Issue 6): STREAM the file straight to Storage's REST endpoint from
+  // disk with the session token, rather than `fetch(uri).arrayBuffer()` (which
+  // buffers a whole long lecture in memory and can OOM). uploadAsync (legacy FS)
+  // streams a multipart-free binary body — the same thing supabase-js posts.
+  const { uploadAsync, FileSystemUploadType } = require('expo-file-system/legacy');
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('انتهت الجلسة — سجّل الدخول من جديد ثم أعد الرفع.');
+  const endpoint = `${env.supabaseUrl}/storage/v1/object/lectures/${encodeURIComponent(path)}`;
+  const res = await uploadAsync(endpoint, file.uri, {
+    httpMethod: 'POST',
+    uploadType: FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: env.supabaseAnonKey,
+      'Content-Type': contentType,
+      'x-upsert': 'false',
+      'cache-control': '3600',
+    },
+  });
+  if (res.status !== 200 && res.status !== 201) {
+    throw new Error(`تعذّر رفع ملف الصوت (${res.status}).`);
+  }
   return path;
 }
 

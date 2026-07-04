@@ -1,20 +1,24 @@
 /**
- * Edit profile — تعديل الملف الشخصي (Task 2).
+ * Edit profile — تعديل الملف الشخصي (Task 2 / V7).
  *
- * Edits the display NAME (stored in the auth user's metadata, synced across
- * devices). The sign-in email is shown read-only: changing it requires an email
- * confirmation step (a security control we keep on) plus a reliable mail
- * provider, so it is intentionally not editable inline here.
+ * Edits the display NAME + gender (auth metadata, synced across devices) AND the
+ * sign-in EMAIL. Email now applies immediately: the project keeps
+ * `mailer_autoconfirm` on (registration is verification-free too), so
+ * updateUser({email}) swaps the sign-in address with no confirmation step.
+ * Only reachable by registered users (the profile screen gates the entry on
+ * !isGuest), so an email always exists here.
  *
  * Route: /(student)/edit-profile
  */
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
+import type { Gender } from '@/api/types';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser, useUpdateProfile } from '@/hooks/useAuth';
 
 import { Card } from '@/components/ui/Card';
+import { GenderPills } from '@/components/ui/GenderPills';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
@@ -26,14 +30,32 @@ export default function EditProfileScreen() {
   const update = useUpdateProfile();
 
   const [name, setName] = useState(user?.displayName ?? '');
-  const email = user?.email ?? '';
+  const [gender, setGender] = useState<Gender | null>(user?.gender ?? null);
+  const [email, setEmail] = useState(user?.email ?? '');
 
   const trimmed = name.trim();
-  const changed = trimmed.length > 0 && trimmed !== (user?.displayName ?? '');
+  const nameChanged = trimmed.length > 0 && trimmed !== (user?.displayName ?? '');
+  const genderChanged = gender !== null && gender !== (user?.gender ?? null);
+
+  const emailTrimmed = email.trim().toLowerCase();
+  const emailDiffers = emailTrimmed !== (user?.email ?? '').toLowerCase();
+  const emailValid = /.+@.+\..+/.test(emailTrimmed);
+  const emailChanged = emailDiffers && emailValid;
+  const emailInvalid = emailDiffers && !emailValid; // typed, but not a valid address
+
+  const changed = nameChanged || genderChanged || emailChanged;
+  const canSave = changed && !emailInvalid;
 
   const onSave = () => {
-    if (!changed) return;
-    update.mutate({ displayName: trimmed }, { onSuccess: () => router.back() });
+    if (!canSave) return;
+    update.mutate(
+      {
+        ...(nameChanged ? { displayName: trimmed } : {}),
+        ...(genderChanged && gender ? { gender } : {}),
+        ...(emailChanged ? { email: emailTrimmed } : {}),
+      },
+      { onSuccess: () => router.back() },
+    );
   };
 
   return (
@@ -62,36 +84,54 @@ export default function EditProfileScreen() {
           <TextInput
             value={name}
             onChangeText={setName}
-            placeholder="اسمك الكريم"
+            placeholder="اسمك"
             placeholderTextColor={colors.textGhost}
             style={inputStyle}
           />
         </View>
 
-        {/* Email — read-only (sign-in email) */}
+        {/* Gender — required for رفيق الدراسة (26.2); changeable in v1 */}
+        <View style={{ marginBottom: 18 }}>
+          <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
+            النوع
+          </Txt>
+          <GenderPills value={gender} onChange={setGender} />
+        </View>
+
+        {/* Email — sign-in address (editable; applies immediately) */}
         <View>
           <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
             البريد الإلكتروني
           </Txt>
-          <View style={[inputStyle, { justifyContent: 'center', backgroundColor: colors.bgSand }]}>
-            <Txt size={13.5} color={colors.textMuted} numberOfLines={1}>
-              {email}
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder="example@gmail.com"
+            placeholderTextColor={colors.textGhost}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={inputStyle}
+          />
+          {emailInvalid ? (
+            <Txt size={11} color={colors.stateDanger} style={{ marginTop: 6 }}>
+              أدخل بريدًا إلكترونيًا صحيحًا
             </Txt>
-          </View>
-          <Txt size={11} color={colors.textGhost} style={{ marginTop: 6 }}>
-            بريد تسجيل الدخول
-          </Txt>
+          ) : (
+            <Txt size={11} color={colors.textGhost} style={{ marginTop: 6 }}>
+              بريد تسجيل الدخول
+            </Txt>
+          )}
         </View>
 
         {update.isError ? (
           <Txt size={12} color={colors.stateDanger} style={{ marginTop: 12 }}>
-            {(update.error as Error).message}
+            {arError((update.error as Error).message)}
           </Txt>
         ) : null}
 
         <Pressable
           onPress={onSave}
-          disabled={update.isPending || !changed}
+          disabled={update.isPending || !canSave}
           style={[
             {
               marginTop: 22,
@@ -99,7 +139,7 @@ export default function EditProfileScreen() {
               borderRadius: radius.input,
               paddingVertical: 14,
               alignItems: 'center',
-              opacity: update.isPending || !changed ? 0.6 : 1,
+              opacity: update.isPending || !canSave ? 0.6 : 1,
             },
             shadows.button,
           ]}
@@ -111,6 +151,16 @@ export default function EditProfileScreen() {
       </Card>
     </Screen>
   );
+}
+
+/** Map the (English) Supabase auth error to a calm Arabic message. */
+function arError(msg: string): string {
+  const m = (msg ?? '').toLowerCase();
+  if (m.includes('already') || m.includes('registered') || m.includes('exists'))
+    return 'هذا البريد مستخدم في حساب آخر.';
+  if (m.includes('invalid') && m.includes('email')) return 'بريد إلكتروني غير صالح.';
+  if (m.includes('rate') || m.includes('too many')) return 'محاولات كثيرة، حاول لاحقًا.';
+  return msg || 'تعذّر الحفظ.';
 }
 
 const inputStyle = {

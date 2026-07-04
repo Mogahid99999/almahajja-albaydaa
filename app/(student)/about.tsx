@@ -2,17 +2,20 @@
  * About — عن المنصة
  *
  * A prominent, calm page introducing the platform and inviting du'a for the
- * scholars and contributors. No imagery — geometric motif (ConcentricMotif,
- * Rhombus) as the visual language. Du'a lines highlighted in primaryTeal.
+ * scholars and contributors. Copy is now editable from the admin panel
+ * (app_config, Feature 6) and falls back to the original text; a Telegram
+ * live-broadcast button appears only when an admin has set the channel URL.
  *
  * Route: /(student)/about
- * Design ref: CLAUDE.md § About, README design tokens.
  */
-import { View } from 'react-native';
+import { Linking, Pressable, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { colors, radius, shadows } from '@/constants/theme';
 
+import { ABOUT_FALLBACK } from '@/api/appContent';
+import { useAboutContent } from '@/hooks/useAppContent';
 import { Card } from '@/components/ui/Card';
 import { ConcentricMotif } from '@/components/ui/Rhombus';
 import { Divider } from '@/components/ui/Divider';
@@ -24,6 +27,8 @@ import { Txt } from '@/components/ui/Txt';
 
 export default function AboutScreen() {
   const router = useRouter();
+  const { data } = useAboutContent();
+  const content = data ?? ABOUT_FALLBACK;
 
   return (
     <Screen bottomPad={118} padded>
@@ -49,21 +54,11 @@ export default function AboutScreen() {
         <Txt size={26} weight="display" color={colors.primaryTeal} align="center">
           عن المنصة
         </Txt>
-        {/* Small decorative rhombus under the title */}
         <Rhombus size={8} color={colors.accentBrassMuted} />
       </View>
 
       {/* ── Body card ────────────────────────────────────────────────────────── */}
-      <Card
-        style={[
-          {
-            gap: 0,
-            overflow: 'hidden',
-          },
-          shadows.feature,
-        ]}
-      >
-        {/* Decorative concentric motif — absolutely positioned behind text */}
+      <Card style={[{ gap: 0, overflow: 'hidden' }, shadows.feature]}>
         <ConcentricMotif
           size={180}
           rings={3}
@@ -71,19 +66,17 @@ export default function AboutScreen() {
           style={{ top: -40, left: -40 }}
         />
 
-        {/* Paragraph 1: platform purpose */}
         <Txt
           size={14}
           color={colors.textMuted}
           style={{ lineHeight: 24, marginBottom: 20 }}
           align="right"
         >
-          «هذه المنصة تهدف إلى تنظيم دروس العلم الشرعي وتيسير الوصول إليها، وجمع التسجيلات المتفرقة في مكان واحد مرتب يعين الطالب على المتابعة والمراجعة.»
+          {content.intro}
         </Txt>
 
         <Divider />
 
-        {/* Paragraph 2: du'a for sincerity — emphasised in teal */}
         <Txt
           size={14}
           weight="displayRegular"
@@ -91,12 +84,11 @@ export default function AboutScreen() {
           style={{ lineHeight: 26, marginTop: 20, marginBottom: 20 }}
           align="right"
         >
-          «نسأل الله أن يجعل هذا العمل خالصًا لوجهه الكريم، وأن ينفع به طلاب العلم.»
+          {content.dua}
         </Txt>
 
         <Divider />
 
-        {/* Paragraph 3: du'a for contributors — emphasised in teal */}
         <Txt
           size={14}
           weight="displayRegular"
@@ -104,30 +96,53 @@ export default function AboutScreen() {
           style={{ lineHeight: 26, marginTop: 20, marginBottom: 20 }}
           align="right"
         >
-          «لا تنسوا من ساهم في هذا العمل من دعائكم: المشايخ، ومن جمع المادة، ومن راجعها، ومن طوّر المنصة، ومن نشرها وساهم فيها.»
+          {content.thanks}
         </Txt>
 
         <Divider />
 
-        {/* Paragraph 4: closing blessing */}
         <Txt
           size={14}
           color={colors.textMuted}
           style={{ lineHeight: 24, marginTop: 20 }}
           align="right"
         >
-          «نفع الله بكم، وبارك في علمكم ووقتكم.»
+          {content.closing}
         </Txt>
       </Card>
 
+      {/* ── Telegram live broadcast (only when a channel URL is set) ─────────── */}
+      {content.telegramUrl ? (
+        <Card style={{ marginTop: 20, gap: 16 }}>
+          <Txt size={14} color={colors.textMuted} style={{ lineHeight: 24 }} align="right">
+            {content.telegramIntro}
+          </Txt>
+          <Pressable
+            onPress={() => Linking.openURL(content.telegramUrl)}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              {
+                flexDirection: 'row-reverse',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                height: 48,
+                borderRadius: radius.input,
+                backgroundColor: colors.primaryTeal,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Feather name="send" size={16} color={colors.onTealPrimary} />
+            <Txt size={14} weight="semibold" color={colors.onTealPrimary}>
+              {content.telegramLabel || 'فتح قناة تلجرام'}
+            </Txt>
+          </Pressable>
+        </Card>
+      ) : null}
+
       {/* ── Bottom motif accent ──────────────────────────────────────────────── */}
-      <View
-        style={{
-          alignItems: 'center',
-          marginTop: 32,
-          gap: 10,
-        }}
-      >
+      <View style={{ alignItems: 'center', marginTop: 32, gap: 10 }}>
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <Rhombus size={5} color={colors.accentBrassSoft} />
           <Rhombus size={8} color={colors.accentBrassMuted} filled={false} />

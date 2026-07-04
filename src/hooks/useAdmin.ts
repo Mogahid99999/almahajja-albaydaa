@@ -16,6 +16,7 @@ import {
 } from '@/api/admin';
 import {
   createSheikh,
+  createSheikhAccount,
   deleteSheikh,
   getSheikhs,
   updateSheikh,
@@ -144,6 +145,16 @@ export function useCreateSheikh() {
   const invalidate = useAdminInvalidate();
   return useMutation({
     mutationFn: (name: string) => createSheikh(name),
+    onSuccess: invalidate,
+  });
+}
+
+/** V6: provision a sheikh LOGIN (role sheikh) + linked metadata row. */
+export function useCreateSheikhAccount() {
+  const invalidate = useAdminInvalidate();
+  return useMutation({
+    mutationFn: (input: { name: string; email: string; password: string }) =>
+      createSheikhAccount(input),
     onSuccess: invalidate,
   });
 }

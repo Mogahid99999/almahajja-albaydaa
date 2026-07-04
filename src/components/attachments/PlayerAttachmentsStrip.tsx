@@ -8,6 +8,7 @@
 import { Feather } from '@expo/vector-icons';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Attachment } from '@/api/types';
 import { Txt } from '@/components/ui';
@@ -16,10 +17,13 @@ import { ATTACHMENT_META, openAttachment } from './attachmentMeta';
 
 export function PlayerAttachmentsStrip({ attachments }: { attachments: Attachment[] }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   if (attachments.length === 0) return null;
 
   return (
-    <View style={{ position: 'absolute', left: 0, right: 0, bottom: 86 }}>
+    // Track the utility bar's safe-area lift so the gap above it stays constant.
+    // 144 clears the V6 «أدوات الدرس» row that now sits at 86.
+    <View style={{ position: 'absolute', left: 0, right: 0, bottom: 144 + insets.bottom }}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
