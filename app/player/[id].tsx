@@ -41,15 +41,13 @@ export default function PlayerScreen() {
   // Lecture metadata (eyebrow, sectionTitle) — loaded once from the API.
   const { data } = useLecturePlayback(id);
 
-  // Live playback state from the shared store.
-  const {
-    title: storeTitle,
-    sheikhName: storeSheikhName,
-    isPlaying,
-    positionSec,
-    durationSec,
-    rate,
-  } = usePlayerStore();
+  // Live playback state from the shared store — per-field selectors so a
+  // position tick (every ~1s while playing) only re-renders the Waveform leaf
+  // below, not this whole screen (artwork, title, top bar).
+  const storeTitle = usePlayerStore((s) => s.title);
+  const storeSheikhName = usePlayerStore((s) => s.sheikhName);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const rate = usePlayerStore((s) => s.rate);
 
   // On mount: if a different lecture (or nothing) is loaded, start this one. A
   // deep-link `t` overrides the saved resume position (guarded so it never
@@ -169,11 +167,7 @@ export default function PlayerScreen() {
       <View style={[styles.controls, { bottom: controlsBottom }]}>
         {/* ── Waveform + time ── */}
         <View style={styles.waveformWrapper}>
-          <Waveform
-            positionSec={positionSec}
-            durationSec={durationSec}
-            onSeek={(sec) => void seekTo(sec)}
-          />
+          <PlayerWaveformLive />
         </View>
 
         {/* ── Transport controls ── */}
@@ -191,6 +185,15 @@ export default function PlayerScreen() {
       {/* ── Pinned utility bar (absolute) ── */}
       <PlayerUtilityBar lectureId={id} rate={rate} />
     </Screen>
+  );
+}
+
+/** Isolated so the position tick only re-renders the waveform, not the whole screen. */
+function PlayerWaveformLive() {
+  const positionSec = usePlayerStore((s) => s.positionSec);
+  const durationSec = usePlayerStore((s) => s.durationSec);
+  return (
+    <Waveform positionSec={positionSec} durationSec={durationSec} onSeek={(sec) => void seekTo(sec)} />
   );
 }
 

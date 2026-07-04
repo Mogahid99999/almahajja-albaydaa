@@ -1,0 +1,50 @@
+diff --git a/node_modules/react-native-web/dist/cjs/exports/I18nManager/index.js b/node_modules/react-native-web/dist/cjs/exports/I18nManager/index.js
+index 2dd7c65..a546cbb 100644
+--- a/node_modules/react-native-web/dist/cjs/exports/I18nManager/index.js
++++ b/node_modules/react-native-web/dist/cjs/exports/I18nManager/index.js
+@@ -19,6 +19,9 @@ var I18nManager = {
+   forceRTL() {
+     return;
+   },
++  swapLeftAndRightInRTL() {
++    return;
++  },
+   getConstants() {
+     return {
+       isRTL: false
+diff --git a/node_modules/react-native-web/dist/exports/I18nManager/index.js b/node_modules/react-native-web/dist/exports/I18nManager/index.js
+index 6154127..61e6e95 100644
+--- a/node_modules/react-native-web/dist/exports/I18nManager/index.js
++++ b/node_modules/react-native-web/dist/exports/I18nManager/index.js
+@@ -15,6 +15,9 @@ var I18nManager = {
+   forceRTL() {
+     return;
+   },
++  swapLeftAndRightInRTL() {
++    return;
++  },
+   getConstants() {
+     return {
+       isRTL: false
+diff --git a/node_modules/react-native-web/src/exports/I18nManager/index.js b/node_modules/react-native-web/src/exports/I18nManager/index.js
+index ba4b6bd..6425d60 100644
+--- a/node_modules/react-native-web/src/exports/I18nManager/index.js
++++ b/node_modules/react-native-web/src/exports/I18nManager/index.js
+@@ -11,6 +11,7 @@
+ type I18nManagerStatus = {
+   allowRTL: (allowRTL: boolean) => void,
+   forceRTL: (forceRTL: boolean) => void,
++  swapLeftAndRightInRTL: (swapLeftAndRightInRTL: boolean) => void,
+   getConstants: () => Constants
+ };
+ 
+@@ -25,6 +26,9 @@ const I18nManager: I18nManagerStatus = {
+   forceRTL() {
+     return;
+   },
++  swapLeftAndRightInRTL() {
++    return;
++  },
+   getConstants(): Constants {
+     return { isRTL: false };
+   }

@@ -17,11 +17,12 @@ import { usePlayerStore } from '@/stores/playerStore';
 export function MiniPlayer() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentLectureId, title, isPlaying, positionSec, durationSec, nextLectureId } =
-    usePlayerStore();
+  const currentLectureId = usePlayerStore((s) => s.currentLectureId);
+  const title = usePlayerStore((s) => s.title);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const nextLectureId = usePlayerStore((s) => s.nextLectureId);
 
   if (!currentLectureId) return null;
-  const progress = durationSec > 0 ? positionSec / durationSec : 0;
 
   return (
     <Pressable
@@ -72,12 +73,7 @@ export function MiniPlayer() {
         >
           {title}
         </Txt>
-        <ProgressBar
-          value={progress}
-          height={3}
-          tint="onTeal"
-          trackColor="rgba(223,231,227,0.22)"
-        />
+        <MiniPlayerProgress />
       </View>
       {nextLectureId ? (
         <Pressable
@@ -122,5 +118,15 @@ export function MiniPlayer() {
         />
       </Pressable>
     </Pressable>
+  );
+}
+
+/** Isolated so the position tick only re-renders this bar, not title/buttons/artwork. */
+function MiniPlayerProgress() {
+  const positionSec = usePlayerStore((s) => s.positionSec);
+  const durationSec = usePlayerStore((s) => s.durationSec);
+  const progress = durationSec > 0 ? positionSec / durationSec : 0;
+  return (
+    <ProgressBar value={progress} height={3} tint="onTeal" trackColor="rgba(223,231,227,0.22)" />
   );
 }

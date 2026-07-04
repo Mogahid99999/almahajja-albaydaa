@@ -38,9 +38,10 @@ const AUTOSAVE_MS = 900;
  * is loaded yet, play starts this note's lesson.
  */
 function NotePlayerBar({ lectureId }: { lectureId: string }) {
-  const { currentLectureId, title, isPlaying, positionSec, durationSec } = usePlayerStore();
+  const currentLectureId = usePlayerStore((s) => s.currentLectureId);
+  const title = usePlayerStore((s) => s.title);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
   const hasLecture = !!currentLectureId;
-  const progress = durationSec > 0 ? positionSec / durationSec : 0;
 
   return (
     <View style={styles.playerBar}>
@@ -49,12 +50,11 @@ function NotePlayerBar({ lectureId }: { lectureId: string }) {
         <Txt weight="display" size={13.5} color={colors.onTealPrimary} numberOfLines={1}>
           {hasLecture ? title : 'اضغط لتشغيل هذا الدرس'}
         </Txt>
-        <ProgressBar
-          value={hasLecture ? progress : 0}
-          height={3}
-          tint="onTeal"
-          trackColor="rgba(223,231,227,0.22)"
-        />
+        {hasLecture ? (
+          <NotePlayerProgress />
+        ) : (
+          <ProgressBar value={0} height={3} tint="onTeal" trackColor="rgba(223,231,227,0.22)" />
+        )}
       </View>
 
       {/* RTL: تقديم skips left, إرجاع skips right — mirror the transport. */}
@@ -97,6 +97,16 @@ function NotePlayerBar({ lectureId }: { lectureId: string }) {
         />
       </Pressable>
     </View>
+  );
+}
+
+/** Isolated so the position tick only re-renders this bar, not title/buttons. */
+function NotePlayerProgress() {
+  const positionSec = usePlayerStore((s) => s.positionSec);
+  const durationSec = usePlayerStore((s) => s.durationSec);
+  const progress = durationSec > 0 ? positionSec / durationSec : 0;
+  return (
+    <ProgressBar value={progress} height={3} tint="onTeal" trackColor="rgba(223,231,227,0.22)" />
   );
 }
 

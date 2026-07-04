@@ -17,7 +17,7 @@
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { arDuration } from '@/lib/format';
@@ -32,7 +32,7 @@ type Props = {
   lecture: LectureRow;
 };
 
-export function LectureRowItem({ lecture }: Props) {
+export const LectureRowItem = memo(function LectureRowItem({ lecture }: Props) {
   const { id, title, durationSec, status, positionSec } = lecture;
   const [toolsOpen, setToolsOpen] = useState(false);
   const router = useRouter();
@@ -186,4 +186,4 @@ export function LectureRowItem({ lecture }: Props) {
       />
     </Pressable>
   );
-}
+});

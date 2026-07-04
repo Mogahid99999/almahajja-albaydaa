@@ -1,5 +1,54 @@
 # PLAN_PERFORMANCE — deep performance scan findings + phased fix plan
 
+## RESULTS (2026-07-04, Sonnet 5)
+
+All six phases (P1–P6) done and verified. Everyday use should feel it in three
+places: long lists (notifications, section lecture lists, admin tables) now
+mount ~10–15 rows instead of hundreds; audio playback no longer re-renders the
+mini/full player's title, artwork, and buttons on every position tick (only a
+small progress-bar leaf updates); and re-opening a recently-played lecture or
+recently-viewed section within its cache window (45min for signed audio/file
+URLs, 5min for section/featured/broadcast data) shows instantly with no
+refetch spinner. The notifications inbox and admin users list now paginate
+(50/page) instead of fetching everything at once.
+
+Two deliberate deviations from the plan's letter, both logged in
+`GLITCH_LOG.md` with reasoning: (1) P4's 5-minute section-rollup staleTime
+would otherwise make a student's own just-finished lecture look not-done if
+they immediately returned to the section — added targeted cache invalidation
+on pause/stop/finish instead of accepting that regression; (2) P6 indexed
+exactly what the live Supabase performance advisor flagged (9 uncovered
+foreign keys) rather than the plan's guessed table names, since the advisor's
+actual output differed from the prediction.
+
+Startup timing (P5): removed one genuinely-unused font weight (IBM Plex Sans
+Arabic Light — zero usages anywhere) and stopped serializing font-load behind
+session-restore (they now run in parallel). Native cold-start numbers were
+measured but are **not** reliable evidence of improvement — the on-device
+screenshot-timing method's own run-to-run variance (3.3–6.9s across repeated
+runs of the *same* build) is larger than either change plausibly produces;
+see `GLITCH_LOG.md` #19 for the raw numbers and why they're inconclusive. Web
+timing couldn't be measured at all — web has been fully broken since before
+this session (see below).
+
+**Two things outside this plan's scope that need the owner's attention:**
+1. **Web is completely broken** (crashes on every route, `GLITCH_LOG.md` #14)
+   — pre-existing, unrelated to this plan, blocked all web-side verification
+   throughout. `app/_layout.tsx:57` calls an `I18nManager` method
+   `react-native-web`'s shim doesn't implement.
+2. **`/downloads` crashes the app** (`GLITCH_LOG.md` #20) — a genuine,
+   reproducible "Maximum update depth exceeded" infinite loop, found during
+   the P6 regression pass. Confirmed unrelated to every change in this plan
+   (that screen/hook/store was never touched). Likely cause flagged, not
+   fixed, in the log entry.
+
+Also from this session: `PLAN_SECURITY.md` was confirmed fully done before
+starting (S1–S5 verified live, 20/20 `security-check.mjs` checks green); the
+one open item (seeded demo-account cleanup) was consciously deferred by the
+owner, not missed.
+
+---
+
 **Written by:** Fable 5 (planning session, 2026-07-04), after code inspection of the
 rendering layer, player pipeline, query layer, and asset/startup path.
 **Executor:** Sonnet 5, phase by phase, **in order**, and only **after

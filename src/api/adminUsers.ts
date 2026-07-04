@@ -35,15 +35,26 @@ function mapRow(r: any): AdminUserRow {
   };
 }
 
-export async function getAdminUserList(search?: string): Promise<AdminUserRow[]> {
-  if (USE_MOCK) return [];
+export type AdminUserPage = {
+  items: AdminUserRow[];
+  /** Offset for the next page, or null when this was the last page. */
+  nextOffset: number | null;
+};
+
+const ADMIN_USERS_PAGE_SIZE = 50;
+
+/** One page of the users list (P3 perf plan — was a flat 300-row fetch). */
+export async function getAdminUserList(search: string | undefined, offset = 0): Promise<AdminUserPage> {
+  if (USE_MOCK) return { items: [], nextOffset: null };
   const { data, error } = await supabase.rpc('admin_user_list', {
     p_search: search && search.trim() ? search.trim() : undefined,
-    p_limit: 300,
-    p_offset: 0,
+    p_limit: ADMIN_USERS_PAGE_SIZE,
+    p_offset: offset,
   });
   if (error) throw error;
-  return (data ?? []).map(mapRow);
+  const items = (data ?? []).map(mapRow);
+  const nextOffset = items.length === ADMIN_USERS_PAGE_SIZE ? offset + ADMIN_USERS_PAGE_SIZE : null;
+  return { items, nextOffset };
 }
 
 export async function getAdminUserDetail(userId: string): Promise<AdminUserDetail> {

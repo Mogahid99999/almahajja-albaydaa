@@ -10,9 +10,10 @@
  * «سُئل بلا اسم» hint marks anonymous questions.
  */
 import { Feather } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
   StyleSheet,
   TextInput,
@@ -293,8 +294,15 @@ export default function AdminQuestions() {
 
   const list = questions ?? [];
 
-  return (
-    <AdminShell active="questions" breadcrumb="مساحة الأسئلة">
+  const renderItem = useCallback(
+    ({ item: q }: { item: InboxQuestion }) => (
+      <QuestionCard q={q} onDelete={() => setPendingDelete(q)} onBlock={() => setPendingBlock(q)} />
+    ),
+    [],
+  );
+
+  const header = (
+    <>
       <Txt weight="display" size={26} color={colors.primaryTeal} style={{ marginBottom: 4 }}>
         مساحة الأسئلة
       </Txt>
@@ -323,37 +331,42 @@ export default function AdminQuestions() {
         <FilterChip label="المخفية" active={status === 'hidden'} onPress={() => setStatus('hidden')} />
       </View>
 
-      {/* List */}
-      {isLoading ? (
-        <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-          <ActivityIndicator color={colors.primaryTeal} />
-        </View>
-      ) : list.length === 0 ? (
-        <View style={{ paddingVertical: 60, alignItems: 'center', gap: 8 }}>
-          <Feather name="inbox" size={26} color={colors.textGhost} />
-          <Txt size={14} color={colors.textMuted} align="center">
-            {status === 'pending'
-              ? 'لا أسئلة بانتظار الرد'
-              : status === 'answered'
-                ? 'لا أسئلة مجابة بعد'
-                : 'لا أسئلة مخفية'}
-          </Txt>
-        </View>
-      ) : (
-        <>
-          <Txt size={12} color={colors.textGhost} style={{ marginBottom: 10 }}>
-            {arNum(list.length)} سؤال
-          </Txt>
-          {list.map((q) => (
-            <QuestionCard
-              key={q.id}
-              q={q}
-              onDelete={() => setPendingDelete(q)}
-              onBlock={() => setPendingBlock(q)}
-            />
-          ))}
-        </>
-      )}
+      {!isLoading && list.length > 0 ? (
+        <Txt size={12} color={colors.textGhost} style={{ marginBottom: 10 }}>
+          {arNum(list.length)} سؤال
+        </Txt>
+      ) : null}
+    </>
+  );
+
+  return (
+    <AdminShell active="questions" breadcrumb="مساحة الأسئلة" scroll={false}>
+      <FlatList
+        style={{ flex: 1 }}
+        data={list}
+        keyExtractor={(q) => q.id}
+        renderItem={renderItem}
+        initialNumToRender={10}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          isLoading ? (
+            <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.primaryTeal} />
+            </View>
+          ) : (
+            <View style={{ paddingVertical: 60, alignItems: 'center', gap: 8 }}>
+              <Feather name="inbox" size={26} color={colors.textGhost} />
+              <Txt size={14} color={colors.textMuted} align="center">
+                {status === 'pending'
+                  ? 'لا أسئلة بانتظار الرد'
+                  : status === 'answered'
+                    ? 'لا أسئلة مجابة بعد'
+                    : 'لا أسئلة مخفية'}
+              </Txt>
+            </View>
+          )
+        }
+      />
 
       <ConfirmDialog
         visible={!!pendingDelete}

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   getNotificationPrefs,
@@ -11,22 +11,30 @@ import type { NotificationType } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 import { cancelDailyReminder, scheduleDailyReminder } from '@/lib/notifications';
 
-/** The الإشعارات inbox, newest first. */
+/** The الإشعارات inbox, newest first — paginated 50/page (P3 perf plan). */
 export function useNotifications() {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: queryKeys.notifications,
-    queryFn: listNotifications,
+    queryFn: ({ pageParam }) => listNotifications(pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }
 
+/** Flattened items across all loaded pages, newest first. */
+export function useNotificationItems() {
+  const { data } = useNotifications();
+  return data?.pages.flatMap((p) => p.items) ?? [];
+}
+
 /**
- * Count of unread notifications, derived from the inbox query (no separate
- * fetch). Drives the single quiet brass dot — never shown as a loud number
- * badge.
+ * Count of unread notifications, derived from the loaded inbox pages (no
+ * separate fetch). Drives the single quiet brass dot — never shown as a loud
+ * number badge. Only reflects pages already loaded, same as the visible list.
  */
 export function useUnreadCount(): number {
-  const { data } = useNotifications();
-  return (data ?? []).reduce((n, item) => (item.read ? n : n + 1), 0);
+  const items = useNotificationItems();
+  return items.reduce((n, item) => (item.read ? n : n + 1), 0);
 }
 
 /** Mark one notification read; refresh the inbox (and thus the unread dot). */

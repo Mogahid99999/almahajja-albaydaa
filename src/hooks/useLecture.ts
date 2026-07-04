@@ -3,12 +3,18 @@ import { useQuery } from '@tanstack/react-query';
 import { getFeaturedLectures, getLecturePlayback, getLecturesByIds, getRecentLectures } from '@/api/lectures';
 import { queryKeys } from '@/constants/queryKeys';
 
-/** Full playback metadata for one lecture (player). */
+/**
+ * Full playback metadata for one lecture (player), incl. a signed audio URL
+ * valid 3600s — cache it near that long (45min stale / 50min gc) so
+ * reopening the same lecture within that window never re-mints the URL.
+ */
 export function useLecturePlayback(lectureId: string) {
   return useQuery({
     queryKey: queryKeys.lecture(lectureId),
     queryFn: () => getLecturePlayback(lectureId),
     enabled: !!lectureId,
+    staleTime: 45 * 60_000,
+    gcTime: 50 * 60_000,
   });
 }
 
@@ -29,10 +35,11 @@ export function useRecentLectures() {
   });
 }
 
-/** The curated «المختارات» list (full-list screen). */
+/** The curated «المختارات» list (full-list screen). Changes rarely (staff-curated). */
 export function useFeaturedLectures() {
   return useQuery({
     queryKey: queryKeys.featuredLectures,
     queryFn: () => getFeaturedLectures(),
+    staleTime: 5 * 60_000,
   });
 }

@@ -100,6 +100,123 @@ Things observed while scanning that are **not** covered by `PLAN_SECURITY.md` or
     were real signal; everything else is expected noise from this app's
     design.
 
+## PLAN_SECURITY.md closeout (2026-07-04, before starting PLAN_PERFORMANCE.md)
+
+12. **PAT rotation confirmed + `.env` fixed.** The `SUPABASE_ACCESS_TOKEN` sitting
+    in `.env` returned `401` against the Management API — i.e. it was already
+    revoked (rotation had happened) but `.env` was never updated with the
+    replacement. Owner supplied the current live token in-session; `.env`
+    updated to match. `security-check.mjs` re-run live: **20/20 checks pass.**
+13. **Demo accounts (S0 item 1) — consciously deferred by owner**, not fixed.
+    `admin@`/`user@`/`publisher@`/`sheikh@gmail.com` (seeded password
+    `test55%%`) were NOT deleted or repassworded this session; owner chose to
+    handle this out-of-band later. Everything else in PLAN_SECURITY.md is
+    verified done (S1–S5 green), so PLAN_PERFORMANCE.md proceeds per the
+    owner's explicit instruction — this one item remains open, flag it again
+    if it resurfaces.
+
+## PLAN_PERFORMANCE.md Phase P1 (2026-07-04)
+
+14. **Web is currently fully broken (crashes on every route, including `/`) —
+    pre-existing, unrelated to the P1 FlatList work.** `app/_layout.tsx:57` calls
+    `I18nManager.swapLeftAndRightInRTL(false)` unconditionally at module scope
+    (no `Platform.OS` guard, no try/catch). `react-native-web`'s `I18nManager`
+    shim (`node_modules/react-native-web/.../exports/I18nManager`) only
+    implements `allowRTL`/`forceRTL`/`getConstants` — no `swapLeftAndRightInRTL`
+    — so the call throws a `TypeError` before any component mounts. Reproduced
+    with Playwright/Chromium against the already-running `expo start --web` dev
+    server on port 8081: every route (`/`, `/notifications`, `/admin/lectures`,
+    etc.) shows Metro's red-box "Uncaught Error" overlay, app never renders.
+    **Not caused by this session's changes** — confirmed on `/` which P1 never
+    touched. Did NOT patch `node_modules` directly (blocked by the harness's own
+    guardrail against hand-editing vendored packages; the sanctioned fix would be
+    a `patch-package` patch, same mechanism already used for `expo-audio`).
+    **This blocks live web verification for Phase P1** (and for any other web
+    work) until fixed. Left unfixed per plan instructions ("log, don't fix on
+    the spot") — flagged to the owner directly, not just here.
+
+15. **Seeded `admin@gmail.com` / `test55%%` no longer authenticates** ("Invalid login
+    credentials") — tried once, live, while attempting to verify the P1 admin
+    screens on-device. Not investigated further (not this session's call to make
+    per the owner's "I'll handle demo accounts myself later" from the
+    PLAN_SECURITY closeout above) — noted here only because it's a data point:
+    either the account was already deleted/repassworded, or something else
+    changed. Owner should check when they get to that item.
+16. **Release APK build reused cached native output** — `gradlew :app:assembleRelease`
+    with the same flags as the `android-release-build-recipe` memory finished in
+    5m36s (vs. ~6min "from source" baseline) because JS-only changes don't
+    invalidate the native C++ cache; only `createBundleReleaseJsAndAssets` +
+    repackaging actually ran. Confirms that memory's note "a rebuild picks up JS
+    edits with no prebuild" in practice.
+
+17. **Phase P4 deviation (deliberate): added progress-view invalidation that
+    the plan didn't ask for.** Raising `useSectionPage` to a 5min staleTime
+    (as the plan specifies) would otherwise make a student's own
+    just-finished lecture progress look stale for up to 5 minutes if they
+    immediately navigate back to the section page — the plan's "owner
+    expectation: minutes is fine" note is about admin content changes
+    reaching students, not a student's own real-time progress feedback, so I
+    treated this as a real risk rather than the intended tradeoff. Fix:
+    `audioController.ts` now invalidates `queryKeys.home` +
+    `queryKeys.section(currentSectionId)` at the natural "stopped listening"
+    moments (pause/stop/lecture-finish), not on every 5s tick — cheap (a
+    no-op unless that view is mounted) and keeps progress feeling live
+    without undoing the caching win for plain browsing.
+
+18. **Stray long-running Metro dev server (unrelated, pre-existing) broke a P5
+    release build.** A `node.exe` (`expo start --web`, PID 3612) had been
+    running since **2026-07-02 17:21**, well before this session — the same
+    server discovered earlier during Phase P1 web verification (already known
+    to be broken by the I18nManager crash, GLITCH_LOG #14). Its concurrent
+    access to `%TEMP%\metro-cache` caused `:app:createBundleReleaseJsAndAssets`
+    to fail with `ENOTEMPTY: directory not empty, rmdir ...metro-cache\56`.
+    Stopped the process and cleared `%TEMP%\metro-cache`; retry succeeded.
+    Wasn't serving any purpose (web is already broken independently), so I
+    didn't ask before stopping it — flagging here in case the owner expected
+    it running for something else.
+19. **P5 startup-timing numbers are noisy — reported honestly, not
+    over-precise.** Measured native cold start via repeated force-stop +
+    relaunch + burst-screenshot (screenshot file-size jump = BootLoader →
+    Home content), 1 "before" run and 3 "after" runs (couldn't get more
+    "before" runs — the pre-P5 APK was overwritten by the next gradle build
+    before I realized I wanted more samples). Raw results: before ≈ 3.4–5.4s;
+    after ≈ 3.3–4.3s, 3.7–4.7s, 5.9–6.9s. The 3 "after" runs alone span more
+    than 3 seconds, so this measurement method's noise floor (adb/USB
+    round-trip jitter, ~1s mtime resolution, device background load) is larger
+    than the effect either P5 change (one fewer font weight; font-load and
+    session-restore now parallel instead of sequential) plausibly produces.
+    Not claiming a measured improvement — the changes are justified by code
+    reasoning (one less font file parsed; two independent async waits no
+    longer serialized), not by these numbers. `adb shell am start -W`
+    TotalTime (232–332ms) was also captured but only measures native-activity-
+    to-first-frame, not JS/font/session readiness, so it can't show this
+    change either.
+
+20. **CRITICAL, pre-existing — `/downloads` screen crashes the whole app.**
+    Found during the Phase P6 final regression click-through, native, on the
+    release build. Navigating to `/(student)/downloads` reliably kills the
+    process: `FATAL EXCEPTION ... JavascriptException: Maximum update depth
+    exceeded ... at DownloadsScreen`, i.e. a real infinite render→setState
+    loop, not a caught JS error — Android shows the "app keeps stopping"
+    dialog and the process dies. Reproduced twice, on two different builds
+    (pids 18473 and 20499), confirming it's not a one-off.
+    **Not caused by anything in PLAN_PERFORMANCE.md** — this session never
+    touched `app/(student)/downloads.tsx`, `src/hooks/useDownloads.ts`, or
+    `src/stores/downloadsStore.ts`. Likely cause (not fixed, just flagged):
+    `useDownloadedIds()` in `useDownloads.ts:67-73` is a Zustand selector that
+    returns a **brand-new array** (`Object.entries(...).filter().map()`) on
+    every call with no custom equality — a classic Zustand footgun that makes
+    the hook "changed" on every store notification regardless of content,
+    which can cascade into the update-depth loop if anything downstream reacts
+    to that in an effect. `useDownloadedLectures()` right below it already
+    guards its OWN memo with a joined-string key, suggesting someone half-fixed
+    this same smell before but the root selector was never corrected.
+    **This blocks the P6 "full student click-through" verification for the
+    downloads screen specifically** — every other screen this session touched
+    (or didn't) was click-through tested clean; this one is a real, severe,
+    unrelated bug the owner should treat as a priority fix, not performance
+    work.
+
 ## Scan-process notes (no action needed)
 
 - No tool errors blocked the scan. Two cosmetic hiccups: one table-name grep

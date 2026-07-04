@@ -6,9 +6,11 @@
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
   Pressable,
   StyleSheet,
@@ -247,7 +249,13 @@ export default function AdminUsers() {
 
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data: users = [], isLoading } = useAdminUsers(search);
+  const {
+    data: users = [],
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useAdminUsers(search);
 
   const shown = useMemo(() => {
     if (filter === 'all') return users;
@@ -262,8 +270,18 @@ export default function AdminUsers() {
       ? `${arNum(users.length)} حساباً`
       : `${arNum(shown.length)} من ${arNum(users.length)} حساباً`;
 
-  return (
-    <AdminShell active="users" breadcrumb="إدارة المستخدمين">
+  const renderItem = useCallback(
+    ({ item: u }: { item: AdminUserRow }) => (
+      <UserCard
+        user={u}
+        onPress={() => router.push(`/admin/user/${u.id}` as Parameters<typeof router.push>[0])}
+      />
+    ),
+    [router],
+  );
+
+  const header = (
+    <>
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
           <Txt weight="display" size={26} color={colors.primaryTeal} style={{ marginBottom: 4 }}>
@@ -284,8 +302,6 @@ export default function AdminUsers() {
         </Pressable>
       </View>
       <View style={{ height: 20 }} />
-
-      <CreateUserModal visible={showCreate} onClose={() => setShowCreate(false)} />
 
       {/* Search */}
       <View style={styles.searchBox}>
@@ -325,31 +341,46 @@ export default function AdminUsers() {
           );
         })}
       </View>
+    </>
+  );
 
-      {/* List */}
-      {isLoading ? (
-        <Txt size={13} color={colors.textMuted} align="center" style={{ paddingVertical: 24 }}>
-          جارٍ التحميل…
-        </Txt>
-      ) : shown.length === 0 ? (
-        <Card>
-          <Txt size={13} color={colors.textMuted} align="center">
-            لا حسابات مطابقة.
-          </Txt>
-        </Card>
-      ) : (
-        <View style={{ gap: 12 }}>
-          {shown.map((u) => (
-            <UserCard
-              key={u.id}
-              user={u}
-              onPress={() =>
-                router.push(`/admin/user/${u.id}` as Parameters<typeof router.push>[0])
-              }
-            />
-          ))}
-        </View>
-      )}
+  return (
+    <AdminShell active="users" breadcrumb="إدارة المستخدمين" scroll={false}>
+      <CreateUserModal visible={showCreate} onClose={() => setShowCreate(false)} />
+
+      <FlatList
+        style={{ flex: 1 }}
+        data={shown}
+        keyExtractor={(u) => u.id}
+        renderItem={renderItem}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        initialNumToRender={10}
+        onEndReachedThreshold={0.5}
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+        }}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          isLoading ? (
+            <Txt size={13} color={colors.textMuted} align="center" style={{ paddingVertical: 24 }}>
+              جارٍ التحميل…
+            </Txt>
+          ) : (
+            <Card>
+              <Txt size={13} color={colors.textMuted} align="center">
+                لا حسابات مطابقة.
+              </Txt>
+            </Card>
+          )
+        }
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={colors.primaryTeal} />
+            </View>
+          ) : null
+        }
+      />
     </AdminShell>
   );
 }

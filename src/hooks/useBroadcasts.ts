@@ -19,11 +19,12 @@ export function useAdminBroadcasts() {
   });
 }
 
-/** Active Home cards (server 1-day window). */
+/** Active Home cards (server 1-day window). Admin creation already invalidates this. */
 export function useHomeBroadcasts() {
   return useQuery({
     queryKey: queryKeys.homeBroadcasts,
     queryFn: getHomeBroadcasts,
+    staleTime: 5 * 60_000,
   });
 }
 

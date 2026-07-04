@@ -8,9 +8,10 @@
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
   StyleSheet,
   TextInput,
@@ -355,8 +356,22 @@ export function QuestionsBoard({
   const publicQ = usePublicQuestions(scope, lectureId);
   const myQ = useMyQuestions(scope, lectureId, !isGuest);
 
-  return (
-    <View>
+  const isLoading = tab === 'public' ? publicQ.isLoading : myQ.isLoading;
+  const data: (PublicQuestion | MyQuestion)[] =
+    tab === 'public' ? (publicQ.data ?? []) : (myQ.data ?? []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: PublicQuestion | MyQuestion }) =>
+      tab === 'public' ? (
+        <PublicQuestionCard q={item as PublicQuestion} />
+      ) : (
+        <MyQuestionCard q={item as MyQuestion} onDelete={() => setPendingDelete(item as MyQuestion)} />
+      ),
+    [tab],
+  );
+
+  const header = (
+    <>
       {isGuest ? <RegisterNudge /> : <Composer scope={scope} lectureId={lectureId} />}
 
       {/* Tabs */}
@@ -370,13 +385,51 @@ export function QuestionsBoard({
           <SegChip label="أسئلتي" active={tab === 'mine'} onPress={() => setTab('mine')} />
         ) : null}
       </View>
+    </>
+  );
 
-      {tab === 'public' ? (
-        publicQ.isLoading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator color={colors.primaryTeal} />
-          </View>
-        ) : (publicQ.data ?? []).length === 0 ? (
+  const confirmDialog = (
+    <ConfirmDialog
+      visible={!!pendingDelete}
+      title="حذف السؤال"
+      message={
+        pendingDelete?.status === 'answered'
+          ? 'سيُحذف سؤالك وجوابه نهائياً، ولن يظهر في الأسئلة المجابة.'
+          : 'سيُحذف سؤالك نهائياً.'
+      }
+      confirmLabel="حذف"
+      pending={deleteOwn.isPending}
+      onConfirm={() => {
+        if (!pendingDelete) return;
+        deleteOwn.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
+      }}
+      onCancel={() => setPendingDelete(null)}
+    />
+  );
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1 }}>
+        {header}
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color={colors.primaryTeal} />
+        </View>
+        {confirmDialog}
+      </View>
+    );
+  }
+
+  return (
+    <FlatList
+      style={{ flex: 1 }}
+      data={data}
+      keyExtractor={(item) => item.id}
+      renderItem={renderItem}
+      initialNumToRender={10}
+      ListHeaderComponent={header}
+      ListFooterComponent={confirmDialog}
+      ListEmptyComponent={
+        tab === 'public' ? (
           <View style={styles.emptyBox}>
             <Feather name="help-circle" size={24} color={colors.textGhost} />
             <Txt size={13.5} color={colors.textMuted} align="center">
@@ -387,42 +440,15 @@ export function QuestionsBoard({
             </Txt>
           </View>
         ) : (
-          (publicQ.data ?? []).map((q) => <PublicQuestionCard key={q.id} q={q} />)
+          <View style={styles.emptyBox}>
+            <Feather name="edit-3" size={24} color={colors.textGhost} />
+            <Txt size={13.5} color={colors.textMuted} align="center">
+              لم تسأل شيئاً بعد
+            </Txt>
+          </View>
         )
-      ) : myQ.isLoading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator color={colors.primaryTeal} />
-        </View>
-      ) : (myQ.data ?? []).length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Feather name="edit-3" size={24} color={colors.textGhost} />
-          <Txt size={13.5} color={colors.textMuted} align="center">
-            لم تسأل شيئاً بعد
-          </Txt>
-        </View>
-      ) : (
-        (myQ.data ?? []).map((q) => (
-          <MyQuestionCard key={q.id} q={q} onDelete={() => setPendingDelete(q)} />
-        ))
-      )}
-
-      <ConfirmDialog
-        visible={!!pendingDelete}
-        title="حذف السؤال"
-        message={
-          pendingDelete?.status === 'answered'
-            ? 'سيُحذف سؤالك وجوابه نهائياً، ولن يظهر في الأسئلة المجابة.'
-            : 'سيُحذف سؤالك نهائياً.'
-        }
-        confirmLabel="حذف"
-        pending={deleteOwn.isPending}
-        onConfirm={() => {
-          if (!pendingDelete) return;
-          deleteOwn.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
-        }}
-        onCancel={() => setPendingDelete(null)}
-      />
-    </View>
+      }
+    />
   );
 }
 

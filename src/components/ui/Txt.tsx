@@ -8,17 +8,9 @@ import {
 
 import { colors, fonts } from '@/constants/theme';
 
-type Weight =
-  | 'light'
-  | 'regular'
-  | 'medium'
-  | 'semibold'
-  | 'bold'
-  | 'display'
-  | 'displayRegular';
+type Weight = 'regular' | 'medium' | 'semibold' | 'bold' | 'display' | 'displayRegular';
 
 const FONT: Record<Weight, string> = {
-  light: fonts.bodyLight,
   regular: fonts.body,
   medium: fonts.bodyMedium,
   semibold: fonts.bodySemibold,

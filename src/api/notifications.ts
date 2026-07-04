@@ -108,15 +108,29 @@ export async function setNotificationPref(
 }
 
 // --- Inbox -------------------------------------------------------------------
-/** The user's notifications, newest first. */
-export async function listNotifications(): Promise<NotificationItem[]> {
-  if (USE_MOCK) return mock.listNotifications();
-  const { data, error } = await supabase
+export type NotificationPage = {
+  items: NotificationItem[];
+  /** `created_at` cursor for the next page, or null when this was the last page. */
+  nextCursor: string | null;
+};
+
+const NOTIFICATIONS_PAGE_SIZE = 50;
+
+/** One page of the user's notifications, newest first (bounded — P3 perf plan). */
+export async function listNotifications(cursor?: string): Promise<NotificationPage> {
+  if (USE_MOCK) {
+    const items = await mock.listNotifications();
+    return { items, nextCursor: null };
+  }
+  let query = supabase
     .from('notifications')
     .select('id, type, title, body, data, read_at, created_at')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(NOTIFICATIONS_PAGE_SIZE);
+  if (cursor) query = query.lt('created_at', cursor);
+  const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []).map((n) => ({
+  const items = (data ?? []).map((n) => ({
     id: n.id,
     type: n.type,
     title: n.title,
@@ -125,6 +139,9 @@ export async function listNotifications(): Promise<NotificationItem[]> {
     read: n.read_at !== null,
     createdAt: n.created_at,
   }));
+  const nextCursor =
+    items.length === NOTIFICATIONS_PAGE_SIZE ? items[items.length - 1].createdAt : null;
+  return { items, nextCursor };
 }
 
 /** Mark a single notification read. */

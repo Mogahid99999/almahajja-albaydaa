@@ -6,8 +6,8 @@
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import type { AdminQuizRow } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
@@ -125,66 +125,79 @@ export default function AdminQuizzesScreen() {
     return [...bySection.values()];
   }, [quizzes]);
 
-  return (
-    <AdminShell active="quizzes" breadcrumb="الاختبارات">
-      <View style={styles.pageHeader}>
-        <Pressable
-          onPress={() => router.push('/admin/quiz-edit' as Parameters<typeof router.push>[0])}
-          style={({ pressed }) => [styles.createBtn, pressed && { opacity: 0.85 }]}
-          accessibilityRole="button"
-        >
-          <Feather name="plus" size={16} color={colors.onTealPrimary} style={{ marginLeft: 6 }} />
-          <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
-            اختبار جديد
-          </Txt>
-        </Pressable>
-        <View>
-          <Txt weight="display" size={27} color={colors.primaryTeal}>
-            الاختبارات
-          </Txt>
-          <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
-            {`${arNum(quizzes.length)} اختبار · تُعرض للطلاب على صفحة القسم بعد النشر`}
-          </Txt>
-        </View>
-      </View>
-
-      {isLoading ? (
-        <Card>
-          <Txt size={13} color={colors.textGhost} align="center">
-            جارٍ التحميل...
-          </Txt>
-        </Card>
-      ) : groups.length === 0 ? (
-        <Card>
-          <View style={{ alignItems: 'center', paddingVertical: 24, gap: 8 }}>
-            <Feather name="check-square" size={26} color={colors.accentBrassSoft} />
-            <Txt size={13.5} weight="semibold" color={colors.textMuted} align="center">
-              لا توجد اختبارات بعد
-            </Txt>
-            <Txt size={12} color={colors.textGhost} align="center">
-              أنشئ أول اختبار وعلّقه على قسم أو عنصر داخلي.
-            </Txt>
-          </View>
-        </Card>
-      ) : (
-        <View style={{ gap: 24 }}>
-          {groups.map((group) => (
-            <View key={group.title + group.rows[0].id}>
-              <Txt weight="semibold" size={15} color={colors.textInk} style={{ marginBottom: 10 }}>
-                {group.title}
-              </Txt>
-              <Card padded={false} style={{ overflow: 'hidden', maxWidth: 860 }}>
-                {group.rows.map((quiz, idx) => (
-                  <React.Fragment key={quiz.id}>
-                    {idx > 0 ? <Divider /> : null}
-                    <QuizRow quiz={quiz} onDelete={() => setPendingDelete(quiz)} />
-                  </React.Fragment>
-                ))}
-              </Card>
-            </View>
+  const renderGroup = useCallback(
+    ({ item: group }: { item: { title: string; rows: AdminQuizRow[] } }) => (
+      <View>
+        <Txt weight="semibold" size={15} color={colors.textInk} style={{ marginBottom: 10 }}>
+          {group.title}
+        </Txt>
+        <Card padded={false} style={{ overflow: 'hidden', maxWidth: 860 }}>
+          {group.rows.map((quiz, idx) => (
+            <React.Fragment key={quiz.id}>
+              {idx > 0 ? <Divider /> : null}
+              <QuizRow quiz={quiz} onDelete={() => setPendingDelete(quiz)} />
+            </React.Fragment>
           ))}
-        </View>
-      )}
+        </Card>
+      </View>
+    ),
+    [],
+  );
+
+  const header = (
+    <View style={styles.pageHeader}>
+      <Pressable
+        onPress={() => router.push('/admin/quiz-edit' as Parameters<typeof router.push>[0])}
+        style={({ pressed }) => [styles.createBtn, pressed && { opacity: 0.85 }]}
+        accessibilityRole="button"
+      >
+        <Feather name="plus" size={16} color={colors.onTealPrimary} style={{ marginLeft: 6 }} />
+        <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+          اختبار جديد
+        </Txt>
+      </Pressable>
+      <View>
+        <Txt weight="display" size={27} color={colors.primaryTeal}>
+          الاختبارات
+        </Txt>
+        <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
+          {`${arNum(quizzes.length)} اختبار · تُعرض للطلاب على صفحة القسم بعد النشر`}
+        </Txt>
+      </View>
+    </View>
+  );
+
+  return (
+    <AdminShell active="quizzes" breadcrumb="الاختبارات" scroll={false}>
+      <FlatList
+        style={{ flex: 1 }}
+        data={groups}
+        keyExtractor={(group) => group.title + group.rows[0].id}
+        renderItem={renderGroup}
+        ItemSeparatorComponent={() => <View style={{ height: 24 }} />}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          isLoading ? (
+            <Card>
+              <Txt size={13} color={colors.textGhost} align="center">
+                جارٍ التحميل...
+              </Txt>
+            </Card>
+          ) : (
+            <Card>
+              <View style={{ alignItems: 'center', paddingVertical: 24, gap: 8 }}>
+                <Feather name="check-square" size={26} color={colors.accentBrassSoft} />
+                <Txt size={13.5} weight="semibold" color={colors.textMuted} align="center">
+                  لا توجد اختبارات بعد
+                </Txt>
+                <Txt size={12} color={colors.textGhost} align="center">
+                  أنشئ أول اختبار وعلّقه على قسم أو عنصر داخلي.
+                </Txt>
+              </View>
+            </Card>
+          )
+        }
+      />
 
       <ConfirmDialog
         visible={!!pendingDelete}

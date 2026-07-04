@@ -16,7 +16,7 @@ export default function LectureQuestionsScreen() {
   const { data: lecture } = useLecturePlayback(id ?? '');
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen scroll={false} bottomPad={118} padded>
       <View
         style={{
           flexDirection: 'row',

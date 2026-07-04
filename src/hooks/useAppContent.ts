@@ -3,21 +3,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAboutContent, getAppConfigForAdmin, getSupportContact, setAppConfig } from '@/api/appContent';
 import { queryKeys } from '@/constants/queryKeys';
 
-/** Student-facing About content (falls back to the original copy). */
+/** Student-facing About content (falls back to the original copy). Rarely edited. */
 export function useAboutContent() {
   return useQuery({
     queryKey: queryKeys.aboutContent,
     queryFn: getAboutContent,
-    staleTime: 5 * 60_000,
+    staleTime: 30 * 60_000,
   });
 }
 
-/** WhatsApp support link for the sign-in screen (empty = hidden). */
+/** WhatsApp support link for the sign-in screen (empty = hidden). Rarely edited. */
 export function useSupportContact() {
   return useQuery({
     queryKey: queryKeys.supportContact,
     queryFn: getSupportContact,
-    staleTime: 5 * 60_000,
+    staleTime: 30 * 60_000,
   });
 }
 

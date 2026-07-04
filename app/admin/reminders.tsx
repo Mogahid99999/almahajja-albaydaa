@@ -8,8 +8,9 @@
  * keep their wording); deleting soft-deletes and clears the inbox rows.
  */
 import { Feather } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
+  FlatList,
   Pressable,
   StyleSheet,
   Switch,
@@ -22,7 +23,7 @@ import {
 import type { Broadcast } from '@/api/broadcasts';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { Card, Divider, Rhombus, Txt } from '@/components/ui';
+import { Card, Divider, Rhombus, Txt, cardRowStyle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useAdminBroadcasts,
@@ -164,8 +165,26 @@ export default function RemindersScreen() {
     }
   }
 
-  return (
-    <AdminShell active="reminders" breadcrumb="التذكيرات النافعة">
+  const renderItem = useCallback(
+    ({ item: b, index }: { item: Broadcast; index: number }) => (
+      <View style={[cardRowStyle(index === 0, index === broadcasts.length - 1), { maxWidth: 700 }]}>
+        <BroadcastRow broadcast={b} onEdit={() => startEdit(b)} onDelete={() => setPendingDelete(b)} />
+      </View>
+    ),
+    [broadcasts.length],
+  );
+
+  const separator = useCallback(
+    () => (
+      <View style={{ maxWidth: 700 }}>
+        <Divider />
+      </View>
+    ),
+    [],
+  );
+
+  const header = (
+    <>
       <Txt weight="display" size={27} color={colors.primaryTeal} style={styles.pageTitle}>
         التذكيرات النافعة
       </Txt>
@@ -265,32 +284,35 @@ export default function RemindersScreen() {
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.listHeading}>
         التذكيرات المرسلة
       </Txt>
-      {isLoading ? (
-        <Card>
-          <Txt size={13} color={colors.textGhost} align="center">
-            جارٍ التحميل...
-          </Txt>
-        </Card>
-      ) : broadcasts.length === 0 ? (
-        <Card>
-          <Txt size={13} color={colors.textMuted} align="center">
-            لا تذكيرات بعد. أرسل الأول أعلاه.
-          </Txt>
-        </Card>
-      ) : (
-        <Card padded={false} style={styles.listCard}>
-          {broadcasts.map((b, idx) => (
-            <React.Fragment key={b.id}>
-              {idx > 0 ? <Divider /> : null}
-              <BroadcastRow
-                broadcast={b}
-                onEdit={() => startEdit(b)}
-                onDelete={() => setPendingDelete(b)}
-              />
-            </React.Fragment>
-          ))}
-        </Card>
-      )}
+    </>
+  );
+
+  return (
+    <AdminShell active="reminders" breadcrumb="التذكيرات النافعة" scroll={false}>
+      <FlatList
+        style={{ flex: 1 }}
+        data={broadcasts}
+        keyExtractor={(b) => b.id}
+        renderItem={renderItem}
+        ItemSeparatorComponent={separator}
+        initialNumToRender={10}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          isLoading ? (
+            <Card>
+              <Txt size={13} color={colors.textGhost} align="center">
+                جارٍ التحميل...
+              </Txt>
+            </Card>
+          ) : (
+            <Card>
+              <Txt size={13} color={colors.textMuted} align="center">
+                لا تذكيرات بعد. أرسل الأول أعلاه.
+              </Txt>
+            </Card>
+          )
+        }
+      />
 
       <ConfirmDialog
         visible={!!pendingDelete}

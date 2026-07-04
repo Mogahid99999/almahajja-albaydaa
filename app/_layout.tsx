@@ -1,6 +1,5 @@
 import { Amiri_400Regular, Amiri_700Bold } from '@expo-google-fonts/amiri';
 import {
-  IBMPlexSansArabic_300Light,
   IBMPlexSansArabic_400Regular,
   IBMPlexSansArabic_500Medium,
   IBMPlexSansArabic_600SemiBold,
@@ -88,7 +87,13 @@ function BootLoader() {
  * flash blank until the next launch. There is NO login-first gate: once ready,
  * Home is the entry point for everyone.
  */
-function SessionGate({ children }: { children: ReactNode }) {
+function SessionGate({
+  fontsLoaded,
+  children,
+}: {
+  fontsLoaded: boolean;
+  children: ReactNode;
+}) {
   const { data: user, isLoading } = useCurrentUser();
   const ensure = useEnsureSession();
   const bootedRef = useRef(false);
@@ -106,8 +111,11 @@ function SessionGate({ children }: { children: ReactNode }) {
   // Ready once we have a session; if the anon sign-in fails (e.g. offline on a
   // brand-new install) fall through anyway so the app is never stuck on a loader.
   // On web there's no silent session, so readiness is just "auth check finished".
-  const ready = Platform.OS === 'web' ? !isLoading : !!user || ensure.isError;
-  if (!ready) return <BootLoader />;
+  // Combined with fontsLoaded (not gated separately beforehand) so the anon
+  // sign-in network round-trip and the font load happen in PARALLEL — total
+  // boot time is max(fonts, session), not fonts-then-session (P5 perf plan).
+  const sessionReady = Platform.OS === 'web' ? !isLoading : !!user || ensure.isError;
+  if (!fontsLoaded || !sessionReady) return <BootLoader />;
   return <>{children}</>;
 }
 
@@ -346,25 +354,24 @@ function NotificationsBootstrap() {
 }
 
 export default function RootLayout() {
+  // Not an early return before the provider tree (P5 perf plan): mounting
+  // QueryClientProvider unconditionally lets SessionGate's anon sign-in kick
+  // off immediately, in parallel with the font load, instead of waiting for
+  // fonts to resolve first.
   const [fontsLoaded] = useFonts({
     Amiri_400Regular,
     Amiri_700Bold,
-    IBMPlexSansArabic_300Light,
     IBMPlexSansArabic_400Regular,
     IBMPlexSansArabic_500Medium,
     IBMPlexSansArabic_600SemiBold,
     IBMPlexSansArabic_700Bold,
   });
 
-  if (!fontsLoaded) {
-    return <BootLoader />;
-  }
-
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <SessionGate>
+        <SessionGate fontsLoaded={fontsLoaded}>
           <UpdateGate>
             <AuthGate />
             <NotificationsBootstrap />

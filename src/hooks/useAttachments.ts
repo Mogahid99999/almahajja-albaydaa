@@ -11,12 +11,19 @@ import {
 import type { AttachmentOwnerRef, CreateAttachmentInput } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 
+// Signed file URLs are valid 3600s — cache near that long (45min stale /
+// 50min gc) so revisiting the same section/lecture/attachment never re-mints.
+const SIGNED_URL_STALE_TIME = 45 * 60_000;
+const SIGNED_URL_GC_TIME = 50 * 60_000;
+
 /** Attachments owned by a section node. */
 export function useSectionAttachments(sectionId: string) {
   return useQuery({
     queryKey: queryKeys.sectionAttachments(sectionId),
     queryFn: () => listSectionAttachments(sectionId),
     enabled: !!sectionId,
+    staleTime: SIGNED_URL_STALE_TIME,
+    gcTime: SIGNED_URL_GC_TIME,
   });
 }
 
@@ -26,6 +33,8 @@ export function useLectureAttachments(lectureId: string) {
     queryKey: queryKeys.lectureAttachments(lectureId),
     queryFn: () => listLectureAttachments(lectureId),
     enabled: !!lectureId,
+    staleTime: SIGNED_URL_STALE_TIME,
+    gcTime: SIGNED_URL_GC_TIME,
   });
 }
 
@@ -35,6 +44,8 @@ export function useAttachment(id: string) {
     queryKey: queryKeys.attachment(id),
     queryFn: () => getAttachment(id),
     enabled: !!id,
+    staleTime: SIGNED_URL_STALE_TIME,
+    gcTime: SIGNED_URL_GC_TIME,
   });
 }
 

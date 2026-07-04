@@ -15,19 +15,21 @@
  *
  * Design ref: screens/صفحة القسم.dc.html
  */
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, FlatList, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import { useCallback } from 'react';
 
 import { arLectureCount } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
 import { useSectionPage } from '@/hooks/useSections';
+import type { LectureRow } from '@/api/types';
 
-import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { Divider } from '@/components/ui/Divider';
 import { Screen } from '@/components/ui/Screen';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
+import { cardRowStyle } from '@/components/ui/cardRowStyle';
 
 import { LectureRowItem } from '@/components/section/LectureRowItem';
 import { ProgressCard } from '@/components/section/ProgressCard';
@@ -40,6 +42,30 @@ import { QuizListCard } from '@/components/quiz/QuizListCard';
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useSectionPage(id ?? '');
+  const lectures = data?.lectures ?? [];
+
+  const renderLecture = useCallback(
+    ({ item, index }: { item: LectureRow; index: number }) => (
+      <View
+        style={[
+          cardRowStyle(index === 0, index === lectures.length - 1),
+          { marginHorizontal: spacing.screenH },
+        ]}
+      >
+        <LectureRowItem lecture={item} />
+      </View>
+    ),
+    [lectures.length],
+  );
+
+  const lectureSeparator = useCallback(
+    () => (
+      <View style={{ marginHorizontal: spacing.screenH }}>
+        <Divider />
+      </View>
+    ),
+    [],
+  );
 
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -70,22 +96,14 @@ export default function SectionScreen() {
     );
   }
 
-  const { section, parentTitle, sheikhNames, rollup, subsections, lectures, attachments, quizzes } =
-    data;
+  const { section, parentTitle, sheikhNames, rollup, subsections, attachments, quizzes } = data;
 
   // The nav bar label is the parent title (breadcrumb context), or the section
   // title itself when this is a root-level section (parentTitle is null).
   const navLabel = parentTitle ?? section.title;
 
-  return (
-    <Screen
-      scroll
-      padded
-      bottomPad={118}
-      // Nav bar needs negative margin to break out of screen padding — we give
-      // the Screen no horizontal padding and handle it inside SectionNavBar.
-      contentStyle={{ paddingHorizontal: 0 }}
-    >
+  const listHeader = (
+    <>
       {/* ── Nav bar ─────────────────────────────────────────────────────────── */}
       <View style={{ paddingHorizontal: spacing.screenH }}>
         <SectionNavBar contextLabel={navLabel} />
@@ -136,43 +154,15 @@ export default function SectionScreen() {
         </View>
       ) : null}
 
-      {/* ── Lectures list ────────────────────────────────────────────────────── */}
-      <View
-        style={{
-          paddingHorizontal: spacing.screenH,
-          marginTop: 26,
-        }}
-      >
+      {/* ── Lectures list title ───────────────────────────────────────────────── */}
+      <View style={{ paddingHorizontal: spacing.screenH, marginTop: 26 }}>
         <SectionTitle title="محاضرات القسم" />
-
-        {lectures.length === 0 ? (
-          /* Quiet empty state — no lectures in this section yet */
-          <View
-            style={{
-              paddingVertical: 32,
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <Txt size={13} color={colors.textMuted} align="center">
-              لا توجد محاضرات في هذا القسم بعد
-            </Txt>
-            <Txt size={11} color={colors.textGhost} align="center">
-              تابع قريباً
-            </Txt>
-          </View>
-        ) : (
-          <Card padded={false} style={{ overflow: 'hidden' }}>
-            {lectures.map((lecture, index) => (
-              <View key={lecture.id}>
-                {index > 0 ? <Divider /> : null}
-                <LectureRowItem lecture={lecture} />
-              </View>
-            ))}
-          </Card>
-        )}
       </View>
+    </>
+  );
 
+  const listFooter = (
+    <>
       {/* ── Quizzes (PRD §12) ────────────────────────────────────────────────── */}
       {quizzes.length > 0 ? (
         <View style={{ paddingHorizontal: spacing.screenH, marginTop: 26 }}>
@@ -186,6 +176,46 @@ export default function SectionScreen() {
           <AttachmentList attachments={attachments} />
         </View>
       ) : null}
+    </>
+  );
+
+  return (
+    <Screen
+      scroll={false}
+      padded
+      bottomPad={118}
+      // Nav bar needs negative margin to break out of screen padding — we give
+      // the Screen no horizontal padding and handle it inside SectionNavBar.
+      contentStyle={{ paddingHorizontal: 0 }}
+    >
+      <FlatList
+        style={{ flex: 1 }}
+        data={lectures}
+        keyExtractor={(lecture) => lecture.id}
+        renderItem={renderLecture}
+        ItemSeparatorComponent={lectureSeparator}
+        initialNumToRender={10}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
+        ListEmptyComponent={
+          /* Quiet empty state — no lectures in this section yet */
+          <View
+            style={{
+              paddingHorizontal: spacing.screenH,
+              paddingVertical: 32,
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <Txt size={13} color={colors.textMuted} align="center">
+              لا توجد محاضرات في هذا القسم بعد
+            </Txt>
+            <Txt size={11} color={colors.textGhost} align="center">
+              تابع قريباً
+            </Txt>
+          </View>
+        }
+      />
     </Screen>
   );
 }

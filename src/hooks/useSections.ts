@@ -8,11 +8,13 @@ export function useHome() {
   return useQuery({ queryKey: queryKeys.home, queryFn: getHomeData });
 }
 
+/** Section tree node + its rollup — changes rarely; 5min keeps back-and-forth browsing quiet. */
 export function useSectionPage(sectionId: string) {
   return useQuery({
     queryKey: queryKeys.section(sectionId),
     queryFn: () => getSectionPage(sectionId),
     enabled: !!sectionId,
+    staleTime: 5 * 60_000,
   });
 }
 

@@ -16,7 +16,9 @@ import * as Linking from 'expo-linking';
 
 import { getLecturePlayback, getNextLecture, getPreviousLecture } from '@/api/lectures';
 import { saveLectureProgress } from '@/api/progress';
+import { queryKeys } from '@/constants/queryKeys';
 import { localUriFor, readDownloadMeta, updateDownloadPosition } from '@/lib/downloads';
+import { queryClient } from '@/lib/queryClient';
 import { usePlayerStore, type PlaybackRate } from '@/stores/playerStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -135,6 +137,7 @@ function onStatus(status: AudioStatus) {
     if (Date.now() < seekGuardUntil) return;
     // Force completion (position = duration → ≥90% threshold).
     void persist(currentDuration || status.currentTime || 0, true);
+    invalidateProgressViews();
     s.setPlaying(false);
     // Auto-advance to the next lecture in the section, if enabled and one exists.
     if (useSettingsStore.getState().autoAdvance && s.nextLectureId) {
@@ -199,6 +202,19 @@ export function playPrev() {
   if (prevId) void playLecture(prevId);
 }
 
+/**
+ * Section/Home rollups now cache for 5min (P4 perf plan) — refresh them at the
+ * natural "the student just stopped listening" moments (pause/stop/finish)
+ * rather than on every 5s tick, so a just-updated progress % doesn't look
+ * stale if they immediately navigate back to the section.
+ */
+function invalidateProgressViews() {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.home });
+  if (currentSectionId) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.section(currentSectionId) });
+  }
+}
+
 function persist(positionSec: number, finished = false) {
   if (!currentId) return Promise.resolve();
   const pos = finished ? currentDuration : positionSec;
@@ -216,7 +232,7 @@ function persist(positionSec: number, finished = false) {
 /** Create-or-replace the player for `source`, seek to `positionSec`, and play. */
 async function startPlayer(source: string, positionSec: number) {
   if (!player) {
-    player = createAudioPlayer({ uri: source }, { updateInterval: 500 });
+    player = createAudioPlayer({ uri: source }, { updateInterval: 1000 });
     player.addListener('playbackStatusUpdate', onStatus);
     // Lock-screen / notification prev·next (from our expo-audio patch) arrive as a
     // `mediaControlAction` event; route them through the same section-aware
@@ -361,6 +377,7 @@ export function toggle() {
     player.pause();
     store().setPlaying(false);
     void persist(player.currentTime ?? store().positionSec);
+    invalidateProgressViews();
   } else {
     player.play();
     store().setPlaying(true);
@@ -372,6 +389,7 @@ export function pause() {
     player.pause();
     store().setPlaying(false);
     void persist(player.currentTime ?? store().positionSec);
+    invalidateProgressViews();
   }
 }
 
@@ -384,6 +402,7 @@ export function pause() {
 export function stop() {
   if (player) {
     void persist(player.currentTime ?? store().positionSec);
+    invalidateProgressViews();
     try {
       player.pause();
     } catch {

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   banUser,
@@ -15,11 +15,17 @@ import type { AppRole } from '@/api/auth';
 import { queryKeys } from '@/constants/queryKeys';
 
 export function useAdminUsers(search: string) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: queryKeys.adminUsers(search),
-    queryFn: () => getAdminUserList(search),
+    queryFn: ({ pageParam }) => getAdminUserList(search, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
     staleTime: 30_000,
   });
+  return {
+    ...query,
+    data: query.data?.pages.flatMap((p) => p.items) ?? [],
+  };
 }
 
 export function useCreateUser() {

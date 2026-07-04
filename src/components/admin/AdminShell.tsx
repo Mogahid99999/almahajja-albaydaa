@@ -79,6 +79,8 @@ interface AdminShellProps {
   active: NavKey;
   breadcrumb: string;
   children: ReactNode;
+  /** false when the page hosts its own FlatList — avoids nesting it inside this ScrollView. */
+  scroll?: boolean;
 }
 
 // ─── Sidebar (shared by the fixed pane and the compact drawer) ────────────────
@@ -137,20 +139,23 @@ function SidebarBody({
               ]}
               accessibilityRole="button"
             >
+            <View style={styles.navIcons}>
               <Rhombus size={8} color={colors.accentBrass} filled={isActive} />
               <Feather
                 name={item.icon}
                 size={16}
                 color={isActive ? colors.onTealPrimary : colors.onTealSecondary}
-                style={{ marginRight: 10 }}
               />
-              <Txt
-                weight={isActive ? 'semibold' : 'regular'}
-                size={13}
-                color={isActive ? colors.onTealPrimary : colors.onTealSecondary}
-              >
-                {item.label}
-              </Txt>
+            </View>
+
+            <Txt
+              weight={isActive ? 'semibold' : 'regular'}
+              size={13}
+              color={isActive ? colors.onTealPrimary : colors.onTealSecondary}
+              style={styles.navLabel}
+            >
+              {item.label}
+            </Txt>
             </Pressable>
           );
         })}
@@ -204,7 +209,7 @@ function SidebarBody({
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function AdminShell({ active, breadcrumb, children }: AdminShellProps) {
+export function AdminShell({ active, breadcrumb, children, scroll = true }: AdminShellProps) {
   const { width } = useWindowDimensions();
   const compact = width < COMPACT_BREAKPOINT;
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -238,18 +243,31 @@ export function AdminShell({ active, breadcrumb, children }: AdminShellProps) {
           </View>
         </View>
 
-        {/* Scrollable content */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            compact && styles.scrollContentCompact,
-            { paddingBottom: 60 + insets.bottom },
-          ]}
-          showsVerticalScrollIndicator={false}
-        >
-          {children}
-        </ScrollView>
+        {/* Scrollable content (or a plain flex frame when the page owns a FlatList) */}
+        {scroll ? (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[
+              styles.scrollContent,
+              compact && styles.scrollContentCompact,
+              { paddingBottom: 60 + insets.bottom },
+            ]}
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
+        ) : (
+          <View
+            style={[
+              styles.scroll,
+              styles.scrollContent,
+              compact && styles.scrollContentCompact,
+              { paddingBottom: 60 + insets.bottom },
+            ]}
+          >
+            {children}
+          </View>
+        )}
       </View>
 
       {/* ── Wide: fixed right sidebar ── */}
@@ -322,11 +340,27 @@ const styles = StyleSheet.create({
 
   navItem: {
     flexDirection: 'row',
+    direction: 'ltr',
     alignItems: 'center',
+    width: '100%',
     paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     borderRadius: radius.sm,
-    gap: 0,
+  } as ViewStyle,
+
+  navIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 10,
+    width: 42,
+  } as ViewStyle,
+
+  navLabel: {
+    flex: 1,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    marginLeft: 12,
   } as ViewStyle,
 
   navItemActive: {

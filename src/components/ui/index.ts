@@ -12,3 +12,4 @@ export { Screen } from './Screen';
 export { Logo } from './Logo';
 export { Divider } from './Divider';
 export { Rhombus, ConcentricMotif, RhombusEmblem } from './Rhombus';
+export { cardRowStyle } from './cardRowStyle';

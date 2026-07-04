@@ -16,7 +16,8 @@ type Props = {
  * Renders nothing when there is no resume position (no in-progress lecture).
  */
 export function ContinueCard({ continueListening }: Props) {
-  const { currentLectureId, isPlaying } = usePlayerStore();
+  const currentLectureId = usePlayerStore((s) => s.currentLectureId);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
   const router = useRouter();
 
   if (!continueListening) return null;

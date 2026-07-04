@@ -13,7 +13,7 @@ export default function QuestionsScreen() {
   const router = useRouter();
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen scroll={false} bottomPad={118} padded>
       <View
         style={{
           flexDirection: 'row',

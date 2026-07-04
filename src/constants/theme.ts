@@ -58,7 +58,6 @@ export const fonts = {
   displayRegular: 'Amiri_400Regular',
   /** IBM Plex Sans Arabic — UI/body. */
   body: 'IBMPlexSansArabic_400Regular',
-  bodyLight: 'IBMPlexSansArabic_300Light',
   bodyMedium: 'IBMPlexSansArabic_500Medium',
   bodySemibold: 'IBMPlexSansArabic_600SemiBold',
   bodyBold: 'IBMPlexSansArabic_700Bold',

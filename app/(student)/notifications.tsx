@@ -9,9 +9,10 @@
  *
  * Route: /(student)/notifications  (opened from the Home header bell)
  */
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { memo, useCallback } from 'react';
 
 import type { NotificationItem } from '@/api/types';
 import { colors } from '@/constants/theme';
@@ -23,7 +24,7 @@ import {
   useUnreadCount,
 } from '@/hooks/useNotifications';
 
-import { Card } from '@/components/ui/Card';
+import { cardRowStyle } from '@/components/ui/cardRowStyle';
 import { Divider } from '@/components/ui/Divider';
 import { IconButton } from '@/components/ui/IconButton';
 import { Rhombus } from '@/components/ui/Rhombus';
@@ -43,7 +44,7 @@ function relativeTime(iso: string): string {
   return `منذ ${arNum(days)} يوم`;
 }
 
-function NotificationRow({
+const NotificationRow = memo(function NotificationRow({
   item,
   onPress,
 }: {
@@ -112,35 +113,47 @@ function NotificationRow({
       ) : null}
     </Pressable>
   );
-}
+});
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { data, isLoading } = useNotifications();
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useNotifications();
   const unread = useUnreadCount();
   const markRead = useMarkRead();
   const markAllRead = useMarkAllRead();
 
-  const onOpen = (item: NotificationItem) => {
-    if (!item.read) markRead.mutate(item.id);
-    if (item.data.lectureId) {
-      const t =
-        typeof item.data.positionSec === 'number' && item.data.positionSec > 0
-          ? `?t=${Math.round(item.data.positionSec)}`
-          : '';
-      router.push(`/player/${item.data.lectureId}${t}`);
-    } else if (item.data.sectionId) {
-      router.push(`/(student)/section/${item.data.sectionId}`);
-    } else if (item.data.route) {
-      router.push(item.data.route as Parameters<typeof router.push>[0]);
-    }
-  };
+  const onOpen = useCallback(
+    (item: NotificationItem) => {
+      if (!item.read) markRead.mutate(item.id);
+      if (item.data.lectureId) {
+        const t =
+          typeof item.data.positionSec === 'number' && item.data.positionSec > 0
+            ? `?t=${Math.round(item.data.positionSec)}`
+            : '';
+        router.push(`/player/${item.data.lectureId}${t}`);
+      } else if (item.data.sectionId) {
+        router.push(`/(student)/section/${item.data.sectionId}`);
+      } else if (item.data.route) {
+        router.push(item.data.route as Parameters<typeof router.push>[0]);
+      }
+    },
+    [markRead, router],
+  );
 
-  const items = data ?? [];
+  const items = data?.pages.flatMap((p) => p.items) ?? [];
 
-  return (
-    <Screen bottomPad={118} padded>
-      {/* ── Nav row ─────────────────────────────────────────────────────────── */}
+  const renderItem = useCallback(
+    ({ item, index }: { item: NotificationItem; index: number }) => (
+      <View style={cardRowStyle(index === 0, index === items.length - 1)}>
+        <NotificationRow item={item} onPress={() => onOpen(item)} />
+      </View>
+    ),
+    [items.length, onOpen],
+  );
+
+  const header = (
+    <>
+      {/* ── Nav row ───────────────────────────────────────────────────────── */}
       <View
         style={{
           flexDirection: 'row',
@@ -159,7 +172,7 @@ export default function NotificationsScreen() {
         />
       </View>
 
-      {/* ── تعليم الكل كمقروء ────────────────────────────────────────────────── */}
+      {/* ── تعليم الكل كمقروء ──────────────────────────────────────────────── */}
       {unread > 0 ? (
         <Pressable
           accessibilityRole="button"
@@ -176,31 +189,53 @@ export default function NotificationsScreen() {
           </Txt>
         </Pressable>
       ) : null}
+    </>
+  );
 
-      {isLoading ? (
+  if (isLoading) {
+    return (
+      <Screen scroll={false} bottomPad={118} padded>
+        {header}
         <View style={{ paddingVertical: 80, alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
         </View>
-      ) : items.length === 0 ? (
-        <View style={{ paddingVertical: 72, alignItems: 'center', gap: 8 }}>
-          <Rhombus size={40} color={colors.borderSand2} />
-          <Txt size={14} weight="semibold" color={colors.textMuted} align="center" style={{ marginTop: 8 }}>
-            لا توجد إشعارات
-          </Txt>
-          <Txt size={12} color={colors.textGhost} align="center">
-            تابع أقسامك ليصلك جديدها
-          </Txt>
-        </View>
-      ) : (
-        <Card padded={false} style={{ overflow: 'hidden' }}>
-          {items.map((item, index) => (
-            <View key={item.id}>
-              {index > 0 ? <Divider /> : null}
-              <NotificationRow item={item} onPress={() => onOpen(item)} />
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen scroll={false} bottomPad={118} padded>
+      <FlatList
+        style={{ flex: 1 }}
+        data={items}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        ItemSeparatorComponent={Divider}
+        initialNumToRender={10}
+        onEndReachedThreshold={0.5}
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+        }}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          <View style={{ paddingVertical: 72, alignItems: 'center', gap: 8 }}>
+            <Rhombus size={40} color={colors.borderSand2} />
+            <Txt size={14} weight="semibold" color={colors.textMuted} align="center" style={{ marginTop: 8 }}>
+              لا توجد إشعارات
+            </Txt>
+            <Txt size={12} color={colors.textGhost} align="center">
+              تابع أقسامك ليصلك جديدها
+            </Txt>
+          </View>
+        }
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.primaryTeal} />
             </View>
-          ))}
-        </Card>
-      )}
+          ) : null
+        }
+      />
     </Screen>
   );
 }

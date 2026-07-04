@@ -10,8 +10,9 @@
  *   - Delete (with confirmation; removes audio from storage too).
  */
 import { Feather } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
+  FlatList,
   Pressable,
   StyleSheet,
   TextInput,
@@ -25,7 +26,7 @@ import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
-import { Card, Divider, Txt } from '@/components/ui';
+import { Card, Divider, Txt, cardRowStyle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import type { AppLectureStatus } from '@/config';
 import {
@@ -374,8 +375,46 @@ export default function LecturesScreen() {
     if (editingId === id) setEditingId(null);
   }
 
-  return (
-    <AdminShell active="lectures" breadcrumb="المحاضرات">
+  const renderItem = useCallback(
+    ({ item: row, index }: { item: AdminLectureRow; index: number }) => (
+      <View style={[cardRowStyle(index === 0, index === filtered.length - 1), { maxWidth: 860 }]}>
+        <LectureRow
+          row={row}
+          isCurrent={currentLectureId === row.id}
+          isPlaying={isPlaying}
+          isEditing={editingId === row.id}
+          onPlay={() => void playLecture(row.id)}
+          onTogglePublish={() => handleTogglePublish(row)}
+          onEdit={() => setEditingId((cur) => (cur === row.id ? null : row.id))}
+          onDelete={() => setPendingDelete(row)}
+        />
+        {editingId === row.id ? (
+          <LectureEditor
+            row={row}
+            sheikhs={sheikhs}
+            pending={updateLecture.isPending}
+            onSave={(input) =>
+              updateLecture.mutate({ id: row.id, input }, { onSuccess: () => setEditingId(null) })
+            }
+            onCancel={() => setEditingId(null)}
+          />
+        ) : null}
+      </View>
+    ),
+    [filtered.length, currentLectureId, isPlaying, editingId, sheikhs, updateLecture],
+  );
+
+  const separator = useCallback(
+    () => (
+      <View style={{ maxWidth: 860 }}>
+        <Divider />
+      </View>
+    ),
+    [],
+  );
+
+  const header = (
+    <>
       <Txt weight="display" size={27} color={colors.primaryTeal} style={styles.pageTitle}>
         المحاضرات
       </Txt>
@@ -405,48 +444,31 @@ export default function LecturesScreen() {
           );
         })}
       </View>
+    </>
+  );
 
-      {isLoading ? (
-        <Card>
-          <Txt size={13} color={colors.textGhost} align="center">جارٍ التحميل...</Txt>
-        </Card>
-      ) : filtered.length === 0 ? (
-        <Card>
-          <Txt size={13} color={colors.textMuted} align="center">لا توجد محاضرات في هذا التصنيف.</Txt>
-        </Card>
-      ) : (
-        <Card padded={false} style={styles.listCard}>
-          {filtered.map((row, idx) => (
-            <React.Fragment key={row.id}>
-              {idx > 0 ? <Divider /> : null}
-              <LectureRow
-                row={row}
-                isCurrent={currentLectureId === row.id}
-                isPlaying={isPlaying}
-                isEditing={editingId === row.id}
-                onPlay={() => void playLecture(row.id)}
-                onTogglePublish={() => handleTogglePublish(row)}
-                onEdit={() => setEditingId((cur) => (cur === row.id ? null : row.id))}
-                onDelete={() => setPendingDelete(row)}
-              />
-              {editingId === row.id ? (
-                <LectureEditor
-                  row={row}
-                  sheikhs={sheikhs}
-                  pending={updateLecture.isPending}
-                  onSave={(input) =>
-                    updateLecture.mutate(
-                      { id: row.id, input },
-                      { onSuccess: () => setEditingId(null) },
-                    )
-                  }
-                  onCancel={() => setEditingId(null)}
-                />
-              ) : null}
-            </React.Fragment>
-          ))}
-        </Card>
-      )}
+  return (
+    <AdminShell active="lectures" breadcrumb="المحاضرات" scroll={false}>
+      <FlatList
+        style={{ flex: 1 }}
+        data={filtered}
+        keyExtractor={(row) => row.id}
+        renderItem={renderItem}
+        ItemSeparatorComponent={separator}
+        initialNumToRender={10}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          isLoading ? (
+            <Card>
+              <Txt size={13} color={colors.textGhost} align="center">جارٍ التحميل...</Txt>
+            </Card>
+          ) : (
+            <Card>
+              <Txt size={13} color={colors.textMuted} align="center">لا توجد محاضرات في هذا التصنيف.</Txt>
+            </Card>
+          )
+        }
+      />
 
       <ConfirmDialog
         visible={!!pendingDelete}

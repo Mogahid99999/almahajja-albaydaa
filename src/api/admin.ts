@@ -123,7 +123,10 @@ export async function getAdminLectures(): Promise<AdminLectureRow[]> {
   const { data: raw, error } = await supabase
     .from('lectures')
     .select('id, title, status, duration_sec, order, section_id, sheikh_id, sections(title), sheikhs(name)')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    // Guard only — the library is small today (client-side filtered below).
+    // pagination TODO: switch to server paging once the count nears this cap.
+    .limit(1000);
   if (error) throw error;
   const data = raw ?? [];
   return data.map((l) => {
