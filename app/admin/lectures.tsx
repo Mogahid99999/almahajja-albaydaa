@@ -468,14 +468,14 @@ const styles = StyleSheet.create({
   pageSubtitle: { marginBottom: 22 } as TextStyle,
 
   filterRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
     marginBottom: 18,
     flexWrap: 'wrap',
   } as ViewStyle,
 
   filterChip: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingVertical: 8,
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingVertical: 12,
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   rowMeta: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     marginTop: 3,
   } as ViewStyle,
@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   } as ViewStyle,
@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
   },
 
   chipRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   } as ViewStyle,
@@ -615,14 +615,14 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   editorTwoCol: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 16,
     alignItems: 'flex-start',
     marginTop: 4,
   } as ViewStyle,
 
   unclassifiedNote: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceInset,
     borderRadius: radius.sm,
@@ -631,13 +631,13 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   editorActions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
     marginTop: 20,
   } as ViewStyle,
 
   saveBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 42,

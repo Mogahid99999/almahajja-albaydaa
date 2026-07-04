@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
     marginTop: 22,
     alignSelf: 'stretch',

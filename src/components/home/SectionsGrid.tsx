@@ -23,7 +23,7 @@ export function SectionsGrid({ sections }: Props) {
 
   return (
     <View style={{ marginTop: 28 }}>
-      <SectionTitle title="الأقسام العِلمية" />
+      <SectionTitle title="الأقسام العلمية" />
 
       {/* 2-column wrap layout using flex */}
       <View

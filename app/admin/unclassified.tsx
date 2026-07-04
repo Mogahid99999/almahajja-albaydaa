@@ -229,13 +229,13 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   itemHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'flex-start',
     paddingBottom: 14,
   } as ViewStyle,
 
   itemMeta: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 5,
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryTeal,
     height: 44,
     borderRadius: radius.sm,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',

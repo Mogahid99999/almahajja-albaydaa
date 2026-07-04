@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSand2,
     borderRadius: radius.input,
     paddingHorizontal: 14,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
 
   breadcrumbRow: {
     flex: 1,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 2,
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
     paddingLeft: 16,

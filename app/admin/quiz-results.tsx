@@ -174,7 +174,7 @@ export default function QuizResultsScreen() {
 
 const styles = StyleSheet.create({
   pageHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 24,
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   tiles: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: 24,
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   tableRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingVertical: 12,

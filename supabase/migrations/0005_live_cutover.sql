@@ -60,6 +60,12 @@ alter table public.attachments
 
 -- ---------------------------------------------------------------------------
 -- 6. Lectures storage bucket + policies
+--
+-- NOTE (audit): this block intentionally repeats 0001_initial_schema.sql
+-- verbatim. It exists so a fresh environment that runs only the cutover
+-- migration still gets the bucket + policies. Idempotent (drop-if-exists +
+-- on-conflict), so re-running over 0001 is a no-op. If storage policies ever
+-- change, change them HERE and treat this as the canonical definition.
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
   values ('lectures', 'lectures', false)

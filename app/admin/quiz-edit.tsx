@@ -403,7 +403,7 @@ export default function QuizEditScreen() {
             {questions.map((q, qi) => (
               <View key={q.key} style={styles.questionBox}>
                 <View style={styles.questionTopRow}>
-                  <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
                     {qi > 0 ? (
                       <Pressable
                         onPress={() => moveQuestion(qi, -1)}
@@ -448,7 +448,7 @@ export default function QuizEditScreen() {
                   style={[styles.input, { minHeight: 54, paddingTop: 12, textAlignVertical: 'top' }]}
                 />
 
-                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
                   <Txt size={12.5} color={colors.textMuted}>
                     درجة السؤال
                   </Txt>
@@ -640,7 +640,7 @@ export default function QuizEditScreen() {
 
 const styles = StyleSheet.create({
   pageHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 28,
@@ -655,7 +655,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   grid: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 20,
     alignItems: 'flex-start',
   } as ViewStyle,
@@ -692,7 +692,7 @@ const styles = StyleSheet.create({
   },
 
   numRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 12,
     flexWrap: 'wrap',
   } as ViewStyle,
@@ -711,13 +711,13 @@ const styles = StyleSheet.create({
   },
 
   checkRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
   } as ViewStyle,
 
   questionsHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
@@ -732,7 +732,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   questionTopRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
@@ -747,7 +747,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   optionRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
@@ -777,7 +777,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   addOptionBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     marginTop: 10,
@@ -785,7 +785,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   addQuestionBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 18,
@@ -804,7 +804,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   metaRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 6,
   } as ViewStyle,
@@ -823,7 +823,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   successBanner: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(31,138,91,0.09)',
     borderRadius: radius.sm,
@@ -833,7 +833,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   errorBanner: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(184,92,74,0.09)',
     borderRadius: radius.sm,

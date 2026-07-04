@@ -33,6 +33,7 @@ export default function BuddySearchScreen() {
   const { data: candidates, isLoading } = useBuddySearch(query);
   const send = useSendBuddyRequest();
 
+  const isGuest = user?.isGuest ?? true;
   const hasGender = !!user?.gender;
 
   const onConfirmSend = () => {
@@ -62,7 +63,33 @@ export default function BuddySearchScreen() {
         <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
 
-      {!hasGender ? (
+      {isGuest ? (
+        /* Study-buddy pairing requires a registered account (same nudge as quizzes) */
+        <Card style={{ alignItems: 'center', paddingVertical: 26, gap: 12 }}>
+          <Feather name="user-plus" size={26} color={colors.accentBrassMuted} />
+          <Txt size={14} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
+            اختيار رفيق دراسة يتطلب حسابًا — حتى تبقى الرفقة معك
+          </Txt>
+          <Pressable
+            onPress={() => router.push('/(auth)/register')}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              {
+                backgroundColor: colors.primaryTeal,
+                borderRadius: radius.input,
+                paddingVertical: 12,
+                paddingHorizontal: 26,
+                opacity: pressed ? 0.85 : 1,
+              },
+              shadows.button,
+            ]}
+          >
+            <Txt size={13.5} weight="semibold" color={colors.onTealPrimary}>
+              إنشاء حساب
+            </Txt>
+          </Pressable>
+        </Card>
+      ) : !hasGender ? (
         /* Gender must be set before searching (segregation needs it) */
         <Card style={{ alignItems: 'center', paddingVertical: 26, gap: 12 }}>
           <Feather name="user-check" size={26} color={colors.accentBrassMuted} />

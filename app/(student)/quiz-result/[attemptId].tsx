@@ -104,7 +104,7 @@ export default function QuizResultScreen() {
 
           <Divider />
 
-          <View style={{ flexDirection: 'row-reverse', paddingTop: 14 }}>
+          <View style={{ flexDirection: 'row', paddingTop: 14 }}>
             <View style={{ flex: 1, alignItems: 'center', gap: 3 }}>
               <Txt weight="semibold" size={18} color={colors.stateSuccess} tabular>
                 {arNum(result.correctCount ?? 0)}
@@ -135,7 +135,7 @@ export default function QuizResultScreen() {
           <View style={{ gap: 12 }}>
             {result.details.map((d, i) => (
               <Card key={d.questionId}>
-                <View style={{ flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
                   <Feather
                     name={d.isCorrect ? 'check-circle' : 'x-circle'}
                     size={17}

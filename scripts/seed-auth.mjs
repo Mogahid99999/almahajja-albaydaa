@@ -1,15 +1,15 @@
 /**
  * Idempotent seed for the two demo accounts in Supabase Auth.
  *
- *   admin@gmail.com  → role "admin"    (password test55%%)
- *   user@gmail.com   → role "student"  (password test55%%)
+ *   admin@gmail.com  → role "admin"
+ *   user@gmail.com   → role "student"
  *
  * Roles are written to BOTH user_metadata (read client-side for routing) and the
  * public.profiles table (source of truth for RLS). Re-running is safe: existing
  * users are looked up by email and updated in place.
  *
- * Run:  node scripts/seed-auth.mjs
- * Needs (from .env):  EXPO_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY
+ * Run:  SEED_PASSWORD=... node scripts/seed-auth.mjs
+ * Needs (from .env or shell env):  EXPO_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY, SEED_PASSWORD
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -33,12 +33,16 @@ function loadEnv() {
 const env = { ...loadEnv(), ...process.env };
 const URL = env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = env.SUPABASE_SECRET_KEY;
+const PASSWORD = env.SEED_PASSWORD;
 if (!URL || !KEY) {
   console.error('Missing EXPO_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY in .env');
   process.exit(1);
 }
+if (!PASSWORD) {
+  console.error('Missing SEED_PASSWORD env var — set it before running this script.');
+  process.exit(1);
+}
 
-const PASSWORD = 'test55%%';
 const ACCOUNTS = [
   { email: 'admin@gmail.com', role: 'admin', display_name: 'مدير المنصة' },
   { email: 'user@gmail.com', role: 'student', display_name: 'طالب علم' },

@@ -29,7 +29,7 @@ export function PlayerAttachmentsStrip({ attachments }: { attachments: Attachmen
         showsHorizontalScrollIndicator={false}
         // RTL: lay chips out from the right edge inward.
         contentContainerStyle={{
-          flexDirection: 'row-reverse',
+          flexDirection: 'row',
           gap: 10,
           paddingHorizontal: 18,
         }}
@@ -43,7 +43,7 @@ export function PlayerAttachmentsStrip({ attachments }: { attachments: Attachmen
               accessibilityRole="button"
               accessibilityLabel={`${meta.label}: ${attachment.title}`}
               style={({ pressed }) => ({
-                flexDirection: 'row-reverse',
+                flexDirection: 'row',
                 alignItems: 'center',
                 gap: 8,
                 paddingVertical: 9,

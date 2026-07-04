@@ -130,7 +130,7 @@ export function LecturePicker({ excludeIds, onSelect, disabled }: LecturePickerP
 const styles = StyleSheet.create({
   trigger: {
     alignSelf: 'flex-start',
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     height: 42,
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 11,
     paddingHorizontal: 14,

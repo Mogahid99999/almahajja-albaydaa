@@ -356,14 +356,14 @@ export default function AdminUsers() {
 
 const styles = StyleSheet.create({
   headerRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
   } as ViewStyle,
 
   addBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     backgroundColor: colors.primaryTeal,
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
   } as TextStyle,
 
   roleRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
   } as ViewStyle,
 
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
   roleChipActive: { backgroundColor: colors.primaryTeal } as ViewStyle,
 
   modalActions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
     marginTop: 8,
   } as ViewStyle,
@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   searchBox: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: colors.surfaceCard,
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
   } as TextStyle,
 
   filterRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 18,
@@ -488,19 +488,19 @@ const styles = StyleSheet.create({
   userCard: { gap: 12 } as ViewStyle,
 
   userTop: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   } as ViewStyle,
 
   userMeta: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   } as ViewStyle,
 
   metaChip: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   } as ViewStyle,

@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   track: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     backgroundColor: colors.surfaceTrack,
     borderRadius: radius.sm,
     padding: 3,
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   noteRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 2,

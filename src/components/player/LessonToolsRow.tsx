@@ -38,7 +38,7 @@ function ToolChip({
       accessibilityRole="button"
       accessibilityLabel={label}
       style={({ pressed }) => ({
-        flexDirection: 'row-reverse',
+        flexDirection: 'row',
         alignItems: 'center',
         gap: 7,
         paddingVertical: 9,
@@ -84,7 +84,7 @@ export function LessonToolsRow({ lectureId }: { lectureId: string }) {
         left: 0,
         right: 0,
         bottom: 86 + insets.bottom,
-        flexDirection: 'row-reverse',
+        flexDirection: 'row',
         justifyContent: 'center',
         gap: 10,
         paddingHorizontal: 18,

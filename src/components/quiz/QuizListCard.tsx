@@ -30,7 +30,7 @@ function QuizRow({ quiz }: { quiz: QuizCard }) {
       onPress={() => router.push(`/quiz/${quiz.id}` as Parameters<typeof router.push>[0])}
       style={({ pressed }) => [
         {
-          flexDirection: 'row-reverse',
+          flexDirection: 'row',
           alignItems: 'center',
           gap: 12,
           paddingVertical: 13,
@@ -57,7 +57,7 @@ function QuizRow({ quiz }: { quiz: QuizCard }) {
       </View>
 
       <View style={{ flex: 1, gap: 4 }}>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Txt
             size={14}
             weight="semibold"
@@ -69,7 +69,7 @@ function QuizRow({ quiz }: { quiz: QuizCard }) {
           </Txt>
           <QuizStatusPill status={quiz.status} />
         </View>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <Rhombus size={6} color={colors.accentBrassMuted} />
           <Txt size={11.5} color={colors.textMuted} tabular>
             {meta.join(' · ')}

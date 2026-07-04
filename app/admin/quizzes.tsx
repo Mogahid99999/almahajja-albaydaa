@@ -48,7 +48,7 @@ function QuizRow({
   return (
     <View style={styles.row}>
       <View style={{ flex: 1, gap: 4 }}>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Txt size={14} weight="semibold" color={colors.textInk} numberOfLines={1} style={{ flexShrink: 1 }}>
             {quiz.title}
           </Txt>
@@ -204,14 +204,14 @@ export default function AdminQuizzesScreen() {
 
 const styles = StyleSheet.create({
   pageHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 28,
   } as ViewStyle,
 
   createBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 44,
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 12,
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   } as ViewStyle,

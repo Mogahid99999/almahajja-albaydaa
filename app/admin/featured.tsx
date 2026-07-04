@@ -87,7 +87,7 @@ function FeaturedRow({
         <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
           {[item.sectionTitle, item.sheikhName].filter(Boolean).join(' · ') || 'غير مصنّف'}
         </Txt>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8, marginTop: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
           <Txt size={11} color={colors.textGhost} tabular>
             {arDuration(item.durationSec)}
           </Txt>
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
   listCard: { overflow: 'hidden', maxWidth: 700 } as ViewStyle,
 
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingVertical: 12,

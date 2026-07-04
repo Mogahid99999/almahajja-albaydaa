@@ -117,7 +117,7 @@ export default function AdminQuizAttemptScreen() {
           <View style={{ gap: 12, marginBottom: 24 }}>
             {detail.answers.map((a, i) => (
               <Card key={a.questionId}>
-                <View style={{ flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
                   <Feather
                     name={a.isCorrect ? 'check-circle' : 'x-circle'}
                     size={17}
@@ -127,7 +127,7 @@ export default function AdminQuizAttemptScreen() {
                   <View style={{ flex: 1, gap: 7 }}>
                     <View
                       style={{
-                        flexDirection: 'row-reverse',
+                        flexDirection: 'row',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: 8,
@@ -218,7 +218,7 @@ export default function AdminQuizAttemptScreen() {
 
 const styles = StyleSheet.create({
   pageHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 24,
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   metaRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 20,
   } as ViewStyle,
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   attemptRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,

@@ -343,13 +343,13 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   typeRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   } as ViewStyle,
 
   typeChip: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingVertical: 8,
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
   },
 
   sourceRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
     backgroundColor: colors.bgSandRaised,
     borderRadius: radius.input,
@@ -430,7 +430,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   fileRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.bgSandRaised,
     borderRadius: radius.sm,
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryTeal,
     height: 46,
     borderRadius: radius.sm,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.button,

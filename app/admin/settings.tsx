@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   heading: { marginBottom: 12, marginTop: 20 } as TextStyle,
 
   notice: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: 'rgba(31,138,91,0.1)',
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   caution: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: 'rgba(201,164,99,0.12)',
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
 
   saveBtn: {
     alignSelf: 'flex-start',
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     height: 38,

@@ -687,7 +687,7 @@ export default function UploadScreen() {
 
 const styles = StyleSheet.create({
   pageHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 28,
@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   grid: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 20,
     alignItems: 'flex-start',
   } as ViewStyle,
@@ -779,7 +779,7 @@ const styles = StyleSheet.create({
   },
 
   audioRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.bgSandRaised,
     borderRadius: radius.sm,
@@ -841,14 +841,14 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   retryBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     marginTop: 5,
   } as ViewStyle,
 
   audioErrorBanner: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(193,58,58,0.08)',
     borderRadius: radius.sm,
@@ -857,7 +857,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   twoCol: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 12,
   } as ViewStyle,
 
@@ -889,7 +889,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSand2,
     borderRadius: radius.input,
     paddingHorizontal: 14,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
@@ -913,7 +913,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   sheikhRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 11,
     paddingHorizontal: 16,
@@ -936,7 +936,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   attachSavedHint: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(31,138,91,0.09)',
     borderRadius: radius.sm,
@@ -945,7 +945,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   noSectionNote: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(176,137,79,0.1)',
     borderRadius: radius.sm,
@@ -965,7 +965,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   metaRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 6,
   } as ViewStyle,
@@ -1003,12 +1003,12 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   tipHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
   } as ViewStyle,
 
   successBanner: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(31,138,91,0.09)',
     borderRadius: radius.sm,

@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   treeRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 11,
     paddingLeft: 16,
@@ -649,20 +649,20 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   editorRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 16,
     alignItems: 'flex-start',
     marginTop: 4,
   } as ViewStyle,
 
   editorActions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
     marginTop: 18,
   } as ViewStyle,
 
   saveBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 42,
@@ -729,7 +729,7 @@ const styles = StyleSheet.create({
   },
 
   toggleRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     marginTop: 20,
     marginBottom: 4,
@@ -740,14 +740,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryTeal,
     height: 46,
     borderRadius: radius.sm,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.button,
   } as ViewStyle,
 
   successBanner: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(31,138,91,0.09)',
     borderRadius: radius.sm,
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   ownerToggle: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
     backgroundColor: colors.bgSandRaised,
     borderRadius: radius.input,
@@ -789,7 +789,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSand2,
     borderRadius: radius.input,
     paddingHorizontal: 14,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
@@ -800,7 +800,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   lectureRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 11,

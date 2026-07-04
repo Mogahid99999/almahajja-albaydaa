@@ -122,7 +122,7 @@ export default function AboutScreen() {
             accessibilityRole="button"
             style={({ pressed }) => [
               {
-                flexDirection: 'row-reverse',
+                flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,

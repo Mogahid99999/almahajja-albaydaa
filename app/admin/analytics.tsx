@@ -181,7 +181,7 @@ export default function AdminAnalytics() {
 
 const styles = StyleSheet.create({
   tilesRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: 28,
@@ -210,13 +210,13 @@ const styles = StyleSheet.create({
   sectionRow: { paddingHorizontal: 16, paddingVertical: 14 } as ViewStyle,
 
   sectionRowHead: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   } as ViewStyle,
 
   listGrid: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 14,
   } as ViewStyle,
@@ -229,13 +229,13 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   listHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
   } as ViewStyle,
 
   listRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 14,

@@ -92,7 +92,7 @@ function QuestionCard({
     <Card style={styles.questionCard}>
       {/* Meta row: asker · time · badges */}
       <View style={styles.metaRow}>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8, flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
           <Feather
             name={q.isAnonymous ? 'user-x' : 'user'}
             size={13}
@@ -138,7 +138,7 @@ function QuestionCard({
       {/* Existing answer */}
       {q.status === 'answered' && q.answerBody && !composing ? (
         <View style={styles.answerBox}>
-          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="check-circle" size={13} color={colors.stateSuccess} />
             <Txt size={11.5} weight="semibold" color={colors.stateSuccess}>
               الجواب
@@ -251,7 +251,7 @@ export default function SheikhInboxScreen() {
     <Screen bottomPad={40}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 12, flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
           <Logo size={40} />
           <View>
             <Txt weight="display" size={20} color={colors.primaryTeal}>
@@ -384,14 +384,14 @@ export default function SheikhInboxScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
   } as ViewStyle,
 
   headerActions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
   settingsCard: { marginTop: 12, marginBottom: 4 } as ViewStyle,
 
   settingRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   } as ViewStyle,
@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
   filters: { marginTop: 16, marginBottom: 18, gap: 8 } as ViewStyle,
 
   filterRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
   } as ViewStyle,
 
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   questionCard: { marginBottom: 12 } as ViewStyle,
 
   metaRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   lectureChip: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
   } as TextStyle,
 
   composerActions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginTop: 10,
@@ -518,14 +518,14 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actionsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 14,
   } as ViewStyle,
 
   answerBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     height: 40,

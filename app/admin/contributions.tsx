@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
   pageSubtitle: { marginBottom: 22 } as TextStyle,
 
   tabsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
     marginBottom: 18,
   } as ViewStyle,
@@ -402,13 +402,13 @@ const styles = StyleSheet.create({
   itemCard: { marginBottom: 12 } as ViewStyle,
 
   metaRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
 
   lectureChip: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
@@ -443,13 +443,13 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actionsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 14,
     marginTop: 12,
   } as ViewStyle,
 
   actionBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingVertical: 8,

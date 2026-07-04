@@ -10,7 +10,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   Alert,
-  I18nManager,
   Pressable,
   StyleSheet,
   TextInput,
@@ -45,7 +44,7 @@ const ROLES: { key: AppRole; label: string }[] = [
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
-      <Txt size={13} color={colors.textInk} style={{ flex: 1, textAlign: 'left' }} numberOfLines={1}>
+      <Txt size={13} color={colors.textInk} style={{ flex: 1, textAlign: 'right', writingDirection: 'rtl' }} numberOfLines={1}>
         {value}
       </Txt>
       <Txt size={12} color={colors.textMuted}>
@@ -462,14 +461,14 @@ function Totals({ label, value }: { label: string; value: number }) {
 
 const styles = StyleSheet.create({
   headerRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginBottom: 16,
   } as ViewStyle,
 
   notice: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: 'rgba(31,138,91,0.1)',
@@ -481,16 +480,16 @@ const styles = StyleSheet.create({
   heading: { marginBottom: 12, marginTop: 20 } as TextStyle,
 
   profileHead: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     padding: 16,
   } as ViewStyle,
 
-  // Anchor label to the right / value to the left on BOTH native (RTL forced)
-  // and web (LTR base, RTL not forced) — otherwise the row mirrors on web.
+  // Label right / value left: plain 'row' is RTL on native (forced) AND on web
+  // (the document is dir="rtl"), so no per-platform branching is needed.
   infoRow: {
-    flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
@@ -498,7 +497,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   totalsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 12,
     marginTop: 14,
   } as ViewStyle,
@@ -510,7 +509,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   wideBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
@@ -519,7 +518,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   roleRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
   } as ViewStyle,
 
@@ -534,7 +533,7 @@ const styles = StyleSheet.create({
   roleChipActive: { backgroundColor: colors.primaryTeal } as ViewStyle,
 
   editRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
@@ -565,13 +564,13 @@ const styles = StyleSheet.create({
   progressRow: { paddingHorizontal: 16, paddingVertical: 12 } as ViewStyle,
 
   progressHead: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   } as ViewStyle,
 
   quizRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 16,

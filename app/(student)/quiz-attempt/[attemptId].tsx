@@ -139,7 +139,7 @@ export default function QuizAttemptScreen() {
       {/* Top bar: exit + progress + timer */}
       <View
         style={{
-          flexDirection: 'row-reverse',
+          flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingVertical: 6,
@@ -151,7 +151,7 @@ export default function QuizAttemptScreen() {
         {remaining != null ? (
           <View
             style={{
-              flexDirection: 'row-reverse',
+              flexDirection: 'row',
               alignItems: 'center',
               gap: 6,
               backgroundColor: remaining <= 60 ? 'rgba(184,92,74,0.1)' : colors.bgSandRaised,
@@ -201,7 +201,7 @@ export default function QuizAttemptScreen() {
       {saveWarning ? (
         <View
           style={{
-            flexDirection: 'row-reverse',
+            flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: 'rgba(176,137,79,0.1)',
             borderRadius: radius.sm,
@@ -234,7 +234,7 @@ export default function QuizAttemptScreen() {
               onPress={() => pickOption(current.id, option.id)}
               style={({ pressed }) => [
                 {
-                  flexDirection: 'row-reverse',
+                  flexDirection: 'row',
                   alignItems: 'center',
                   gap: 12,
                   backgroundColor: selected ? 'rgba(31,74,66,0.07)' : colors.surfaceCard,
@@ -290,7 +290,7 @@ export default function QuizAttemptScreen() {
       </Txt>
 
       {/* Prev / Next / Submit */}
-      <View style={{ flexDirection: 'row-reverse', gap: 10, marginTop: 14 }}>
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
         <Pressable
           onPress={() => setIndex((i) => Math.max(0, i - 1))}
           disabled={index === 0}
@@ -303,7 +303,7 @@ export default function QuizAttemptScreen() {
               borderColor: index === 0 ? colors.borderSand : colors.primaryTeal,
               alignItems: 'center',
               justifyContent: 'center',
-              flexDirection: 'row-reverse',
+              flexDirection: 'row',
               gap: 6,
               opacity: pressed ? 0.7 : index === 0 ? 0.5 : 1,
             },
@@ -357,7 +357,7 @@ export default function QuizAttemptScreen() {
                 backgroundColor: colors.primaryTeal,
                 alignItems: 'center',
                 justifyContent: 'center',
-                flexDirection: 'row-reverse',
+                flexDirection: 'row',
                 gap: 6,
                 opacity: pressed ? 0.85 : 1,
                 ...shadows.button,
@@ -411,7 +411,7 @@ export default function QuizAttemptScreen() {
                 {`بقي ${arNum(questions.length - answeredCount)} من الأسئلة بدون إجابة.`}
               </Txt>
             ) : null}
-            <View style={{ flexDirection: 'row-reverse', gap: 10, marginTop: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
               <Pressable
                 onPress={() => void handleSubmit()}
                 style={({ pressed }) => [

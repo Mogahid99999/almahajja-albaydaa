@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   sidebarHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 20,
@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   navItem: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 12,
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   userRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 14,
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   topbar: {
     height: TOPBAR_H,
     backgroundColor: colors.bgSandRaised,
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     borderBottomWidth: 1,
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   topbarStart: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     flex: 1,

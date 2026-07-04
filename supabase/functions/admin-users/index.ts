@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   if (action === "createUser") {
     const email = (body.email ?? "").trim().toLowerCase();
     if (!/.+@.+\..+/.test(email)) return json({ error: "invalid email" }, 400);
-    if (!body.password || body.password.length < 6) {
+    if (!body.password || body.password.length < 8) {
       return json({ error: "password too short" }, 400);
     }
     const role = body.role && VALID_ROLES.includes(body.role) ? body.role : "student";
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
         return json({ ok: true, status: "active" });
       }
       case "setPassword": {
-        if (!body.password || body.password.length < 6) {
+        if (!body.password || body.password.length < 8) {
           return json({ error: "password too short" }, 400);
         }
         await mustUpdate(admin, userId, { password: body.password });

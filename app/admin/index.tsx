@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   groupHeading: { marginBottom: 12, marginTop: 4 } as TextStyle,
 
   statsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: 24,
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   statValue: { lineHeight: 32 } as TextStyle,
 
   topGrid: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 14,
     marginBottom: 28,
@@ -331,13 +331,13 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   topHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
   } as ViewStyle,
 
   topRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 14,
@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
   quickLinksCard: { marginBottom: 28, overflow: 'hidden' } as ViewStyle,
 
   quickLink: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
   } as ViewStyle,
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   lectureRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
     gap: 12,

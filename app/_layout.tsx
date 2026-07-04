@@ -47,8 +47,14 @@ import { useNotificationsStore } from '@/stores/notificationsStore';
 // locale) we restart ONCE to apply it. `isRTL` is true on every launch afterwards
 // (the pref persists natively), so this never loops. Web can't restart and is LTR
 // admin-only, so it's skipped there.
+// On Android this is also enforced natively in MainApplication.kt (before the
+// first frame), so the restart below never fires there; it remains as the iOS
+// fallback. swapLeftAndRightInRTL(false) keeps left/right styles PHYSICAL in
+// RTL (textAlign 'right' means the right edge, absolute right:0 means the right
+// edge) — without it RN mirrors them and every text lands on the left.
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
+I18nManager.swapLeftAndRightInRTL(false);
 if (Platform.OS !== 'web' && !I18nManager.isRTL) {
   RNRestart.restart();
 }

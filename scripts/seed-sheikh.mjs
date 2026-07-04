@@ -1,15 +1,15 @@
 /**
  * Idempotent seed for the demo SHEIKH (شيخ) account — V6 Q&A.
  *
- *   sheikh@gmail.com → role "sheikh"  (password test55%%)
+ *   sheikh@gmail.com → role "sheikh"
  *
  * A sheikh login lands on /sheikh (the questions inbox) and can answer or
  * delete questions. Role is written to BOTH user_metadata (client routing) and
  * public.profiles (RLS source of truth), and a `sheikhs` metadata row is
  * linked via user_id. Re-running is safe.
  *
- * Run:  node scripts/seed-sheikh.mjs
- * Needs (from .env):  EXPO_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY
+ * Run:  SEED_PASSWORD=... node scripts/seed-sheikh.mjs
+ * Needs (from .env or shell env):  EXPO_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY, SEED_PASSWORD
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -32,14 +32,19 @@ function loadEnv() {
 const env = { ...loadEnv(), ...process.env };
 const URL = env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = env.SUPABASE_SECRET_KEY;
+const PASSWORD = env.SEED_PASSWORD;
 if (!URL || !KEY) {
   console.error('Missing EXPO_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY in .env');
+  process.exit(1);
+}
+if (!PASSWORD) {
+  console.error('Missing SEED_PASSWORD env var — set it before running this script.');
   process.exit(1);
 }
 
 const ACCOUNT = {
   email: 'sheikh@gmail.com',
-  password: 'test55%%',
+  password: PASSWORD,
   role: 'sheikh',
   display_name: 'الشيخ التجريبي',
 };

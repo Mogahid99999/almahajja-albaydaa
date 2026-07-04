@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   label: { marginBottom: 8 } as TextStyle,
 
   addRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
     alignItems: 'center',
   } as ViewStyle,
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   },
 
   addBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 46,
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
   listCard: { overflow: 'hidden', maxWidth: 700 } as ViewStyle,
 
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 12,
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   } as ViewStyle,

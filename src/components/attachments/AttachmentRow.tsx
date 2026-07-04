@@ -40,7 +40,7 @@ export function AttachmentRow({
       onPress={() => openAttachment(attachment, router)}
       style={({ pressed }) => [
         {
-          flexDirection: 'row-reverse',
+          flexDirection: 'row',
           alignItems: 'center',
           gap: 12,
           paddingVertical: 13,
@@ -72,7 +72,7 @@ export function AttachmentRow({
         <Txt size={14} weight="semibold" color={colors.textInk} numberOfLines={1}>
           {attachment.title}
         </Txt>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Rhombus size={6} color={colors.accentBrassMuted} />
           <Txt size={11.5} color={colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
             {subtitle}
@@ -82,7 +82,7 @@ export function AttachmentRow({
 
       {/* Trailing action */}
       {onRemove ? (
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
           {onMoveUp ? (
             <Pressable
               onPress={onMoveUp}

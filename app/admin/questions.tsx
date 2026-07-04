@@ -105,7 +105,7 @@ function QuestionCard({
     <Card style={styles.questionCard}>
       {/* Meta row: asker · time · status */}
       <View style={styles.metaRow}>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8, flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
           <Feather name={q.isAnonymous ? 'user-x' : 'user'} size={13} color={colors.textGhost} />
           <Txt size={12.5} weight="medium" color={colors.textSlate} numberOfLines={1}>
             {q.askerDisplay}
@@ -159,7 +159,7 @@ function QuestionCard({
       {/* Existing answer */}
       {q.answerBody && !composing ? (
         <View style={styles.answerBox}>
-          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="check-circle" size={13} color={colors.stateSuccess} />
             <Txt size={11.5} weight="semibold" color={colors.stateSuccess}>
               الجواب
@@ -393,7 +393,7 @@ export default function AdminQuestions() {
 
 const styles = StyleSheet.create({
   notice: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: 'rgba(31,138,91,0.1)',
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   filterRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 8,
@@ -424,14 +424,14 @@ const styles = StyleSheet.create({
   questionCard: { marginBottom: 12 } as ViewStyle,
 
   metaRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
   } as ViewStyle,
 
   tagRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 8,
@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   lectureChip: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingVertical: 4,
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
   } as TextStyle,
 
   composerActions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginTop: 10,
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actionsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 8,
@@ -518,7 +518,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   answerBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     height: 40,
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   iconTextBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     height: 40,

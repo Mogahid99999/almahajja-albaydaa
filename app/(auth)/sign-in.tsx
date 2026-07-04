@@ -1,10 +1,9 @@
 import { Feather, FontAwesome } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Pressable, TextInput, View } from 'react-native';
+import { I18nManager, Linking, Pressable, TextInput, View } from 'react-native';
 
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
-import { DEMO_ACCOUNTS } from '@/config';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignIn } from '@/hooks/useAuth';
 import { useSupportContact } from '@/hooks/useAppContent';
@@ -39,7 +38,7 @@ export default function SignInScreen() {
 
       <Card style={{ padding: 20, overflow: 'hidden' }}>
         <ConcentricMotif size={180} color="rgba(31,74,66,0.05)" style={{ top: -40, left: -40 }} />
-        <Txt weight="semibold" size={16} style={{ marginBottom: 16 }}>
+        <Txt weight="semibold" size={16} style={[arabicTextStyle, { marginBottom: 16 }]}>
           تسجيل الدخول
         </Txt>
 
@@ -123,13 +122,6 @@ export default function SignInScreen() {
         </Pressable>
       </Link>
 
-      {/* Demo accounts hint (mock mode) */}
-      <Card style={{ marginTop: 16, backgroundColor: 'rgba(176,137,79,0.06)', borderStyle: 'dashed', borderColor: colors.accentBrassSoft }}>
-        <Txt size={11.5} color={colors.textFaint} style={{ lineHeight: 18 }}>
-          حسابات تجريبية:{'\n'}مدير: {DEMO_ACCOUNTS.admin.email}{'\n'}طالب: {DEMO_ACCOUNTS.student.email}{'\n'}كلمة المرور: {DEMO_ACCOUNTS.admin.password}
-        </Txt>
-      </Card>
-
       {/* Support contact — only when an admin has set a WhatsApp link (empty = hidden) */}
       {supportUrl ? (
         <Pressable
@@ -162,13 +154,22 @@ export default function SignInScreen() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <View style={{ marginBottom: 14 }}>
-      <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
+      <Txt size={13} weight="semibold" color={colors.textSlate} style={[arabicTextStyle, { marginBottom: 7 }]}>
         {label}
       </Txt>
       {children}
     </View>
   );
 }
+
+const swapsLeftAndRightInRtl = I18nManager.isRTL && I18nManager.doLeftAndRightSwapInRTL;
+const visualRightTextAlign = swapsLeftAndRightInRtl ? 'left' : 'right';
+const visualLeftTextAlign = swapsLeftAndRightInRtl ? 'right' : 'left';
+
+const arabicTextStyle = {
+  textAlign: visualRightTextAlign as 'left' | 'right',
+  writingDirection: 'rtl' as const,
+};
 
 const inputStyle = {
   height: 46,
@@ -177,8 +178,8 @@ const inputStyle = {
   borderRadius: radius.input,
   backgroundColor: colors.surfaceWhite,
   paddingHorizontal: 14,
-  textAlign: 'right' as const,
-  writingDirection: 'rtl' as const,
+  textAlign: visualLeftTextAlign as 'left' | 'right',
+  writingDirection: 'ltr' as const,
   fontFamily: fonts.body,
   fontSize: 14,
   color: colors.textInk,
@@ -200,8 +201,8 @@ const pwInputStyle = {
   flex: 1,
   height: '100%' as const,
   paddingHorizontal: 14,
-  textAlign: 'right' as const,
-  writingDirection: 'rtl' as const,
+  textAlign: visualLeftTextAlign as 'left' | 'right',
+  writingDirection: 'ltr' as const,
   fontFamily: fonts.body,
   fontSize: 14,
   color: colors.textInk,

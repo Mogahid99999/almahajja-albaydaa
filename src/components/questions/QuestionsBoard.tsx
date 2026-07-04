@@ -105,7 +105,7 @@ function RegisterNudge() {
   const router = useRouter();
   return (
     <Card style={{ marginBottom: 18 }}>
-      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Feather name="user-plus" size={16} color={colors.accentBrassMuted} />
         <Txt size={12.5} color={colors.textMuted} style={{ flex: 1, lineHeight: 20 }}>
           طرح سؤال يتطلب حساباً — حتى يصلك الجواب ويبقى معك.
@@ -252,7 +252,7 @@ function PublicQuestionCard({ q }: { q: PublicQuestion }) {
       </Txt>
       {q.answerBody ? (
         <View style={styles.answerBox}>
-          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="message-circle" size={13} color={colors.primaryTeal600} />
             <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
               جواب الشيخ
@@ -324,7 +324,7 @@ function MyQuestionCard({ q, onDelete }: { q: MyQuestion; onDelete: () => void }
       </Txt>
       {q.answerBody ? (
         <View style={styles.answerBox}>
-          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="message-circle" size={13} color={colors.primaryTeal600} />
             <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
               جواب الشيخ
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   tabsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
     marginBottom: 14,
   } as ViewStyle,
@@ -461,13 +461,13 @@ const styles = StyleSheet.create({
   } as TextStyle,
 
   optionsRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
     marginTop: 12,
   } as ViewStyle,
 
   togglePill: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingVertical: 7,
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   sentRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     marginTop: 10,
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
   qCard: { marginBottom: 12 } as ViewStyle,
 
   qMetaRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   } as ViewStyle,
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   nameBadge: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingVertical: 3,

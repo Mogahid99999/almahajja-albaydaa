@@ -299,6 +299,8 @@ grant execute on function public.is_admin()                 to authenticated;
 
 -- =============================================================================
 -- Storage: private bucket for lecture audio + downloads
+-- (NOTE: 0005_live_cutover.sql re-creates this same bucket + policies verbatim
+--  and is the canonical place for future storage-policy edits.)
 -- =============================================================================
 insert into storage.buckets (id, name, public)
 values ('lectures', 'lectures', false)

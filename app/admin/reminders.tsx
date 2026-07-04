@@ -65,7 +65,7 @@ function BroadcastRow({
         <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
           {broadcast.body}
         </Txt>
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8, marginTop: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
           <Txt size={11} color={colors.textGhost}>
             {shortDate(broadcast.publishedAt)}
           </Txt>
@@ -228,7 +228,7 @@ export default function RemindersScreen() {
           </Txt>
         ) : null}
 
-        <View style={{ flexDirection: 'row-reverse', gap: 10, marginTop: 14 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
           <Pressable
             onPress={submit}
             disabled={pending}
@@ -340,14 +340,14 @@ const styles = StyleSheet.create({
   },
 
   switchRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginTop: 14,
   } as ViewStyle,
 
   submitBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 46,
@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
   listCard: { overflow: 'hidden', maxWidth: 700 } as ViewStyle,
 
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 12,
@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   } as ViewStyle,

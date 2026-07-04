@@ -122,7 +122,7 @@ export default function JourneyScreen() {
           {quizStats && quizStats.attempted > 0 ? (
             <Card
               style={{
-                flexDirection: 'row-reverse',
+                flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 marginBottom: 24,

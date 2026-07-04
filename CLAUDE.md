@@ -69,3 +69,5 @@ RTL throughout, design system synced from Claude Design. Calm muted teal/off-whi
 
 ## Conventions
 [fill in once decided: naming, file structure, etc. — leave blank for now, Claude Code will propose these]
+
+- After any migration touching RLS/policies/functions, run `node scripts/security-check.mjs`.

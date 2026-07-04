@@ -70,7 +70,7 @@ export default function ReminderDetailScreen() {
         <>
           {/* ── Hero: eyebrow + title ─────────────────────────────────────────── */}
           <View style={{ alignItems: 'center', gap: 12, marginBottom: 28 }}>
-            <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Rhombus size={7} color={colors.accentBrass} filled />
               <Txt size={12.5} weight="semibold" color={colors.accentBrass}>
                 تذكير نافع

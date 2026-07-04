@@ -32,7 +32,7 @@ function RegisterNudge() {
   const router = useRouter();
   return (
     <Card style={{ marginBottom: 18 }}>
-      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Feather name="user-plus" size={16} color={colors.accentBrassMuted} />
         <Txt size={12.5} color={colors.textMuted} style={{ flex: 1, lineHeight: 20 }}>
           مشاركة فائدة تتطلب حساباً — وتُنشر دون اسمك دائماً.
@@ -80,7 +80,7 @@ function Composer({ lectureId }: { lectureId: string }) {
         textAlignVertical="top"
         style={styles.composerInput}
       />
-      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6, marginTop: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
         <Feather name="eye-off" size={12} color={colors.textGhost} />
         <Txt size={11.5} color={colors.textGhost}>
           تُنشر دون اسمك
@@ -114,7 +114,7 @@ function Composer({ lectureId }: { lectureId: string }) {
 function BenefitCard({ b, onDelete }: { b: LectureBenefit; onDelete?: () => void }) {
   return (
     <Card style={{ marginBottom: 12 }}>
-      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={styles.benefitMark}>
           <Feather name="award" size={13} color={colors.accentBrassMuted} />
         </View>

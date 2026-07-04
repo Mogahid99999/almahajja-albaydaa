@@ -104,7 +104,7 @@ function RegisterNudge() {
   const router = useRouter();
   return (
     <Card>
-      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Feather name="user-plus" size={16} color={colors.accentBrassMuted} />
         <Txt size={12.5} color={colors.textMuted} style={{ flex: 1, lineHeight: 20 }}>
           تدوين الملاحظات يتطلب حساباً — حتى تبقى ملاحظاتك محفوظة ومتاحة على أجهزتك.
@@ -190,7 +190,7 @@ function NoteEditor({ lectureId }: { lectureId: string }) {
             جارٍ الحفظ...
           </Txt>
         ) : save.isSuccess ? (
-          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 5 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <Feather name="check" size={12} color={colors.stateSuccess} />
             <Txt size={11.5} color={colors.stateSuccess}>
               تم الحفظ
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   } as TextStyle,
 
   statusRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 10,

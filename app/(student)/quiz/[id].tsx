@@ -23,13 +23,13 @@ function StatRow({ label, value }: { label: string; value: string }) {
   return (
     <View
       style={{
-        flexDirection: 'row-reverse',
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 11,
       }}
     >
-      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Rhombus size={6} color={colors.accentBrassMuted} />
         <Txt size={13} color={colors.textMuted}>
           {label}
@@ -172,7 +172,7 @@ export default function QuizIntroScreen() {
         {startError ? (
           <View
             style={{
-              flexDirection: 'row-reverse',
+              flexDirection: 'row',
               alignItems: 'center',
               backgroundColor: 'rgba(184,92,74,0.09)',
               borderRadius: radius.sm,
@@ -191,7 +191,7 @@ export default function QuizIntroScreen() {
           <>
             <View
               style={{
-                flexDirection: 'row-reverse',
+                flexDirection: 'row',
                 alignItems: 'center',
                 backgroundColor: 'rgba(176,137,79,0.1)',
                 borderRadius: radius.sm,
