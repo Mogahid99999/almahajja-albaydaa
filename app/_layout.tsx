@@ -5,7 +5,11 @@ import {
   IBMPlexSansArabic_600SemiBold,
   IBMPlexSansArabic_700Bold,
 } from '@expo-google-fonts/ibm-plex-sans-arabic';
-import { QueryClientProvider } from '@tanstack/react-query';
+import type { Query } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -38,7 +42,39 @@ import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient } from '@/lib/queryClient';
+import { APP_VERSION } from '@/lib/version';
 import { useNotificationsStore } from '@/stores/notificationsStore';
+
+// ── Offline-first query persistence (V10 Feature D) ──────────────────────────
+// Persist the query cache to async-storage so a cold OFFLINE launch renders Home
+// + sections + lecture lists + notes from disk (no spinner, no network). Only
+// stable, non-private content is persisted; volatile/private caches
+// (notifications, admin, questions, quiz attempts, buddy, broadcasts, auth,
+// signed-URL playback) are never written to disk.
+const persister = createAsyncStoragePersister({ storage: AsyncStorage });
+
+/** First key element of the query caches that are safe + useful to persist. */
+const PERSISTED_QUERY_ROOTS = new Set<string>([
+  'home', // Home data (resume + rails + sections grid)
+  'section', // section pages (titles, lecture list, progress, quiz cards)
+  'sections', // section flat/edit metadata
+  'lecture', // single-lecture playback metadata (title/eyebrow for offline open;
+  //            the signed audioUrl it also carries is never used for playback —
+  //            playLecture fetches a fresh URL directly — so no stale-URL risk)
+  'lectures', // recent / featured / by-ids lecture-card lists
+  'notes', // private per-lesson notes («حتى الملاحظات»)
+  'journey', // journey summary / weekly goal / badges / streak snapshots
+  'benefits', // shared lesson benefits (read-only)
+  'appContent', // «عن المنصة» + support contact (static)
+]);
+
+function shouldDehydrateQuery(query: Query): boolean {
+  if (query.state.status !== 'success') return false; // never persist errors/pending
+  const key = query.queryKey;
+  if (!Array.isArray(key)) return false;
+  if (key.some((part) => part === 'admin')) return false; // defence-in-depth
+  return PERSISTED_QUERY_ROOTS.has(String(key[0]));
+}
 
 // Arabic-first: force RTL across the whole app — even when the phone's language
 // is English (Task 6). `forceRTL` only takes effect after a reload, so on the
@@ -47,14 +83,19 @@ import { useNotificationsStore } from '@/stores/notificationsStore';
 // (the pref persists natively), so this never loops. Web can't restart and is LTR
 // admin-only, so it's skipped there.
 // On Android this is also enforced natively in MainApplication.kt (before the
-// first frame), so the restart below never fires there; it remains as the iOS
-// fallback. swapLeftAndRightInRTL(false) keeps left/right styles PHYSICAL in
-// RTL (textAlign 'right' means the right edge, absolute right:0 means the right
+// first frame), so the restart below never fires there in a real build; it
+// remains as the iOS fallback. Expo Go ignores this project's native Android
+// code (it runs its own generic host), so isRTL can still read false there —
+// skip the restart in Expo Go since `react-native-restart` has no native
+// module to call in that environment (RNRestart is null → throws).
+// swapLeftAndRightInRTL(false) keeps left/right styles PHYSICAL in RTL
+// (textAlign 'right' means the right edge, absolute right:0 means the right
 // edge) — without it RN mirrors them and every text lands on the left.
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 I18nManager.swapLeftAndRightInRTL(false);
-if (Platform.OS !== 'web' && !I18nManager.isRTL) {
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+if (Platform.OS !== 'web' && !I18nManager.isRTL && !isExpoGo) {
   RNRestart.restart();
 }
 
@@ -368,7 +409,15 @@ export default function RootLayout() {
   });
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister,
+        maxAge: 30 * 24 * 3600_000,
+        buster: APP_VERSION,
+        dehydrateOptions: { shouldDehydrateQuery },
+      }}
+    >
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <SessionGate fontsLoaded={fontsLoaded}>
@@ -387,6 +436,6 @@ export default function RootLayout() {
           </UpdateGate>
         </SessionGate>
       </SafeAreaProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

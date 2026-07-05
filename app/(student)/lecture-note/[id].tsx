@@ -25,6 +25,7 @@ import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useLectureNote, useSaveNote } from '@/hooks/useNotes';
 import { useLecturePlayback } from '@/hooks/useLecture';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { playLecture, seekBy, toggle } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 
@@ -218,9 +219,10 @@ export default function LectureNoteScreen() {
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
   const { data: lecture } = useLecturePlayback(id ?? '');
+  const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       <View
         style={{
           flexDirection: 'row',

@@ -1,3 +1,12 @@
+import Constants from 'expo-constants';
+
+/**
+ * Installed app version (from app.json). Used as the persisted-query-cache buster
+ * (V10 Feature D): bumping the app version discards any stale persisted cache so a
+ * new build never rehydrates data shaped for an older one.
+ */
+export const APP_VERSION: string = Constants.expoConfig?.version ?? '0.0.0';
+
 /**
  * Compare two dotted numeric version strings (e.g. "1.2.0" vs "1.10.0").
  * Returns -1 if a < b, 0 if equal, 1 if a > b. Non-numeric / missing parts

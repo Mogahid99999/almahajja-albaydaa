@@ -4,19 +4,23 @@
  */
 import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton, Screen, Txt } from '@/components/ui';
 import { QuestionsBoard } from '@/components/questions/QuestionsBoard';
 import { colors } from '@/constants/theme';
 import { useLecturePlayback } from '@/hooks/useLecture';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 export default function LectureQuestionsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { data: lecture } = useLecturePlayback(id ?? '');
+  const insets = useSafeAreaInsets();
+  const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen scroll={false} bottomPad={118} padded>
+    <Screen scroll={false} bottomPad={0} padded>
       <View
         style={{
           flexDirection: 'row',
@@ -38,7 +42,13 @@ export default function LectureQuestionsScreen() {
         <View style={{ marginBottom: 18 }} />
       )}
 
-      {id ? <QuestionsBoard scope="lecture" lectureId={id} /> : null}
+      {id ? (
+        <QuestionsBoard
+          scope="lecture"
+          lectureId={id}
+          bottomPad={miniPad + insets.bottom + 24}
+        />
+      ) : null}
     </Screen>
   );
 }

@@ -44,7 +44,9 @@ export type {
 
 // ─── Student ─────────────────────────────────────────────────────────────────
 
-type RawStatusRow = {
+/** Row shape of get_section_quizzes / get_quiz_intro, also embedded in the
+ *  get_section_page RPC (V10) — the section-page mapper reuses mapCard below. */
+export type RawStatusRow = {
   id: string;
   title: string;
   description: string | null;
@@ -70,7 +72,7 @@ function deriveStatus(r: RawStatusRow): QuizStatus {
   return 'failed';
 }
 
-function mapCard(r: RawStatusRow): QuizCard {
+export function mapCard(r: RawStatusRow): QuizCard {
   return {
     id: r.id,
     title: r.title,

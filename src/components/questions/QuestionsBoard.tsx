@@ -343,9 +343,12 @@ function MyQuestionCard({ q, onDelete }: { q: MyQuestion; onDelete: () => void }
 export function QuestionsBoard({
   scope,
   lectureId,
+  bottomPad = 0,
 }: {
   scope: QuestionScope;
   lectureId?: string;
+  /** Clearance below the last row so the footer clears the nav bar + MiniPlayer. */
+  bottomPad?: number;
 }) {
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
@@ -422,6 +425,7 @@ export function QuestionsBoard({
   return (
     <FlatList
       style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: bottomPad }}
       data={data}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}

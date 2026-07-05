@@ -2,6 +2,7 @@ import { ActivityIndicator, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
 import { useHome } from '@/hooks/useSections';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { Screen } from '@/components/ui';
 import { BroadcastCard } from '@/components/home/BroadcastCard';
 import { ContinueCard } from '@/components/home/ContinueCard';
@@ -27,8 +28,9 @@ import { JourneyHomeCard } from '@/components/journey/JourneyHomeCard';
  */
 export default function HomeScreen() {
   const { data, isLoading } = useHome();
+  const miniPad = useMiniPlayerPad();
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bgSand, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color={colors.primaryTeal} />
@@ -37,7 +39,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <Screen bottomPad={118} padded={false}>
+    <Screen bottomPad={miniPad || 24} padded={false}>
       {/* Header sits inside the screen padding manually so the rail can bleed edge-to-edge */}
       <View style={{ paddingHorizontal: 22 }}>
         <HomeHeader />

@@ -9,9 +9,9 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
-import type { HomeData, FlatSectionNode, SectionPageData, SectionCard, LectureRow, LectureCard } from './types';
+import type { HomeData, FlatSectionNode, SectionPageData, SectionCard, LectureRow, LectureCard, Attachment } from './types';
 import { resolveAttachmentRows } from './attachments';
-import { getSectionQuizzes } from './quizzes';
+import { mapCard, type RawStatusRow } from './quizzes';
 
 export type { HomeData, FlatSectionNode, SectionPageData } from './types';
 
@@ -113,110 +113,102 @@ export async function getHomeData(): Promise<HomeData> {
   return { continueListening, newlyAdded, featured, sections };
 }
 
-/** Generic section page (rendered at every level of the tree). Student view. */
+/** The jsonb document shape returned by the get_section_page RPC (migration 0045). */
+type SectionPageRpc = {
+  section: {
+    id: string;
+    title: string;
+    description: string | null;
+    cover_image: string | null;
+    cover_letter: string;
+    show_header: boolean;
+    parent_id: string | null;
+  };
+  parent_title: string | null;
+  rollup: { total: number; completed: number; sheikh_names: string[] };
+  subsections: { id: string; title: string; cover_letter: string; total: number; completed: number }[];
+  lectures: {
+    id: string;
+    title: string;
+    duration_sec: number;
+    order: number;
+    sheikh_name: string | null;
+    position_sec: number;
+    completed: boolean;
+  }[];
+  attachments: {
+    id: string;
+    type: string;
+    title: string;
+    description: string | null;
+    storage_path: string | null;
+    external_url: string | null;
+    body: string | null;
+    order: number;
+  }[];
+  quizzes: RawStatusRow[];
+};
+
+/**
+ * Generic section page (rendered at every level of the tree). Student view.
+ *
+ * One RPC (get_section_page, migration 0045) replaces the old ~6 sequential
+ * round-trips — the whole page arrives as a single jsonb document, mapped to
+ * SectionPageData here. Signed URLs for attachments are still minted client-side
+ * (resolveAttachmentRows), keeping them out of the cached RPC payload.
+ */
 export async function getSectionPage(sectionId: string): Promise<SectionPageData> {
   if (USE_MOCK) return mock.getSectionPage(sectionId);
 
-  const [{ data: section, error: sErr }, rollupResult] = await Promise.all([
-    supabase
-      .from('sections')
-      .select('id, title, description, cover_image, cover_letter, show_header, parent_id')
-      .eq('id', sectionId)
-      .single(),
-    supabase.rpc('get_section_rollup', { p_section_id: sectionId }),
-  ]);
-  if (sErr || !section) throw sErr ?? new Error('section not found');
+  const { data, error } = await supabase.rpc('get_section_page', {
+    p_section_id: sectionId,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('section not found');
+  const page = data as unknown as SectionPageRpc;
 
-  const rollupRow = rollupResult.data?.[0];
-  const total = Number(rollupRow?.total_lectures ?? 0);
-  const completed = Number(rollupRow?.completed_lectures ?? 0);
+  const total = Number(page.rollup?.total ?? 0);
+  const completed = Number(page.rollup?.completed ?? 0);
 
-  let parentTitle: string | null = null;
-  if (section.parent_id) {
-    const { data: parent } = await supabase
-      .from('sections')
-      .select('title')
-      .eq('id', section.parent_id)
-      .single();
-    parentTitle = parent?.title ?? null;
-  }
+  const subsections: SectionCard[] = (page.subsections ?? []).map((s) => {
+    const t = Number(s.total ?? 0);
+    const c = Number(s.completed ?? 0);
+    return {
+      id: s.id,
+      title: s.title,
+      coverLetter: coverLetter(s.cover_letter, s.title),
+      lectureCount: t,
+      progressPct: t > 0 ? Math.round((c / t) * 100) : 0,
+    };
+  });
 
-  const { data: subData } = await supabase
-    .from('sections')
-    .select('id, title, cover_letter')
-    .eq('parent_id', sectionId)
-    .order('order');
-  const subRows = subData ?? [];
-
-  let subsections: SectionCard[] = [];
-  if (subRows.length > 0) {
-    const { data: subRollupsData } = await supabase.rpc('get_children_rollups', {
-      p_section_ids: subRows.map((s) => s.id),
-    });
-    const subRollups = subRollupsData ?? [];
-    const byId = Object.fromEntries(subRollups.map((r) => [r.section_id, r]));
-    subsections = subRows.map((s) => {
-      const r = byId[s.id];
-      const t = Number(r?.total_lectures ?? 0);
-      const c = Number(r?.completed_lectures ?? 0);
-      return {
-        id: s.id,
-        title: s.title,
-        coverLetter: coverLetter(s.cover_letter, s.title),
-        lectureCount: t,
-        progressPct: t > 0 ? Math.round((c / t) * 100) : 0,
-      };
-    });
-  }
-
-  const { data: lectureData } = await supabase
-    .from('lectures')
-    .select('id, title, duration_sec, order, sheikhs(name), user_lecture_progress(position_sec, completed)')
-    .eq('section_id', sectionId)
-    .eq('status', 'published')
-    .order('order');
-  const lectureRows = lectureData ?? [];
-
-  const lectures: LectureRow[] = lectureRows.map((l) => {
-    const sheikh = Array.isArray(l.sheikhs) ? l.sheikhs[0] : (l.sheikhs as any);
-    const prog = Array.isArray(l.user_lecture_progress)
-      ? l.user_lecture_progress[0]
-      : (l.user_lecture_progress as any);
-    const isDone = prog?.completed ?? false;
-    const pos = prog?.position_sec ?? 0;
+  const lectures: LectureRow[] = (page.lectures ?? []).map((l) => {
+    const pos = l.position_sec ?? 0;
     return {
       id: l.id,
       title: l.title,
       durationSec: l.duration_sec ?? 0,
-      sheikhName: sheikh?.name ?? null,
-      status: isDone ? 'completed' : pos > 0 ? 'in_progress' : 'new',
+      sheikhName: l.sheikh_name ?? null,
+      status: l.completed ? 'completed' : pos > 0 ? 'in_progress' : 'new',
       positionSec: pos,
       order: l.order,
     };
   });
 
-  const { data: attRows = [] } = await supabase
-    .from('attachments')
-    .select('id, type, title, description, storage_path, external_url, body, order')
-    .eq('section_id', sectionId)
-    .order('order');
-
-  const [attachments, quizzes] = await Promise.all([
-    resolveAttachmentRows(attRows as any),
-    getSectionQuizzes(sectionId),
-  ]);
+  const attachments: Attachment[] = await resolveAttachmentRows((page.attachments ?? []) as any);
+  const quizzes = (page.quizzes ?? []).map(mapCard);
 
   return {
     section: {
-      id: section.id,
-      title: section.title,
-      description: section.description,
-      coverLetter: coverLetter(section.cover_letter, section.title),
-      coverImage: section.cover_image,
-      showHeader: section.show_header,
+      id: page.section.id,
+      title: page.section.title,
+      description: page.section.description,
+      coverLetter: coverLetter(page.section.cover_letter, page.section.title),
+      coverImage: page.section.cover_image,
+      showHeader: page.section.show_header,
     },
-    parentTitle,
-    sheikhNames: (rollupRow?.sheikh_names as string[]) ?? [],
+    parentTitle: page.parent_title ?? null,
+    sheikhNames: page.rollup?.sheikh_names ?? [],
     rollup: {
       total,
       completed,

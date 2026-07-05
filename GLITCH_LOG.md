@@ -192,7 +192,18 @@ Things observed while scanning that are **not** covered by `PLAN_SECURITY.md` or
     to-first-frame, not JS/font/session readiness, so it can't show this
     change either.
 
-20. **CRITICAL, pre-existing — `/downloads` screen crashes the whole app.**
+20. ✅ **FIXED in V10 — `/downloads` screen crashed the whole app.**
+    Root cause was exactly the flagged one: `useDownloadedIds()`
+    (`src/hooks/useDownloads.ts`) is a Zustand selector returning a brand-new
+    array on every call, so `useSyncExternalStore` saw the snapshot "change" on
+    every render and looped until "Maximum update depth exceeded" killed the
+    process. Fix: wrapped the selector in `useShallow` from
+    `zustand/react/shallow` (zustand v5 pattern) so an unrelated store
+    notification no longer produces a new reference. Verified on the RELEASE
+    build — `/(student)/downloads` opens clean both empty and with downloads
+    present. Original report below.
+
+    **CRITICAL, pre-existing — `/downloads` screen crashes the whole app.**
     Found during the Phase P6 final regression click-through, native, on the
     release build. Navigating to `/(student)/downloads` reliably kills the
     process: `FATAL EXCEPTION ... JavascriptException: Maximum update depth

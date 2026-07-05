@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 
 import { getLecturePlayback } from '@/api/lectures';
 import type { LectureCard } from '@/api/types';
@@ -63,12 +64,20 @@ export function useDownload(lectureId: string) {
   };
 }
 
-/** Ids of all downloaded lectures (for the downloads page). */
+/**
+ * Ids of all downloaded lectures (for the downloads page). `useShallow` memoises
+ * the derived array so an unrelated store notification (e.g. a download-progress
+ * tick on another lecture) doesn't hand React a brand-new reference every render
+ * — without it, `useSyncExternalStore` sees the snapshot "change" on every pass
+ * and loops until "Maximum update depth exceeded" kills the app (GLITCH_LOG #20).
+ */
 export function useDownloadedIds(): string[] {
-  return useDownloadsStore((s) =>
-    Object.entries(s.byLectureId)
-      .filter(([, e]) => e.status === 'downloaded')
-      .map(([id]) => id),
+  return useDownloadsStore(
+    useShallow((s) =>
+      Object.entries(s.byLectureId)
+        .filter(([, e]) => e.status === 'downloaded')
+        .map(([id]) => id),
+    ),
   );
 }
 

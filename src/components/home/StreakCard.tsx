@@ -162,7 +162,7 @@ function RecoverySheet({
           </Txt>
 
           <Txt size={13.5} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
-            استمع اليوم إلى درسين، أو أربع دقائق من الاستماع، وتعود مداومتك كما كانت تلقائياً.
+            أكمل درسين كاملين على الأقل خلال أيام المهلة الثلاثة، وتعود مداومتك كما كانت تلقائياً.
           </Txt>
 
           <Txt size={12.5} color={colors.textMuted} align="center">

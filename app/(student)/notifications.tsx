@@ -13,10 +13,12 @@ import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { memo, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { NotificationItem } from '@/api/types';
 import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import {
   useMarkAllRead,
   useMarkRead,
@@ -121,6 +123,8 @@ export default function NotificationsScreen() {
   const unread = useUnreadCount();
   const markRead = useMarkRead();
   const markAllRead = useMarkAllRead();
+  const insets = useSafeAreaInsets();
+  const miniPad = useMiniPlayerPad();
 
   const onOpen = useCallback(
     (item: NotificationItem) => {
@@ -204,9 +208,10 @@ export default function NotificationsScreen() {
   }
 
   return (
-    <Screen scroll={false} bottomPad={118} padded>
+    <Screen scroll={false} bottomPad={0} padded>
       <FlatList
         style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}

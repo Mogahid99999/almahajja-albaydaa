@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
 
 import type { SectionCard } from '@/api/types';
 import { colors, radius } from '@/constants/theme';
 import { arLectureCount } from '@/lib/format';
+import { usePrefetchSection } from '@/hooks/useSections';
 import { Card, SectionTitle, Txt } from '@/components/ui';
 
 type Props = {
@@ -54,6 +56,12 @@ function SectionGridCard({
   section: SectionCard;
   onPress: () => void;
 }) {
+  // Warm this section's page while it's on screen, so the tap opens instantly.
+  const prefetch = usePrefetchSection();
+  useEffect(() => {
+    prefetch(section.id);
+  }, [prefetch, section.id]);
+
   return (
     <Pressable
       onPress={onPress}

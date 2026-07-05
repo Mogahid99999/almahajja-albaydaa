@@ -8,8 +8,9 @@
  *
  * Design reference: screens/مشغل الصوت.dc.html
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -49,21 +50,36 @@ export default function PlayerScreen() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const rate = usePlayerStore((s) => s.rate);
 
+  // True when a NON-downloaded lecture can't be reached (offline) — playLecture
+  // only rejects when the stream can't be resolved AND there's no local file, so
+  // we surface a calm inline notice instead of a dead player / crash (V10 Feature D).
+  const [unavailable, setUnavailable] = useState(false);
+
   // On mount: if a different lecture (or nothing) is loaded, start this one. A
   // deep-link `t` overrides the saved resume position (guarded so it never
   // rewinds a student who has since listened further — see playLecture).
   useEffect(() => {
     if (id && usePlayerStore.getState().currentLectureId !== id) {
+      setUnavailable(false);
       const startAtSec = t != null ? Number(t) : NaN;
-      void playLecture(id, Number.isFinite(startAtSec) ? { startAtSec } : undefined);
+      playLecture(id, Number.isFinite(startAtSec) ? { startAtSec } : undefined).catch(() =>
+        setUnavailable(true),
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, t]);
 
   // Title / sheikh: prefer live store values (already loaded by playLecture),
-  // fall back to API response while the store is being populated.
-  const title = storeTitle ?? data?.title ?? '';
-  const sheikhName = storeSheikhName ?? data?.sheikhName ?? null;
+  // fall back to API response while the store is being populated. When the
+  // lecture is UNAVAILABLE (offline + not downloaded), never fall back to the
+  // store values — those describe whatever is still playing in the background,
+  // NOT the lecture the user just opened. Show only the requested lecture's own
+  // metadata (from cache) so the screen never contradicts its "needs a
+  // connection" notice with a different lecture's name.
+  const title = unavailable ? (data?.title ?? '') : (storeTitle ?? data?.title ?? '');
+  const sheikhName = unavailable
+    ? (data?.sheikhName ?? null)
+    : (storeSheikhName ?? data?.sheikhName ?? null);
   const eyebrow = data?.eyebrow ?? '';
   const sectionTitle = data?.sectionTitle ?? eyebrow;
 
@@ -163,17 +179,36 @@ export default function PlayerScreen() {
         </View>
       </View>
 
-      {/* ── Waveform + transport — pinned just above the «أدوات الدرس» row ── */}
+      {/* ── Waveform + transport — pinned just above the «أدوات الدرس» row ──
+             (or a calm offline notice when a non-downloaded lecture is tapped
+             without a connection). ── */}
       <View style={[styles.controls, { bottom: controlsBottom }]}>
-        {/* ── Waveform + time ── */}
-        <View style={styles.waveformWrapper}>
-          <PlayerWaveformLive />
-        </View>
+        {unavailable ? (
+          <View style={styles.offlineNotice}>
+            <Feather name="wifi-off" size={22} color={colors.accentBrass} />
+            <Txt
+              size={13.5}
+              weight="medium"
+              color={colors.onTealPrimary}
+              align="center"
+              style={{ lineHeight: 22 }}
+            >
+              هذه المحاضرة تحتاج اتصالاً — أو حمّلها للاستماع بلا إنترنت
+            </Txt>
+          </View>
+        ) : (
+          <>
+            {/* ── Waveform + time ── */}
+            <View style={styles.waveformWrapper}>
+              <PlayerWaveformLive />
+            </View>
 
-        {/* ── Transport controls ── */}
-        <View style={styles.transportWrapper}>
-          <TransportControls isPlaying={isPlaying} />
-        </View>
+            {/* ── Transport controls ── */}
+            <View style={styles.transportWrapper}>
+              <TransportControls isPlaying={isPlaying} />
+            </View>
+          </>
+        )}
       </View>
 
       {/* ── Lecture attachments strip (absolute, above the tools row) ── */}
@@ -259,6 +294,11 @@ const styles = StyleSheet.create({
   },
   waveformWrapper: {
     paddingHorizontal: 28,
+  },
+  offlineNotice: {
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    gap: 12,
   },
   transportWrapper: {
     marginTop: 16,

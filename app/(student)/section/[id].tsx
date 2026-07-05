@@ -18,10 +18,12 @@
 import { ActivityIndicator, FlatList, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { arLectureCount } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
 import { useSectionPage } from '@/hooks/useSections';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import type { LectureRow } from '@/api/types';
 
 import { Chip } from '@/components/ui/Chip';
@@ -43,6 +45,8 @@ export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useSectionPage(id ?? '');
   const lectures = data?.lectures ?? [];
+  const insets = useSafeAreaInsets();
+  const miniPad = useMiniPlayerPad();
 
   const renderLecture = useCallback(
     ({ item, index }: { item: LectureRow; index: number }) => (
@@ -68,9 +72,12 @@ export default function SectionScreen() {
   );
 
   // ── Loading ─────────────────────────────────────────────────────────────────
-  if (isLoading) {
+  // Spinner only on a genuinely cold cache. With keepPreviousData + the persisted
+  // cache (V10), a revisit or a prefetched section already has `data`, so we render
+  // it immediately and refetch silently in the background — no spinner over content.
+  if (isLoading && !data) {
     return (
-      <Screen scroll={false} padded bottomPad={118}>
+      <Screen scroll={false} padded bottomPad={0}>
         <SectionNavBar contextLabel={null} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
@@ -183,13 +190,18 @@ export default function SectionScreen() {
     <Screen
       scroll={false}
       padded
-      bottomPad={118}
+      // bottomPad moves INTO the FlatList content below — reserving it on the
+      // outer container (with scroll={false}) would sit the list inside the pad
+      // and clip the quizzes/attachments footer, leaving a dead band above the
+      // nav bar (the owner's screenshot). miniPad is 0 when nothing is playing.
+      bottomPad={0}
       // Nav bar needs negative margin to break out of screen padding — we give
       // the Screen no horizontal padding and handle it inside SectionNavBar.
       contentStyle={{ paddingHorizontal: 0 }}
     >
       <FlatList
         style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
         data={lectures}
         keyExtractor={(lecture) => lecture.id}
         renderItem={renderLecture}

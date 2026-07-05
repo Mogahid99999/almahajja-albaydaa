@@ -131,7 +131,17 @@ export async function saveLectureProgress(args: {
   const { error } = await supabase
     .from('user_lecture_progress')
     .upsert(
-      { user_id: user.id, lecture_id: lectureId, position_sec: posInt, completed },
+      {
+        user_id: user.id,
+        lecture_id: lectureId,
+        position_sec: posInt,
+        completed,
+        // Stamp WHEN it was completed, only on the false→true crossing — the 26.1
+        // recovery bar (0044) counts lessons completed inside the 3-day window.
+        // Omitted otherwise so an earlier stamp is never overwritten (a lecture is
+        // never un-completed, so completed_at stays put once set).
+        ...(justCompleted ? { completed_at: new Date().toISOString() } : {}),
+      },
       { onConflict: 'user_id,lecture_id' },
     );
   if (error) throw error;

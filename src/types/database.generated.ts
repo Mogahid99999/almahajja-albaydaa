@@ -821,6 +821,7 @@ export type Database = {
       user_lecture_progress: {
         Row: {
           completed: boolean
+          completed_at: string | null
           lecture_id: string
           position_sec: number
           updated_at: string
@@ -828,6 +829,7 @@ export type Database = {
         }
         Insert: {
           completed?: boolean
+          completed_at?: string | null
           lecture_id: string
           position_sec?: number
           updated_at?: string
@@ -835,6 +837,7 @@ export type Database = {
         }
         Update: {
           completed?: boolean
+          completed_at?: string | null
           lecture_id?: string
           position_sec?: number
           updated_at?: string
@@ -1188,6 +1191,7 @@ export type Database = {
           passed_count: number
         }[]
       }
+      get_section_page: { Args: { p_section_id: string }; Returns: Json }
       get_section_quizzes: {
         Args: { p_section_id: string }
         Returns: {

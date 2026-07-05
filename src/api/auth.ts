@@ -142,8 +142,12 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       gender: u.gender ?? null,
     };
   }
-  const { data } = await supabase.auth.getUser();
-  const u = data.user;
+  // getSession() reads the session from async-storage WITHOUT a network round-trip
+  // (unlike getUser(), which validates against the auth server). This is what
+  // makes an offline cold start reach Home from the cached session instead of
+  // hanging on a network call the device can't complete (V10 Feature D).
+  const { data } = await supabase.auth.getSession();
+  const u = data.session?.user;
   if (!u) return null;
   const role = (u.user_metadata?.role as AppRole) ?? roleForEmail(u.email ?? '');
   return {

@@ -19,6 +19,7 @@ import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { arDayCount } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useBuddySearch, useSendBuddyRequest } from '@/hooks/useBuddy';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
@@ -32,6 +33,7 @@ export default function BuddySearchScreen() {
   const [candidate, setCandidate] = useState<BuddyCandidate | null>(null);
   const { data: candidates, isLoading } = useBuddySearch(query);
   const send = useSendBuddyRequest();
+  const miniPad = useMiniPlayerPad();
 
   const isGuest = user?.isGuest ?? true;
   const hasGender = !!user?.gender;
@@ -47,7 +49,7 @@ export default function BuddySearchScreen() {
   };
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{

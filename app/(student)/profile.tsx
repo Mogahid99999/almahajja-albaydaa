@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter, Link } from 'expo-router';
 
 import { useCurrentUser, useSignOut } from '@/hooks/useAuth';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { colors, radius, shadows } from '@/constants/theme';
 
 import { Card } from '@/components/ui/Card';
@@ -82,6 +83,7 @@ export default function ProfileScreen() {
   const { data: user } = useCurrentUser();
   const signOut = useSignOut();
 
+  const miniPad = useMiniPlayerPad();
   const isGuest = user?.isGuest ?? true;
   const email = user?.email ?? '';
   const name = user?.displayName?.trim() || '';
@@ -91,7 +93,7 @@ export default function ProfileScreen() {
   const avatarChar = name ? avatarInitial(name) : email ? avatarInitial(email) : '';
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       {/* ── Nav row ────────────────────────────────────────────────────────── */}
       <View
         style={{

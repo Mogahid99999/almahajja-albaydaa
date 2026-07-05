@@ -8,17 +8,21 @@
 import { ActivityIndicator, FlatList, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Divider, IconButton, Screen, Txt, cardRowStyle } from '@/components/ui';
 import { LectureRowItem } from '@/components/section/LectureRowItem';
 import { colors } from '@/constants/theme';
 import { useFeaturedLectures } from '@/hooks/useLecture';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import type { LectureRow } from '@/api/types';
 
 export default function FeaturedLecturesScreen() {
   const router = useRouter();
   const { data, isLoading } = useFeaturedLectures();
   const lectures = data ?? [];
+  const insets = useSafeAreaInsets();
+  const miniPad = useMiniPlayerPad();
 
   const renderItem = useCallback(
     ({ item, index }: { item: LectureRow; index: number }) => (
@@ -57,9 +61,10 @@ export default function FeaturedLecturesScreen() {
   }
 
   return (
-    <Screen scroll={false} bottomPad={118} padded>
+    <Screen scroll={false} bottomPad={0} padded>
       <FlatList
         style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
         data={lectures}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}

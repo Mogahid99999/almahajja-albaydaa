@@ -16,6 +16,7 @@ import { Pressable, TextInput, View } from 'react-native';
 import type { Gender } from '@/api/types';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser, useUpdateProfile } from '@/hooks/useAuth';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 import { Card } from '@/components/ui/Card';
 import { GenderPills } from '@/components/ui/GenderPills';
@@ -28,6 +29,7 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const update = useUpdateProfile();
+  const miniPad = useMiniPlayerPad();
 
   const [name, setName] = useState(user?.displayName ?? '');
   const [gender, setGender] = useState<Gender | null>(user?.gender ?? null);
@@ -59,7 +61,7 @@ export default function EditProfileScreen() {
   };
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{

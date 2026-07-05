@@ -12,6 +12,7 @@ import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { useDownloadedLectures } from '@/hooks/useDownloads';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { colors } from '@/constants/theme';
 
 import { Card } from '@/components/ui/Card';
@@ -26,9 +27,10 @@ import { DownloadedLectureRow } from '@/components/downloads/DownloadedLectureRo
 export default function DownloadsScreen() {
   const router = useRouter();
   const lectures = useDownloadedLectures();
+  const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       {/* ── Nav row ──────────────────────────────────────────────────────────── */}
       <View
         style={{

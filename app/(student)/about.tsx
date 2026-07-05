@@ -16,6 +16,7 @@ import { colors, radius, shadows } from '@/constants/theme';
 
 import { ABOUT_FALLBACK } from '@/api/appContent';
 import { useAboutContent } from '@/hooks/useAppContent';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { Card } from '@/components/ui/Card';
 import { ConcentricMotif } from '@/components/ui/Rhombus';
 import { Divider } from '@/components/ui/Divider';
@@ -29,9 +30,10 @@ export default function AboutScreen() {
   const router = useRouter();
   const { data } = useAboutContent();
   const content = data ?? ABOUT_FALLBACK;
+  const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       {/* ── Nav row ──────────────────────────────────────────────────────────── */}
       <View
         style={{

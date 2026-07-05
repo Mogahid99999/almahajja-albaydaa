@@ -4,16 +4,20 @@
  */
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton, Screen, Txt } from '@/components/ui';
 import { QuestionsBoard } from '@/components/questions/QuestionsBoard';
 import { colors } from '@/constants/theme';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 export default function QuestionsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen scroll={false} bottomPad={118} padded>
+    <Screen scroll={false} bottomPad={0} padded>
       <View
         style={{
           flexDirection: 'row',
@@ -31,7 +35,7 @@ export default function QuestionsScreen() {
         اسأل عمّا أشكل عليك، ويجيبك الشيخ — وتنتفع بأسئلة إخوانك
       </Txt>
 
-      <QuestionsBoard scope="general" />
+      <QuestionsBoard scope="general" bottomPad={miniPad + insets.bottom + 24} />
     </Screen>
   );
 }

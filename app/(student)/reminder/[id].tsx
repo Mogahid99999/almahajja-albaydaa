@@ -12,6 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { colors, shadows } from '@/constants/theme';
 import { useBroadcast } from '@/hooks/useBroadcasts';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { arNum } from '@/lib/format';
 
 import { Card } from '@/components/ui/Card';
@@ -36,9 +37,10 @@ export default function ReminderDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useBroadcast(id ?? '');
+  const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       {/* ── Nav row ──────────────────────────────────────────────────────────── */}
       <View
         style={{

@@ -26,6 +26,7 @@ import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useAddBenefit, useDeleteOwnBenefit, useLectureBenefits } from '@/hooks/useBenefits';
 import { useLecturePlayback } from '@/hooks/useLecture';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { arSince } from '@/lib/format';
 
 function RegisterNudge() {
@@ -147,9 +148,10 @@ export default function LectureBenefitsScreen() {
   const { data: benefits, isLoading } = useLectureBenefits(id ?? '');
   const deleteOwn = useDeleteOwnBenefit(id ?? '');
   const [pendingDelete, setPendingDelete] = useState<LectureBenefit | null>(null);
+  const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       <View
         style={{
           flexDirection: 'row',

@@ -42,7 +42,7 @@ export function StreakDetailCard() {
 
       {recoveryAvailable ? (
         <Txt size={12} color={colors.accentBrassMuted} style={{ marginTop: 10 }}>
-          {`يمكنك استعادة مداومتك خلال ${arDayCount(recoveryDaysLeft)} — درسان أو أربع دقائق استماع اليوم`}
+          {`يمكنك استعادة مداومتك خلال ${arDayCount(recoveryDaysLeft)} — درسان كاملان خلال المهلة`}
         </Txt>
       ) : null}
     </Card>

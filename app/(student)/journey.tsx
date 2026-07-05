@@ -18,6 +18,7 @@ import { arNum } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useBadges, useJourneySummary, useSetWeeklyGoal, useWeeklyGoal } from '@/hooks/useJourney';
 import { useMyQuizStats } from '@/hooks/useQuizzes';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
@@ -55,6 +56,7 @@ export default function JourneyScreen() {
   const { data: badges } = useBadges({ enabled: !isGuest });
   const { data: quizStats } = useMyQuizStats({ enabled: !isGuest });
   const setGoal = useSetWeeklyGoal();
+  const miniPad = useMiniPlayerPad();
 
   const [editing, setEditing] = useState(false);
 
@@ -63,7 +65,7 @@ export default function JourneyScreen() {
   };
 
   return (
-    <Screen bottomPad={118} padded>
+    <Screen bottomPad={miniPad || 24} padded>
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{

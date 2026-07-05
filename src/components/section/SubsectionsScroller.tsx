@@ -14,12 +14,14 @@
  * RTL note: the forward chevron on each card points LEFT (`chevron-left`)
  * because navigating deeper in RTL means going visually leftward.
  */
+import { useEffect } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { arLectureCount } from '@/lib/format';
 import { colors, fonts, radius } from '@/constants/theme';
+import { usePrefetchSection } from '@/hooks/useSections';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
 import type { SectionCard } from '@/api/types';
@@ -30,6 +32,13 @@ type Props = {
 
 export function SubsectionsScroller({ subsections }: Props) {
   const router = useRouter();
+
+  // Warm every child section that's rendered in the scroller, so drilling in is
+  // instant (V10 Perf C). prefetch is a no-op while a page is still fresh.
+  const prefetch = usePrefetchSection();
+  useEffect(() => {
+    for (const sub of subsections) prefetch(sub.id);
+  }, [prefetch, subsections]);
 
   if (subsections.length === 0) return null;
 
