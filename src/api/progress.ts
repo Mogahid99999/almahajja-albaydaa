@@ -15,7 +15,7 @@ import {
 import { tryClaimGoalCongrats } from './notifications';
 import * as mock from '@/mock/api';
 import { evaluateBadges } from './journey';
-import { enqueueActivity, localDay } from '@/lib/outbox';
+import { enqueueActivity, localDay } from '@/lib/outboxQueue';
 import { isOnlineSync } from '@/lib/connectivity';
 import { defaultNotificationEnabled, type Badge, type NotificationType } from './types';
 

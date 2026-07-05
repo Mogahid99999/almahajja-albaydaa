@@ -19,6 +19,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -30,6 +31,7 @@ import {
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { AttachmentManager } from '@/components/admin/AttachmentManager';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
@@ -112,6 +114,7 @@ export default function UploadScreen() {
   const jobRef = useRef(0);
   // Set once the lecture is saved — attachments hang off the created lecture id.
   const [createdLectureId, setCreatedLectureId] = useState<string | null>(null);
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
 
   // Sheikh picker open
   const [sheikhOpen, setSheikhOpen] = useState(false);
@@ -242,6 +245,16 @@ export default function UploadScreen() {
     // Never upload an unconverted file: if audio was picked it must have finished
     // compressing (the row + disabled button communicate the converting/error state).
     if (audioBlocksSubmit) return;
+    // Publishing immediately notifies every opted-in student — confirm first so
+    // a typo/misclick can't blast everyone with a brand-new, unreviewed lecture.
+    if (sectionId && publishStatus === 'published') {
+      setConfirmingPublish(true);
+      return;
+    }
+    runSubmit();
+  }
+
+  function runSubmit() {
     // Web: the compressed MP3 is the only thing that goes to storage (the
     // original is never uploaded). Native: no compression — upload the picked
     // file as-is (Issue 6).
@@ -301,6 +314,7 @@ export default function UploadScreen() {
             return { state: 'idle', progress: 0, result: null, error: null };
           });
         },
+        onSettled: () => setConfirmingPublish(false),
       },
     );
   }
@@ -493,37 +507,48 @@ export default function UploadScreen() {
                   {selectedSheikh?.name ?? 'اختر الشيخ...'}
                 </Txt>
               </Pressable>
-              {sheikhOpen && (
-                <View style={styles.sheikhDropdown}>
-                  {sheikhs.map((s, idx) => (
-                    <React.Fragment key={s.id}>
-                      <Pressable
-                        onPress={() => { setSheikhId(s.id); setSheikhOpen(false); }}
-                        style={({ pressed }) => [
-                          styles.sheikhRow,
-                          s.id === sheikhId && styles.sheikhRowSelected,
-                          pressed && { backgroundColor: colors.bgSand },
-                        ]}
-                      >
-                        <Txt size={13} color={s.id === sheikhId ? colors.primaryTeal : colors.textInk}>
-                          {s.name}
+              <Modal
+                visible={sheikhOpen}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setSheikhOpen(false)}
+              >
+                <Pressable style={styles.sheikhBackdrop} onPress={() => setSheikhOpen(false)}>
+                  <View
+                    style={styles.sheikhDropdown}
+                    // Stop propagation so tapping inside doesn't close
+                    onStartShouldSetResponder={() => true}
+                  >
+                    {sheikhs.map((s, idx) => (
+                      <React.Fragment key={s.id}>
+                        <Pressable
+                          onPress={() => { setSheikhId(s.id); setSheikhOpen(false); }}
+                          style={({ pressed }) => [
+                            styles.sheikhRow,
+                            s.id === sheikhId && styles.sheikhRowSelected,
+                            pressed && { backgroundColor: colors.bgSand },
+                          ]}
+                        >
+                          <Txt size={13} color={s.id === sheikhId ? colors.primaryTeal : colors.textInk}>
+                            {s.name}
+                          </Txt>
+                          {s.id === sheikhId && (
+                            <Feather name="check" size={14} color={colors.primaryTeal} style={{ marginLeft: 8 }} />
+                          )}
+                        </Pressable>
+                        {idx < sheikhs.length - 1 && <Divider />}
+                      </React.Fragment>
+                    ))}
+                    {sheikhs.length === 0 && (
+                      <View style={{ padding: 14 }}>
+                        <Txt size={13} color={colors.textGhost} align="center">
+                          لا يوجد مشايخ مضافون بعد.
                         </Txt>
-                        {s.id === sheikhId && (
-                          <Feather name="check" size={14} color={colors.primaryTeal} style={{ marginLeft: 8 }} />
-                        )}
-                      </Pressable>
-                      {idx < sheikhs.length - 1 && <Divider />}
-                    </React.Fragment>
-                  ))}
-                  {sheikhs.length === 0 && (
-                    <View style={{ padding: 14 }}>
-                      <Txt size={13} color={colors.textGhost} align="center">
-                        لا يوجد مشايخ مضافون بعد.
-                      </Txt>
-                    </View>
-                  )}
-                </View>
-              )}
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+              </Modal>
             </View>
           </View>
         </CardSection>
@@ -679,6 +704,18 @@ export default function UploadScreen() {
       </View>
 
       {content}
+
+      <ConfirmDialog
+        visible={confirmingPublish}
+        destructive={false}
+        title="نشر المحاضرة؟"
+        message="سيصل إشعار فوري إلى جميع الدارسين بأن هذه المحاضرة متاحة الآن."
+        confirmLabel="نشر"
+        cancelLabel="تراجع"
+        pending={createLecture.isPending}
+        onConfirm={runSubmit}
+        onCancel={() => setConfirmingPublish(false)}
+      />
     </AdminShell>
   );
 }
@@ -772,10 +809,7 @@ const styles = StyleSheet.create({
 
   titleInputFocused: {
     borderColor: colors.primaryTeal600,
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    ...shadows.subtle,
   },
 
   audioRow: {
@@ -876,10 +910,7 @@ const styles = StyleSheet.create({
 
   inputFocused: {
     borderColor: colors.primaryTeal600,
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    ...shadows.subtle,
   },
 
   sheikhField: {
@@ -894,22 +925,22 @@ const styles = StyleSheet.create({
     gap: 8,
   } as ViewStyle,
 
+  sheikhBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  } as ViewStyle,
+
   sheikhDropdown: {
-    position: 'absolute',
-    top: 50,
-    left: 0,
-    right: 0,
-    zIndex: 100,
+    width: 360,
+    maxHeight: 420,
     backgroundColor: colors.surfaceWhite,
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.borderSand,
     overflow: 'hidden',
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 8,
+    ...shadows.raised,
   } as ViewStyle,
 
   sheikhRow: {

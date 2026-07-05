@@ -147,15 +147,37 @@ function onStatus(status: AudioStatus) {
     // Refresh the lock-screen scrubber max the first time the real length lands.
     if (wasSeed) syncLockScreen();
   }
-  s.setPosition(status.currentTime ?? 0);
+  // Hard clamp (Plan 5 · item 8): some sources report `currentTime` running
+  // 30-40s past the known duration for a few ticks right before playback
+  // actually stops — never let the UI (or a persisted position) show a value
+  // past the track's own length.
+  const rawPosition = status.currentTime ?? 0;
+  const clampedPosition = currentDuration > 0 ? Math.min(rawPosition, currentDuration) : rawPosition;
+  s.setPosition(clampedPosition);
   s.setPlaying(status.playing);
   if (status.isLoaded) s.setLoading(false);
+
+  // Phase 3.5 — expo-audio surfaces a load/playback failure (e.g. logcat's
+  // `PlaybackState state=ERROR(7) error="Source error"`) via `status.error`, which
+  // was previously read nowhere: `isLoading` only clears `if (status.isLoaded)`,
+  // so an error that never reaches `isLoaded: true` left the spinner stuck
+  // indefinitely. Surface it in the store so the player screen can show a calm
+  // retry state instead. Cleared the moment a status without an error arrives
+  // (a fresh load, or the SDK's own recovery) so a resolved failure doesn't keep
+  // showing the retry UI.
+  if (status.error) {
+    s.setLoading(false);
+    s.setPlaying(false);
+    s.setLoadError(status.error);
+  } else if (s.loadError) {
+    s.setLoadError(null);
+  }
 
   // Persist progress at most every ~5s while playing.
   const now = Date.now();
   if (status.playing && currentId && now - lastSavedAt > 5000) {
     lastSavedAt = now;
-    void persist(status.currentTime ?? 0);
+    void persist(clampedPosition);
   }
 
   if (status.didJustFinish && currentId) {
@@ -238,11 +260,26 @@ export function playPrev() {
  * natural "the student just stopped listening" moments (pause/stop/finish)
  * rather than on every 5s tick, so a just-updated progress % doesn't look
  * stale if they immediately navigate back to the section.
+ *
+ * Also invalidates THIS lecture's own `queryKeys.lecture` entry (Phase 3.1 fix):
+ * that cache entry embeds `positionSec` (read by `getLecturePlayback`), and it's
+ * the SAME entry `playLecture()`'s streaming path seeks to via `ensureQueryData`
+ * on the next open. Without this, a pause/stop/finish updates the Home resume
+ * card (via the `home` invalidation below) but leaves the player's own
+ * resume-seek value pinned to whatever was cached up to 30 minutes ago (or
+ * indefinitely across a restart, since a fresh-looking persisted entry never
+ * re-prefetches) — the two disagree. Invalidating (rather than refetching here)
+ * is enough: `ensureQueryData` respects `isInvalidated` regardless of staleTime,
+ * so the NEXT open always re-reads the true server position. Applies identically
+ * to guest and signed-in sessions — this is a client-cache fix, not gated on auth.
  */
 function invalidateProgressViews() {
   void queryClient.invalidateQueries({ queryKey: queryKeys.home });
   if (currentSectionId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.section(currentSectionId) });
+  }
+  if (currentId) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.lecture(currentId) });
   }
 }
 
@@ -383,6 +420,19 @@ export async function playLecture(
       })
       .catch(() => {});
     return;
+  }
+
+  // Phase 3.7 fast-fail: offline + never downloaded → below, `ensureQueryData`
+  // would still attempt a REAL network round-trip (`networkMode: 'offlineFirst'`
+  // makes the first attempt regardless of connectivity) that has no timeout
+  // wired anywhere, so it can hang far longer than reads as "perpetual" to a
+  // waiting user before it finally rejects. Failing fast here instead makes the
+  // player screen's existing `.catch(() => setUnavailable(true))` (app/player/[id].tsx)
+  // show the calm "needs a connection" notice immediately instead of a
+  // blank/spinning player. A DOWNLOADED lecture never reaches this line — it
+  // already returned via the fast path above.
+  if (!localUri && !isOnlineSync()) {
+    throw new Error('offline and lecture not downloaded');
   }
 
   // ── Streaming path: needs the signed URL, so resolve metadata first. ──

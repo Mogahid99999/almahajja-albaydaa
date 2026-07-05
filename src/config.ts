@@ -26,7 +26,7 @@ export const NOTIF_TEST_MODE = false;
  * JS layer (`src/lib/bubble.ts`) gracefully no-ops. Flip on only once the native
  * module is linked + device-verified.
  */
-export const BUBBLE_ENABLED = true;
+export const BUBBLE_ENABLED = false;
 
 /** A lecture is marked complete once this fraction has been listened. (PRD §9) */
 export const COMPLETE_THRESHOLD = 0.9;
@@ -38,11 +38,17 @@ export const COMPLETE_THRESHOLD = 0.9;
  */
 export const MAX_LISTEN_TICK_SEC = 90;
 
-/** The two demo accounts (also seeded in Supabase Auth via scripts/seed-auth.mjs). */
-export const DEMO_ACCOUNTS = {
-  admin: { email: 'admin@gmail.com', password: 'test55%%', role: 'admin' as const },
-  student: { email: 'user@gmail.com', password: 'test55%%', role: 'student' as const },
-};
+/**
+ * The two demo accounts (also seeded in Supabase Auth via scripts/seed-auth.mjs).
+ * Only defined in mock mode — must not exist in the release JS bundle, since the
+ * literal credentials would otherwise be recoverable from a shipped APK.
+ */
+export const DEMO_ACCOUNTS = USE_MOCK
+  ? {
+      admin: { email: 'admin@gmail.com', password: 'test55%%', role: 'admin' as const },
+      student: { email: 'user@gmail.com', password: 'test55%%', role: 'student' as const },
+    }
+  : undefined;
 
 /**
  * Lecture lifecycle. The DB enum currently has only draft/published; we model

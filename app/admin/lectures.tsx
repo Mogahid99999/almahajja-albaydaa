@@ -342,6 +342,20 @@ export default function LecturesScreen() {
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminLectureRow | null>(null);
+  // A confirm step before any action that would newly PUBLISH a lecture — that
+  // fans out a real push notification to every opted-in student immediately.
+  // Re-saving an already-published lecture (status staying 'published') never
+  // re-notifies (the DB trigger only fires on a draft/unclassified → published
+  // transition), so this only guards the actual transition.
+  const [pendingPublish, setPendingPublish] = useState<
+    | { kind: 'toggle'; row: AdminLectureRow }
+    | {
+        kind: 'edit';
+        row: AdminLectureRow;
+        input: { title: string; sectionId: string | null; sheikhId: string | null; order: number; status: AppLectureStatus };
+      }
+    | null
+  >(null);
 
   const counts = useMemo(() => {
     const c: Record<StatusFilter, number> = {
@@ -360,10 +374,11 @@ export default function LecturesScreen() {
   );
 
   function handleTogglePublish(row: AdminLectureRow) {
-    setStatus.mutate({
-      id: row.id,
-      status: row.status === 'published' ? 'draft' : 'published',
-    });
+    if (row.status !== 'published') {
+      setPendingPublish({ kind: 'toggle', row });
+      return;
+    }
+    setStatus.mutate({ id: row.id, status: 'draft' });
   }
 
   function handleConfirmDelete() {
@@ -393,9 +408,13 @@ export default function LecturesScreen() {
             row={row}
             sheikhs={sheikhs}
             pending={updateLecture.isPending}
-            onSave={(input) =>
-              updateLecture.mutate({ id: row.id, input }, { onSuccess: () => setEditingId(null) })
-            }
+            onSave={(input) => {
+              if (input.status === 'published' && row.status !== 'published') {
+                setPendingPublish({ kind: 'edit', row, input });
+                return;
+              }
+              updateLecture.mutate({ id: row.id, input }, { onSuccess: () => setEditingId(null) });
+            }}
             onCancel={() => setEditingId(null)}
           />
         ) : null}
@@ -478,6 +497,34 @@ export default function LecturesScreen() {
         pending={deleteLecture.isPending}
         onConfirm={handleConfirmDelete}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingPublish}
+        destructive={false}
+        title="نشر المحاضرة؟"
+        message={`سيصل إشعار فوري إلى جميع الدارسين بأن «${pendingPublish?.row.title ?? ''}» متاحة الآن.`}
+        confirmLabel="نشر"
+        cancelLabel="تراجع"
+        pending={setStatus.isPending || updateLecture.isPending}
+        onConfirm={() => {
+          if (!pendingPublish) return;
+          if (pendingPublish.kind === 'toggle') {
+            setStatus.mutate(
+              { id: pendingPublish.row.id, status: 'published' },
+              { onSettled: () => setPendingPublish(null) },
+            );
+          } else {
+            updateLecture.mutate(
+              { id: pendingPublish.row.id, input: pendingPublish.input },
+              {
+                onSuccess: () => setEditingId(null),
+                onSettled: () => setPendingPublish(null),
+              },
+            );
+          }
+        }}
+        onCancel={() => setPendingPublish(null)}
       />
     </AdminShell>
   );

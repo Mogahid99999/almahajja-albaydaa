@@ -9,7 +9,6 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Alert,
   Pressable,
   StyleSheet,
   TextInput,
@@ -20,6 +19,7 @@ import {
 } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Divider, IconButton, ProgressBar, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
@@ -119,16 +119,18 @@ export default function AdminUserDetailScreen() {
   const router = useRouter();
   const { data, isLoading } = useAdminUserDetail(userId);
   const actions = useAdminUserActions(userId);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [pendingBanAction, setPendingBanAction] = useState<'ban' | 'unban' | null>(null);
+  const [pendingRole, setPendingRole] = useState<{ key: AppRole; label: string } | null>(null);
 
   const profile = data?.profile;
 
-  const flash = (msg: string) => {
-    setNotice(msg);
+  const flash = (msg: string, type: 'success' | 'error' = 'success') => {
+    setNotice({ msg, type });
     setTimeout(() => setNotice(null), 3000);
   };
 
-  const onError = (e: unknown) => Alert.alert('تعذّر التنفيذ', (e as Error).message);
+  const onError = (e: unknown) => flash((e as Error).message, 'error');
 
   return (
     <AdminShell active="users" breadcrumb="تفاصيل المستخدم">
@@ -140,10 +142,14 @@ export default function AdminUserDetailScreen() {
       </View>
 
       {notice && (
-        <View style={styles.notice}>
-          <Feather name="check" size={14} color={colors.stateSuccess} />
-          <Txt size={12} color={colors.stateSuccess}>
-            {notice}
+        <View style={[styles.notice, notice.type === 'error' && styles.noticeError]}>
+          <Feather
+            name={notice.type === 'error' ? 'alert-circle' : 'check'}
+            size={14}
+            color={notice.type === 'error' ? colors.stateDanger : colors.stateSuccess}
+          />
+          <Txt size={12} color={notice.type === 'error' ? colors.stateDanger : colors.stateSuccess}>
+            {notice.msg}
           </Txt>
         </View>
       )}
@@ -169,27 +175,7 @@ export default function AdminUserDetailScreen() {
             {/* Ban / unban */}
             <Pressable
               disabled={actions.ban.isPending || actions.unban.isPending}
-              onPress={() => {
-                const banned = profile.status === 'banned';
-                Alert.alert(
-                  banned ? 'تفعيل الحساب' : 'إيقاف الحساب',
-                  banned
-                    ? 'سيتمكن الطالب من الدخول مجددًا.'
-                    : 'لن يتمكن الطالب من الدخول حتى تُفعّل الحساب.',
-                  [
-                    { text: 'إلغاء', style: 'cancel' },
-                    {
-                      text: banned ? 'تفعيل' : 'إيقاف',
-                      style: banned ? 'default' : 'destructive',
-                      onPress: () =>
-                        (banned ? actions.unban : actions.ban).mutate(undefined, {
-                          onSuccess: () => flash(banned ? 'تم تفعيل الحساب' : 'تم إيقاف الحساب'),
-                          onError,
-                        }),
-                    },
-                  ],
-                );
-              }}
+              onPress={() => setPendingBanAction(profile.status === 'banned' ? 'unban' : 'ban')}
               style={[
                 styles.wideBtn,
                 {
@@ -224,19 +210,7 @@ export default function AdminUserDetailScreen() {
                     <Pressable
                       key={r.key}
                       disabled={active || actions.setRole.isPending}
-                      onPress={() =>
-                        Alert.alert('تغيير الدور', `تعيين هذا الحساب كـ«${r.label}»؟`, [
-                          { text: 'إلغاء', style: 'cancel' },
-                          {
-                            text: 'تأكيد',
-                            onPress: () =>
-                              actions.setRole.mutate(r.key, {
-                                onSuccess: () => flash('تم تغيير الدور'),
-                                onError,
-                              }),
-                          },
-                        ])
-                      }
+                      onPress={() => setPendingRole(r)}
                       style={[styles.roleChip, active && styles.roleChipActive]}
                     >
                       <Txt
@@ -392,6 +366,46 @@ export default function AdminUserDetailScreen() {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        visible={!!pendingBanAction}
+        title={pendingBanAction === 'unban' ? 'تفعيل الحساب' : 'إيقاف الحساب'}
+        message={
+          pendingBanAction === 'unban'
+            ? 'سيتمكن الطالب من الدخول مجددًا.'
+            : 'لن يتمكن الطالب من الدخول حتى تُفعّل الحساب.'
+        }
+        confirmLabel={pendingBanAction === 'unban' ? 'تفعيل' : 'إيقاف'}
+        destructive={pendingBanAction !== 'unban'}
+        pending={actions.ban.isPending || actions.unban.isPending}
+        onConfirm={() => {
+          const banned = pendingBanAction === 'unban';
+          (banned ? actions.unban : actions.ban).mutate(undefined, {
+            onSuccess: () => flash(banned ? 'تم تفعيل الحساب' : 'تم إيقاف الحساب'),
+            onError,
+            onSettled: () => setPendingBanAction(null),
+          });
+        }}
+        onCancel={() => setPendingBanAction(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingRole}
+        title="تغيير الدور"
+        message={`تعيين هذا الحساب كـ«${pendingRole?.label ?? ''}»؟`}
+        confirmLabel="تأكيد"
+        destructive={false}
+        pending={actions.setRole.isPending}
+        onConfirm={() => {
+          if (!pendingRole) return;
+          actions.setRole.mutate(pendingRole.key, {
+            onSuccess: () => flash('تم تغيير الدور'),
+            onError,
+            onSettled: () => setPendingRole(null),
+          });
+        }}
+        onCancel={() => setPendingRole(null)}
+      />
     </AdminShell>
   );
 }
@@ -475,6 +489,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     padding: 12,
     marginBottom: 14,
+  } as ViewStyle,
+
+  noticeError: {
+    backgroundColor: 'rgba(184,92,74,0.1)',
   } as ViewStyle,
 
   heading: { marginBottom: 12, marginTop: 20 } as TextStyle,

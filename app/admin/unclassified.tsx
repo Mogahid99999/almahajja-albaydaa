@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
@@ -133,8 +134,17 @@ export default function UnclassifiedScreen() {
 
   // Track which IDs are being processed (to disable their button)
   const [processing, setProcessing] = useState<Set<string>>(new Set());
+  // Classifying here always publishes immediately (no draft option in this
+  // queue) — confirm first since that fans out a push notification to every
+  // opted-in student.
+  const [pendingClassify, setPendingClassify] = useState<{
+    id: string;
+    title: string;
+    sectionId: string;
+    order: number;
+  } | null>(null);
 
-  function handleClassify(id: string, sectionId: string, order: number) {
+  function runClassify(id: string, sectionId: string, order: number) {
     setProcessing((prev) => new Set(prev).add(id));
     classifyLecture.mutate(
       { id, sectionId, order },
@@ -199,11 +209,29 @@ export default function UnclassifiedScreen() {
               key={item.id}
               item={item}
               isPending={processing.has(item.id)}
-              onClassify={(sectionId, order) => handleClassify(item.id, sectionId, order)}
+              onClassify={(sectionId, order) =>
+                setPendingClassify({ id: item.id, title: item.title, sectionId, order })
+              }
             />
           ))}
         </View>
       )}
+
+      <ConfirmDialog
+        visible={!!pendingClassify}
+        destructive={false}
+        title="نشر المحاضرة؟"
+        message={`سيصل إشعار فوري إلى جميع الدارسين بأن «${pendingClassify?.title ?? ''}» متاحة الآن.`}
+        confirmLabel="تصنيف ونشر"
+        cancelLabel="تراجع"
+        pending={pendingClassify ? processing.has(pendingClassify.id) : false}
+        onConfirm={() => {
+          if (!pendingClassify) return;
+          runClassify(pendingClassify.id, pendingClassify.sectionId, pendingClassify.order);
+          setPendingClassify(null);
+        }}
+        onCancel={() => setPendingClassify(null)}
+      />
     </AdminShell>
   );
 }
@@ -274,10 +302,7 @@ const styles = StyleSheet.create({
 
   inputFocused: {
     borderColor: colors.primaryTeal600,
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    ...shadows.subtle,
   },
 
   classifyBtn: {

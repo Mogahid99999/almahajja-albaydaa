@@ -27,7 +27,12 @@ export function ContinueCard({ continueListening }: Props) {
   const progress = durationSec > 0 ? positionSec / durationSec : 0;
 
   function handlePress() {
-    router.push(`/player/${id}`);
+    // Pass the fresh, currently-displayed position as `t` — same deep-link
+    // param a resume notification uses (app/player/[id].tsx honors it, guarded
+    // to never rewind). Belt-and-suspenders alongside the cache-invalidation
+    // fix (Phase 3.1): this entry point never has to trust the lecture-cache
+    // resume value at all, since it hands over the number it's already showing.
+    router.push(`/player/${id}?t=${Math.floor(positionSec)}`);
   }
 
   return (

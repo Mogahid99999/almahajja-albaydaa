@@ -45,8 +45,6 @@ export function FeaturedRail({ lectures }: Props) {
           paddingHorizontal: spacing.screenH,
           paddingBottom: 4,
         }}
-        // RTL scroll: content starts from the right edge.
-        style={{ direction: 'rtl' } as object}
       >
         {lectures.map((lecture, idx) => {
           const tint = COVER_TINTS[idx % COVER_TINTS.length]!;

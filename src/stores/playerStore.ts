@@ -22,6 +22,13 @@ type PlayerState = {
   nextLectureId: string | null;
   /** The previous lecture in the section, resolved after a track loads (null = none). */
   prevLectureId: string | null;
+  /**
+   * expo-audio's `AudioStatus.error` surfaced (Phase 3.5 — "Source error" hang).
+   * Non-null means the current track failed to load/play; the full player shows
+   * a calm retry state instead of leaving `isLoading` stuck true forever. Cleared
+   * whenever a new track loads (`setTrack`) or a load/retry succeeds.
+   */
+  loadError: string | null;
 };
 
 type PlayerActions = {
@@ -39,6 +46,7 @@ type PlayerActions = {
   setRate: (rate: PlaybackRate) => void;
   setNext: (nextLectureId: string | null) => void;
   setPrev: (prevLectureId: string | null) => void;
+  setLoadError: (loadError: string | null) => void;
   reset: () => void;
 };
 
@@ -53,6 +61,7 @@ const initial: PlayerState = {
   rate: 1.0,
   nextLectureId: null,
   prevLectureId: null,
+  loadError: null,
 };
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
@@ -67,6 +76,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
       // A new track's neighbours are unknown until resolved by the controller.
       nextLectureId: null,
       prevLectureId: null,
+      // A new load attempt starts clean — any previous track's failure must not
+      // bleed into this one.
+      loadError: null,
     }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setLoading: (isLoading) => set({ isLoading }),
@@ -75,5 +87,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
   setRate: (rate) => set({ rate }),
   setNext: (nextLectureId) => set({ nextLectureId }),
   setPrev: (prevLectureId) => set({ prevLectureId }),
+  setLoadError: (loadError) => set({ loadError }),
   reset: () => set(initial),
 }));

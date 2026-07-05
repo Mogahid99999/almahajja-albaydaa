@@ -1,12 +1,24 @@
 import { Feather, FontAwesome } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { I18nManager, Linking, Pressable, TextInput, View } from 'react-native';
+import { Linking, Pressable, TextInput, View } from 'react-native';
 
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignIn } from '@/hooks/useAuth';
 import { useSupportContact } from '@/hooks/useAppContent';
+
+// Supabase auth errors come back in English; map the ones users actually hit
+// during sign-in to Arabic. Anything unrecognized falls back to a generic
+// Arabic message rather than leaking English into this Arabic-first screen.
+function arabicSignInError(message: string): string {
+  const known: Record<string, string> = {
+    'Invalid login credentials': 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
+    'Email not confirmed': 'يرجى تأكيد بريدك الإلكتروني أولاً',
+    'Too many requests': 'محاولات كثيرة جداً، حاول مرة أخرى بعد قليل',
+  };
+  return known[message] ?? 'تعذّر تسجيل الدخول، حاول مرة أخرى';
+}
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -78,7 +90,7 @@ export default function SignInScreen() {
 
         {signIn.isError ? (
           <Txt size={12} color={colors.stateDanger} style={{ marginBottom: 10 }}>
-            {(signIn.error as Error).message}
+            {arabicSignInError((signIn.error as Error).message)}
           </Txt>
         ) : null}
 
@@ -131,7 +143,7 @@ export default function SignInScreen() {
           accessibilityLabel="تواصل مع الدعم الفني عبر واتساب"
           style={({ pressed }) => [
             {
-              flexDirection: 'row-reverse',
+              flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 7,
@@ -162,9 +174,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const swapsLeftAndRightInRtl = I18nManager.isRTL && I18nManager.doLeftAndRightSwapInRTL;
-const visualRightTextAlign = swapsLeftAndRightInRtl ? 'left' : 'right';
-const visualLeftTextAlign = swapsLeftAndRightInRtl ? 'right' : 'left';
+// Confirmed on-device (see the same fix in components/ui/Txt.tsx):  this
+// app's forced-RTL setup renders `textAlign: 'right'` flush LEFT and 'left'
+// flush RIGHT for any box wider than its content, unconditionally.
+const visualRightTextAlign = 'left';
+const visualLeftTextAlign = 'right';
 
 const arabicTextStyle = {
   textAlign: visualRightTextAlign as 'left' | 'right',
@@ -188,7 +202,7 @@ const inputStyle = {
 // Password field: same box as inputStyle, but a row so the show/hide eye sits
 // inside it (on the left in RTL).
 const pwWrapStyle = {
-  flexDirection: 'row-reverse' as const,
+  flexDirection: 'row' as const,
   alignItems: 'center' as const,
   height: 46,
   borderWidth: 1,

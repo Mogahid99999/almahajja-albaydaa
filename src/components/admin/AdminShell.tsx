@@ -340,7 +340,6 @@ const styles = StyleSheet.create({
 
   navItem: {
     flexDirection: 'row',
-    direction: 'ltr',
     alignItems: 'center',
     width: '100%',
     paddingVertical: 12,

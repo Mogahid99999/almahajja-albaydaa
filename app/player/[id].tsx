@@ -9,19 +9,21 @@
  * Design reference: screens/مشغل الصوت.dc.html
  */
 import { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, radius } from '@/constants/theme';
+import { colors, platformShadow, radius } from '@/constants/theme';
+import { queryKeys } from '@/constants/queryKeys';
 import { Txt, Screen, IconButton, RhombusEmblem, ConcentricMotif } from '@/components/ui';
 import { Waveform } from '@/components/player/Waveform';
 import { TransportControls } from '@/components/player/TransportControls';
 import { PlayerUtilityBar } from '@/components/player/PlayerUtilityBar';
 import { LessonToolsRow } from '@/components/player/LessonToolsRow';
 import { PlayerAttachmentsStrip } from '@/components/attachments/PlayerAttachmentsStrip';
-import { playLecture, seekTo } from '@/lib/audioController';
+import { playLecture, seekTo, stop } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useLecturePlayback } from '@/hooks/useLecture';
 
@@ -30,6 +32,7 @@ export default function PlayerScreen() {
   const { id, t } = useLocalSearchParams<{ id: string; t?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const qc = useQueryClient();
 
   // Collapse the modal player. When it was opened as the entry screen (a
   // notification deep-link, or a fast-refresh that landed here) there's no
@@ -49,6 +52,9 @@ export default function PlayerScreen() {
   const storeSheikhName = usePlayerStore((s) => s.sheikhName);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const rate = usePlayerStore((s) => s.rate);
+  // Phase 3.5 — expo-audio's own reported load/playback failure (e.g. a
+  // transient "Source error"), surfaced via onStatus in audioController.
+  const loadError = usePlayerStore((s) => s.loadError);
 
   // True when a NON-downloaded lecture can't be reached (offline) — playLecture
   // only rejects when the stream can't be resolved AND there's no local file, so
@@ -68,6 +74,19 @@ export default function PlayerScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, t]);
+
+  // Retry a failed load (Phase 3.5): the player is already "on" this lecture id,
+  // so a plain playLecture(id) would just toggle play/pause (see its early
+  // return). stop() first fully resets the controller + store (currentId → null,
+  // loadError → null); invalidating the cached playback entry too means the
+  // retry mints a fresh signed URL / re-reads the row instead of possibly
+  // replaying the exact same (cached) source that just failed.
+  const retry = () => {
+    if (!id) return;
+    void qc.invalidateQueries({ queryKey: queryKeys.lecture(id) });
+    stop();
+    playLecture(id).catch(() => setUnavailable(true));
+  };
 
   // Title / sheikh: prefer live store values (already loaded by playLecture),
   // fall back to API response while the store is being populated. When the
@@ -196,6 +215,29 @@ export default function PlayerScreen() {
               هذه المحاضرة تحتاج اتصالاً — أو حمّلها للاستماع بلا إنترنت
             </Txt>
           </View>
+        ) : loadError ? (
+          <View style={styles.offlineNotice}>
+            <Feather name="refresh-cw" size={22} color={colors.accentBrass} />
+            <Txt
+              size={13.5}
+              weight="medium"
+              color={colors.onTealPrimary}
+              align="center"
+              style={{ lineHeight: 22 }}
+            >
+              تعذّر تشغيل هذه المحاضرة الآن
+            </Txt>
+            <Pressable
+              onPress={retry}
+              accessibilityRole="button"
+              accessibilityLabel="إعادة المحاولة"
+              style={({ pressed }) => [styles.retryButton, pressed && { opacity: 0.8 }]}
+            >
+              <Txt size={13} weight="semibold" color={colors.primaryTealDeep}>
+                إعادة المحاولة
+              </Txt>
+            </Pressable>
+          </View>
         ) : (
           <>
             {/* ── Waveform + time ── */}
@@ -268,11 +310,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.artwork,
     borderWidth: 1,
     borderColor: 'rgba(201,164,99,0.32)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 24 },
-    shadowOpacity: 0.6,
-    shadowRadius: 30,
-    elevation: 12,
+    ...platformShadow('#000', { width: 0, height: 24 }, 0.6, 30, 12),
   },
   titleBlock: {
     // `stretch` (not `center`) gives each line the full width to lay out in;
@@ -299,6 +337,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     alignItems: 'center',
     gap: 12,
+  },
+  retryButton: {
+    backgroundColor: colors.accentBrass,
+    borderRadius: radius.input,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    marginTop: 2,
   },
   transportWrapper: {
     marginTop: 16,

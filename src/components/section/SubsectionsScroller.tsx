@@ -52,8 +52,6 @@ export function SubsectionsScroller({ subsections }: Props) {
       {/* Horizontal RTL scroll */}
       <ScrollView
         horizontal
-        // RTL scroll starts from the right
-        style={{ direction: 'rtl' } as any}
         contentContainerStyle={{
           gap: 12,
           paddingBottom: 4,

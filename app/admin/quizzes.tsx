@@ -37,13 +37,14 @@ function StatusPill({ status }: { status: 'draft' | 'published' }) {
 
 function QuizRow({
   quiz,
+  onTogglePublish,
   onDelete,
 }: {
   quiz: AdminQuizRow;
+  onTogglePublish: () => void;
   onDelete: () => void;
 }) {
   const router = useRouter();
-  const setStatus = useSetQuizStatus();
 
   return (
     <View style={styles.row}>
@@ -61,13 +62,7 @@ function QuizRow({
 
       <View style={styles.actions}>
         <Pressable
-          onPress={() =>
-            setStatus.mutate({
-              quizId: quiz.id,
-              status: quiz.status === 'published' ? 'draft' : 'published',
-            })
-          }
-          disabled={setStatus.isPending}
+          onPress={onTogglePublish}
           accessibilityLabel={quiz.status === 'published' ? 'إلغاء النشر' : 'نشر'}
           style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
         >
@@ -111,7 +106,20 @@ export default function AdminQuizzesScreen() {
   const router = useRouter();
   const { data: quizzes = [], isLoading } = useAdminQuizzes();
   const deleteQuiz = useDeleteQuiz();
+  const setStatus = useSetQuizStatus();
   const [pendingDelete, setPendingDelete] = useState<AdminQuizRow | null>(null);
+  // Publishing fans out a real push notification to every opted-in student
+  // (0018_quiz_publish_notify.sql) — confirm before that transition, same as
+  // lectures. Unpublishing never notifies, so it goes through immediately.
+  const [pendingPublish, setPendingPublish] = useState<AdminQuizRow | null>(null);
+
+  function handleTogglePublish(quiz: AdminQuizRow) {
+    if (quiz.status === 'published') {
+      setStatus.mutate({ quizId: quiz.id, status: 'draft' });
+      return;
+    }
+    setPendingPublish(quiz);
+  }
 
   const groups = useMemo(() => {
     const bySection = new Map<string, { title: string; rows: AdminQuizRow[] }>();
@@ -135,7 +143,11 @@ export default function AdminQuizzesScreen() {
           {group.rows.map((quiz, idx) => (
             <React.Fragment key={quiz.id}>
               {idx > 0 ? <Divider /> : null}
-              <QuizRow quiz={quiz} onDelete={() => setPendingDelete(quiz)} />
+              <QuizRow
+                quiz={quiz}
+                onTogglePublish={() => handleTogglePublish(quiz)}
+                onDelete={() => setPendingDelete(quiz)}
+              />
             </React.Fragment>
           ))}
         </Card>
@@ -210,6 +222,24 @@ export default function AdminQuizzesScreen() {
           deleteQuiz.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
         }}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingPublish}
+        destructive={false}
+        title="نشر الاختبار؟"
+        message={`سيصل إشعار فوري إلى جميع الدارسين بأن اختبار «${pendingPublish?.title ?? ''}» متاح الآن.`}
+        confirmLabel="نشر"
+        cancelLabel="تراجع"
+        pending={setStatus.isPending}
+        onConfirm={() => {
+          if (!pendingPublish) return;
+          setStatus.mutate(
+            { quizId: pendingPublish.id, status: 'published' },
+            { onSettled: () => setPendingPublish(null) },
+          );
+        }}
+        onCancel={() => setPendingPublish(null)}
       />
     </AdminShell>
   );

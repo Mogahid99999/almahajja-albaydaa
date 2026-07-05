@@ -21,6 +21,7 @@ import {
 
 import type { QuizQuestionInput } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Txt } from '@/components/ui';
@@ -114,6 +115,7 @@ export default function QuizEditScreen() {
   const [questions, setQuestions] = useState<EditableQuestion[]>([blankQuestion()]);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
   const hydratedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -209,6 +211,19 @@ export default function QuizEditScreen() {
     setSuccessMsg('');
     if (problem) return;
 
+    // Publishing fans out a real push notification to every opted-in student
+    // (0018_quiz_publish_notify.sql) — confirm before an actual draft/new →
+    // published transition. Re-saving an already-published quiz never
+    // re-notifies (the DB trigger only fires on that transition), so it saves
+    // straight through.
+    if (status === 'published' && existing?.status !== 'published') {
+      setConfirmingPublish(true);
+      return;
+    }
+    doSave();
+  }
+
+  function doSave() {
     const input = {
       sectionId: sectionId!,
       title: title.trim(),
@@ -242,6 +257,7 @@ export default function QuizEditScreen() {
         {
           onSuccess: () => setSuccessMsg('تم حفظ التعديلات.'),
           onError: () => setError('تعذّر الحفظ. حاول مرة أخرى.'),
+          onSettled: () => setConfirmingPublish(false),
         },
       );
     } else {
@@ -255,6 +271,7 @@ export default function QuizEditScreen() {
             router.replace(`/admin/quiz-edit?id=${newId}` as Parameters<typeof router.replace>[0]);
           },
           onError: () => setError('تعذّر الحفظ. حاول مرة أخرى.'),
+          onSettled: () => setConfirmingPublish(false),
         },
       );
     }
@@ -634,6 +651,18 @@ export default function QuizEditScreen() {
       </View>
 
       {content}
+
+      <ConfirmDialog
+        visible={confirmingPublish}
+        destructive={false}
+        title="نشر الاختبار؟"
+        message="سيصل إشعار فوري إلى جميع الدارسين بأن هذا الاختبار متاح الآن."
+        confirmLabel="نشر"
+        cancelLabel="تراجع"
+        pending={saving}
+        onConfirm={doSave}
+        onCancel={() => setConfirmingPublish(false)}
+      />
     </AdminShell>
   );
 }

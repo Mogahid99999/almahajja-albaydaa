@@ -23,7 +23,7 @@ import {
 } from 'react-native';
 
 import { Rhombus, Txt } from '@/components/ui';
-import { colors, fonts, radius } from '@/constants/theme';
+import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSectionsFlat } from '@/hooks/useSections';
 import type { FlatSectionNode } from '@/api/types';
 
@@ -218,10 +218,7 @@ const styles = StyleSheet.create({
 
   fieldOpen: {
     borderColor: colors.primaryTeal600,
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    ...shadows.subtle,
   } as ViewStyle,
 
   breadcrumbRow: {
@@ -254,11 +251,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderSand,
     overflow: 'hidden',
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 12,
+    ...shadows.raised,
   } as ViewStyle,
 
   searchRow: {

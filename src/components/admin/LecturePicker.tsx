@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 
 import { Txt } from '@/components/ui';
-import { colors, fonts, radius } from '@/constants/theme';
+import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
 import { useAdminLectures } from '@/hooks/useAdmin';
 
@@ -157,11 +157,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderSand,
     overflow: 'hidden',
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 12,
+    ...shadows.raised,
   } as ViewStyle,
 
   searchRow: {

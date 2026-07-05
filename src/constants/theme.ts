@@ -5,6 +5,7 @@
  * Calm and serious — two background colors max, no bright/competitive colors,
  * no gamification.
  */
+import { Platform } from 'react-native';
 
 export const colors = {
   // Backgrounds & surfaces
@@ -77,30 +78,63 @@ export const spacing = {
   adminContent: 30,
 } as const;
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/**
+ * Shadow-only style keys — deliberately NOT typed as ViewStyle/TextStyle so
+ * this spreads cleanly into either (this app spreads shadow presets into both
+ * View and TextInput style objects).
+ */
+type ShadowStyle = {
+  boxShadow?: string;
+  shadowColor?: string;
+  shadowOffset?: { width: number; height: number };
+  shadowOpacity?: number;
+  shadowRadius?: number;
+  elevation?: number;
+};
+
+/**
+ * Cross-platform drop shadow. Native (iOS/Android) keeps the real shadow
+ * style props (shadowColor etc.) and elevation; web uses `boxShadow` directly
+ * instead — react-native-web renders the shadow shorthand fine today but logs
+ * a deprecation warning for it, and this produces the identical visual shadow
+ * without that noise.
+ */
+export function platformShadow(
+  color: string,
+  offset: { width: number; height: number },
+  opacity: number,
+  radius: number,
+  elevation?: number,
+): ShadowStyle {
+  return Platform.select<ShadowStyle>({
+    web: { boxShadow: `${offset.width}px ${offset.height}px ${radius}px ${hexToRgba(color, opacity)}` },
+    default: {
+      shadowColor: color,
+      shadowOffset: offset,
+      shadowOpacity: opacity,
+      shadowRadius: radius,
+      ...(elevation !== undefined ? { elevation } : {}),
+    },
+  })!;
+}
+
 /**
  * Soft, brand-tinted shadows only (README › Spacing/shadow). RN approximations
  * of the long low-opacity CSS shadows; never hard or neutral-gray.
  */
 export const shadows = {
-  feature: {
-    shadowColor: '#1f4a42',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 8,
-  },
-  miniPlayer: {
-    shadowColor: '#16352f',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 12,
-  },
-  button: {
-    shadowColor: '#1f4a42',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
-  },
+  feature: platformShadow('#1f4a42', { width: 0, height: 14 }, 0.35, 18, 8),
+  miniPlayer: platformShadow('#16352f', { width: 0, height: 14 }, 0.45, 18, 12),
+  button: platformShadow('#1f4a42', { width: 0, height: 8 }, 0.35, 10, 5),
+  /** Subtle focus glow — no elevation (Android never showed one for this either). */
+  subtle: platformShadow(colors.primaryTeal, { width: 0, height: 0 }, 0.1, 3),
+  /** Raised popover/dropdown shadow. */
+  raised: platformShadow(colors.primaryTeal, { width: 0, height: 8 }, 0.18, 20, 12),
 } as const;

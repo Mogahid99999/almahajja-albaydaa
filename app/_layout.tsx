@@ -41,7 +41,7 @@ import { recordAppOpen } from '@/lib/notificationState';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { queryClient } from '@/lib/queryClient';
+import { queryClient, reconcileContentListsAfterHydration } from '@/lib/queryClient';
 import { initConnectivity } from '@/lib/connectivity';
 import { flushOutbox, startOutbox } from '@/lib/outbox';
 import { APP_VERSION } from '@/lib/version';
@@ -102,6 +102,17 @@ function shouldDehydrateQuery(query: Query): boolean {
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 I18nManager.swapLeftAndRightInRTL(false);
+
+// Web (the admin dashboard) already gets `<html dir="rtl">` from `app/+html.tsx`,
+// but that file only applies to the static/export build — the Metro dev server
+// serves its own default HTML shell, which defaults to `dir="ltr"`. Set it here
+// too, at module scope, so a plain browser element (scrollbar placement, text
+// selection, an input missing an explicit `dir`) is never LTR-by-default, in
+// dev or in prod.
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  document.documentElement.dir = 'rtl';
+  document.documentElement.lang = 'ar';
+}
 
 // Connectivity → TanStack onlineManager (V11 · A): paused offlineFirst queries
 // resume the instant the network returns, and the offline outbox gets its
@@ -434,6 +445,12 @@ export default function RootLayout() {
         buster: APP_VERSION,
         dehydrateOptions: { shouldDehydrateQuery },
       }}
+      // Phase 3.4 fix: once the persisted cache has been restored from disk (and
+      // already rendered), reconcile the "admin can add/remove/unpublish"
+      // content-list roots (home/section/sections/lectures) against the server in
+      // the background — see reconcileContentListsAfterHydration for why this is
+      // scoped instead of a blanket refetch-everything-on-launch.
+      onSuccess={reconcileContentListsAfterHydration}
     >
       <SafeAreaProvider>
         <StatusBar style="dark" />

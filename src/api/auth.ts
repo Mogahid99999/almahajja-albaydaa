@@ -125,8 +125,11 @@ async function restoreGuestSession(): Promise<boolean> {
   }
 }
 
-function roleForEmail(email: string): AppRole {
-  return email.trim().toLowerCase() === DEMO_ACCOUNTS.admin.email ? 'admin' : 'student';
+// Real accounts (seed scripts, admin-users edge function) always write `role`
+// into user_metadata, so this only ever fires for an account created without
+// it — safe to default to the least-privileged role.
+function fallbackRole(): AppRole {
+  return 'student';
 }
 
 /** Currently signed-in user (with role), or null. */
@@ -149,7 +152,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const { data } = await supabase.auth.getSession();
   const u = data.session?.user;
   if (!u) return null;
-  const role = (u.user_metadata?.role as AppRole) ?? roleForEmail(u.email ?? '');
+  const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
     email: u.email ?? '',
@@ -204,7 +207,7 @@ export async function signInAnonymously(): Promise<CurrentUser> {
 export async function signIn(email: string, password: string): Promise<CurrentUser> {
   const e = email.trim().toLowerCase();
   if (USE_MOCK) {
-    const match = Object.values(DEMO_ACCOUNTS).find(
+    const match = Object.values(DEMO_ACCOUNTS!).find(
       (a) => a.email === e && a.password === password,
     );
     if (!match) throw new Error('بيانات الدخول غير صحيحة');
@@ -228,7 +231,7 @@ export async function signIn(email: string, password: string): Promise<CurrentUs
   const { data, error } = await supabase.auth.signInWithPassword({ email: e, password });
   if (error) throw error;
   const u = data.user!;
-  const role = (u.user_metadata?.role as AppRole) ?? roleForEmail(e);
+  const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
     email: u.email ?? e,
@@ -278,7 +281,7 @@ export async function register(
   await clearStoredGuestSession();
   await syncOwnProfile({ gender, displayName: display });
   const u = data.user;
-  const role = (u.user_metadata?.role as AppRole) ?? roleForEmail(e);
+  const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
     email: u.email ?? e,
@@ -324,7 +327,7 @@ export async function updateProfile(fields: {
     await syncOwnProfile({ gender: fields.gender, displayName: fields.displayName });
   }
   const u = data.user;
-  const role = (u.user_metadata?.role as AppRole) ?? roleForEmail(u.email ?? '');
+  const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
     email: u.email ?? '',

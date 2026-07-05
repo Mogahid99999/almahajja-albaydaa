@@ -52,7 +52,20 @@ export function useRegister() {
   return useMutation({
     mutationFn: (vars: { name: string; email: string; password: string; gender: Gender }) =>
       register(vars.name, vars.email, vars.password, vars.gender),
-    onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
+    onSuccess: (user) => {
+      qc.setQueryData(queryKeys.currentUser, user);
+      // Phase 3.6 safety net: `register()` links onto the SAME auth.uid() (no new
+      // user id, no row migration needed — `user_lecture_progress` already belongs
+      // to this uid before and after), so there is nothing to "carry over" here.
+      // But if any pre-registration completion is still sitting in a stale
+      // `home`/`section` cache entry (e.g. a still-mounted screen that missed an
+      // earlier invalidation, or an outbox replay that raced the sign-up request),
+      // registering is a natural moment to force a resync so رحلتي العلمية and the
+      // section the student was just in never show a percentage that regresses.
+      void qc.invalidateQueries({ queryKey: queryKeys.home });
+      void qc.invalidateQueries({ queryKey: ['section'] });
+      void qc.invalidateQueries({ queryKey: ['journey'] });
+    },
   });
 }
 

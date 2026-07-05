@@ -709,10 +709,7 @@ const styles = StyleSheet.create({
 
   inputFocused: {
     borderColor: colors.primaryTeal600,
-    shadowColor: colors.primaryTeal,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    ...shadows.subtle,
   },
 
   textArea: {

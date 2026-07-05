@@ -113,6 +113,7 @@ export default function RemindersScreen() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pendingDelete, setPendingDelete] = useState<Broadcast | null>(null);
+  const [confirmingSend, setConfirmingSend] = useState(false);
 
   const pending = create.isPending || update.isPending;
 
@@ -142,10 +143,9 @@ export default function RemindersScreen() {
     }
     setError('');
     setNotice('');
-    const input = { title: t, body: b, showOnHome };
     if (editingId) {
       update.mutate(
-        { id: editingId, input },
+        { id: editingId, input: { title: t, body: b, showOnHome } },
         {
           onSuccess: () => {
             setNotice('حُفظ التعديل.');
@@ -155,14 +155,22 @@ export default function RemindersScreen() {
         },
       );
     } else {
-      create.mutate(input, {
-        onSuccess: () => {
-          setNotice('أُرسل التذكير إلى جميع الدارسين.');
-          resetForm();
-        },
-        onError: (err) => setError(err instanceof Error ? err.message : 'تعذّر الإرسال.'),
-      });
+      // Sending fans out a real push notification to every opted-in student —
+      // confirm before firing, so a typo/misclick can't blast everyone.
+      setConfirmingSend(true);
     }
+  }
+
+  function confirmSend() {
+    const input = { title: title.trim(), body: body.trim(), showOnHome };
+    create.mutate(input, {
+      onSuccess: () => {
+        setNotice('أُرسل التذكير إلى جميع الدارسين.');
+        resetForm();
+      },
+      onError: (err) => setError(err instanceof Error ? err.message : 'تعذّر الإرسال.'),
+      onSettled: () => setConfirmingSend(false),
+    });
   }
 
   const renderItem = useCallback(
@@ -330,6 +338,18 @@ export default function RemindersScreen() {
           });
         }}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        visible={confirmingSend}
+        destructive={false}
+        title="إرسال إلى جميع الدارسين؟"
+        message="سيصل إشعار فوري إلى كل الدارسين المفعّل لديهم استقبال التذكيرات النافعة. تأكد من العنوان والنص قبل الإرسال."
+        confirmLabel="إرسال"
+        cancelLabel="تراجع"
+        pending={create.isPending}
+        onConfirm={confirmSend}
+        onCancel={() => setConfirmingSend(false)}
       />
     </AdminShell>
   );

@@ -39,6 +39,20 @@ export type TxtProps = Omit<TextProps, 'style'> & {
 };
 
 /**
+ * On this app's forced-RTL setup, Android renders `textAlign: 'right'` flush
+ * LEFT and `textAlign: 'left'` flush RIGHT for any Text whose box is wider
+ * than its content (flex:1 boxes, full-width blocks) — confirmed on-device.
+ * Text boxes that are already tight to their content (row siblings sized to
+ * their own text) show no visible difference either way, so this swap is
+ * safe everywhere. 'center'/'justify'/'auto' are unaffected and pass through.
+ */
+function physicalAlign(align: TextStyle['textAlign']): TextStyle['textAlign'] {
+  if (align === 'right') return 'left';
+  if (align === 'left') return 'right';
+  return align;
+}
+
+/**
  * Arabic-first text. Defaults to RTL, body font, ink color. Always prefer this
  * over a raw <Text> so font + direction stay consistent across screens.
  */
@@ -59,7 +73,7 @@ export function Txt({
           fontFamily: FONT[weight],
           fontSize: size,
           color,
-          textAlign: align,
+          textAlign: physicalAlign(align),
           writingDirection: 'rtl',
           ...(tabular ? { fontVariant: ['tabular-nums'] as TextStyle['fontVariant'] } : null),
           ...(centerGlyph

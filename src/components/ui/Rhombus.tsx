@@ -51,7 +51,7 @@ export function ConcentricMotif({
   style?: ViewStyle;
 }) {
   return (
-    <View pointerEvents="none" style={[{ position: 'absolute', opacity: 1 }, style]}>
+    <View style={[{ position: 'absolute', opacity: 1, pointerEvents: 'none' }, style]}>
       {Array.from({ length: rings }).map((_, i) => {
         const d = size * (1 - i / (rings + 1));
         return (

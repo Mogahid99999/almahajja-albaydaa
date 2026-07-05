@@ -149,8 +149,8 @@ function QuickLink({
 const DASH = '—';
 
 export default function AdminHome() {
-  useAdminOnly();
-  const { data: stats } = useAdminStats();
+  const role = useAdminOnly();
+  const { data: stats } = useAdminStats(role === 'admin');
   const { data: lectures = [] } = useAdminLectures();
   const { data: unclassified = [] } = useUnclassifiedLectures();
 

@@ -1,140 +1,34 @@
 /**
- * Offline outbox (V11 · B) — the write-side sync queue.
+ * Offline outbox (V11 · B) — the write-side sync queue's FLUSH/REPLAY half.
  *
  * When the device is offline (or a write fails), listening ticks, note edits and
  * weekly-goal changes are COALESCED into a tiny AsyncStorage-backed queue instead
- * of being dropped. On reconnect / app-foreground / post-boot / a 60s heartbeat
- * while non-empty, the queue is REPLAYED — activity entries in chronological day
- * order, each credited to the day it actually happened (save_activity's day-aware
- * replay), so المداومة (the streak) is never broken by having been offline.
+ * of being dropped (the queue storage + enqueue functions live in `outboxQueue.ts`
+ * — split out to avoid a require-cycle, since `api/progress.ts` needs to enqueue
+ * but this file needs `replayActivity` back from `api/progress.ts`). On reconnect
+ * / app-foreground / post-boot / a 60s heartbeat while non-empty, the queue is
+ * REPLAYED — activity entries in chronological day order, each credited to the
+ * day it actually happened (save_activity's day-aware replay), so المداومة (the
+ * streak) is never broken by having been offline.
  *
  * Accepted tradeoffs (by design, per the plan): a lost-ack retry can double-credit
  * a few seconds (bounded by the server's 6h/day clamp); a replayed completion
  * stamps midnight of its day; quizzes stay online-only.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/constants/queryKeys';
 import { isOnline, onReconnect } from '@/lib/connectivity';
 import { replayActivity } from '@/api/progress';
 import { saveMyNote } from '@/api/notes';
 import { setWeeklyGoal } from '@/api/journey';
-import type { GoalMetric } from '@/api/types';
+import { hasPending, loadQueue, removeQueueEntry, setOnEnqueue } from '@/lib/outboxQueue';
 
-const KEY = 'offline-outbox-v1';
+export type { OutboxActivity, OutboxEntry, OutboxGoal, OutboxNote } from '@/lib/outboxQueue';
+export { enqueueActivity, enqueueGoal, enqueueNote, hasPending, localDay } from '@/lib/outboxQueue';
+
 // Prefix key: invalidating this refreshes every journey-* query (summary, streak,
 // weekly goal, badges) — queryKeys.journey is only the summary leaf.
 const JOURNEY_ROOT = ['journey'] as const;
-
-/** One coalesced listening entry per (lectureId, day). */
-export type OutboxActivity = {
-  kind: 'activity';
-  lectureId: string;
-  /** YYYY-MM-DD, device-local (streak days are device-local). */
-  day: string;
-  positionSec: number;
-  durationSec: number;
-  deltaSec: number;
-  completed: boolean;
-};
-/** One entry per lectureId — last write wins. */
-export type OutboxNote = { kind: 'note'; lectureId: string; body: string; updatedAt: string };
-/** One entry total — last write wins. */
-export type OutboxGoal = { kind: 'goal'; metric: GoalMetric; target: number };
-export type OutboxEntry = OutboxActivity | OutboxNote | OutboxGoal;
-
-/** Device-local YYYY-MM-DD (the day the activity is credited to). */
-export function localDay(d: Date = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// In-memory mirror so enqueue/flush never race on the async read. Loaded lazily.
-let queue: OutboxEntry[] = [];
-let loaded = false;
-let loadPromise: Promise<OutboxEntry[]> | null = null;
-
-async function load(): Promise<OutboxEntry[]> {
-  if (loaded) return queue;
-  // Cache the in-flight read so concurrent callers share one AsyncStorage load
-  // (two parallel reads would otherwise clobber each other's just-pushed entries).
-  if (!loadPromise) {
-    loadPromise = (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(KEY);
-        queue = raw ? (JSON.parse(raw) as OutboxEntry[]) : [];
-      } catch {
-        queue = [];
-      }
-      loaded = true;
-      return queue;
-    })();
-  }
-  return loadPromise;
-}
-
-async function persist(): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(queue));
-  } catch {
-    /* best-effort; the in-memory mirror still drives this session */
-  }
-}
-
-/** Whether anything is queued (drives the boot flush + the 60s heartbeat). */
-export async function hasPending(): Promise<boolean> {
-  return (await load()).length > 0;
-}
-
-// ── Enqueue (coalescing keeps the queue tiny) ────────────────────────────────
-
-export async function enqueueActivity(e: Omit<OutboxActivity, 'kind'>): Promise<void> {
-  const q = await load();
-  const existing = q.find(
-    (x): x is OutboxActivity =>
-      x.kind === 'activity' && x.lectureId === e.lectureId && x.day === e.day,
-  );
-  if (existing) {
-    existing.deltaSec += Math.max(0, e.deltaSec);
-    existing.positionSec = Math.max(existing.positionSec, e.positionSec);
-    if (e.durationSec > 0) existing.durationSec = e.durationSec;
-    existing.completed = existing.completed || e.completed;
-  } else {
-    q.push({ kind: 'activity', ...e, deltaSec: Math.max(0, e.deltaSec) });
-  }
-  await persist();
-  scheduleHeartbeat();
-}
-
-export async function enqueueNote(lectureId: string, body: string): Promise<void> {
-  const q = await load();
-  const existing = q.find((x): x is OutboxNote => x.kind === 'note' && x.lectureId === lectureId);
-  const updatedAt = new Date().toISOString();
-  if (existing) {
-    existing.body = body;
-    existing.updatedAt = updatedAt;
-  } else {
-    q.push({ kind: 'note', lectureId, body, updatedAt });
-  }
-  await persist();
-  scheduleHeartbeat();
-}
-
-export async function enqueueGoal(metric: GoalMetric, target: number): Promise<void> {
-  const q = await load();
-  const existing = q.find((x): x is OutboxGoal => x.kind === 'goal');
-  if (existing) {
-    existing.metric = metric;
-    existing.target = target;
-  } else {
-    q.push({ kind: 'goal', metric, target });
-  }
-  await persist();
-  scheduleHeartbeat();
-}
 
 // ── Flush ────────────────────────────────────────────────────────────────────
 
@@ -150,7 +44,7 @@ export function flushOutbox(): Promise<void> {
 }
 
 async function doFlush(): Promise<void> {
-  const q = await load();
+  const q = await loadQueue();
   if (q.length === 0) {
     stopHeartbeat();
     return;
@@ -188,23 +82,35 @@ async function doFlush(): Promise<void> {
       break;
     }
     // Remove this exact entry only after its call succeeded.
-    const i = queue.indexOf(entry);
-    if (i >= 0) queue.splice(i, 1);
-    await persist();
+    await removeQueueEntry(entry);
   }
 
   // Refresh exactly what the committed writes moved, so a reconnect refetch can't
   // flicker the UI back to the pre-edit server value. The JOURNEY ROOT (['journey'])
   // covers summary + streak + weekly goal + badges — the Home streak card
   // («واصلت اليوم») and رحلتي العلمية all live under it.
+  //
+  // Phase 3.6 fix: a replayed ACTIVITY entry can complete/advance a lecture whose
+  // SECTION detail page (`queryKeys.section`) is cached from before this replay —
+  // e.g. a completion recorded while offline, replayed here on reconnect. Without
+  // this, `home`'s rollup card refreshes but the section's own drill-down page
+  // keeps showing the pre-replay percentage indefinitely (this is what produced
+  // the "guest completion lost" symptom: not a dropped DB row — `save_activity`
+  // OR-merges `completed` and never un-sets it — but a section page that was never
+  // told to refetch). The replay doesn't know which section(s) it touched, so
+  // invalidate the whole `['section']` root (partial match) — cheap and rare
+  // (only runs when the outbox actually had something queued).
   if (didActivity || didGoal) {
     void queryClient.invalidateQueries({ queryKey: JOURNEY_ROOT });
     void queryClient.invalidateQueries({ queryKey: queryKeys.home });
   }
+  if (didActivity) {
+    void queryClient.invalidateQueries({ queryKey: ['section'] });
+  }
   for (const id of noteIds) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.lectureNote(id) });
   }
-  if (queue.length === 0) stopHeartbeat();
+  if (!(await hasPending())) stopHeartbeat();
 }
 
 // ── Triggers ───────────────────────────────────────────────────────────────
@@ -231,6 +137,11 @@ function stopHeartbeat(): void {
     heartbeat = null;
   }
 }
+
+// Arm the heartbeat the instant something new is enqueued (rather than waiting
+// for the next foreground/reconnect trigger) — matches the pre-split behavior
+// where enqueue and the heartbeat lived in the same module.
+setOnEnqueue(scheduleHeartbeat);
 
 let started = false;
 

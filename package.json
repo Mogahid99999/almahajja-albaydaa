@@ -22,7 +22,7 @@
     "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-query-persist-client": "^5.101.2",
     "babel-preset-expo": "~56.0.0",
-    "expo": "~56.0.12",
+    "expo": "~56.0.14",
     "expo-asset": "~56.0.17",
     "expo-audio": "~56.0.12",
     "expo-constants": "~56.0.18",
@@ -30,10 +30,11 @@
     "expo-document-picker": "~56.0.4",
     "expo-file-system": "~56.0.8",
     "expo-font": "~56.0.7",
-    "expo-linking": "~56.0.14",
+    "expo-linking": "~56.0.15",
     "expo-network": "~56.0.5",
-    "expo-notifications": "~56.0.18",
-    "expo-router": "~56.2.11",
+    "expo-notifications": "~56.0.19",
+    "expo-router": "~56.2.13",
+    "expo-splash-screen": "~56.0.12",
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",
     "react": "19.2.3",
@@ -56,6 +57,10 @@
       "//": "expo-audio is patched (media notification prev/next, deep-link, duration) — build it from source so node_modules edits/patch-package apply instead of the prebuilt AAR.",
       "buildFromSource": [
         "expo-audio"
+      ],
+      "//exclude": "floating-bubble (PLAN_4 Phase 4.2): excluded from this Play Store submission so its SYSTEM_ALERT_WINDOW permission + native code aren't compiled in. Code stays in modules/ — remove from this list to re-enable once BUBBLE_ENABLED is flipped back on and a Play Console sensitive-permissions declaration is prepared.",
+      "exclude": [
+        "floating-bubble"
       ]
     }
   },
