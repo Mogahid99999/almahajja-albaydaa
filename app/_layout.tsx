@@ -42,6 +42,8 @@ import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient } from '@/lib/queryClient';
+import { initConnectivity } from '@/lib/connectivity';
+import { flushOutbox, startOutbox } from '@/lib/outbox';
 import { APP_VERSION } from '@/lib/version';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 
@@ -59,13 +61,15 @@ const PERSISTED_QUERY_ROOTS = new Set<string>([
   'section', // section pages (titles, lecture list, progress, quiz cards)
   'sections', // section flat/edit metadata
   'lecture', // single-lecture playback metadata (title/eyebrow for offline open;
-  //            the signed audioUrl it also carries is never used for playback —
-  //            playLecture fetches a fresh URL directly — so no stale-URL risk)
+  //            a cached signed URL may be served to the player, but only within a
+  //            30-min staleTime that is well under its 3600s TTL — see audioController)
   'lectures', // recent / featured / by-ids lecture-card lists
   'notes', // private per-lesson notes («حتى الملاحظات»)
   'journey', // journey summary / weekly goal / badges / streak snapshots
   'benefits', // shared lesson benefits (read-only)
   'appContent', // «عن المنصة» + support contact (static)
+  'notifications', // the user's own inbox/prefs on the user's own device (V11 · E —
+  //                 server stays the source of truth on the next online refetch)
 ]);
 
 function shouldDehydrateQuery(query: Query): boolean {
@@ -73,6 +77,10 @@ function shouldDehydrateQuery(query: Query): boolean {
   const key = query.queryKey;
   if (!Array.isArray(key)) return false;
   if (key.some((part) => part === 'admin')) return false; // defence-in-depth
+  // Quizzes (V11 · E): persist ONLY the quiet «اختباراتك» stats line so it renders
+  // offline on رحلتي العلمية — never the attempt/intro/result payloads (server-graded,
+  // answer-key sensitive, volatile).
+  if (key[0] === 'quizzes') return key[1] === 'myStats';
   return PERSISTED_QUERY_ROOTS.has(String(key[0]));
 }
 
@@ -94,6 +102,11 @@ function shouldDehydrateQuery(query: Query): boolean {
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 I18nManager.swapLeftAndRightInRTL(false);
+
+// Connectivity → TanStack onlineManager (V11 · A): paused offlineFirst queries
+// resume the instant the network returns, and the offline outbox gets its
+// reconnect signal. Module scope, no render coupling.
+initConnectivity();
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 if (Platform.OS !== 'web' && !I18nManager.isRTL && !isExpoGo) {
   RNRestart.restart();
@@ -303,10 +316,14 @@ function NotificationsBootstrap() {
   // on mount (cold start counts as an open) and on each AppState → active.
   useEffect(() => {
     if (!user) return;
+    // Offline outbox (V11 · B): wire reconnect + post-boot triggers once the
+    // session is ready, then drain on every foreground below.
+    startOutbox();
     const onActive = () => {
       void recordAppOpen();
       void clearBadge(); // reset the launcher "new lessons" count on open (Issue 8)
       void touchLastOpened(); // server stamp for the weekly-goal cron
+      void flushOutbox(); // replay any queued offline activity/note/goal writes
       void (async () => {
         try {
           // §7 priority dispatcher (resume > weekly-goal > daily): the daily

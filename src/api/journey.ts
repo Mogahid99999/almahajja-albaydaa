@@ -122,30 +122,18 @@ export async function getBadges(): Promise<Badge[]> {
 }
 
 /**
- * Record a listening delta against today + re-evaluate badges; returns the
- * newly-earned badges. Called from the save-progress seam, not from the player
- * UI. Live: rpc('record_meaningful_activity') — accumulates the daily upsert
- * AND server-side decides when the day starts counting toward the streak
- * (≥120s accumulated or a completion; the 26.1 threshold + recovery live in
- * 0014's SQL, never per-tick JS — tick deltas are ~5s, capped at 90). Then
- * compare the badge catalog against get_journey_summary and insert-on-conflict
- * any new earns (badge rules stay in TS — PLAN_PHASE2.md §3.2).
+ * Re-evaluate the milestone badge catalog against the freshest server-side
+ * rollup and persist any newly-earned badges; returns only the ones earned now.
+ *
+ * V11 · C: badges are re-evaluated at exactly two moments — a completion event
+ * (from the save-progress seam) and رحلتي العلمية mount — never on a per-tick
+ * playback save (the tick is now a single save_activity RPC). This is the diff
+ * logic formerly inlined in recordListening. Badge rules stay in TS
+ * (PLAN_PHASE2.md §3.2); one get_journey_summary RPC + one user_badges read.
  */
-export async function recordListening(args: {
-  lectureId: string | null;
-  deltaSec: number;
-  completed?: boolean;
-}): Promise<Badge[]> {
-  if (USE_MOCK) return mock.recordListening(args);
+export async function evaluateBadges(): Promise<Badge[]> {
+  if (USE_MOCK) return mock.evaluateBadges();
 
-  const { error: recErr } = await supabase.rpc('record_meaningful_activity', {
-    p_lecture_id: args.lectureId as string, // SQL fn accepts null; arg typed string
-    p_seconds: args.deltaSec,
-    p_completed: args.completed ?? false,
-  });
-  if (recErr) throw recErr;
-
-  // Re-evaluate badges against the fresh server-side rollup.
   const summary = await getJourneySummary();
   const { completedLectures } = summary;
   const longest = summary.streak.longest;
@@ -173,4 +161,27 @@ export async function recordListening(args: {
       .upsert(toInsert, { onConflict: 'user_id,badge_key', ignoreDuplicates: true });
   }
   return newly;
+}
+
+/**
+ * Record a listening delta against today + re-evaluate badges; returns the
+ * newly-earned badges. Retained for back-compat / the mock contract — the V11
+ * live save seam now credits listening inside `save_activity` (one RPC) and
+ * calls {@link evaluateBadges} only on completion, so this is no longer on the
+ * per-tick path. Live: rpc('record_meaningful_activity') then evaluateBadges().
+ */
+export async function recordListening(args: {
+  lectureId: string | null;
+  deltaSec: number;
+  completed?: boolean;
+}): Promise<Badge[]> {
+  if (USE_MOCK) return mock.recordListening(args);
+
+  const { error: recErr } = await supabase.rpc('record_meaningful_activity', {
+    p_lecture_id: args.lectureId as string, // SQL fn accepts null; arg typed string
+    p_seconds: args.deltaSec,
+    p_completed: args.completed ?? false,
+  });
+  if (recErr) throw recErr;
+  return evaluateBadges();
 }

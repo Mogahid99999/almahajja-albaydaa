@@ -957,6 +957,15 @@ export type Database = {
         Args: { p_answer_body: string; p_question_id: string }
         Returns: undefined
       }
+      apply_meaningful_activity: {
+        Args: {
+          p_completed: boolean
+          p_day: string
+          p_lecture_id: string
+          p_seconds: number
+        }
+        Returns: undefined
+      }
       ask_question: {
         Args: {
           p_audience: string
@@ -1076,6 +1085,7 @@ export type Database = {
           title: string
         }[]
       }
+      get_home_page: { Args: never; Returns: Json }
       get_incoming_buddy_requests: {
         Args: never
         Returns: {
@@ -1282,6 +1292,18 @@ export type Database = {
       }
       respond_buddy_request: {
         Args: { p_accept: boolean; p_request_id: string }
+        Returns: undefined
+      }
+      save_activity: {
+        Args: {
+          p_completed: boolean
+          p_day?: string
+          p_delta_sec: number
+          p_duration_sec: number
+          p_is_replay?: boolean
+          p_lecture_id: string
+          p_position_sec: number
+        }
         Returns: undefined
       }
       save_quiz_answer: {

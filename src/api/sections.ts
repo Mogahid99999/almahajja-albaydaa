@@ -11,7 +11,10 @@ import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import type { HomeData, FlatSectionNode, SectionPageData, SectionCard, LectureRow, LectureCard, Attachment } from './types';
 import { resolveAttachmentRows } from './attachments';
+import { getLecturePlayback } from './lectures';
 import { mapCard, type RawStatusRow } from './quizzes';
+import { queryClient } from '@/lib/queryClient';
+import { queryKeys } from '@/constants/queryKeys';
 
 export type { HomeData, FlatSectionNode, SectionPageData } from './types';
 
@@ -21,62 +24,70 @@ function coverLetter(stored: string, title: string): string {
   return title.replace(/^ال/, '')[0] ?? title[0] ?? '◆';
 }
 
-/** Home screen: resume card + أُضيف حديثاً rail + مختارات rail + sections grid. */
+/** The jsonb document shape returned by the get_home_page RPC (migration 0047). */
+type HomePageRpc = {
+  sections: { id: string; title: string; cover_letter: string; total: number; completed: number }[];
+  newly_added: {
+    id: string;
+    title: string;
+    duration_sec: number;
+    sheikh_name: string | null;
+    section_title: string | null;
+  }[];
+  featured: {
+    lecture_id: string;
+    title: string;
+    duration_sec: number;
+    sheikh_name: string | null;
+    section_title: string | null;
+  }[];
+  continue_listening: {
+    lecture_id: string;
+    title: string;
+    sheikh_name: string | null;
+    section_title: string | null;
+    position_sec: number;
+    duration_sec: number;
+  } | null;
+};
+
+/**
+ * Home screen: resume card + أُضيف حديثاً rail + مختارات rail + sections grid.
+ *
+ * V11 · D: one `get_home_page` RPC (migration 0047) replaces the 5 sequential
+ * round-trips — the whole payload arrives as a single jsonb document, mapped to
+ * HomeData here (the cover-letter fallback logic stays client-side). When a resume
+ * lecture is present, its playback metadata is prefetched so «تابع الاستماع» opens
+ * with no wait. Mock path untouched.
+ */
 export async function getHomeData(): Promise<HomeData> {
   if (USE_MOCK) return mock.getHomeData();
 
-  const { data: rootData, error: rErr } = await supabase
-    .from('sections')
-    .select('id, title, cover_letter')
-    .is('parent_id', null)
-    .order('order');
-  if (rErr) throw rErr;
-  const rootRows = rootData ?? [];
+  const { data, error } = await supabase.rpc('get_home_page');
+  if (error) throw error;
+  const page = (data ?? {}) as unknown as HomePageRpc;
 
-  let sections: SectionCard[] = [];
-  if (rootRows.length > 0) {
-    const { data: rollupsData } = await supabase.rpc('get_children_rollups', {
-      p_section_ids: rootRows.map((s) => s.id),
-    });
-    const rollups = rollupsData ?? [];
-    const byId = Object.fromEntries(rollups.map((r) => [r.section_id, r]));
-    sections = rootRows.map((s) => {
-      const r = byId[s.id];
-      const total = Number(r?.total_lectures ?? 0);
-      const completed = Number(r?.completed_lectures ?? 0);
-      return {
-        id: s.id,
-        title: s.title,
-        coverLetter: coverLetter(s.cover_letter, s.title),
-        lectureCount: total,
-        progressPct: total > 0 ? Math.round((completed / total) * 100) : 0,
-      };
-    });
-  }
-
-  // «أُضيف حديثاً» — newest published lectures, auto-sorted by created_at.
-  const { data: newData } = await supabase
-    .from('lectures')
-    .select('id, title, duration_sec, sheikhs(name), sections(title)')
-    .eq('status', 'published')
-    .not('section_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(8);
-  const newlyAdded: LectureCard[] = (newData ?? []).map((l) => {
-    const sheikh = Array.isArray(l.sheikhs) ? l.sheikhs[0] : (l.sheikhs as any);
-    const sec = Array.isArray(l.sections) ? l.sections[0] : (l.sections as any);
+  const sections: SectionCard[] = (page.sections ?? []).map((s) => {
+    const total = Number(s.total ?? 0);
+    const completed = Number(s.completed ?? 0);
     return {
-      id: l.id,
-      title: l.title,
-      sheikhName: sheikh?.name ?? null,
-      durationSec: l.duration_sec ?? 0,
-      coverLetter: sec?.title?.[0] ?? '◆',
+      id: s.id,
+      title: s.title,
+      coverLetter: coverLetter(s.cover_letter, s.title),
+      lectureCount: total,
+      progressPct: total > 0 ? Math.round((completed / total) * 100) : 0,
     };
   });
 
-  // «مختارات» — the staff-curated ordered list.
-  const { data: featuredData } = await supabase.rpc('get_featured_lectures');
-  const featured: LectureCard[] = (featuredData ?? []).map((l) => ({
+  const newlyAdded: LectureCard[] = (page.newly_added ?? []).map((l) => ({
+    id: l.id,
+    title: l.title,
+    sheikhName: l.sheikh_name ?? null,
+    durationSec: l.duration_sec ?? 0,
+    coverLetter: l.section_title?.[0] ?? '◆',
+  }));
+
+  const featured: LectureCard[] = (page.featured ?? []).map((l) => ({
     id: l.lecture_id,
     title: l.title,
     sheikhName: l.sheikh_name ?? null,
@@ -84,30 +95,28 @@ export async function getHomeData(): Promise<HomeData> {
     coverLetter: l.section_title?.[0] ?? '◆',
   }));
 
-  const { data: prog } = await supabase
-    .from('user_lecture_progress')
-    .select('position_sec, lectures(id, title, duration_sec, sheikhs(name), sections(title))')
-    .eq('completed', false)
-    .gt('position_sec', 0)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const cl = page.continue_listening;
+  const continueListening: HomeData['continueListening'] = cl
+    ? {
+        id: cl.lecture_id,
+        title: cl.title,
+        sheikhName: cl.sheikh_name ?? null,
+        eyebrow: cl.section_title ?? '',
+        positionSec: cl.position_sec ?? 0,
+        durationSec: cl.duration_sec ?? 0,
+      }
+    : null;
 
-  let continueListening: HomeData['continueListening'] = null;
-  if (prog) {
-    const lec = Array.isArray(prog.lectures) ? prog.lectures[0] : (prog.lectures as any);
-    if (lec) {
-      const sheikh = Array.isArray(lec.sheikhs) ? lec.sheikhs[0] : (lec.sheikhs as any);
-      const sec = Array.isArray(lec.sections) ? lec.sections[0] : (lec.sections as any);
-      continueListening = {
-        id: lec.id,
-        title: lec.title,
-        sheikhName: sheikh?.name ?? null,
-        eyebrow: sec?.title ?? '',
-        positionSec: prog.position_sec,
-        durationSec: lec.duration_sec ?? 0,
-      };
-    }
+  // Warm the resume lecture's playback metadata so tapping «تابع الاستماع» opens
+  // the player with zero wait (V11 · D). The signed audioUrl's 3600s TTL safely
+  // exceeds this 30-min staleTime, and prefetchQuery no-ops while it's fresh.
+  if (continueListening) {
+    const id = continueListening.id;
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.lecture(id),
+      queryFn: () => getLecturePlayback(id),
+      staleTime: 30 * 60_000,
+    });
   }
 
   return { continueListening, newlyAdded, featured, sections };

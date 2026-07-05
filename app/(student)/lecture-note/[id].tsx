@@ -11,6 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Pressable,
   StyleSheet,
   TextInput,
@@ -19,7 +20,6 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { saveMyNote } from '@/api/notes';
 import { Card, IconButton, ProgressBar, RhombusEmblem, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -141,6 +141,9 @@ function NoteEditor({ lectureId }: { lectureId: string }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest unsaved draft, flushed on unmount so a quick back never loses text.
   const dirtyRef = useRef<string | null>(null);
+  // Stable handle to the latest mutate so the unmount flush doesn't re-run per render.
+  const saveMutateRef = useRef(save.mutate);
+  saveMutateRef.current = save.mutate;
 
   useEffect(() => {
     if (isLoading || loadedRef.current) return;
@@ -151,9 +154,10 @@ function NoteEditor({ lectureId }: { lectureId: string }) {
   useEffect(
     () => () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (dirtyRef.current !== null) {
-        void saveMyNote(lectureId, dirtyRef.current).catch(() => {});
-      }
+      // Flush a still-dirty draft through the mutation (not a raw save) so an
+      // offline back-out is captured optimistically AND queued for replay, rather
+      // than silently lost — `mutate` runs onMutate/onError even after unmount.
+      if (dirtyRef.current !== null) saveMutateRef.current(dirtyRef.current);
     },
     [lectureId],
   );
@@ -177,8 +181,11 @@ function NoteEditor({ lectureId }: { lectureId: string }) {
   }
 
   return (
-    <>
-      <Card style={{ padding: 4 }}>
+    // flex:1 so the editor fills the space above the keyboard; with the activity's
+    // adjustResize the container shrinks when the keyboard opens and the multiline
+    // input scrolls its OWN content — the writing area is never covered.
+    <View style={{ flex: 1 }}>
+      <Card style={{ padding: 4, flex: 1 }}>
         <TextInput
           value={draft}
           onChangeText={onChange}
@@ -200,6 +207,14 @@ function NoteEditor({ lectureId }: { lectureId: string }) {
           <Txt size={11.5} color={colors.textGhost}>
             جارٍ الحفظ...
           </Txt>
+        ) : save.isError ? (
+          // Offline / failed write — calm, queued for replay (no red, no modal).
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Feather name="clock" size={12} color={colors.textGhost} />
+            <Txt size={11.5} color={colors.textGhost}>
+              سيُحفظ عند عودة الاتصال
+            </Txt>
+          </View>
         ) : save.isSuccess ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <Feather name="check" size={12} color={colors.stateSuccess} />
@@ -209,7 +224,7 @@ function NoteEditor({ lectureId }: { lectureId: string }) {
           </View>
         ) : null}
       </View>
-    </>
+    </View>
   );
 }
 
@@ -222,36 +237,43 @@ export default function LectureNoteScreen() {
   const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 6,
-        }}
-      >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
-          ملاحظاتي
-        </Txt>
-        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
-      </View>
-      {lecture?.title ? (
-        <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 18 }} numberOfLines={2}>
-          {lecture.title}
-        </Txt>
-      ) : (
-        <View style={{ marginBottom: 18 }} />
-      )}
+    // Non-scrolling flex screen + KeyboardAvoidingView: the app is edge-to-edge, so
+    // the keyboard OVERLAYS the view (adjustResize doesn't shrink it). `padding`
+    // lifts the whole editor above the keyboard; the note editor (flex:1) fills the
+    // remaining space and its multiline input scrolls internally — the entire
+    // writing area (and the save-status row) stays above the keyboard, never covered.
+    <Screen scroll={false} bottomPad={miniPad || 12} padded>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 6,
+          }}
+        >
+          <Txt size={22} weight="display" color={colors.primaryTeal}>
+            ملاحظاتي
+          </Txt>
+          <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
+        </View>
+        {lecture?.title ? (
+          <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 18 }} numberOfLines={2}>
+            {lecture.title}
+          </Txt>
+        ) : (
+          <View style={{ marginBottom: 18 }} />
+        )}
 
-      {isGuest ? (
-        <RegisterNudge />
-      ) : id ? (
-        <>
-          <NotePlayerBar lectureId={id} />
-          <NoteEditor lectureId={id} />
-        </>
-      ) : null}
+        {isGuest ? (
+          <RegisterNudge />
+        ) : id ? (
+          <>
+            <NotePlayerBar lectureId={id} />
+            <NoteEditor lectureId={id} />
+          </>
+        ) : null}
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -286,7 +308,8 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   editor: {
-    minHeight: 320,
+    flex: 1,
+    minHeight: 200,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontFamily: fonts.body,

@@ -16,7 +16,13 @@ import type { GoalMetric } from '@/api/types';
 import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useBadges, useJourneySummary, useSetWeeklyGoal, useWeeklyGoal } from '@/hooks/useJourney';
+import {
+  useBadges,
+  useJourneySummary,
+  useSetWeeklyGoal,
+  useSyncBadgesOnMount,
+  useWeeklyGoal,
+} from '@/hooks/useJourney';
 import { useMyQuizStats } from '@/hooks/useQuizzes';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
@@ -58,10 +64,15 @@ export default function JourneyScreen() {
   const setGoal = useSetWeeklyGoal();
   const miniPad = useMiniPlayerPad();
 
+  // Catch up any badge earned offline / via the streak crons, once on mount.
+  useSyncBadgesOnMount(!isGuest);
+
   const [editing, setEditing] = useState(false);
 
   const onSave = (metric: GoalMetric, target: number) => {
-    setGoal.mutate({ metric, target }, { onSuccess: () => setEditing(false) });
+    // Close on settle (not just success) so an offline edit — which resolves via
+    // the outbox — still closes the sheet normally; the value is already optimistic.
+    setGoal.mutate({ metric, target }, { onSettled: () => setEditing(false) });
   };
 
   return (

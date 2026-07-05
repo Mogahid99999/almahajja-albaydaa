@@ -1,4 +1,10 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 
 import {
   getNotificationPrefs,
@@ -18,6 +24,8 @@ export function useNotifications() {
     queryFn: ({ pageParam }) => listNotifications(pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    // Hold the last-fetched inbox on screen while a refetch runs / offline (V11 · E).
+    placeholderData: keepPreviousData,
   });
 }
 

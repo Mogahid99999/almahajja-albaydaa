@@ -14,13 +14,33 @@ import {
 } from 'expo-audio';
 import * as Linking from 'expo-linking';
 
+import { COMPLETE_THRESHOLD, MAX_LISTEN_TICK_SEC } from '@/config';
 import { getLecturePlayback, getNextLecture, getPreviousLecture } from '@/api/lectures';
 import { saveLectureProgress } from '@/api/progress';
 import { queryKeys } from '@/constants/queryKeys';
+import { isOnlineSync } from '@/lib/connectivity';
 import { localUriFor, readDownloadMeta, updateDownloadPosition } from '@/lib/downloads';
 import { queryClient } from '@/lib/queryClient';
 import { usePlayerStore, type PlaybackRate } from '@/stores/playerStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+
+// Reuse window for a prefetched playback entry (V11 · D). Kept well under the
+// signed-URL TTL (3600s) so a cached URL served to the player is always valid; a
+// staler (e.g. persisted) entry is past this and gets refetched fresh.
+const LECTURE_PLAYBACK_STALE = 30 * 60_000;
+
+/**
+ * Warm a lecture's playback metadata (+ signed URL) into the same cache entry the
+ * player reads (queryKeys.lecture). Makes auto-advance / the "next" button and the
+ * resume card gapless. No-op offline (skipped by the caller) or while still fresh.
+ */
+function prefetchPlayback(lectureId: string) {
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.lecture(lectureId),
+    queryFn: () => getLecturePlayback(lectureId),
+    staleTime: LECTURE_PLAYBACK_STALE,
+  });
+}
 
 let player: AudioPlayer | null = null;
 let currentId: string | null = null;
@@ -28,6 +48,13 @@ let currentDuration = 0;
 let currentSectionId: string | null = null;
 let currentOrder = 0;
 let lastSavedAt = 0;
+// V11 · C: the forward listened delta is computed here (no prev SELECT) — track
+// the last position we credited, whether we've saved this track yet (firstTouch),
+// and whether we've already reported this track's completion (so a re-listen or a
+// second tick past 90% doesn't re-fire completion badges/praise). Reset on load.
+let lastSavedPos = 0;
+let hasSavedTrack = false;
+let trackCompleted = false;
 let audioModeSet = false;
 // A programmatic seek can make the player emit `didJustFinish` (e.g. it clamps a
 // past-the-end target to the end). Finishes within this window are ignored so a
@@ -161,7 +188,11 @@ function resolveNext() {
   }
   void getNextLecture(sectionId, order)
     .then((next) => {
-      if (currentId === forId) store().setNext(next?.id ?? null);
+      if (currentId !== forId) return;
+      store().setNext(next?.id ?? null);
+      // Prefetch the next lecture's playback so auto-advance is gapless (V11 · D);
+      // skip offline (the fetch would fail — local playback still works without it).
+      if (next?.id && isOnlineSync()) prefetchPlayback(next.id);
     })
     .catch(() => {
       if (currentId === forId) store().setNext(null);
@@ -215,6 +246,17 @@ function invalidateProgressViews() {
   }
 }
 
+/**
+ * Reset the per-track progress bookkeeping when a new lecture loads (V11 · C).
+ * `lastSavedPos` seeds from the resume position so the first tick's delta is the
+ * seconds listened SINCE resuming, not the whole resume offset.
+ */
+function resetTrackProgress(positionSec: number) {
+  lastSavedPos = Math.max(0, Math.round(positionSec));
+  hasSavedTrack = false;
+  trackCompleted = false;
+}
+
 function persist(positionSec: number, finished = false) {
   if (!currentId) return Promise.resolve();
   const pos = finished ? currentDuration : positionSec;
@@ -222,10 +264,27 @@ function persist(positionSec: number, finished = false) {
   // lecture is downloaded) so it resumes at the same second when played OFFLINE,
   // where the server progress row is unreachable.
   updateDownloadPosition(currentId, pos);
+
+  // Derive everything saveLectureProgress used to fetch (V11 · C — no prev SELECT):
+  const posInt = Math.max(0, Math.round(pos));
+  const reachedThreshold =
+    finished || (currentDuration > 0 && posInt / currentDuration >= COMPLETE_THRESHOLD);
+  const justCompleted = reachedThreshold && !trackCompleted;
+  if (justCompleted) trackCompleted = true;
+  const firstTouch = !hasSavedTrack;
+  // Forward movement only, capped — a scrub-forward can't inflate listening time.
+  const deltaSec = Math.max(0, Math.min(posInt - lastSavedPos, MAX_LISTEN_TICK_SEC));
+  lastSavedPos = posInt;
+  hasSavedTrack = true;
+
   return saveLectureProgress({
     lectureId: currentId,
     positionSec: pos,
     durationSec: currentDuration,
+    deltaSec,
+    completed: reachedThreshold,
+    justCompleted,
+    firstTouch,
   }).catch(() => {});
 }
 
@@ -297,6 +356,7 @@ export async function playLecture(
     currentSectionId = null; // unknown until the background refresh lands
     currentOrder = 0;
     lastSavedAt = Date.now();
+    resetTrackProgress(positionSec);
 
     store().setTrack({
       id: lectureId,
@@ -335,7 +395,14 @@ export async function playLecture(
   let order = 0;
 
   try {
-    const data = await getLecturePlayback(lectureId);
+    // Reuse a freshly prefetched entry (gapless auto-advance / instant resume);
+    // a stale or persisted entry is past the staleTime so it refetches a fresh
+    // signed URL. Same cache entry the player screen reads (queryKeys.lecture).
+    const data = await queryClient.ensureQueryData({
+      queryKey: queryKeys.lecture(lectureId),
+      queryFn: () => getLecturePlayback(lectureId),
+      staleTime: LECTURE_PLAYBACK_STALE,
+    });
     title = data.title;
     sheikhName = data.sheikhName;
     durationSec = data.durationSec;
@@ -363,6 +430,7 @@ export async function playLecture(
   currentSectionId = sectionId;
   currentOrder = order;
   lastSavedAt = Date.now();
+  resetTrackProgress(positionSec);
 
   store().setTrack({ id: lectureId, title, sheikhName, durationSec, positionSec });
   store().setLoading(true);

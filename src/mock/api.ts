@@ -425,7 +425,7 @@ function toBadge(def: BadgeDef): Badge {
 }
 
 /** Earn any newly-qualified badges; return only the ones just earned. */
-function evaluateBadges(): Badge[] {
+export function evaluateBadges(): Badge[] {
   const completed = db.completedLecturesCount();
   const longest = db.longestStreak();
   const newly: Badge[] = [];

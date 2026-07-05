@@ -2,7 +2,7 @@
  * Personal progress. Always scoped to the signed-in user. Progress never rolls
  * sideways between branches of the tree, and a lecture is never un-completed.
  */
-import { COMPLETE_THRESHOLD, MAX_LISTEN_TICK_SEC, USE_MOCK } from '@/config';
+import { MAX_LISTEN_TICK_SEC, USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import {
   cancelResumeReminder,
@@ -14,7 +14,9 @@ import {
 } from '@/lib/notifications';
 import { tryClaimGoalCongrats } from './notifications';
 import * as mock from '@/mock/api';
-import { recordListening } from './journey';
+import { evaluateBadges } from './journey';
+import { enqueueActivity, localDay } from '@/lib/outbox';
+import { isOnlineSync } from '@/lib/connectivity';
 import { defaultNotificationEnabled, type Badge, type NotificationType } from './types';
 
 export type LectureProgress = { position_sec: number; completed: boolean } | null;
@@ -85,91 +87,117 @@ export async function getLectureProgress(lectureId: string): Promise<LectureProg
 }
 
 /**
- * Upsert playback position; flips `completed` once {@link COMPLETE_THRESHOLD}
- * (90%) is reached. Called debounced (~5s) during playback and on completion.
+ * Persist one playback tick in ONE round-trip (V11 · C). Called debounced (~5s)
+ * during playback, on pause/stop, and on completion.
  *
- * This is the single integration point for two Phase-2 features (the player UI
- * is untouched):
- *  - رحلتي العلمية: credits the forward-listened delta to today's
- *    `daily_listening` and re-evaluates milestone badges, returning any just
- *    earned (so the caller can show a calm acknowledgement).
- *  - الإشعارات: schedules / cancels the local "لديك درس لم تكمله" resume
- *    reminder, gated on the `resume_reminder` pref.
+ * Where the pre-V11 seam made ~5 calls per tick (select-prev + upsert +
+ * record_meaningful_activity + get_journey_summary + user_badges), this is a
+ * single `save_activity` RPC: it upserts the position, credits the forward
+ * listened delta to `daily_listening` and flips the streak day, server-side. The
+ * caller ({@link import('@/lib/audioController')}) supplies the delta (computed
+ * from the last saved position — no prev SELECT), the completion flags and
+ * `firstTouch`, since it owns the track lifecycle.
  *
- * Mirrors the mock contract in src/mock/api.ts exactly.
+ * Offline (or a failed write) → the tick is QUEUED for day-accurate replay
+ * instead of dropped; the on-device sidecar still holds the resume position.
+ * Badges are re-evaluated ONLY on a completion event (never per tick); the local
+ * resume/series/praise reminders keep their existing gating.
+ *
+ * Passes the mock contract through untouched (src/mock/api.ts reads the same
+ * lectureId/positionSec/durationSec and ignores the extra fields).
  */
 export async function saveLectureProgress(args: {
   lectureId: string;
   positionSec: number;
   durationSec: number;
+  /** Forward seconds listened since the last saved position (caller-computed). */
+  deltaSec: number;
+  /** Threshold reached (or forced on finish) — server OR-merges, never un-completes. */
+  completed: boolean;
+  /** completed && not-already-reported-this-track — the false→true crossing. */
+  justCompleted: boolean;
+  /** No save yet for this track this session — the "just started" moment. */
+  firstTouch: boolean;
 }): Promise<Badge[]> {
   if (USE_MOCK) return mock.saveLectureProgress(args);
 
-  const { lectureId, positionSec, durationSec } = args;
-  const reachedThreshold =
-    durationSec > 0 && positionSec / durationSec >= COMPLETE_THRESHOLD;
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('not authenticated');
-
-  // Previous position + completion: needed to compute the listened delta and to
-  // honour "a lecture is never un-completed" (rewinding must not clear it).
-  const { data: prev } = await supabase
-    .from('user_lecture_progress')
-    .select('position_sec, completed')
-    .eq('lecture_id', lectureId)
-    .maybeSingle();
-  const prevPos = prev?.position_sec ?? 0;
-  const wasCompleted = prev?.completed ?? false;
-  const completed = reachedThreshold || wasCompleted;
-  const justCompleted = completed && !wasCompleted;
-
-  // position_sec is an INTEGER column — expo-audio reports a fractional
-  // currentTime, so round (else PostgREST rejects "16.532" with a 22P02 and the
-  // in-progress save is silently lost, breaking resume-from-position).
+  const { lectureId, positionSec, durationSec, completed, justCompleted, firstTouch } = args;
+  // position_sec/duration_sec are INTEGER columns and expo-audio reports a
+  // fractional currentTime — round (else PostgREST 22P02 drops the save).
   const posInt = Math.max(0, Math.round(positionSec));
-  const { error } = await supabase
-    .from('user_lecture_progress')
-    .upsert(
-      {
-        user_id: user.id,
-        lecture_id: lectureId,
-        position_sec: posInt,
-        completed,
-        // Stamp WHEN it was completed, only on the false→true crossing — the 26.1
-        // recovery bar (0044) counts lessons completed inside the 3-day window.
-        // Omitted otherwise so an earlier stamp is never overwritten (a lecture is
-        // never un-completed, so completed_at stays put once set).
-        ...(justCompleted ? { completed_at: new Date().toISOString() } : {}),
-      },
-      { onConflict: 'user_id,lecture_id' },
-    );
-  if (error) throw error;
-
+  const durInt = Math.max(0, Math.round(durationSec));
   // Forward movement only, capped — a scrub-forward can't inflate listening time.
-  // Rounded: record_daily_listening's p_seconds is an INTEGER column too.
-  const delta = Math.max(0, Math.round(Math.min(positionSec - prevPos, MAX_LISTEN_TICK_SEC)));
+  const delta = Math.max(0, Math.round(Math.min(args.deltaSec, MAX_LISTEN_TICK_SEC)));
+
+  const enqueue = () =>
+    enqueueActivity({
+      lectureId,
+      day: localDay(),
+      positionSec: posInt,
+      durationSec: durInt,
+      deltaSec: delta,
+      completed,
+    });
+
+  // Offline → queue and return; the doomed RPC is never attempted.
+  if (!isOnlineSync()) {
+    await enqueue();
+    return [];
+  }
+
+  const { error } = await supabase.rpc('save_activity', {
+    p_lecture_id: lectureId,
+    p_position_sec: posInt,
+    p_duration_sec: durInt,
+    p_delta_sec: delta,
+    p_completed: completed,
+  });
+  if (error) {
+    // Thought we were online but the write failed — queue for replay, don't drop it.
+    await enqueue();
+    return [];
+  }
 
   // Local notifications (fire-and-forget; a scheduling error never blocks the save).
-  // `firstTouch` (no prior progress row) marks "just started a lesson" — the other
-  // moment (besides completion) the unfinished-series reminder is (re)evaluated.
-  void maybeUpdateReminders(
-    lectureId,
-    completed,
-    justCompleted,
-    posInt,
-    durationSec,
-    !prev,
-  );
-
-  // Re-evaluate badges only when state can actually change: a new listened
-  // delta (streak/active-days) or a fresh completion (completed-count badges).
-  // The server decides whether the day becomes streak-meaningful (26.1):
-  // today's accumulated seconds ≥ 120 or a completion — never per-tick JS.
-  if (delta > 0 || justCompleted) {
-    return recordListening({ lectureId, deltaSec: delta, completed: justCompleted });
+  // Gated on the two meaningful moments so a steady in-progress tick is exactly ONE
+  // network call (save_activity) — the prefs/title reads inside only matter when a
+  // lesson is just started or just completed (V11 · C).
+  if (firstTouch || justCompleted) {
+    void maybeUpdateReminders(lectureId, completed, justCompleted, posInt, durInt, firstTouch);
   }
+
+  // Badges re-evaluate ONLY on a completion event now (never per in-progress tick);
+  // رحلتي العلمية mount re-evaluates too, as a catch-up (see useJourney).
+  if (justCompleted) return evaluateBadges();
   return [];
+}
+
+/**
+ * Replay one queued offline activity entry for the EXACT day it happened (V11 · B).
+ * `p_is_replay=true` makes the server take greatest() for position (a stale entry
+ * never rewinds newer online progress) and clamp the coalesced delta to the 6h/day
+ * bound; `p_day` credits `daily_listening` for that day so the streak math is
+ * day-accurate. Called only by the outbox flush.
+ */
+export async function replayActivity(e: {
+  lectureId: string;
+  day: string;
+  positionSec: number;
+  durationSec: number;
+  deltaSec: number;
+  completed: boolean;
+}): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.rpc('save_activity', {
+    p_lecture_id: e.lectureId,
+    p_position_sec: Math.max(0, Math.round(e.positionSec)),
+    p_duration_sec: Math.max(0, Math.round(e.durationSec)),
+    p_delta_sec: Math.max(0, Math.round(e.deltaSec)),
+    p_completed: e.completed,
+    p_day: e.day,
+    p_is_replay: true,
+  });
+  if (error) throw error;
 }
 
 /**
