@@ -8,11 +8,11 @@
  * Route: /(student)/profile
  * Design tokens: manuscript-warm palette, RTL, calm tone.
  */
-import { Pressable, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, Link } from 'expo-router';
 
-import { useCurrentUser, useSignOut } from '@/hooks/useAuth';
+import { useCurrentUser, useDeleteAccount, useSignOut } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useHome } from '@/hooks/useSections';
@@ -86,6 +86,32 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { data: user, refetch: refetchUser } = useCurrentUser();
   const signOut = useSignOut();
+  const deleteAccount = useDeleteAccount();
+
+  // In-app account deletion (App Store 5.1.1(v)): a clear destructive confirm,
+  // then the server-side delete; the app falls back to the device guest session
+  // and lands on Home. Errors stay calm — nothing is deleted locally on failure.
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'حذف الحساب نهائيًا',
+      'سيُحذف حسابك وجميع بياناتك — التقدم والملاحظات والأسئلة والإشعارات — حذفًا نهائيًا لا رجعة فيه. هل تريد المتابعة؟',
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'حذف الحساب',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAccount.mutateAsync();
+              router.replace('/');
+            } catch {
+              Alert.alert('تعذّر حذف الحساب', 'حدث خطأ أثناء الحذف — حاول مرة أخرى لاحقًا.');
+            }
+          },
+        },
+      ],
+    );
+  };
   const { data: home, refetch: refetchHome } = useHome();
   const startTour = useTourStore((s) => s.start);
 
@@ -306,6 +332,13 @@ export default function ProfileScreen() {
               }
               router.replace('/sign-in');
             }}
+            destructive
+          />
+          <Divider />
+          <LinkRow
+            icon="trash-2"
+            label="حذف الحساب نهائيًا"
+            onPress={confirmDeleteAccount}
             destructive
           />
         </Card>

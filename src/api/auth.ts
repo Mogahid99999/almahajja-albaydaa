@@ -372,6 +372,31 @@ export async function signOut(): Promise<CurrentUser | null> {
 }
 
 /**
+ * Permanently delete the signed-in account (App Store Guideline 5.1.1(v)).
+ * The `delete-account` Edge Function verifies the caller's JWT and removes
+ * their own auth.users row with the service role — every personal table
+ * cascades off it (see the function header), so progress, notes, prefs,
+ * push tokens and the rest go with the account in one server-side delete.
+ * Afterwards the dead session is dropped locally and (on native) the device's
+ * guest session is restored, mirroring {@link signOut} — the app keeps working
+ * as a guest. Returns the restored guest, or null when a fresh one is needed.
+ */
+export async function deleteAccount(): Promise<CurrentUser | null> {
+  if (USE_MOCK) {
+    await AsyncStorage.removeItem(MOCK_SESSION_KEY);
+    return null;
+  }
+  const { error } = await supabase.functions.invoke('delete-account');
+  if (error) throw error;
+  // The account no longer exists server-side — only a local sign-out applies.
+  await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+  if (Platform.OS === 'web') return null;
+  const restored = await restoreGuestSession();
+  if (!restored) return null;
+  return getCurrentUser();
+}
+
+/**
  * Send a password-reset email (always real Supabase). The recovery email is an
  * OTP CODE, not a link (Supabase recovery template renders `{{ .Token }}`), so
  * the flow is identical on native and web — no deep link / recovery redirect.

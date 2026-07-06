@@ -116,6 +116,17 @@ const DAILY_REMINDER_ID = 'daily-reminder';
 const AUDIBLE_CHANNEL_ID = 'default-v2';
 
 /**
+ * iOS has no notification channels — sound/importance ride on each notification
+ * itself — so the channel routing is Android-only. For a delayed trigger the
+ * channelId field is simply omitted off-Android; for an IMMEDIATE notification
+ * Android needs `{ channelId }` as the whole trigger while iOS needs `null`.
+ */
+const channelField = (): { channelId?: string } =>
+  Platform.OS === 'android' ? { channelId: AUDIBLE_CHANNEL_ID } : {};
+const immediateTrigger = (): Notifications.NotificationTriggerInput =>
+  Platform.OS === 'android' ? { channelId: AUDIBLE_CHANNEL_ID } : null;
+
+/**
  * Whether local reminders can fire on this platform at all (real device + a build
  * where the native module exists). Callers use it to skip the pref/title lookups
  * that would otherwise run only to no-op inside scheduleResumeReminder.
@@ -200,7 +211,12 @@ export async function ensurePermission(): Promise<Notifications.PermissionStatus
     const current = await N.getPermissionsAsync();
     if (current.granted) return N.PermissionStatus.GRANTED;
     if (!current.canAskAgain) return current.status;
-    const requested = await N.requestPermissionsAsync();
+    // iOS scopes are explicit: alert + badge (launcher unread count, Issue 8) +
+    // sound (the audible reminders). No provisional delivery — the app asks once,
+    // plainly, and respects the answer. Android ignores the ios block.
+    const requested = await N.requestPermissionsAsync({
+      ios: { allowAlert: true, allowBadge: true, allowSound: true },
+    });
     return requested.status;
   } catch {
     return 'denied' as Notifications.PermissionStatus;
@@ -276,7 +292,7 @@ export async function scheduleResumeReminders(args: {
         sound: 'default',
       },
       trigger: {
-        channelId: AUDIBLE_CHANNEL_ID,
+        ...channelField(),
         type: N.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds: delaySeconds(RESUME_T1_HOURS, 60),
       },
@@ -292,7 +308,7 @@ export async function scheduleResumeReminders(args: {
         sound: 'default',
       },
       trigger: {
-        channelId: AUDIBLE_CHANNEL_ID,
+        ...channelField(),
         type: N.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds: delaySeconds(RESUME_LONGGAP_HOURS, 150),
       },
@@ -339,7 +355,7 @@ export async function presentCompletionPraise(lectureTitle: string): Promise<voi
       },
       // Immediate, but routed to the audible channel (Android sound lives on the
       // channel, so a null trigger would fall back to the default/silent one).
-      trigger: { channelId: AUDIBLE_CHANNEL_ID },
+      trigger: immediateTrigger(),
     });
   } catch {
     // Non-fatal — a missed encouragement must never break playback saves.
@@ -366,7 +382,7 @@ export async function presentGoalCongrats(): Promise<void> {
         data: { route: '/(student)/journey' } as Record<string, unknown>,
       },
       // Immediate on the audible channel (see completion praise above).
-      trigger: { channelId: AUDIBLE_CHANNEL_ID },
+      trigger: immediateTrigger(),
     });
   } catch {
     // Non-fatal.
@@ -404,7 +420,7 @@ export async function scheduleSeriesReminder(
         sound: 'default',
       },
       trigger: {
-        channelId: AUDIBLE_CHANNEL_ID,
+        ...channelField(),
         type: N.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds: delaySeconds(SERIES_REMINDER_HOURS, 90),
       },
@@ -450,7 +466,7 @@ export async function scheduleDailyReminder(): Promise<void> {
         data: { daily: true } as Record<string, unknown>,
       },
       trigger: {
-        channelId: AUDIBLE_CHANNEL_ID,
+        ...channelField(),
         type: N.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds: delaySeconds(DAILY_REMINDER_INTERVAL_HOURS, 110),
         repeats: true,

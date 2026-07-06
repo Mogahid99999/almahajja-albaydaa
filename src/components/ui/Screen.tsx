@@ -44,6 +44,27 @@ export function Screen({
     paddingBottom: bottomPad + insets.bottom,
   };
 
+  // iOS only: a subtle tint PINNED over the status-bar area (outside the
+  // scroll), so content scrolling beneath the notch / Dynamic Island never
+  // collides with the clock text un-fogged — the in-flow scrim above scrolls
+  // away with the content. Skipped (zero-height) inside the pageSheet-presented
+  // player modal, where insets.top is 0. Android is left exactly as shipped.
+  const iosStatusBarScrim =
+    Platform.OS === 'ios' && topInset > 0 ? (
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: topInset,
+          backgroundColor: 'rgba(0, 0, 0, 0.08)',
+          zIndex: 101,
+        }}
+      />
+    ) : null;
+
   if (!scroll) {
     return (
       <View style={[{ flex: 1, backgroundColor: background }, contentStyle]}>
@@ -62,38 +83,42 @@ export function Screen({
         >
           {children}
         </View>
+        {iosStatusBarScrim}
       </View>
     );
   }
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: background }}
-      contentContainerStyle={[
-        { paddingHorizontal: padded ? spacing.screenH : 0, paddingBottom: bottomPad + insets.bottom },
-        contentStyle,
-      ]}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing ?? false}
-            onRefresh={onRefresh}
-            tintColor={colors.primaryTeal}
-            colors={[colors.primaryTeal]}
-          />
-        ) : undefined
-      }
-    >
-      {/* Semi-transparent status bar scrim to fog any overlapping content */}
-      <View
-        style={{
-          height: topInset + 8,
-          backgroundColor: 'rgba(0, 0, 0, 0.15)',
-          zIndex: 100,
-          marginHorizontal: padded ? -spacing.screenH : 0,
-        }}
-      />
-      {children}
-    </ScrollView>
+    <View style={{ flex: 1, backgroundColor: background }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[
+          { paddingHorizontal: padded ? spacing.screenH : 0, paddingBottom: bottomPad + insets.bottom },
+          contentStyle,
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing ?? false}
+              onRefresh={onRefresh}
+              tintColor={colors.primaryTeal}
+              colors={[colors.primaryTeal]}
+            />
+          ) : undefined
+        }
+      >
+        {/* Semi-transparent status bar scrim to fog any overlapping content */}
+        <View
+          style={{
+            height: topInset + 8,
+            backgroundColor: 'rgba(0, 0, 0, 0.15)',
+            zIndex: 100,
+            marginHorizontal: padded ? -spacing.screenH : 0,
+          }}
+        />
+        {children}
+      </ScrollView>
+      {iosStatusBarScrim}
+    </View>
   );
 }

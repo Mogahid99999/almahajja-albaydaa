@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Platform } from 'react-native';
 
 import {
+  deleteAccount,
   ensureSession,
   getCurrentUser,
   register,
@@ -104,6 +105,26 @@ export function useSignOut() {
     // clear reads the dying session and writes the stale user back into the cache.
     mutationFn: async () => {
       const restored = await signOut();
+      const guest =
+        restored ??
+        (Platform.OS === 'web' ? null : await ensureSession().catch(() => null));
+      qc.clear();
+      qc.setQueryData(queryKeys.currentUser, guest ?? null);
+    },
+  });
+}
+
+/**
+ * Permanent in-app account deletion (App Store 5.1.1(v)). Mirrors useSignOut's
+ * shape — everything in mutationFn so the cache reset survives the component
+ * unmounting, and the guest session exists BEFORE qc.clear() for the same
+ * stale-refetch reason documented there.
+ */
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const restored = await deleteAccount();
       const guest =
         restored ??
         (Platform.OS === 'web' ? null : await ensureSession().catch(() => null));

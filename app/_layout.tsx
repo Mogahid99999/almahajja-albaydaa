@@ -298,7 +298,7 @@ function NotificationsBootstrap() {
       if (cancelled || !token) return;
       setToken(token);
       try {
-        await registerPushToken(token, 'android');
+        await registerPushToken(token, Platform.OS);
         if (!cancelled) setRegistered(true);
       } catch {
         // Registration failure is non-fatal — the inbox still works.
@@ -479,7 +479,9 @@ export default function RootLayout() {
       onSuccess={onPersistedCacheHydrated}
     >
       <SafeAreaProvider>
-        <StatusBar style="dark" backgroundColor="rgba(0, 0, 0, 0.08)" />
+        {/* SDK 56's expo-status-bar has no backgroundColor prop (Android 15
+            edge-to-edge is always on) — the status-bar fog is Screen.tsx's job. */}
+        <StatusBar style="dark" />
         <SessionGate fontsLoaded={fontsLoaded}>
           <UpdateGate>
             <AuthGate />

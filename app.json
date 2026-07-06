@@ -10,10 +10,15 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.riwaqalilm.app",
+      "buildNumber": "1",
+      "entitlements": {
+        "aps-environment": "production"
+      },
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -69,7 +74,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
       "expo-asset",
       "expo-font",
       [
