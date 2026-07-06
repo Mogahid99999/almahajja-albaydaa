@@ -1434,6 +1434,7 @@ export type Database = {
           id: string
         }[]
       }
+      search_content: { Args: { p_search: string }; Returns: Json }
       section_visible_to_viewer: {
         Args: { p_gender: string; p_section_id: string }
         Returns: boolean

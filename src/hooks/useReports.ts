@@ -18,10 +18,11 @@ export function useReportContent() {
 
 // ─── Admin moderation ─────────────────────────────────────────────────────────
 
-export function useAdminReports(status?: ReportStatus) {
+export function useAdminReports(status?: ReportStatus, enabled = true) {
   return useQuery({
     queryKey: queryKeys.reports(status),
     queryFn: () => adminListReports(status),
+    enabled,
   });
 }
 

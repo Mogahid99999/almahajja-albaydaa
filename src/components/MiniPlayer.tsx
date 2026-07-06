@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ProgressBar, RhombusEmblem, Txt } from '@/components/ui';
+import { BOTTOM_NAV_BAR_HEIGHT } from '@/components/navigation/BottomNavBar';
 import { colors, radius, shadows } from '@/constants/theme';
 import { playNext, stop, toggle } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
@@ -14,7 +15,7 @@ import { usePlayerStore } from '@/stores/playerStore';
  * player; the round brass button toggles play/pause (shared state — PRD §8).
  * Renders nothing until a lecture is loaded.
  */
-export function MiniPlayer() {
+export function MiniPlayer({ liftAboveNavBar = false }: { liftAboveNavBar?: boolean }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const currentLectureId = usePlayerStore((s) => s.currentLectureId);
@@ -34,7 +35,9 @@ export function MiniPlayer() {
           position: 'absolute',
           left: 12,
           right: 12,
-          bottom: insets.bottom + 14,
+          bottom: liftAboveNavBar
+            ? insets.bottom + BOTTOM_NAV_BAR_HEIGHT + 10
+            : insets.bottom + 14,
           backgroundColor: colors.primaryTealDeep,
           borderRadius: radius.feature - 2,
           padding: 10,

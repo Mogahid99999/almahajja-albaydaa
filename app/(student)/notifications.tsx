@@ -19,6 +19,7 @@ import type { NotificationItem } from '@/api/types';
 import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import {
   useMarkAllRead,
   useMarkRead,
@@ -26,6 +27,7 @@ import {
   useUnreadCount,
 } from '@/hooks/useNotifications';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { cardRowStyle } from '@/components/ui/cardRowStyle';
 import { Divider } from '@/components/ui/Divider';
 import { IconButton } from '@/components/ui/IconButton';
@@ -119,12 +121,13 @@ const NotificationRow = memo(function NotificationRow({
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useNotifications();
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useNotifications();
   const unread = useUnreadCount();
   const markRead = useMarkRead();
   const markAllRead = useMarkAllRead();
   const insets = useSafeAreaInsets();
   const miniPad = useMiniPlayerPad();
+  const { refreshing, onRefresh } = usePullToRefresh([refetch]);
 
   const onOpen = useCallback(
     (item: NotificationItem) => {
@@ -198,7 +201,7 @@ export default function NotificationsScreen() {
 
   if (isLoading) {
     return (
-      <Screen scroll={false} bottomPad={118} padded>
+      <Screen scroll={false} bottomPad={118 + BOTTOM_NAV_CLEARANCE} padded>
         {header}
         <View style={{ paddingVertical: 80, alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
@@ -211,12 +214,14 @@ export default function NotificationsScreen() {
     <Screen scroll={false} bottomPad={0} padded>
       <FlatList
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 + BOTTOM_NAV_CLEARANCE }}
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ItemSeparatorComponent={Divider}
         initialNumToRender={10}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         onEndReachedThreshold={0.5}
         onEndReached={() => {
           if (hasNextPage && !isFetchingNextPage) fetchNextPage();

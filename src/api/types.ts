@@ -111,6 +111,28 @@ export type BuddyRequest = {
   createdAt: string;
 };
 
+/** A lecture row in the search screen's results. */
+export type SearchLectureResult = {
+  id: string;
+  title: string;
+  durationSec: number;
+  sheikhName: string | null;
+  sectionTitle: string | null;
+};
+
+/** A section row in the search screen's results. */
+export type SearchSectionResult = {
+  id: string;
+  title: string;
+  coverLetter: string | null;
+};
+
+/** Combined search_content() response. */
+export type SearchResults = {
+  lectures: SearchLectureResult[];
+  sections: SearchSectionResult[];
+};
+
 /** Everything the رحلتي العلمية page header needs, in one round-trip. */
 export type JourneySummary = {
   completedLectures: number;

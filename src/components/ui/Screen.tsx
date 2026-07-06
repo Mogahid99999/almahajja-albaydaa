@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Platform, ScrollView, StatusBar, View, type ViewStyle } from 'react-native';
+import { Platform, RefreshControl, ScrollView, StatusBar, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/constants/theme';
@@ -8,6 +8,10 @@ import { colors, spacing } from '@/constants/theme';
  * Sand-background screen wrapper. Applies safe-area top inset and 22px mobile
  * side padding. Use `scroll` for vertical scroll screens; `bottomPad` clears the
  * fixed mini-player (~118px on Home/Section).
+ *
+ * `refreshing`/`onRefresh` only apply to the `scroll` branch — `scroll={false}`
+ * screens host their own FlatList and wire pull-to-refresh directly onto it
+ * instead (see notifications.tsx).
  */
 export function Screen({
   children,
@@ -16,6 +20,8 @@ export function Screen({
   bottomPad = 24,
   background = colors.bgSand,
   contentStyle,
+  refreshing,
+  onRefresh,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -23,6 +29,8 @@ export function Screen({
   bottomPad?: number;
   background?: string;
   contentStyle?: ViewStyle;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   // On Android, insets.top can briefly read 0 on first paint before the safe-area
@@ -65,6 +73,16 @@ export function Screen({
         contentStyle,
       ]}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing ?? false}
+            onRefresh={onRefresh}
+            tintColor={colors.primaryTeal}
+            colors={[colors.primaryTeal]}
+          />
+        ) : undefined
+      }
     >
       {/* Semi-transparent status bar scrim to fog any overlapping content */}
       <View

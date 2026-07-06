@@ -44,6 +44,9 @@ export const queryKeys = {
   buddyOutgoing: ['buddy', 'outgoing'] as const,
   buddySearch: (query: string) => ['buddy', 'search', query] as const,
 
+  // Content search · بحث (bottom nav)
+  contentSearch: (query: string) => ['search', 'content', query] as const,
+
   // Quizzes · الاختبارات (Feature 12)
   sectionQuizzes: (sectionId: string) => ['quizzes', 'section', sectionId] as const,
   quizIntro: (quizId: string) => ['quizzes', 'intro', quizId] as const,
