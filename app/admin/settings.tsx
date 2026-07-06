@@ -46,9 +46,30 @@ const SUPPORT_FIELDS: FieldDef[] = [
   },
 ];
 
+const QNA_FIELDS: FieldDef[] = [
+  {
+    key: 'qna_notice_text',
+    label: 'ملاحظة صفحتي الأسئلة (العامة وأسئلة الدرس)',
+    multiline: true,
+  },
+];
+
+const REPORTS_FIELDS: FieldDef[] = [
+  {
+    key: 'admin_notify_email',
+    label: 'البريد الإلكتروني لإشعارات البلاغات (يُترك فارغاً لتعطيل التنبيه بالبريد)',
+    placeholder: 'admin@example.com',
+  },
+];
+
 const APP_FIELDS: FieldDef[] = [
   { key: 'min_app_version', label: 'أدنى إصدار مدعوم', placeholder: '1.0.0' },
   { key: 'app_download_url', label: 'رابط تنزيل التحديث', placeholder: 'https://...' },
+];
+
+const RELEASE_FIELDS: FieldDef[] = [
+  { key: 'latest_app_version', label: 'أحدث إصدار منشور', placeholder: '1.1.0' },
+  { key: 'latest_released_at', label: 'تاريخ إصدار آخر تحديث (YYYY-MM-DD)', placeholder: '2026-07-06' },
 ];
 
 function ConfigField({
@@ -102,7 +123,15 @@ export default function AdminSettings() {
   // Seed the form once config arrives (fallbacks fill empty keys).
   useEffect(() => {
     if (!config) return;
-    const all = [...ABOUT_FIELDS, ...TELEGRAM_FIELDS, ...SUPPORT_FIELDS, ...APP_FIELDS];
+    const all = [
+      ...ABOUT_FIELDS,
+      ...TELEGRAM_FIELDS,
+      ...SUPPORT_FIELDS,
+      ...QNA_FIELDS,
+      ...REPORTS_FIELDS,
+      ...APP_FIELDS,
+      ...RELEASE_FIELDS,
+    ];
     const next: Record<string, string> = {};
     for (const f of all) next[f.key] = config[f.key] ?? f.fallback ?? '';
     setForm(next);
@@ -172,6 +201,16 @@ export default function AdminSettings() {
       <Card style={{ gap: 18 }}>{renderFields(SUPPORT_FIELDS)}</Card>
 
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
+        صفحتا الأسئلة
+      </Txt>
+      <Card style={{ gap: 18 }}>{renderFields(QNA_FIELDS)}</Card>
+
+      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
+        إشعارات البلاغات
+      </Txt>
+      <Card style={{ gap: 18 }}>{renderFields(REPORTS_FIELDS)}</Card>
+
+      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
         إعدادات التطبيق
       </Txt>
       <View style={styles.caution}>
@@ -180,7 +219,16 @@ export default function AdminSettings() {
           لا ترفع «أدنى إصدار مدعوم» فوق إصدار التطبيق المثبَّت لدى المستخدمين، فسيُقفل الدخول عليهم جميعًا.
         </Txt>
       </View>
-      <Card style={{ gap: 18, marginBottom: 24 }}>{renderFields(APP_FIELDS)}</Card>
+      <Card style={{ gap: 18 }}>{renderFields(APP_FIELDS)}</Card>
+
+      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
+        تتبّع الإصدار الأخير
+      </Txt>
+      <Txt size={12} color={colors.textMuted} style={{ marginBottom: 12 }}>
+        عند رفع بناء جديد، سجّل رقم إصداره وتاريخه هنا. سيظهر إشعار لطيف للمستخدمين على
+        إصدار أقدم، ثم يُطلب منهم التحديث تلقائيًا إن مرّت 30 يومًا دون أن يحدّثوا.
+      </Txt>
+      <Card style={{ gap: 18, marginBottom: 24 }}>{renderFields(RELEASE_FIELDS)}</Card>
     </AdminShell>
   );
 }

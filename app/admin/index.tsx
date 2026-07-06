@@ -13,10 +13,12 @@ import { Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'rea
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { Card, Divider, Txt } from '@/components/ui';
-import { colors, radius } from '@/constants/theme';
+import { colors, radius, shadows } from '@/constants/theme';
 import { useAdminLectures, useUnclassifiedLectures } from '@/hooks/useAdmin';
 import { useAdminStats } from '@/hooks/useAdminStats';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
+import { useAdminReports } from '@/hooks/useReports';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { arDuration, arNum, toArabicDigits } from '@/lib/format';
 
 function arHours(h: number): string {
@@ -60,6 +62,32 @@ function StatCard({ label, value, icon, accent = false, href }: StatCardProps) {
       style={({ pressed }) => [styles.statPressable, pressed && { opacity: 0.85 }]}
     >
       {inner}
+    </Pressable>
+  );
+}
+
+// ─── Urgent reports banner ─────────────────────────────────────────────────────
+
+function UrgentReportsBanner({ count }: { count: number }) {
+  const router = useRouter();
+  if (count === 0) return null;
+  return (
+    <Pressable
+      onPress={() => router.push('/admin/reports' as Parameters<typeof router.push>[0])}
+      style={({ pressed }) => [styles.urgentBanner, pressed && { opacity: 0.85 }]}
+    >
+      <View style={styles.urgentIcon}>
+        <Feather name="flag" size={18} color={colors.onTealPrimary} />
+      </View>
+      <View style={{ flex: 1, marginRight: 12 }}>
+        <Txt weight="semibold" size={14} color={colors.stateDanger}>
+          {arNum(count)} {count === 1 ? 'بلاغ مفتوح' : 'بلاغات مفتوحة'} بحاجة إلى مراجعة
+        </Txt>
+        <Txt size={12} color={colors.textMuted} style={{ marginTop: 2 }}>
+          اضغط لمراجعة البلاغات الآن
+        </Txt>
+      </View>
+      <Feather name="chevron-left" size={16} color={colors.stateDanger} />
     </Pressable>
   );
 }
@@ -150,9 +178,15 @@ const DASH = '—';
 
 export default function AdminHome() {
   const role = useAdminOnly();
-  const { data: stats } = useAdminStats(role === 'admin');
-  const { data: lectures = [] } = useAdminLectures();
-  const { data: unclassified = [] } = useUnclassifiedLectures();
+  const { data: stats, refetch: refetchStats } = useAdminStats(role === 'admin');
+  const { data: lectures = [], refetch: refetchLectures } = useAdminLectures();
+  const { data: unclassified = [], refetch: refetchUnclassified } = useUnclassifiedLectures();
+  const { data: openReports = [], refetch: refetchReports } = useAdminReports('open', role === 'admin');
+  const { refreshing, onRefresh } = usePullToRefresh([
+    refetchLectures,
+    refetchUnclassified,
+    ...(role === 'admin' ? [refetchStats, refetchReports] : []),
+  ]);
 
   const draftCount = lectures.filter((l) => l.status === 'draft').length;
   const incomingCount = unclassified.length;
@@ -162,13 +196,20 @@ export default function AdminHome() {
   const h = (v: number | undefined) => (v === undefined ? DASH : arHours(v));
 
   return (
-    <AdminShell active="dashboard" breadcrumb="لوحة المعلومات">
+    <AdminShell
+      active="dashboard"
+      breadcrumb="لوحة المعلومات"
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <Txt weight="display" size={27} color={colors.primaryTeal} style={styles.pageTitle}>
         لوحة المعلومات
       </Txt>
       <Txt size={13} color={colors.textMuted} style={styles.pageSubtitle}>
         نظرة عامة على المنصة والطلاب
       </Txt>
+
+      <UrgentReportsBanner count={openReports.length} />
 
       {/* People */}
       <Txt weight="semibold" size={14} color={colors.textInk} style={styles.groupHeading}>
@@ -279,6 +320,27 @@ export default function AdminHome() {
 const styles = StyleSheet.create({
   pageTitle: { marginBottom: 4 } as TextStyle,
   pageSubtitle: { marginBottom: 24 } as TextStyle,
+
+  urgentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(184,92,74,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(184,92,74,0.3)',
+    borderRadius: radius.card,
+    padding: 14,
+    marginBottom: 20,
+    ...shadows.button,
+  } as ViewStyle,
+
+  urgentIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.stateDanger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as ViewStyle,
 
   groupHeading: { marginBottom: 12, marginTop: 4 } as TextStyle,
 

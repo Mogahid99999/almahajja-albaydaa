@@ -3,6 +3,8 @@ import { ActivityIndicator, View } from 'react-native';
 import { colors } from '@/constants/theme';
 import { useHome } from '@/hooks/useSections';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Screen } from '@/components/ui';
 import { BroadcastCard } from '@/components/home/BroadcastCard';
 import { ContinueCard } from '@/components/home/ContinueCard';
@@ -27,8 +29,9 @@ import { JourneyHomeCard } from '@/components/journey/JourneyHomeCard';
  * The MiniPlayer is NOT added here — it lives in the student group layout.
  */
 export default function HomeScreen() {
-  const { data, isLoading } = useHome();
+  const { data, isLoading, refetch } = useHome();
   const miniPad = useMiniPlayerPad();
+  const { refreshing, onRefresh } = usePullToRefresh([refetch]);
 
   if (isLoading && !data) {
     return (
@@ -39,7 +42,12 @@ export default function HomeScreen() {
   }
 
   return (
-    <Screen bottomPad={miniPad || 24} padded={false}>
+    <Screen
+      bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE}
+      padded={false}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       {/* Header sits inside the screen padding manually so the rail can bleed edge-to-edge */}
       <View style={{ paddingHorizontal: 22 }}>
         <HomeHeader />

@@ -14,6 +14,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
@@ -41,6 +42,7 @@ type NavKey =
   | 'reminders'
   | 'questions'
   | 'contributions'
+  | 'reports'
   | 'analytics'
   | 'users'
   | 'settings';
@@ -65,6 +67,7 @@ const NAV_ITEMS: {
   { key: 'reminders', label: 'التذكيرات النافعة', href: '/admin/reminders', icon: 'star' },
   { key: 'questions', label: 'مساحة الأسئلة', href: '/admin/questions', icon: 'help-circle', adminOnly: true },
   { key: 'contributions', label: 'مشاركات الدارسين', href: '/admin/contributions', icon: 'message-square', adminOnly: true },
+  { key: 'reports', label: 'البلاغات', href: '/admin/reports', icon: 'flag', adminOnly: true },
   { key: 'analytics', label: 'تحليلات التقدم', href: '/admin/analytics', icon: 'trending-up', adminOnly: true },
   { key: 'users', label: 'إدارة المستخدمين', href: '/admin/users', icon: 'user-check', adminOnly: true },
   { key: 'settings', label: 'الإعدادات وعن المنصة', href: '/admin/settings', icon: 'settings', adminOnly: true },
@@ -81,6 +84,9 @@ interface AdminShellProps {
   children: ReactNode;
   /** false when the page hosts its own FlatList — avoids nesting it inside this ScrollView. */
   scroll?: boolean;
+  /** Only apply to the `scroll` branch — pages hosting their own FlatList wire refresh onto it directly. */
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }
 
 // ─── Sidebar (shared by the fixed pane and the compact drawer) ────────────────
@@ -209,7 +215,14 @@ function SidebarBody({
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function AdminShell({ active, breadcrumb, children, scroll = true }: AdminShellProps) {
+export function AdminShell({
+  active,
+  breadcrumb,
+  children,
+  scroll = true,
+  refreshing,
+  onRefresh,
+}: AdminShellProps) {
   const { width } = useWindowDimensions();
   const compact = width < COMPACT_BREAKPOINT;
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -253,6 +266,16 @@ export function AdminShell({ active, breadcrumb, children, scroll = true }: Admi
               { paddingBottom: 60 + insets.bottom },
             ]}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              onRefresh ? (
+                <RefreshControl
+                  refreshing={refreshing ?? false}
+                  onRefresh={onRefresh}
+                  tintColor={colors.primaryTeal}
+                  colors={[colors.primaryTeal]}
+                />
+              ) : undefined
+            }
           >
             {children}
           </ScrollView>

@@ -24,6 +24,7 @@ import { arLectureCount } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
 import { useSectionPage } from '@/hooks/useSections';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import type { LectureRow } from '@/api/types';
 
 import { Chip } from '@/components/ui/Chip';
@@ -43,10 +44,11 @@ import { QuizListCard } from '@/components/quiz/QuizListCard';
 
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, isLoading } = useSectionPage(id ?? '');
+  const { data, isLoading, refetch } = useSectionPage(id ?? '');
   const lectures = data?.lectures ?? [];
   const insets = useSafeAreaInsets();
   const miniPad = useMiniPlayerPad();
+  const { refreshing, onRefresh } = usePullToRefresh([refetch]);
 
   const renderLecture = useCallback(
     ({ item, index }: { item: LectureRow; index: number }) => (
@@ -122,7 +124,6 @@ export default function SectionScreen() {
           title={section.title}
           description={section.description}
           showHeader={section.showHeader}
-          coverLetter={section.coverLetter}
         />
       </View>
 
@@ -207,6 +208,8 @@ export default function SectionScreen() {
         renderItem={renderLecture}
         ItemSeparatorComponent={lectureSeparator}
         initialNumToRender={10}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
         ListEmptyComponent={

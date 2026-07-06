@@ -67,6 +67,60 @@ Deno.serve(async (req) => {
     if (typeof count === "number") badge = count;
   }
 
+  // Item 6: email an admin when content is reported. Best-effort, own
+  // try/catch — must never block the push send below. No-ops (logs) if
+  // RESEND_API_KEY is unset or admin_notify_email is empty.
+  if (row.type === "content_reported") {
+    try {
+      const resendKey = Deno.env.get("RESEND_API_KEY");
+      if (!resendKey) {
+        console.log("content_reported: RESEND_API_KEY unset, skipping email");
+      } else {
+        const { data: cfg } = await supabase
+          .from("app_config")
+          .select("value")
+          .eq("key", "admin_notify_email")
+          .maybeSingle();
+        const to = cfg?.value?.trim();
+        if (!to) {
+          console.log("content_reported: admin_notify_email unset, skipping email");
+        } else {
+          // De-dupe: report_content (0051) inserts one notification row PER
+          // admin, so the webhook fires once per admin for one report. Only
+          // send the email once per report — when this row belongs to the
+          // lexicographically-first admin id — rather than once per admin.
+          const { data: admins } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("role", "admin")
+            .order("id", { ascending: true })
+            .limit(1);
+          const firstAdminId = admins?.[0]?.id;
+          if (firstAdminId && firstAdminId === row.user_id) {
+            await fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${resendKey}`,
+              },
+              body: JSON.stringify({
+                from: "المَحجّة البَيْضَاء <notifications@resend.dev>",
+                to: [to],
+                subject: row.title,
+                html: `<div dir="rtl" style="font-family: sans-serif; text-align: right;">
+                  <p>${row.body}</p>
+                  <p>يمكن مراجعة البلاغ من لوحة الإدارة، صفحة «البلاغات».</p>
+                </div>`,
+              }),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.log("content_reported email failed (non-blocking):", e);
+    }
+  }
+
   // Gently audible (the §14 silent choice was reversed — user-approved). Route to
   // the SAME 'default-v2' channel the local notifications use (importance HIGH +
   // default system sound, no vibration) so a new-content push reaches every

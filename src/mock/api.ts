@@ -573,6 +573,7 @@ export async function getSectionsEditData(): Promise<SectionEditData[]> {
     parentId: s.parent_id,
     order: s.order,
     showHeader: s.show_header,
+    visibility: 'all',
   }));
 }
 

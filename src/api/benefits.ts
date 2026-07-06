@@ -9,6 +9,7 @@
  */
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
+import { BlockedWordError, isBlockedWordError } from '@/api/reports';
 
 export type LectureBenefit = {
   id: string;
@@ -52,7 +53,10 @@ export async function addLectureBenefit(lectureId: string, body: string): Promis
     p_lecture_id: lectureId,
     p_body: body,
   });
-  if (error) throw error;
+  if (error) {
+    if (isBlockedWordError(error)) throw new BlockedWordError();
+    throw error;
+  }
   return data as string;
 }
 

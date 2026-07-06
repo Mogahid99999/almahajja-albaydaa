@@ -14,12 +14,16 @@ import {
   updateLecture,
   updateSection,
 } from '@/api/admin';
+import type { PickedAttachmentFile } from '@/api/attachments';
 import {
   createSheikh,
   createSheikhAccount,
   deleteSheikh,
+  getSheikhProfiles,
   getSheikhs,
   updateSheikh,
+  updateSheikhBio,
+  uploadSheikhPhoto,
 } from '@/api/sheikhs';
 import type { AppLectureStatus } from '@/config';
 import { queryKeys } from '@/constants/queryKeys';
@@ -38,6 +42,13 @@ export function useSectionsEditData() {
 
 export function useSheikhs() {
   return useQuery({ queryKey: queryKeys.sheikhs, queryFn: getSheikhs });
+}
+
+/** Sheikh list incl. bio + photo (Item 8). `invalidateQueries({queryKey:
+ * queryKeys.sheikhs})` below fuzzy-matches this prefixed key too — no extra
+ * invalidation wiring needed. */
+export function useSheikhProfiles() {
+  return useQuery({ queryKey: ['sheikhs', 'profiles'], queryFn: getSheikhProfiles });
 }
 
 /**
@@ -163,6 +174,25 @@ export function useUpdateSheikh() {
   const invalidate = useAdminInvalidate();
   return useMutation({
     mutationFn: (vars: { id: string; name: string }) => updateSheikh(vars.id, vars.name),
+    onSuccess: invalidate,
+  });
+}
+
+/** Item 8: save a sheikh's bio text. */
+export function useUpdateSheikhBio() {
+  const invalidate = useAdminInvalidate();
+  return useMutation({
+    mutationFn: (vars: { id: string; bio: string }) => updateSheikhBio(vars.id, vars.bio),
+    onSuccess: invalidate,
+  });
+}
+
+/** Item 8: upload/replace a sheikh's photo. */
+export function useUploadSheikhPhoto() {
+  const invalidate = useAdminInvalidate();
+  return useMutation({
+    mutationFn: (vars: { sheikhId: string; file: PickedAttachmentFile }) =>
+      uploadSheikhPhoto(vars.sheikhId, vars.file),
     onSuccess: invalidate,
   });
 }

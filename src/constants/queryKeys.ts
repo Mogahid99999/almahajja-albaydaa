@@ -44,6 +44,9 @@ export const queryKeys = {
   buddyOutgoing: ['buddy', 'outgoing'] as const,
   buddySearch: (query: string) => ['buddy', 'search', query] as const,
 
+  // Content search · بحث (bottom nav)
+  contentSearch: (query: string) => ['search', 'content', query] as const,
+
   // Quizzes · الاختبارات (Feature 12)
   sectionQuizzes: (sectionId: string) => ['quizzes', 'section', sectionId] as const,
   quizIntro: (quizId: string) => ['quizzes', 'intro', quizId] as const,
@@ -71,6 +74,7 @@ export const queryKeys = {
   lectureNote: (lectureId: string) => ['notes', lectureId] as const,
   lectureBenefits: (lectureId: string) => ['benefits', lectureId] as const,
   adminBenefits: (lectureId?: string) => ['admin', 'benefits', lectureId ?? 'all'] as const,
+  reports: (status?: string) => ['admin', 'reports', status ?? 'all'] as const,
 
   // Beneficial reminders · التذكيرات النافعة (V7)
   adminBroadcasts: ['admin', 'broadcasts'] as const,
@@ -84,5 +88,6 @@ export const queryKeys = {
   adminUserDetail: (userId: string) => ['admin', 'user', userId] as const,
   aboutContent: ['appContent', 'about'] as const,
   supportContact: ['appContent', 'support'] as const,
+  qnaNotice: ['appContent', 'qnaNotice'] as const,
   adminConfig: ['admin', 'config'] as const,
 } as const;

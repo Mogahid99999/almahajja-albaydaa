@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getAboutContent, getAppConfigForAdmin, getSupportContact, setAppConfig } from '@/api/appContent';
+import { getAboutContent, getAppConfigForAdmin, getQnaNotice, getSupportContact, setAppConfig } from '@/api/appContent';
 import { queryKeys } from '@/constants/queryKeys';
 
 /** Student-facing About content (falls back to the original copy). Rarely edited. */
@@ -17,6 +17,15 @@ export function useSupportContact() {
   return useQuery({
     queryKey: queryKeys.supportContact,
     queryFn: getSupportContact,
+    staleTime: 30 * 60_000,
+  });
+}
+
+/** Q&A notice above the questions boards (empty rarely, falls back to default copy). */
+export function useQnaNotice() {
+  return useQuery({
+    queryKey: queryKeys.qnaNotice,
+    queryFn: getQnaNotice,
     staleTime: 30 * 60_000,
   });
 }

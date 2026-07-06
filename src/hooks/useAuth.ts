@@ -10,8 +10,9 @@ import {
   signOut,
   updateProfile,
 } from '@/api/auth';
-import type { Gender } from '@/api/types';
+import type { Gender, HomeData } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
+import { useTourStore } from '@/stores/tourStore';
 
 /** Current signed-in user (with role + isGuest). `null` only before the anon session boots. */
 export function useCurrentUser() {
@@ -65,6 +66,16 @@ export function useRegister() {
       void qc.invalidateQueries({ queryKey: queryKeys.home });
       void qc.invalidateQueries({ queryKey: ['section'] });
       void qc.invalidateQueries({ queryKey: ['journey'] });
+
+      // First-time "How it works" tour (TourCard): starts once, right here,
+      // right after registration — see tourStore for why this is in-session
+      // only rather than a persisted account flag.
+      const home = qc.getQueryData<HomeData>(queryKeys.home);
+      useTourStore.getState().start({
+        sectionId: home?.sections[0]?.id ?? null,
+        lectureId:
+          home?.continueListening?.id ?? home?.newlyAdded[0]?.id ?? home?.featured[0]?.id ?? null,
+      });
     },
   });
 }

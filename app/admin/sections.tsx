@@ -33,7 +33,7 @@ import {
 } from '@/hooks/useAdmin';
 import { useSectionsFlat } from '@/hooks/useSections';
 import { arNum } from '@/lib/format';
-import type { AttachmentOwnerRef, FlatSectionNode, SectionEditData } from '@/api/types';
+import type { AttachmentOwnerRef, FlatSectionNode, SectionEditData, SectionVisibility } from '@/api/types';
 
 /** Descendant ids (inclusive) of a node, walked over the flat list. */
 function subtreeIds(nodes: FlatSectionNode[], rootId: string): Set<string> {
@@ -108,6 +108,43 @@ function SectionTreeRow({
   );
 }
 
+// ─── Section visibility (الكل / رجال / نساء) ─────────────────────────────────
+
+const VISIBILITY_OPTIONS: { value: SectionVisibility; label: string }[] = [
+  { value: 'all', label: 'الكل' },
+  { value: 'male', label: 'رجال' },
+  { value: 'female', label: 'نساء' },
+];
+
+function VisibilityToggle({
+  value,
+  onChange,
+}: {
+  value: SectionVisibility;
+  onChange: (v: SectionVisibility) => void;
+}) {
+  return (
+    <View style={styles.visibilityToggle}>
+      {VISIBILITY_OPTIONS.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <Pressable
+            key={opt.value}
+            onPress={() => onChange(opt.value)}
+            style={[styles.visibilityToggleBtn, active && styles.visibilityToggleBtnActive]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+          >
+            <Txt size={13} weight="semibold" color={active ? colors.onTealPrimary : colors.textMuted}>
+              {opt.label}
+            </Txt>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 // ─── Inline section editor ────────────────────────────────────────────────────
 
 function SectionEditor({
@@ -126,6 +163,7 @@ function SectionEditor({
     parentId: string | null;
     order: number;
     showHeader: boolean;
+    visibility: SectionVisibility;
   }) => void;
   onCancel: () => void;
 }) {
@@ -134,6 +172,7 @@ function SectionEditor({
   const [parentId, setParentId] = useState<string | null>(data?.parentId ?? node.parentId);
   const [order, setOrder] = useState(String(data?.order ?? 0));
   const [showHeader, setShowHeader] = useState(data?.showHeader ?? true);
+  const [visibility, setVisibility] = useState<SectionVisibility>(data?.visibility ?? 'all');
 
   // Forbid reparenting under self or a descendant (would orphan the subtree).
   function save() {
@@ -144,6 +183,7 @@ function SectionEditor({
       parentId: parentId === node.id ? node.parentId : parentId,
       order: order ? Number(order) : 0,
       showHeader,
+      visibility,
     });
   }
 
@@ -179,6 +219,11 @@ function SectionEditor({
         placeholderTextColor={colors.textGhost}
         style={styles.textArea}
       />
+
+      <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.fieldLabel}>
+        من يظهر له هذا القسم
+      </Txt>
+      <VisibilityToggle value={visibility} onChange={setVisibility} />
 
       <View style={styles.editorRow}>
         <View style={{ width: 130 }}>
@@ -264,6 +309,7 @@ export default function SectionsScreen() {
   const [parentId, setParentId] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [showHeader, setShowHeader] = useState(true);
+  const [visibility, setVisibility] = useState<SectionVisibility>('all');
   const [titleFocused, setTitleFocused] = useState(false);
   const [descFocused, setDescFocused] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -294,6 +340,7 @@ export default function SectionsScreen() {
         parentId,
         description: description.trim() || null,
         showHeader,
+        visibility,
       },
       {
         onSuccess: () => {
@@ -302,6 +349,7 @@ export default function SectionsScreen() {
           setParentId(null);
           setDescription('');
           setShowHeader(true);
+          setVisibility('all');
         },
       },
     );
@@ -416,6 +464,12 @@ export default function SectionsScreen() {
           textAlign="right"
           style={[styles.textArea, descFocused && styles.inputFocused]}
         />
+
+        {/* Visibility (gender scope) */}
+        <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.fieldLabel}>
+          من يظهر له هذا القسم
+        </Txt>
+        <VisibilityToggle value={visibility} onChange={setVisibility} />
 
         {/* Show header toggle */}
         <View style={styles.toggleRow}>
@@ -776,6 +830,27 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   ownerToggleBtnActive: {
+    backgroundColor: colors.primaryTeal,
+  } as ViewStyle,
+
+  visibilityToggle: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: colors.bgSandRaised,
+    borderRadius: radius.input,
+    padding: 4,
+    marginTop: 4,
+  } as ViewStyle,
+
+  visibilityToggleBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as ViewStyle,
+
+  visibilityToggleBtnActive: {
     backgroundColor: colors.primaryTeal,
   } as ViewStyle,
 

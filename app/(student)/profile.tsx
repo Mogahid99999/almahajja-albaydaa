@@ -14,6 +14,10 @@ import { useRouter, Link } from 'expo-router';
 
 import { useCurrentUser, useSignOut } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useHome } from '@/hooks/useSections';
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
+import { useTourStore } from '@/stores/tourStore';
 import { colors, radius, shadows } from '@/constants/theme';
 
 import { Card } from '@/components/ui/Card';
@@ -80,10 +84,13 @@ function LinkRow({ icon, label, onPress, destructive = false }: LinkRowProps) {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { data: user } = useCurrentUser();
+  const { data: user, refetch: refetchUser } = useCurrentUser();
   const signOut = useSignOut();
+  const { data: home, refetch: refetchHome } = useHome();
+  const startTour = useTourStore((s) => s.start);
 
   const miniPad = useMiniPlayerPad();
+  const { refreshing, onRefresh } = usePullToRefresh([refetchUser, refetchHome]);
   const isGuest = user?.isGuest ?? true;
   const email = user?.email ?? '';
   const name = user?.displayName?.trim() || '';
@@ -93,7 +100,12 @@ export default function ProfileScreen() {
   const avatarChar = name ? avatarInitial(name) : email ? avatarInitial(email) : '';
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    <Screen
+      bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE}
+      padded
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       {/* ── Nav row ────────────────────────────────────────────────────────── */}
       <View
         style={{
@@ -232,6 +244,26 @@ export default function ProfileScreen() {
           label="عن المنصة"
           onPress={() => router.push('/(student)/about')}
         />
+        {!isGuest ? (
+          <>
+            <Divider />
+            <LinkRow
+              icon="navigation"
+              label="إعادة عرض الجولة التعريفية"
+              onPress={() => {
+                startTour({
+                  sectionId: home?.sections[0]?.id ?? null,
+                  lectureId:
+                    home?.continueListening?.id ??
+                    home?.newlyAdded[0]?.id ??
+                    home?.featured[0]?.id ??
+                    null,
+                });
+                router.replace('/');
+              }}
+            />
+          </>
+        ) : null}
       </Card>
 
       {/* ── Playback settings (auto-advance) ─────────────────────────────────── */}

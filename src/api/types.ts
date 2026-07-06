@@ -83,6 +83,10 @@ export type StreakStatus = {
 // --- Study buddy · رفيق الدراسة (26.2) ----------------------------------------
 export type Gender = 'male' | 'female';
 
+/** Section gender scope. 'all' (default) hides nothing; 'male'/'female' scope
+ *  the section AND everything nested under it to that gender only. */
+export type SectionVisibility = 'all' | 'male' | 'female';
+
 /** The accepted buddy's card data — encouraging phrases only, never ranks. */
 export type BuddyStatus = {
   buddyId: string;
@@ -105,6 +109,28 @@ export type BuddyRequest = {
   id: string;
   fromDisplayName: string;
   createdAt: string;
+};
+
+/** A lecture row in the search screen's results. */
+export type SearchLectureResult = {
+  id: string;
+  title: string;
+  durationSec: number;
+  sheikhName: string | null;
+  sectionTitle: string | null;
+};
+
+/** A section row in the search screen's results. */
+export type SearchSectionResult = {
+  id: string;
+  title: string;
+  coverLetter: string | null;
+};
+
+/** Combined search_content() response. */
+export type SearchResults = {
+  lectures: SearchLectureResult[];
+  sections: SearchSectionResult[];
 };
 
 /** Everything the رحلتي العلمية page header needs, in one round-trip. */
@@ -172,7 +198,8 @@ export type NotificationType =
   | 'buddy_activity'
   | 'buddy_request'
   | 'question_received'
-  | 'question_answered';
+  | 'question_answered'
+  | 'content_reported';
 
 /**
  * Every notification type, in a stable order. Single source of truth for the
@@ -195,6 +222,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'buddy_request',
   'question_received',
   'question_answered',
+  'content_reported',
 ];
 
 /**
@@ -571,6 +599,7 @@ export type SectionEditData = {
   parentId: string | null;
   order: number;
   showHeader: boolean;
+  visibility: SectionVisibility;
 };
 
 export type UnclassifiedItem = {

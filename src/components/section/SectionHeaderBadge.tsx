@@ -4,9 +4,8 @@
  * Renders ONLY when section.showHeader is true.
  * When false, the section page starts at the meta row — return null.
  *
- * Layout: a compact teal emblem (58px, brass border) holding the section's cover
- * letter, beside the FULL section title in green (Amiri) with the description
- * under it.
+ * Layout: the section's topic icon (58px, no tile/box) beside the FULL section
+ * title in green (Amiri) with the description under it.
  *
  * Task 7: the title must render IN FULL — earlier it was squeezed INTO a narrow
  * vertical badge (scaleX 0.82) which broke real titles mid-word (العقيدة → العقي
@@ -19,17 +18,16 @@
 import { View } from 'react-native';
 
 import { colors } from '@/constants/theme';
+import { SectionIcon } from '@/components/ui/SectionIcon';
 import { Txt } from '@/components/ui/Txt';
 
 type Props = {
   title: string;
   description: string | null;
   showHeader: boolean;
-  /** Section cover letter (already strips the leading "ال" — matches the grid). */
-  coverLetter: string;
 };
 
-export function SectionHeaderBadge({ title, description, showHeader, coverLetter }: Props) {
+export function SectionHeaderBadge({ title, description, showHeader }: Props) {
   if (!showHeader) return null;
 
   return (
@@ -41,23 +39,17 @@ export function SectionHeaderBadge({ title, description, showHeader, coverLetter
         marginBottom: 4,
       }}
     >
-      {/* Teal emblem holding the section's cover letter (optically centred) */}
+      {/* Topic icon — no surrounding tile */}
       <View
         style={{
           flexShrink: 0,
           width: 58,
           height: 58,
-          borderRadius: 16,
-          backgroundColor: colors.primaryTeal,
-          borderWidth: 1,
-          borderColor: 'rgba(176,137,79,0.4)',
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Txt weight="display" size={27} color={colors.accentBrass} align="center" centerGlyph>
-          {coverLetter}
-        </Txt>
+        <SectionIcon title={title} size={40} color={colors.primaryTeal} />
       </View>
 
       {/* Full section title (never clipped) + description */}

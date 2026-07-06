@@ -21,12 +21,14 @@ import {
 
 import type { LectureBenefit } from '@/api/benefits';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { ReportSheet } from '@/components/reports/ReportSheet';
 import { Card, IconButton, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useAddBenefit, useDeleteOwnBenefit, useLectureBenefits } from '@/hooks/useBenefits';
 import { useLecturePlayback } from '@/hooks/useLecture';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { useReportContent } from '@/hooks/useReports';
 import { arSince } from '@/lib/format';
 
 function RegisterNudge() {
@@ -112,7 +114,15 @@ function Composer({ lectureId }: { lectureId: string }) {
   );
 }
 
-function BenefitCard({ b, onDelete }: { b: LectureBenefit; onDelete?: () => void }) {
+function BenefitCard({
+  b,
+  onDelete,
+  onReport,
+}: {
+  b: LectureBenefit;
+  onDelete?: () => void;
+  onReport: () => void;
+}) {
   return (
     <Card style={{ marginBottom: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -122,6 +132,13 @@ function BenefitCard({ b, onDelete }: { b: LectureBenefit; onDelete?: () => void
         <Txt size={11.5} color={colors.textGhost} style={{ flex: 1 }}>
           {b.isMine ? 'فائدتك · دون اسم' : 'أحد الدارسين'} · {arSince(b.createdAt)}
         </Txt>
+        <Pressable
+          onPress={onReport}
+          accessibilityLabel="الإبلاغ عن هذه الفائدة"
+          style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Feather name="flag" size={14} color={colors.textGhost} />
+        </Pressable>
         {onDelete ? (
           <Pressable
             onPress={onDelete}
@@ -148,6 +165,8 @@ export default function LectureBenefitsScreen() {
   const { data: benefits, isLoading } = useLectureBenefits(id ?? '');
   const deleteOwn = useDeleteOwnBenefit(id ?? '');
   const [pendingDelete, setPendingDelete] = useState<LectureBenefit | null>(null);
+  const [reportTarget, setReportTarget] = useState<LectureBenefit | null>(null);
+  const reportContent = useReportContent();
   const miniPad = useMiniPlayerPad();
 
   return (
@@ -195,6 +214,7 @@ export default function LectureBenefitsScreen() {
             key={b.id}
             b={b}
             onDelete={b.isMine ? () => setPendingDelete(b) : undefined}
+            onReport={() => setReportTarget(b)}
           />
         ))
       )}
@@ -210,6 +230,20 @@ export default function LectureBenefitsScreen() {
           deleteOwn.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
         }}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ReportSheet
+        visible={!!reportTarget}
+        pending={reportContent.isPending}
+        error={reportContent.error instanceof Error ? reportContent.error.message : undefined}
+        onClose={() => setReportTarget(null)}
+        onSubmit={(reason) => {
+          if (!reportTarget) return;
+          reportContent.mutate(
+            { contentType: 'benefit', contentId: reportTarget.id, reason: reason || undefined },
+            { onSuccess: () => setReportTarget(null) },
+          );
+        }}
       />
     </Screen>
   );

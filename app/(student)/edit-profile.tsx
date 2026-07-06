@@ -1,10 +1,12 @@
 /**
  * Edit profile — تعديل الملف الشخصي (Task 2 / V7).
  *
- * Edits the display NAME + gender (auth metadata, synced across devices) AND the
- * sign-in EMAIL. Email now applies immediately: the project keeps
- * `mailer_autoconfirm` on (registration is verification-free too), so
- * updateUser({email}) swaps the sign-in address with no confirmation step.
+ * The sign-in EMAIL is the only editable field here — applies immediately:
+ * the project keeps `mailer_autoconfirm` on (registration is
+ * verification-free too), so updateUser({email}) swaps the sign-in address
+ * with no confirmation step. Name and gender are entered once at
+ * registration under an identity oath (Item 10) and are permanently
+ * read-only afterward for every account, shown here for reference only.
  * Only reachable by registered users (the profile screen gates the entry on
  * !isGuest), so an email always exists here.
  *
@@ -19,11 +21,12 @@ import { useCurrentUser, useUpdateProfile } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 import { Card } from '@/components/ui/Card';
-import { GenderPills } from '@/components/ui/GenderPills';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
 import { useRouter } from 'expo-router';
+
+const GENDER_LABEL: Record<Gender, string> = { male: 'ذكر', female: 'أنثى' };
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -31,13 +34,7 @@ export default function EditProfileScreen() {
   const update = useUpdateProfile();
   const miniPad = useMiniPlayerPad();
 
-  const [name, setName] = useState(user?.displayName ?? '');
-  const [gender, setGender] = useState<Gender | null>(user?.gender ?? null);
   const [email, setEmail] = useState(user?.email ?? '');
-
-  const trimmed = name.trim();
-  const nameChanged = trimmed.length > 0 && trimmed !== (user?.displayName ?? '');
-  const genderChanged = gender !== null && gender !== (user?.gender ?? null);
 
   const emailTrimmed = email.trim().toLowerCase();
   const emailDiffers = emailTrimmed !== (user?.email ?? '').toLowerCase();
@@ -45,19 +42,11 @@ export default function EditProfileScreen() {
   const emailChanged = emailDiffers && emailValid;
   const emailInvalid = emailDiffers && !emailValid; // typed, but not a valid address
 
-  const changed = nameChanged || genderChanged || emailChanged;
-  const canSave = changed && !emailInvalid;
+  const canSave = emailChanged;
 
   const onSave = () => {
     if (!canSave) return;
-    update.mutate(
-      {
-        ...(nameChanged ? { displayName: trimmed } : {}),
-        ...(genderChanged && gender ? { gender } : {}),
-        ...(emailChanged ? { email: emailTrimmed } : {}),
-      },
-      { onSuccess: () => router.back() },
-    );
+    update.mutate({ email: emailTrimmed }, { onSuccess: () => router.back() });
   };
 
   return (
@@ -78,27 +67,33 @@ export default function EditProfileScreen() {
       </View>
 
       <Card style={{ padding: 20 }}>
-        {/* Name — editable */}
+        {/* Name — locked after registration (Item 10 identity oath) */}
         <View style={{ marginBottom: 18 }}>
           <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
             الاسم
           </Txt>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="اسمك"
-            placeholderTextColor={colors.textGhost}
-            style={inputStyle}
-          />
+          <View style={readOnlyBoxStyle}>
+            <Txt size={14} color={colors.textInk}>
+              {user?.displayName ?? '—'}
+            </Txt>
+          </View>
         </View>
 
-        {/* Gender — required for رفيق الدراسة (26.2); changeable in v1 */}
-        <View style={{ marginBottom: 18 }}>
+        {/* Gender — locked after registration (Item 10 identity oath) */}
+        <View style={{ marginBottom: 10 }}>
           <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
             النوع
           </Txt>
-          <GenderPills value={gender} onChange={setGender} />
+          <View style={readOnlyBoxStyle}>
+            <Txt size={14} color={colors.textInk}>
+              {user?.gender ? GENDER_LABEL[user.gender] : '—'}
+            </Txt>
+          </View>
         </View>
+
+        <Txt size={11} color={colors.textGhost} style={{ marginBottom: 18 }}>
+          لا يمكن تعديل الاسم أو الجنس بعد التسجيل
+        </Txt>
 
         {/* Email — sign-in address (editable; applies immediately) */}
         <View>
@@ -178,4 +173,15 @@ const inputStyle = {
   fontFamily: fonts.body,
   fontSize: 14,
   color: colors.textInk,
+};
+
+const readOnlyBoxStyle = {
+  minHeight: 46,
+  justifyContent: 'center' as const,
+  borderWidth: 1,
+  borderColor: colors.borderSand2,
+  borderRadius: radius.input,
+  backgroundColor: colors.surfaceInset,
+  paddingHorizontal: 14,
+  paddingVertical: 8,
 };

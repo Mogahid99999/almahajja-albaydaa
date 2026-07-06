@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton, Screen, Txt } from '@/components/ui';
 import { QuestionsBoard } from '@/components/questions/QuestionsBoard';
 import { colors } from '@/constants/theme';
+import { useQnaNotice } from '@/hooks/useAppContent';
 import { useLecturePlayback } from '@/hooks/useLecture';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
@@ -18,6 +19,7 @@ export default function LectureQuestionsScreen() {
   const { data: lecture } = useLecturePlayback(id ?? '');
   const insets = useSafeAreaInsets();
   const miniPad = useMiniPlayerPad();
+  const { data: qnaNotice } = useQnaNotice();
 
   return (
     <Screen scroll={false} bottomPad={0} padded>
@@ -35,8 +37,13 @@ export default function LectureQuestionsScreen() {
         <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
       {lecture?.title ? (
-        <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 18 }} numberOfLines={2}>
+        <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 6 }} numberOfLines={2}>
           {lecture.title}
+        </Txt>
+      ) : null}
+      {qnaNotice?.text ? (
+        <Txt size={11.5} color={colors.textGhost} style={{ marginBottom: 18, lineHeight: 18 }}>
+          {qnaNotice.text}
         </Txt>
       ) : (
         <View style={{ marginBottom: 18 }} />

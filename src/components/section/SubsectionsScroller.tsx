@@ -4,7 +4,7 @@
  * Renders ONLY when subsections.length > 0.
  *
  * Each card (152px wide):
- *   - Letter tile (38px, teal letter on eef0e9 background) + chevron-left (→ left = forward in RTL)
+ *   - Topic icon (25px, teal, no tile/box) + chevron-left (→ left = forward in RTL)
  *   - Amiri section name
  *   - Lecture count in Arabic-Indic
  *
@@ -22,6 +22,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { arLectureCount } from '@/lib/format';
 import { colors, fonts, radius } from '@/constants/theme';
 import { usePrefetchSection } from '@/hooks/useSections';
+import { SectionIcon } from '@/components/ui/SectionIcon';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
 import type { SectionCard } from '@/api/types';
@@ -88,28 +89,16 @@ export function SubsectionsScroller({ subsections }: Props) {
                 justifyContent: 'space-between',
               }}
             >
-              {/* Letter emblem tile */}
+              {/* Topic icon — no surrounding tile */}
               <View
                 style={{
                   width: 38,
                   height: 38,
-                  borderRadius: 11,
-                  backgroundColor: '#eef0e9',
-                  borderWidth: 1,
-                  borderColor: '#d8e0d4',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Txt
-                  weight="display"
-                  size={19}
-                  color={colors.primaryTeal}
-                  align="center"
-                  centerGlyph
-                >
-                  {sub.coverLetter}
-                </Txt>
+                <SectionIcon title={sub.title} size={25} color={colors.primaryTeal} />
               </View>
 
               {/* chevron-left = forward in RTL */}

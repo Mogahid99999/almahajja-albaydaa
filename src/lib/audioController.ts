@@ -21,6 +21,7 @@ import { queryKeys } from '@/constants/queryKeys';
 import { isOnlineSync } from '@/lib/connectivity';
 import { localUriFor, readDownloadMeta, updateDownloadPosition } from '@/lib/downloads';
 import { queryClient } from '@/lib/queryClient';
+import { readResumePosition, saveResumePosition } from '@/lib/resumeCache';
 import { usePlayerStore, type PlaybackRate } from '@/stores/playerStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -301,6 +302,11 @@ function persist(positionSec: number, finished = false) {
   // lecture is downloaded) so it resumes at the same second when played OFFLINE,
   // where the server progress row is unreachable.
   updateDownloadPosition(currentId, pos);
+  // Also mirror it into the local resume cache — unlike the download sidecar
+  // above, this covers EVERY lecture (downloaded or streamed-only), closing
+  // the gap where a streamed lecture has no local fallback if the persisted
+  // query cache goes stale relative to disk across a force-kill.
+  saveResumePosition(currentId, pos);
 
   // Derive everything saveLectureProgress used to fetch (V11 · C — no prev SELECT):
   const posInt = Math.max(0, Math.round(pos));
@@ -383,6 +389,13 @@ export async function playLecture(
   // ── Fast path: downloaded + cached sidecar → start now, refresh later. ──
   if (localUri && meta) {
     let positionSec = meta.positionSec ?? 0;
+    // Also consult the local resume cache — it can be more current than the
+    // download sidecar (e.g. this lecture was streamed before ever being
+    // downloaded) — take whichever is larger, never rewind.
+    const localResume = readResumePosition(lectureId);
+    if (localResume && localResume.positionSec > positionSec) {
+      positionSec = localResume.positionSec;
+    }
     // A resume deep-link may ask to open ahead; honor it, never rewind (§8).
     if (opts?.startAtSec != null && opts.startAtSec > positionSec) {
       positionSec = opts.startAtSec;
@@ -469,6 +482,14 @@ export async function playLecture(
     durationSec = meta.durationSec;
     positionSec = meta.positionSec ?? 0;
     source = localUri;
+  }
+
+  // Streamed-only lectures have no local sidecar (downloads.ts) to fall back
+  // on if the query cache served a stale pre-force-kill position — consult
+  // the resume cache here too and take whichever is larger, never rewind.
+  const localResume = readResumePosition(lectureId);
+  if (localResume && localResume.positionSec > positionSec) {
+    positionSec = localResume.positionSec;
   }
 
   if (opts?.startAtSec != null && opts.startAtSec > positionSec) {

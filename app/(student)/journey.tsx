@@ -25,6 +25,8 @@ import {
 } from '@/hooks/useJourney';
 import { useMyQuizStats } from '@/hooks/useQuizzes';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
@@ -57,12 +59,15 @@ export default function JourneyScreen() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
-  const { data: summary, isLoading } = useJourneySummary({ enabled: !isGuest });
-  const { data: goal } = useWeeklyGoal({ enabled: !isGuest });
-  const { data: badges } = useBadges({ enabled: !isGuest });
-  const { data: quizStats } = useMyQuizStats({ enabled: !isGuest });
+  const { data: summary, isLoading, refetch: refetchSummary } = useJourneySummary({ enabled: !isGuest });
+  const { data: goal, refetch: refetchGoal } = useWeeklyGoal({ enabled: !isGuest });
+  const { data: badges, refetch: refetchBadges } = useBadges({ enabled: !isGuest });
+  const { data: quizStats, refetch: refetchQuizStats } = useMyQuizStats({ enabled: !isGuest });
   const setGoal = useSetWeeklyGoal();
   const miniPad = useMiniPlayerPad();
+  const { refreshing, onRefresh } = usePullToRefresh(
+    isGuest ? [] : [refetchSummary, refetchGoal, refetchBadges, refetchQuizStats],
+  );
 
   // Catch up any badge earned offline / via the streak crons, once on mount.
   useSyncBadgesOnMount(!isGuest);
@@ -76,7 +81,12 @@ export default function JourneyScreen() {
   };
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    <Screen
+      bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE}
+      padded
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{
