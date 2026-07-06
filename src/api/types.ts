@@ -589,6 +589,8 @@ export type FlatSectionNode = {
   depth: number;
   /** Ancestor titles including self, e.g. ["العقيدة","التوحيد","الأصول الثلاثة"]. */
   path: string[];
+  /** رقم الترتيب among siblings — the tree arrives sorted by it (migration 0059). */
+  order: number;
 };
 
 /** Editable fields of a section node — used to pre-fill the admin editor. */

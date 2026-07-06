@@ -372,6 +372,34 @@ export async function signOut(): Promise<CurrentUser | null> {
 }
 
 /**
+ * Ban enforcement (admin «حظر»): GoTrue rejects a banned account on the /user
+ * endpoint even while its access token is still unexpired, so a server-side
+ * validation on app-foreground catches a ban within seconds instead of
+ * waiting for the next token refresh. When the session turns out banned (or
+ * the account was deleted), it is signed out exactly like a manual sign-out —
+ * on native the device's guest session is restored so the app keeps working
+ * as a guest. Network failures never sign anyone out (offline must stay
+ * usable). Returns `{ banned: false }` when the session is fine.
+ */
+export async function checkBannedAndSignOut(): Promise<{
+  banned: boolean;
+  user: CurrentUser | null;
+}> {
+  if (USE_MOCK) return { banned: false, user: null };
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) return { banned: false, user: null };
+  const { error } = await supabase.auth.getUser();
+  if (!error) return { banned: false, user: null };
+  const status = (error as { status?: number }).status ?? 0;
+  const code = (error as { code?: string }).code ?? '';
+  if (code === 'user_banned' || code === 'user_not_found' || status === 403) {
+    const user = await signOut();
+    return { banned: true, user };
+  }
+  return { banned: false, user: null };
+}
+
+/**
  * Permanently delete the signed-in account (App Store Guideline 5.1.1(v)).
  * The `delete-account` Edge Function verifies the caller's JWT and removes
  * their own auth.users row with the service role — every personal table

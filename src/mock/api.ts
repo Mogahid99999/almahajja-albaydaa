@@ -556,7 +556,7 @@ export async function getSectionsFlat(): Promise<FlatSectionNode[]> {
   const walk = (parentId: string | null, depth: number, path: string[]) => {
     for (const s of db.childrenOf(parentId)) {
       const p = [...path, s.title];
-      out.push({ id: s.id, title: s.title, parentId, depth, path: p });
+      out.push({ id: s.id, title: s.title, parentId, depth, path: p, order: s.order ?? 0 });
       walk(s.id, depth + 1, p);
     }
   };

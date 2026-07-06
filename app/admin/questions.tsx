@@ -238,7 +238,12 @@ function QuestionCard({
           </Pressable>
 
           <Pressable
-            onPress={() => setHidden.mutate({ questionId: q.id, hidden: !isHidden })}
+            onPress={() =>
+              setHidden.mutate(
+                { questionId: q.id, hidden: !isHidden },
+                { onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر تغيير الحالة') },
+              )
+            }
             disabled={setHidden.isPending}
             style={({ pressed }) => [styles.iconTextBtn, pressed && { opacity: 0.7 }]}
           >
@@ -378,6 +383,7 @@ export default function AdminQuestions() {
           if (!pendingDelete) return;
           deleteQuestion.mutate(pendingDelete.id, {
             onSuccess: () => flash('تم حذف السؤال'),
+            onError: (e) => flash((e as Error).message),
             onSettled: () => setPendingDelete(null),
           });
         }}

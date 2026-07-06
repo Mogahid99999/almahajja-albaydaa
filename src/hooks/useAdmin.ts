@@ -10,10 +10,12 @@ import {
   getNextLectureOrder,
   getSectionsEditData,
   getUnclassifiedLectures,
+  reorderSections,
   setLectureStatus,
   updateLecture,
   updateSection,
 } from '@/api/admin';
+import type { FlatSectionNode } from '@/api/types';
 import type { PickedAttachmentFile } from '@/api/attachments';
 import {
   createSheikh,
@@ -122,6 +124,65 @@ export function useUpdateSection() {
       input: Parameters<typeof updateSection>[1];
     }) => updateSection(vars.id, vars.input),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Rebuild the depth-first flat list after new `order` values, mirroring the
+ * server sort exactly (siblings by order then title — migration 0059) so the
+ * optimistic frame and the refetched one are identical.
+ */
+function reflattenTree(nodes: FlatSectionNode[]): FlatSectionNode[] {
+  const byParent = new Map<string | null, FlatSectionNode[]>();
+  for (const n of nodes) {
+    const list = byParent.get(n.parentId) ?? [];
+    list.push(n);
+    byParent.set(n.parentId, list);
+  }
+  const out: FlatSectionNode[] = [];
+  const walk = (parentId: string | null) => {
+    const children = (byParent.get(parentId) ?? []).sort(
+      (a, b) => a.order - b.order || a.title.localeCompare(b.title, 'ar'),
+    );
+    for (const c of children) {
+      out.push(c);
+      walk(c.id);
+    }
+  };
+  walk(null);
+  return out;
+}
+
+/**
+ * Persist a drag-and-drop sibling reorder. Optimistic: the tree re-sorts in the
+ * cache immediately; a server failure rolls it back and refetches.
+ */
+export function useReorderSections() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => reorderSections(ids),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: queryKeys.sectionsFlat });
+      const previous = qc.getQueryData<FlatSectionNode[]>(queryKeys.sectionsFlat);
+      if (previous) {
+        const pos = new Map(ids.map((id, i) => [id, i + 1]));
+        const next = reflattenTree(
+          previous.map((n) => (pos.has(n.id) ? { ...n, order: pos.get(n.id)! } : n)),
+        );
+        qc.setQueryData(queryKeys.sectionsFlat, next);
+      }
+      return { previous };
+    },
+    onError: (_e, _ids, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKeys.sectionsFlat, ctx.previous);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.sectionsFlat });
+      void qc.invalidateQueries({ queryKey: queryKeys.sectionsEdit });
+      // The student app orders by the same numbers (home grid + section pages).
+      void qc.invalidateQueries({ queryKey: queryKeys.home });
+      void qc.invalidateQueries({ queryKey: ['section'] });
+    },
   });
 }
 

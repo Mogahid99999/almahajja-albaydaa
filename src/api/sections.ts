@@ -241,5 +241,6 @@ export async function getSectionsFlat(): Promise<FlatSectionNode[]> {
     parentId: r.parent_id ?? null,
     depth: r.depth,
     path: r.path,
+    order: (r as { ord?: number }).ord ?? 0,
   }));
 }

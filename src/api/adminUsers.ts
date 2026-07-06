@@ -12,7 +12,7 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import type { AppRole } from './auth';
-import type { AdminUserDetail, AdminUserRow } from './types';
+import type { AdminUserDetail, AdminUserRow, Gender } from './types';
 
 function mapRow(r: any): AdminUserRow {
   return {
@@ -128,6 +128,8 @@ export const createUser = (input: {
   password: string;
   displayName: string;
   role: AppRole;
+  /** Required by the admin form for students (buddy pairing + gendered sections); staff flows may omit it. */
+  gender?: Gender;
 }) =>
   invokeAdmin({
     action: 'createUser',
@@ -135,6 +137,7 @@ export const createUser = (input: {
     password: input.password,
     displayName: input.displayName,
     role: input.role,
+    ...(input.gender ? { gender: input.gender } : {}),
   });
 
 export const banUser = (userId: string) => invokeAdmin({ action: 'ban', userId });

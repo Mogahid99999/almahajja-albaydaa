@@ -18,6 +18,7 @@ import { ActivityIndicator, AppState, I18nManager, Platform, View } from 'react-
 import RNRestart from 'react-native-restart';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { checkBannedAndSignOut } from '@/api/auth';
 import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/notifications';
 import { getResumeTarget, hasResumableLesson } from '@/api/progress';
 import { useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
@@ -359,6 +360,12 @@ function NotificationsBootstrap() {
       void clearBadge(); // reset the launcher "new lessons" count on open (Issue 8)
       void touchLastOpened(); // server stamp for the weekly-goal cron
       void flushOutbox(); // replay any queued offline activity/note/goal writes
+      // Ban enforcement: if the admin banned this account, drop the session NOW
+      // (server-validated; a network failure never signs anyone out). The
+      // currentUser cache flip makes AuthGate reroute immediately.
+      void checkBannedAndSignOut().then((res) => {
+        if (res.banned) queryClient.setQueryData(queryKeys.currentUser, res.user);
+      });
       void (async () => {
         try {
           // §7 priority dispatcher (resume > weekly-goal > daily): the daily

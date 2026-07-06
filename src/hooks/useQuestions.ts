@@ -9,11 +9,14 @@ import {
   getPublicQuestions,
   getQuestionInbox,
   setQuestionHidden,
+  type InboxQuestion,
   type QuestionAudience,
   type QuestionScope,
   type QuestionStatus,
 } from '@/api/questions';
 import { queryKeys } from '@/constants/queryKeys';
+
+const QUESTION_INBOX_ROOT = ['questions', 'inbox'] as const;
 
 export function usePublicQuestions(scope: QuestionScope, lectureId?: string) {
   return useQuery({
@@ -75,7 +78,29 @@ export function useSetQuestionHidden() {
   return useMutation({
     mutationFn: (vars: { questionId: string; hidden: boolean }) =>
       setQuestionHidden(vars.questionId, vars.hidden),
-    onSuccess: () => {
+    // Optimistic: flip the inbox row's status the instant إخفاء/إظهار is
+    // tapped (mirrors set_question_hidden's status logic, migration 0032), so
+    // the action never looks like a dead button on a slow link.
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: QUESTION_INBOX_ROOT });
+      const snapshots = qc.getQueriesData<InboxQuestion[]>({ queryKey: QUESTION_INBOX_ROOT });
+      qc.setQueriesData<InboxQuestion[]>({ queryKey: QUESTION_INBOX_ROOT }, (rows) =>
+        rows?.map((r) => {
+          if (r.id !== vars.questionId) return r;
+          const status: QuestionStatus = vars.hidden
+            ? 'hidden'
+            : r.answerBody && r.answerBody.trim().length > 0
+              ? 'answered'
+              : 'pending';
+          return { ...r, status };
+        }),
+      );
+      return { snapshots };
+    },
+    onError: (_e, _v, ctx) => {
+      for (const [key, data] of ctx?.snapshots ?? []) qc.setQueryData(key, data);
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['questions'] });
     },
   });
@@ -96,7 +121,18 @@ export function useDeleteQuestion() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (questionId: string) => deleteQuestion(questionId),
-    onSuccess: () => {
+    onMutate: async (questionId) => {
+      await qc.cancelQueries({ queryKey: QUESTION_INBOX_ROOT });
+      const snapshots = qc.getQueriesData<InboxQuestion[]>({ queryKey: QUESTION_INBOX_ROOT });
+      qc.setQueriesData<InboxQuestion[]>({ queryKey: QUESTION_INBOX_ROOT }, (rows) =>
+        rows?.filter((r) => r.id !== questionId),
+      );
+      return { snapshots };
+    },
+    onError: (_e, _v, ctx) => {
+      for (const [key, data] of ctx?.snapshots ?? []) qc.setQueryData(key, data);
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['questions'] });
     },
   });

@@ -1014,6 +1014,9 @@ export type Database = {
       admin_list_reports: {
         Args: { p_status?: string }
         Returns: {
+          author_email: string
+          author_id: string
+          author_name: string
           content_body: string
           content_id: string
           content_type: string
@@ -1026,6 +1029,7 @@ export type Database = {
         }[]
       }
       admin_progress_analytics: { Args: never; Returns: Json }
+      admin_reorder_sections: { Args: { p_ids: string[] }; Returns: undefined }
       admin_set_benefit_status: {
         Args: { p_id: string; p_status: string }
         Returns: undefined
@@ -1339,6 +1343,7 @@ export type Database = {
         Returns: {
           depth: number
           id: string
+          ord: number
           parent_id: string
           path: string[]
           title: string

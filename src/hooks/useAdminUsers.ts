@@ -31,8 +31,7 @@ export function useAdminUsers(search: string) {
 export function useCreateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { email: string; password: string; displayName: string; role: AppRole }) =>
-      createUser(input),
+    mutationFn: (input: Parameters<typeof createUser>[0]) => createUser(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
   });
 }

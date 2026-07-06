@@ -33,6 +33,7 @@ import {
 } from '@/hooks/useBenefits';
 import { useDeleteQuestion, useQuestionInbox } from '@/hooks/useQuestions';
 import { arNum, arSince } from '@/lib/format';
+import { notify } from '@/lib/notify';
 
 type Tab = 'benefits' | 'questions';
 
@@ -96,8 +97,10 @@ function useBanAuthor() {
   return useMutation({
     mutationFn: (userId: string) => banUser(userId),
     onSuccess: () => {
+      notify('تم الحظر', 'حُظر الحساب وسُجّل خروجه من جميع الأجهزة.');
       void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
     },
+    onError: (e) => notify('تعذّر الحظر', (e as Error).message),
   });
 }
 
@@ -172,10 +175,13 @@ function BenefitsTab() {
               label={b.status === 'visible' ? 'إخفاء' : 'إظهار'}
               color={colors.primaryTeal600}
               onPress={() =>
-                setStatus.mutate({
-                  benefitId: b.id,
-                  status: b.status === 'visible' ? 'hidden' : 'visible',
-                })
+                setStatus.mutate(
+                  {
+                    benefitId: b.id,
+                    status: b.status === 'visible' ? 'hidden' : 'visible',
+                  },
+                  { onError: (e) => notify('تعذّر تغيير الحالة', (e as Error).message) },
+                )
               }
             />
             <ActionBtn
@@ -202,7 +208,10 @@ function BenefitsTab() {
         pending={deleteBenefit.isPending}
         onConfirm={() => {
           if (!pendingDelete) return;
-          deleteBenefit.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
+          deleteBenefit.mutate(pendingDelete.id, {
+            onSettled: () => setPendingDelete(null),
+            onError: (e) => notify('تعذّر الحذف', (e as Error).message),
+          });
         }}
         onCancel={() => setPendingDelete(null)}
       />
@@ -329,7 +338,10 @@ function QuestionsTab() {
         pending={deleteQuestion.isPending}
         onConfirm={() => {
           if (!pendingDelete) return;
-          deleteQuestion.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
+          deleteQuestion.mutate(pendingDelete.id, {
+            onSettled: () => setPendingDelete(null),
+            onError: (e) => notify('تعذّر الحذف', (e as Error).message),
+          });
         }}
         onCancel={() => setPendingDelete(null)}
       />

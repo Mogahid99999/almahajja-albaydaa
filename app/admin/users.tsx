@@ -9,7 +9,6 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -26,8 +25,9 @@ import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { useAdminUsers, useCreateUser } from '@/hooks/useAdminUsers';
 import { arNum, arSince } from '@/lib/format';
+import { notify } from '@/lib/notify';
 import type { AppRole } from '@/api/auth';
-import type { AdminUserRow, AdminUserStatus } from '@/api/types';
+import type { AdminUserRow, AdminUserStatus, Gender } from '@/api/types';
 
 const STATUS_META: Record<AdminUserStatus, { label: string; bg: string; fg: string }> = {
   active: { label: 'نشط', bg: 'rgba(31,138,91,0.12)', fg: colors.stateSuccess },
@@ -119,32 +119,40 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+const GENDER_OPTIONS: { key: Gender; label: string }[] = [
+  { key: 'male', label: 'ذكر' },
+  { key: 'female', label: 'أنثى' },
+];
+
 function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const create = useCreateUser();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<AppRole>('student');
+  const [gender, setGender] = useState<Gender | null>(null);
 
   const close = () => {
     setName('');
     setEmail('');
     setPassword('');
     setRole('student');
+    setGender(null);
     onClose();
   };
 
-  const valid = /.+@.+\..+/.test(email.trim()) && password.trim().length >= 6;
+  const valid = /.+@.+\..+/.test(email.trim()) && password.trim().length >= 6 && !!gender;
 
   const submit = () => {
+    if (!gender) return;
     create.mutate(
-      { email: email.trim(), password: password.trim(), displayName: name.trim(), role },
+      { email: email.trim(), password: password.trim(), displayName: name.trim(), role, gender },
       {
         onSuccess: () => {
-          Alert.alert('تم', 'أُنشئ الحساب بنجاح.');
+          notify('تم', 'أُنشئ الحساب بنجاح.');
           close();
         },
-        onError: (e) => Alert.alert('تعذّر الإنشاء', (e as Error).message),
+        onError: (e) => notify('تعذّر الإنشاء', (e as Error).message),
       },
     );
   };
@@ -188,6 +196,28 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
               autoCapitalize="none"
               style={styles.modalInput}
             />
+          </Field>
+          <Field label="الجنس (لازم لرفيق الدراسة والأقسام المخصصة)">
+            <View style={styles.roleRow}>
+              {GENDER_OPTIONS.map((g) => {
+                const active = g.key === gender;
+                return (
+                  <Pressable
+                    key={g.key}
+                    onPress={() => setGender(g.key)}
+                    style={[styles.roleChip, active && styles.roleChipActive]}
+                  >
+                    <Txt
+                      size={12}
+                      weight={active ? 'semibold' : 'regular'}
+                      color={active ? colors.onTealPrimary : colors.textMuted}
+                    >
+                      {g.label}
+                    </Txt>
+                  </Pressable>
+                );
+              })}
+            </View>
           </Field>
           <Field label="الدور">
             <View style={styles.roleRow}>

@@ -230,7 +230,16 @@ export function AdminShell({
 
   return (
     <View style={styles.root}>
-      {/* ── Left content area (fills remaining space) ── */}
+      {/* ── Wide: fixed sidebar. First flex child = the START edge, which is the
+          RIGHT side here (the document/root is RTL on every platform), exactly
+          where an Arabic dashboard expects its nav. ── */}
+      {!compact ? (
+        <View style={styles.sidebar}>
+          <SidebarBody active={active} />
+        </View>
+      ) : null}
+
+      {/* ── Content area (fills remaining space) ── */}
       <View style={styles.main}>
         {/* Topbar */}
         <View style={[styles.topbar, { height: TOPBAR_H + insets.top, paddingTop: insets.top }]}>
@@ -292,13 +301,6 @@ export function AdminShell({
           </View>
         )}
       </View>
-
-      {/* ── Wide: fixed right sidebar ── */}
-      {!compact ? (
-        <View style={styles.sidebar}>
-          <SidebarBody active={active} />
-        </View>
-      ) : null}
 
       {/* ── Compact: drawer overlay ── */}
       {compact ? (

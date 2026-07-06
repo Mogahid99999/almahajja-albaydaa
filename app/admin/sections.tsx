@@ -7,8 +7,9 @@
  * and a "إظهار الهيدر" toggle → useCreateSection().mutate(...)
  */
 import { Feather } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,9 +29,11 @@ import {
   useAdminLectures,
   useCreateSection,
   useDeleteSection,
+  useReorderSections,
   useSectionsEditData,
   useUpdateSection,
 } from '@/hooks/useAdmin';
+import { notify } from '@/lib/notify';
 import { useSectionsFlat } from '@/hooks/useSections';
 import { arNum } from '@/lib/format';
 import type { AttachmentOwnerRef, FlatSectionNode, SectionEditData, SectionVisibility } from '@/api/types';
@@ -53,24 +56,68 @@ function subtreeIds(nodes: FlatSectionNode[], rootId: string): Set<string> {
 
 // ─── Tree display ─────────────────────────────────────────────────────────────
 
+/** Drag interaction callbacks, stable via refs in the parent. */
+type DragHandlers = {
+  onDragStart: (node: FlatSectionNode) => void;
+  onDragMove: (pageY: number) => void;
+  onDragEnd: (commit: boolean) => void;
+};
+
 function SectionTreeRow({
   node,
   isEditing,
+  isDragging,
+  isDropTarget,
   onEdit,
   onDelete,
+  registerRef,
+  drag,
 }: {
   node: FlatSectionNode;
   isEditing: boolean;
+  /** This row is the one being dragged. */
+  isDragging: boolean;
+  /** The dragged sibling will land AT this row's position when released. */
+  isDropTarget: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  registerRef: (id: string, ref: View | null) => void;
+  drag: DragHandlers;
 }) {
+  // The handlers live in a ref so one PanResponder (created once) always calls
+  // the latest closures — recreating it mid-gesture would drop the touch.
+  const dragRef = useRef({ node, drag });
+  dragRef.current = { node, drag };
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => dragRef.current.drag.onDragStart(dragRef.current.node),
+      onPanResponderMove: (_e, g) => dragRef.current.drag.onDragMove(g.moveY),
+      onPanResponderRelease: () => dragRef.current.drag.onDragEnd(true),
+      onPanResponderTerminate: () => dragRef.current.drag.onDragEnd(false),
+      onPanResponderTerminationRequest: () => false,
+    }),
+  ).current;
+
   return (
     <View
+      ref={(r) => registerRef(node.id, r)}
       style={[
         styles.treeRow,
         { paddingRight: 12 + node.depth * 20 },
+        isDragging && styles.treeRowDragging,
+        isDropTarget && styles.treeRowDropTarget,
       ]}
     >
+      {/* Drag handle — reorders within the same parent only */}
+      <View
+        {...pan.panHandlers}
+        accessibilityLabel="اسحب لإعادة الترتيب"
+        style={styles.dragHandle}
+      >
+        <Feather name="menu" size={14} color={colors.textGhost} />
+      </View>
       <View style={styles.treeBullet}>
         {node.depth === 0 ? (
           <Rhombus size={8} color={colors.primaryTeal} filled />
@@ -87,6 +134,11 @@ function SectionTreeRow({
       >
         {node.title}
       </Txt>
+      <View style={styles.orderChip}>
+        <Txt size={10.5} weight="semibold" color={colors.primaryTeal600}>
+          {arNum(node.order)}
+        </Txt>
+      </View>
       <Txt size={11} color={colors.textGhost} numberOfLines={1} style={styles.treePath}>
         {node.path.slice(0, -1).join(' › ')}
       </Txt>
@@ -286,6 +338,76 @@ export default function SectionsScreen() {
   const createSection = useCreateSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
+  const reorderSections = useReorderSections();
+
+  // ── Drag-and-drop reorder (same-parent siblings) ──────────────────────────
+  // While a row's handle is held, its SIBLINGS' window positions are measured
+  // once; every move picks the nearest insertion slot; release persists the
+  // new order (optimistic — useReorderSections re-sorts the cache instantly).
+  const rowRefs = useRef(new Map<string, View | null>());
+  const dragMeta = useRef<{
+    dragged: FlatSectionNode;
+    /** Visual-order siblings (dragged excluded): id + row mid-Y in window coords. */
+    slots: { id: string; midY: number }[];
+    insertIndex: number;
+  } | null>(null);
+  const [dragVisual, setDragVisual] = useState<{ draggedId: string; targetId: string | null } | null>(null);
+
+  const registerRef = useCallback((id: string, ref: View | null) => {
+    rowRefs.current.set(id, ref);
+  }, []);
+
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
+
+  const onDragStart = useCallback((node: FlatSectionNode) => {
+    const sibs = sectionsRef.current.filter(
+      (s) => s.parentId === node.parentId && s.id !== node.id,
+    );
+    const slots: { id: string; midY: number }[] = [];
+    dragMeta.current = { dragged: node, slots, insertIndex: -1 };
+    setDragVisual({ draggedId: node.id, targetId: null });
+    for (const s of sibs) {
+      rowRefs.current.get(s.id)?.measureInWindow((_x, y, _w, h) => {
+        slots.push({ id: s.id, midY: y + h / 2 });
+        slots.sort((a, b) => a.midY - b.midY);
+      });
+    }
+  }, []);
+
+  const onDragMove = useCallback((pageY: number) => {
+    const meta = dragMeta.current;
+    if (!meta || meta.slots.length === 0) return;
+    let idx = 0;
+    while (idx < meta.slots.length && meta.slots[idx].midY < pageY) idx++;
+    if (idx !== meta.insertIndex) {
+      meta.insertIndex = idx;
+      // Highlight the sibling whose place the dragged row will take (or the
+      // last one when dropping at the end).
+      const target = meta.slots[Math.min(idx, meta.slots.length - 1)];
+      setDragVisual({ draggedId: meta.dragged.id, targetId: target?.id ?? null });
+    }
+  }, []);
+
+  const onDragEnd = useCallback(
+    (commit: boolean) => {
+      const meta = dragMeta.current;
+      dragMeta.current = null;
+      setDragVisual(null);
+      if (!commit || !meta || meta.insertIndex < 0) return;
+      const ids = meta.slots.map((s) => s.id);
+      ids.splice(meta.insertIndex, 0, meta.dragged.id);
+      reorderSections.mutate(ids, {
+        onError: (e) => notify('تعذّر حفظ الترتيب', (e as Error).message),
+      });
+    },
+    [reorderSections],
+  );
+
+  const dragHandlers = useMemo(
+    () => ({ onDragStart, onDragMove, onDragEnd }),
+    [onDragStart, onDragMove, onDragEnd],
+  );
 
   // Edit/delete state for the tree nodes.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -362,7 +484,7 @@ export default function SectionsScreen() {
         الأقسام والشجرة
       </Txt>
       <Txt size={13} color={colors.textMuted} style={styles.pageSubtitle}>
-        {arNum(sections.length)} قسم · استعرض الهيكل أو أضف قسماً جديداً
+        {arNum(sections.length)} قسم · مرتّبة حسب رقم الترتيب — اسحب من مقبض ≡ لإعادة ترتيب الأقسام المتجاورة
       </Txt>
 
       {/* Tree card */}
@@ -382,8 +504,12 @@ export default function SectionsScreen() {
             <SectionTreeRow
               node={node}
               isEditing={editingId === node.id}
+              isDragging={dragVisual?.draggedId === node.id}
+              isDropTarget={dragVisual?.targetId === node.id}
               onEdit={() => setEditingId((cur) => (cur === node.id ? null : node.id))}
               onDelete={() => setPendingDelete(node)}
+              registerRef={registerRef}
+              drag={dragHandlers}
             />
             {editingId === node.id ? (
               <SectionEditor
@@ -671,6 +797,34 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingLeft: 16,
     minHeight: 42,
+  } as ViewStyle,
+
+  treeRowDragging: {
+    opacity: 0.55,
+    backgroundColor: 'rgba(44,97,87,0.06)',
+  } as ViewStyle,
+
+  treeRowDropTarget: {
+    backgroundColor: 'rgba(201,164,99,0.14)',
+  } as ViewStyle,
+
+  dragHandle: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+    cursor: 'pointer',
+  } as ViewStyle,
+
+  orderChip: {
+    minWidth: 24,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(44,97,87,0.08)',
+    alignItems: 'center',
+    marginLeft: 8,
   } as ViewStyle,
 
   treeBullet: {

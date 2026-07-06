@@ -66,6 +66,7 @@ Deno.serve(async (req) => {
     email?: string;
     displayName?: string;
     role?: string;
+    gender?: string;
   };
   try {
     body = await req.json();
@@ -78,24 +79,33 @@ Deno.serve(async (req) => {
   if (action === "createUser") {
     const email = (body.email ?? "").trim().toLowerCase();
     if (!/.+@.+\..+/.test(email)) return json({ error: "invalid email" }, 400);
-    if (!body.password || body.password.length < 8) {
-      return json({ error: "password too short" }, 400);
+    // Same minimum as self-registration (app/(auth)/register.tsx) and the
+    // admin form's «٦ أحرف على الأقل» label — they previously disagreed (6 vs
+    // 8), so valid submissions failed with an opaque "password too short".
+    if (!body.password || body.password.length < 6) {
+      return json({ error: "كلمة المرور قصيرة (٦ أحرف على الأقل)" }, 400);
     }
     const role = body.role && VALID_ROLES.includes(body.role) ? body.role : "student";
     const name = (body.displayName ?? "").trim();
+    const gender = body.gender === "male" || body.gender === "female" ? body.gender : null;
     try {
       const { data: created, error: cErr } = await admin.auth.admin.createUser({
         email,
         password: body.password,
         email_confirm: true,
-        user_metadata: { display_name: name, role },
+        user_metadata: { display_name: name, role, ...(gender ? { gender } : {}) },
         app_metadata: { role },
       });
       if (cErr) return json({ error: cErr.message }, 400);
       const uid = created.user?.id;
       // The on-signup trigger creates the profiles row (role student); align it.
+      // profiles.gender is the authoritative copy (buddy pairing + gendered
+      // sections read it), so it must be written here too, not just metadata.
       if (uid) {
-        await admin.from("profiles").update({ role, display_name: name }).eq("id", uid);
+        await admin
+          .from("profiles")
+          .update({ role, display_name: name, ...(gender ? { gender } : {}) })
+          .eq("id", uid);
       }
       return json({ ok: true, userId: uid, role });
     } catch (e) {
@@ -112,6 +122,21 @@ Deno.serve(async (req) => {
       case "ban": {
         if (isSelf) return json({ error: "cannot ban your own account" }, 400);
         await mustUpdate(admin, userId, { ban_duration: BAN_FOREVER });
+        // Kill the banned user's ACTIVE sessions too — the ban alone only
+        // blocks the next token refresh, so an open app could keep working for
+        // up to an hour. GoTrue's admin logout endpoint revokes every refresh
+        // token now; best-effort (the ban itself already succeeded).
+        try {
+          await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}/logout`, {
+            method: "POST",
+            headers: {
+              apikey: SERVICE_ROLE,
+              Authorization: `Bearer ${SERVICE_ROLE}`,
+            },
+          });
+        } catch {
+          // non-fatal
+        }
         return json({ ok: true, status: "banned" });
       }
       case "unban": {
@@ -119,8 +144,10 @@ Deno.serve(async (req) => {
         return json({ ok: true, status: "active" });
       }
       case "setPassword": {
-        if (!body.password || body.password.length < 8) {
-          return json({ error: "password too short" }, 400);
+        // Same 6-char minimum as the admin UI (app/admin/user/[id].tsx) and
+        // self-registration — was 8, silently rejecting valid 6–7 char inputs.
+        if (!body.password || body.password.length < 6) {
+          return json({ error: "كلمة المرور قصيرة (٦ أحرف على الأقل)" }, 400);
         }
         await mustUpdate(admin, userId, { password: body.password });
         return json({ ok: true });

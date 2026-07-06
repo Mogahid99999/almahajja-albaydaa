@@ -38,6 +38,10 @@ export type AdminReportRow = {
   status: ReportStatus;
   reporterId: string | null;
   reporterName: string | null;
+  /** Author of the REPORTED content (question asker / benefit writer) — admin-only (migration 0059). */
+  authorId: string | null;
+  authorName: string | null;
+  authorEmail: string | null;
   createdAt: string;
 };
 
@@ -75,6 +79,9 @@ export async function adminListReports(status?: ReportStatus): Promise<AdminRepo
     status: r.status as ReportStatus,
     reporterId: r.reporter_id ?? null,
     reporterName: r.reporter_name ?? null,
+    authorId: r.author_id ?? null,
+    authorName: r.author_id ? (r.author_name ?? 'طالب علم') : null,
+    authorEmail: r.author_email ?? null,
     createdAt: r.created_at,
   }));
 }

@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AdminReportRow, ReportStatus } from '@/api/reports';
 import { adminSetReportStatus } from '@/api/reports';
 import { adminSetBenefitStatus } from '@/api/benefits';
+import { banUser } from '@/api/adminUsers';
 import { setQuestionHidden } from '@/api/questions';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
@@ -19,6 +20,7 @@ import { colors, radius, shadows } from '@/constants/theme';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAdminReports, useAdminSetReportStatus } from '@/hooks/useReports';
 import { arNum, arSince } from '@/lib/format';
+import { notify } from '@/lib/notify';
 
 function StatusChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
@@ -68,7 +70,20 @@ function useHideReportedContent() {
       }
       await adminSetReportStatus(row.id, 'reviewed');
     },
-    onSuccess: () => {
+    // Optimistic: the report leaves «مفتوحة» the instant إخفاء is confirmed.
+    onMutate: async (row) => {
+      await qc.cancelQueries({ queryKey: ['admin', 'reports'] });
+      const snapshots = qc.getQueriesData<AdminReportRow[]>({ queryKey: ['admin', 'reports'] });
+      qc.setQueriesData<AdminReportRow[]>({ queryKey: ['admin', 'reports'] }, (rows) =>
+        rows?.map((r) => (r.id === row.id ? { ...r, status: 'reviewed' as ReportStatus } : r)),
+      );
+      return { snapshots };
+    },
+    onError: (e, _row, ctx) => {
+      for (const [key, data] of ctx?.snapshots ?? []) qc.setQueryData(key, data);
+      notify('تعذّر إخفاء المحتوى', (e as Error).message);
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.reports() });
       void qc.invalidateQueries({ queryKey: ['questions'] });
       void qc.invalidateQueries({ queryKey: ['benefits'] });
@@ -77,13 +92,28 @@ function useHideReportedContent() {
   });
 }
 
+/** Direct ban of the reported content's author, from the report card itself. */
+function useBanReportedAuthor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => banUser(userId),
+    onSuccess: () => {
+      notify('تم الحظر', 'حُظر الحساب وسُجّل خروجه من جميع الأجهزة.');
+      void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+    onError: (e) => notify('تعذّر الحظر', (e as Error).message),
+  });
+}
+
 export default function ReportsScreen() {
   const [status, setStatus] = useState<ReportStatus | 'all'>('open');
   const { data: reports, isLoading } = useAdminReports(status === 'all' ? undefined : status);
   const setReportStatus = useAdminSetReportStatus();
   const hideContent = useHideReportedContent();
+  const banAuthor = useBanReportedAuthor();
   const [pendingHide, setPendingHide] = useState<AdminReportRow | null>(null);
   const [pendingDismiss, setPendingDismiss] = useState<AdminReportRow | null>(null);
+  const [pendingBan, setPendingBan] = useState<AdminReportRow | null>(null);
 
   return (
     <AdminShell active="reports" breadcrumb="البلاغات">
@@ -135,6 +165,18 @@ export default function ReportsScreen() {
                     {arSince(r.createdAt)}
                   </Txt>
                 </View>
+                {/* Author of the reported content — admin-only surface */}
+                <View style={styles.authorRow}>
+                  <Feather name="edit-3" size={12} color={colors.textGhost} />
+                  <Txt size={12} weight="medium" color={colors.textSlate} numberOfLines={1}>
+                    الكاتب: {r.authorName ?? 'غير معروف (ربما حُذف المحتوى)'}
+                  </Txt>
+                  {r.authorEmail ? (
+                    <Txt size={11.5} color={colors.textGhost} numberOfLines={1} style={{ flexShrink: 1 }}>
+                      {r.authorEmail}
+                    </Txt>
+                  ) : null}
+                </View>
                 <Txt size={14} color={colors.textInk} style={{ marginTop: 8, lineHeight: 23 }} numberOfLines={4}>
                   {r.contentBody ?? '(تم حذف المحتوى الأصلي)'}
                 </Txt>
@@ -158,6 +200,9 @@ export default function ReportsScreen() {
                 {r.status === 'open' ? (
                   <View style={styles.actionsRow}>
                     <ActionBtn icon="eye-off" label="إخفاء المحتوى" color={colors.stateDanger} onPress={() => setPendingHide(r)} />
+                    {r.authorId ? (
+                      <ActionBtn icon="slash" label="حظر الكاتب" color={colors.stateDanger} onPress={() => setPendingBan(r)} />
+                    ) : null}
                     <ActionBtn icon="x-circle" label="تجاهل البلاغ" color={colors.textMuted} onPress={() => setPendingDismiss(r)} />
                   </View>
                 ) : null}
@@ -182,6 +227,18 @@ export default function ReportsScreen() {
           hideContent.mutate(pendingHide, { onSettled: () => setPendingHide(null) });
         }}
         onCancel={() => setPendingHide(null)}
+      />
+      <ConfirmDialog
+        visible={!!pendingBan}
+        title="حظر الكاتب"
+        message={`سيُحظر «${pendingBan?.authorName ?? ''}» من الدخول نهائياً ويُسجَّل خروجه فوراً (يمكن رفع الحظر من إدارة المستخدمين).`}
+        confirmLabel="حظر"
+        pending={banAuthor.isPending}
+        onConfirm={() => {
+          if (!pendingBan?.authorId) return;
+          banAuthor.mutate(pendingBan.authorId, { onSettled: () => setPendingBan(null) });
+        }}
+        onCancel={() => setPendingBan(null)}
       />
       <ConfirmDialog
         visible={!!pendingDismiss}
@@ -215,6 +272,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 9,
     borderRadius: radius.pill, backgroundColor: 'rgba(44,97,87,0.08)',
   } as ViewStyle,
+  authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 } as ViewStyle,
   reasonBox: {
     marginTop: 10, padding: 10, borderRadius: radius.sm, backgroundColor: colors.bgSandRaised,
     borderWidth: 1, borderColor: colors.borderSand,

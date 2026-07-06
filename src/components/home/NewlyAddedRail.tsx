@@ -6,13 +6,8 @@ import { colors, radius, spacing } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
 import { SectionTitle, Txt } from '@/components/ui';
 
-/** Cover tints matching the design reference — cycled by index. */
-const COVER_TINTS = [
-  { from: '#2c5a50', to: '#1a3f38' },
-  { from: '#7a5e34', to: '#5c4527' },
-  { from: '#3a4a55', to: '#26333b' },
-  { from: '#5a4a6a', to: '#3b3048' },
-];
+/** Single cover tint used for all cards — matches the navbar's active gold accent. */
+const COVER_TINTS = [{ from: '#786422', to: '#786422' }];
 
 type Props = {
   lectures: LectureCard[];

@@ -14,8 +14,8 @@ type Props = {
 
 /**
  * "الأقسام العِلمية" — 2-column grid of section cards.
- * Each card shows a topic icon (matched to the section title, no tile/box),
- * the section title, and an Arabic lecture count.
+ * Each card stacks a topic icon, then the section title, then an Arabic
+ * lecture count — each on its own line, matching the sub-sections cards.
  * Tapping navigates to `/section/[id]`.
  */
 export function SectionsGrid({ sections }: Props) {
@@ -76,45 +76,40 @@ function SectionGridCard({
       <Card
         padded={false}
         style={{
-          padding: 16,
-          paddingBottom: 14,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
+          padding: 15,
         }}
       >
         {/* Topic icon — no surrounding tile */}
         <View
           style={{
-            width: 42,
-            height: 42,
+            width: 38,
+            height: 38,
             alignItems: 'center',
             justifyContent: 'center',
-            flexShrink: 0,
           }}
         >
-          <SectionIcon title={section.title} size={28} color={colors.primaryTeal} />
+          <SectionIcon title={section.title} size={25} color={colors.primaryTeal} />
         </View>
 
-        {/* Text */}
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Txt
-            weight="semibold"
-            size={14}
-            color={colors.textInk}
-            numberOfLines={1}
-          >
-            {section.title}
-          </Txt>
-          <Txt
-            size={11}
-            color={colors.textGhost}
-            style={{ marginTop: 2 }}
-            numberOfLines={1}
-          >
-            {arLectureCount(section.lectureCount)}
-          </Txt>
-        </View>
+        {/* Section title — own line, room to wrap */}
+        <Txt
+          weight="semibold"
+          size={14}
+          color={colors.textInk}
+          style={{ marginTop: 12, lineHeight: 19 }}
+          numberOfLines={2}
+        >
+          {section.title}
+        </Txt>
+
+        {/* Lecture count */}
+        <Txt
+          size={11}
+          color={colors.textGhost}
+          style={{ marginTop: 4 }}
+        >
+          {arLectureCount(section.lectureCount)}
+        </Txt>
       </Card>
     </Pressable>
   );
