@@ -1,12 +1,16 @@
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Modal, Pressable, TextInput, View } from 'react-native';
 
 import type { Gender } from '@/api/types';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { GenderPills } from '@/components/ui/GenderPills';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useRegister } from '@/hooks/useAuth';
+
+const OATH_TEXT =
+  'بمجرد إنشاء الحساب، سيتم اعتماد البيانات التي أدخلتها (الاسم والجنس) بشكل نهائي ولا يمكن تعديلها لاحقًا. بالمتابعة، أنت تُقسم بالله أن ما أدخلته صحيح وأنك مسؤول عن ذلك أمام الله.';
 
 /**
  * Register — إنشاء حساب (Task 2).
@@ -24,6 +28,8 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [gender, setGender] = useState<Gender | null>(null);
   const [genderError, setGenderError] = useState(false);
+  const [oathVisible, setOathVisible] = useState(false);
+  const [oathChecked, setOathChecked] = useState(false);
   const register = useRegister();
 
   const trimmedName = name.trim();
@@ -37,6 +43,13 @@ export default function RegisterScreen() {
       setGenderError(true);
       return;
     }
+    setOathChecked(false);
+    setOathVisible(true);
+  };
+
+  const onConfirmOath = () => {
+    if (!oathChecked || !gender) return;
+    setOathVisible(false);
     register.mutate(
       { name: trimmedName, email: trimmedEmail, password, gender },
       // Land on the profile so the new name/identity is confirmed — coherent from
@@ -45,7 +58,13 @@ export default function RegisterScreen() {
     );
   };
 
+  const onCancelOath = () => {
+    setOathVisible(false);
+    setOathChecked(false);
+  };
+
   return (
+    <>
     <Screen scroll contentStyle={{ justifyContent: 'center', flexGrow: 1 }}>
       {/* Brand */}
       <View style={{ alignItems: 'center', marginBottom: 24 }}>
@@ -150,6 +169,78 @@ export default function RegisterScreen() {
         </Txt>
       </Pressable>
     </Screen>
+
+    <Modal visible={oathVisible} transparent animationType="slide" onRequestClose={() => {}}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}>
+        <View
+          style={{
+            backgroundColor: colors.bgSandRaised,
+            borderTopLeftRadius: radius.artwork,
+            borderTopRightRadius: radius.artwork,
+            paddingHorizontal: 22,
+            paddingTop: 22,
+            paddingBottom: 28,
+            gap: 16,
+          }}
+        >
+          <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
+            تأكيد البيانات
+          </Txt>
+          <Txt size={13.5} color={colors.textMuted} align="right" style={{ lineHeight: 23 }}>
+            {OATH_TEXT}
+          </Txt>
+
+          <Pressable
+            onPress={() => setOathChecked((c) => !c)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}
+          >
+            <View
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 5,
+                borderWidth: 1.5,
+                borderColor: oathChecked ? colors.primaryTeal : colors.borderSand2,
+                backgroundColor: oathChecked ? colors.primaryTeal : colors.surfaceWhite,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {oathChecked ? <Feather name="check" size={14} color={colors.onTealPrimary} /> : null}
+            </View>
+            <Txt size={13} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
+              أقسم بالله أن هذه البيانات صحيحة
+            </Txt>
+          </Pressable>
+
+          <Pressable
+            onPress={onConfirmOath}
+            disabled={!oathChecked || register.isPending}
+            style={[
+              {
+                backgroundColor: colors.primaryTeal,
+                borderRadius: radius.input,
+                paddingVertical: 14,
+                alignItems: 'center',
+                opacity: !oathChecked || register.isPending ? 0.5 : 1,
+              },
+              shadows.button,
+            ]}
+          >
+            <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
+              {register.isPending ? 'جارٍ التسجيل…' : 'متابعة'}
+            </Txt>
+          </Pressable>
+
+          <Pressable onPress={onCancelOath} style={{ alignItems: 'center', paddingVertical: 4 }}>
+            <Txt size={13} weight="semibold" color={colors.textMuted}>
+              رجوع
+            </Txt>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 

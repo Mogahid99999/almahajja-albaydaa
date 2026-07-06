@@ -78,10 +78,43 @@ export async function getSupportContact(): Promise<{ whatsappUrl: string }> {
   }
 }
 
+/** Q&A notice keys (V12 · Item 7). */
+const QNA_KEYS = ['qna_notice_text'];
+const QNA_NOTICE_FALLBACK =
+  'سيتم الإجابة عن جميع الأسئلة بإذن الله من قِبل الشيخ خلال فترة قصيرة';
+
+/**
+ * Small notice shown above the Q&A boards ("answers may take a little
+ * while"). Falls back to the original copy so the page never looks broken.
+ */
+export async function getQnaNotice(): Promise<{ text: string }> {
+  if (USE_MOCK) return { text: QNA_NOTICE_FALLBACK };
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('key, value')
+      .in('key', QNA_KEYS);
+    if (error || !data) return { text: QNA_NOTICE_FALLBACK };
+    const m = new Map(data.map((r) => [r.key, r.value]));
+    return { text: m.get('qna_notice_text') || QNA_NOTICE_FALLBACK };
+  } catch {
+    return { text: QNA_NOTICE_FALLBACK };
+  }
+}
+
 /** All config keys the admin Settings screen edits (About + Telegram + V4 gate). */
 export type AppConfigMap = Record<string, string>;
 
-const SETTINGS_KEYS = [...ABOUT_KEYS, ...SUPPORT_KEYS, 'min_app_version', 'app_download_url'];
+const SETTINGS_KEYS = [
+  ...ABOUT_KEYS,
+  ...SUPPORT_KEYS,
+  ...QNA_KEYS,
+  'min_app_version',
+  'app_download_url',
+  'latest_app_version',
+  'latest_released_at',
+  'admin_notify_email',
+];
 
 export async function getAppConfigForAdmin(): Promise<AppConfigMap> {
   if (USE_MOCK) return {};

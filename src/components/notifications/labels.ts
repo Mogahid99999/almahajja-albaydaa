@@ -25,6 +25,7 @@ export const notificationTypeLabel: Record<NotificationType, string> = {
   buddy_request: 'دعوة رفيق دراسة',
   question_received: 'سؤال جديد (لحساب الشيخ)',
   question_answered: 'الجواب عن سؤالك',
+  content_reported: 'بلاغ جديد (لحساب الإدارة)',
 };
 
 /** One-line explanation shown under each toggle. */
@@ -44,6 +45,7 @@ export const notificationTypeDescription: Record<NotificationType, string> = {
   buddy_request: 'عند دعوتك لرفقة طلب العلم أو قبول دعوتك',
   question_received: 'عند وصول سؤال جديد من طالب علم',
   question_answered: 'عند إجابة الشيخ عن سؤالك',
+  content_reported: 'عند إبلاغ أحد الدارسين عن محتوى بحاجة مراجعة',
 };
 
 /** Calm Feather icon per type (rhombus-framed in the row). */
@@ -63,6 +65,7 @@ export const notificationTypeIcon: Record<NotificationType, FeatherName> = {
   buddy_request: 'mail',
   question_received: 'help-circle',
   question_answered: 'message-circle',
+  content_reported: 'flag',
 };
 
 /**

@@ -7,75 +7,114 @@
  */
 import { Feather } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Image, Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
 
-import type { SheikhOption } from '@/api/types';
+import type { SheikhProfile } from '@/api/sheikhs';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { Card, Divider, Rhombus, Txt } from '@/components/ui';
+import { Card, Divider, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useCreateSheikh,
   useCreateSheikhAccount,
   useDeleteSheikh,
-  useSheikhs,
+  useSheikhProfiles,
   useUpdateSheikh,
+  useUpdateSheikhBio,
+  useUploadSheikhPhoto,
 } from '@/hooks/useAdmin';
+import { getDocumentAsync } from '@/lib/documentPicker';
 import { arNum } from '@/lib/format';
 
 function SheikhRow({
   sheikh,
   onRename,
+  onSaveBio,
   onDelete,
+  onPhotoPick,
   renamePending,
+  bioPending,
+  photoPending,
 }: {
-  sheikh: SheikhOption;
+  sheikh: SheikhProfile;
   onRename: (name: string) => void;
+  onSaveBio: (bio: string) => void;
   onDelete: () => void;
+  onPhotoPick: () => void;
   renamePending: boolean;
+  bioPending: boolean;
+  photoPending: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(sheikh.name);
+  const [bio, setBio] = useState(sheikh.bio ?? '');
 
   function save() {
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === sheikh.name) {
-      setEditing(false);
-      setName(sheikh.name);
-      return;
-    }
-    onRename(trimmed);
+    const trimmedName = name.trim();
+    if (trimmedName && trimmedName !== sheikh.name) onRename(trimmedName);
+    const trimmedBio = bio.trim();
+    if (trimmedBio !== (sheikh.bio ?? '')) onSaveBio(trimmedBio);
     setEditing(false);
   }
 
   return (
     <View style={styles.row}>
-      <View style={styles.bullet}>
-        <Rhombus size={8} color={colors.accentBrass} filled={false} />
-      </View>
+      <Pressable
+        onPress={onPhotoPick}
+        disabled={photoPending}
+        accessibilityLabel="تغيير صورة الشيخ"
+        style={[styles.avatar, photoPending && { opacity: 0.6 }]}
+      >
+        {sheikh.photoUrl ? (
+          <Image source={{ uri: sheikh.photoUrl }} style={styles.avatarImg} />
+        ) : (
+          <Feather name="user" size={18} color={colors.textGhost} />
+        )}
+        <View style={styles.avatarBadge}>
+          <Feather name="camera" size={9} color={colors.onTealPrimary} />
+        </View>
+      </Pressable>
 
-      {editing ? (
-        <TextInput
-          value={name}
-          onChangeText={setName}
-          textAlign="right"
-          autoFocus
-          onSubmitEditing={save}
-          placeholder="اسم الشيخ..."
-          placeholderTextColor={colors.textGhost}
-          style={[styles.input, { flex: 1 }]}
-        />
-      ) : (
-        <Txt size={14} weight="medium" color={colors.textInk} style={{ flex: 1 }} numberOfLines={1}>
-          {sheikh.name}
-        </Txt>
-      )}
+      <View style={{ flex: 1 }}>
+        {editing ? (
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            textAlign="right"
+            autoFocus
+            placeholder="اسم الشيخ..."
+            placeholderTextColor={colors.textGhost}
+            style={styles.input}
+          />
+        ) : (
+          <Txt size={14} weight="medium" color={colors.textInk} numberOfLines={1}>
+            {sheikh.name}
+          </Txt>
+        )}
+
+        {editing ? (
+          <TextInput
+            value={bio}
+            onChangeText={setBio}
+            textAlign="right"
+            multiline
+            numberOfLines={3}
+            placeholder="نبذة عن الشيخ..."
+            placeholderTextColor={colors.textGhost}
+            style={[styles.input, styles.bioInput]}
+          />
+        ) : sheikh.bio ? (
+          <Txt size={12} color={colors.textMuted} numberOfLines={2} style={{ marginTop: 4 }}>
+            {sheikh.bio}
+          </Txt>
+        ) : null}
+      </View>
 
       <View style={styles.actions}>
         {editing ? (
           <Pressable
             onPress={save}
-            disabled={renamePending}
+            disabled={renamePending || bioPending}
             accessibilityLabel="حفظ"
             style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
           >
@@ -84,7 +123,7 @@ function SheikhRow({
         ) : (
           <Pressable
             onPress={() => setEditing(true)}
-            accessibilityLabel="إعادة تسمية"
+            accessibilityLabel="تعديل"
             style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
           >
             <Feather name="edit-2" size={15} color={colors.primaryTeal} />
@@ -201,15 +240,33 @@ function SheikhAccountCard() {
 }
 
 export default function SheikhsScreen() {
-  const { data: sheikhs = [], isLoading } = useSheikhs();
+  const { data: sheikhs = [], isLoading } = useSheikhProfiles();
   const createSheikh = useCreateSheikh();
   const updateSheikh = useUpdateSheikh();
+  const updateSheikhBio = useUpdateSheikhBio();
+  const uploadSheikhPhoto = useUploadSheikhPhoto();
   const deleteSheikh = useDeleteSheikh();
 
   const [newName, setNewName] = useState('');
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState('');
-  const [pendingDelete, setPendingDelete] = useState<SheikhOption | null>(null);
+  const [photoError, setPhotoError] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<SheikhProfile | null>(null);
+
+  async function pickAndUploadPhoto(sheikhId: string) {
+    setPhotoError('');
+    try {
+      const res = await getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true, multiple: false });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      uploadSheikhPhoto.mutate(
+        { sheikhId, file: { uri: asset.uri, name: asset.name, mimeType: asset.mimeType } },
+        { onError: () => setPhotoError('تعذّر رفع الصورة.') },
+      );
+    } catch {
+      setPhotoError('تعذّر اختيار الصورة.');
+    }
+  }
 
   function handleAdd() {
     const trimmed = newName.trim();
@@ -291,13 +348,22 @@ export default function SheikhsScreen() {
               <SheikhRow
                 sheikh={s}
                 renamePending={updateSheikh.isPending}
+                bioPending={updateSheikhBio.isPending}
+                photoPending={uploadSheikhPhoto.isPending}
                 onRename={(name) => updateSheikh.mutate({ id: s.id, name })}
+                onSaveBio={(bio) => updateSheikhBio.mutate({ id: s.id, bio })}
+                onPhotoPick={() => pickAndUploadPhoto(s.id)}
                 onDelete={() => setPendingDelete(s)}
               />
             </React.Fragment>
           ))}
         </Card>
       )}
+      {photoError ? (
+        <Txt size={12} color={colors.stateDanger} style={{ marginTop: 8 }}>
+          {photoError}
+        </Txt>
+      ) : null}
 
       <ConfirmDialog
         visible={!!pendingDelete}
@@ -379,6 +445,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   } as ViewStyle,
+
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.bgSand,
+    borderWidth: 1,
+    borderColor: colors.borderSand2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  } as ViewStyle,
+
+  avatarImg: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+
+  avatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    left: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primaryTeal,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.surfaceWhite,
+  } as ViewStyle,
+
+  bioInput: {
+    marginTop: 6,
+    minHeight: 60,
+    paddingTop: 10,
+    textAlignVertical: 'top',
+  },
 
   actions: {
     flexDirection: 'row',

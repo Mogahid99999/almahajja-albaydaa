@@ -44,11 +44,16 @@ export type CurrentUser = {
  * these two columns). Best-effort — an auth update must never fail on it; the
  * next profile save retries the sync.
  */
-async function syncOwnProfile(fields: { gender?: Gender; displayName?: string }): Promise<void> {
+async function syncOwnProfile(fields: {
+  gender?: Gender;
+  displayName?: string;
+  oathAccepted?: boolean;
+}): Promise<void> {
   try {
     await supabase.rpc('set_own_profile', {
       ...(fields.gender ? { p_gender: fields.gender } : {}),
       ...(fields.displayName ? { p_display_name: fields.displayName } : {}),
+      ...(fields.oathAccepted ? { p_oath_accepted: true } : {}),
     });
   } catch {
     // Non-fatal.
@@ -279,7 +284,7 @@ export async function register(
   // This uid is no longer a guest — restoring its stored tokens after a
   // sign-out would silently log back into the registered account.
   await clearStoredGuestSession();
-  await syncOwnProfile({ gender, displayName: display });
+  await syncOwnProfile({ gender, displayName: display, oathAccepted: true });
   const u = data.user;
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {

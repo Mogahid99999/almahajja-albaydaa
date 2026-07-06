@@ -15,7 +15,7 @@ import type { AppLectureStatus } from '@/config';
 import { supabase } from '@/lib/supabase';
 import { env } from '@/lib/env';
 import * as mock from '@/mock/api';
-import type { AdminLectureRow, SectionEditData, UnclassifiedItem } from './types';
+import type { AdminLectureRow, SectionEditData, SectionVisibility, UnclassifiedItem } from './types';
 
 export type { AdminLectureRow, SectionEditData, UnclassifiedItem } from './types';
 
@@ -288,9 +288,8 @@ export async function deleteLecture(id: string): Promise<void> {
  */
 export async function getSectionsEditData(): Promise<SectionEditData[]> {
   if (USE_MOCK) return mock.getSectionsEditData();
-  const { data, error } = await supabase
-    .from('sections')
-    .select('id, title, description, order, show_header, parent_id');
+  const { data, error } = await supabase.from('sections')
+    .select('id, title, description, order, show_header, parent_id, visibility');
   if (error) throw error;
   return (data ?? []).map((s) => ({
     id: s.id,
@@ -299,6 +298,7 @@ export async function getSectionsEditData(): Promise<SectionEditData[]> {
     parentId: s.parent_id ?? null,
     order: s.order,
     showHeader: s.show_header,
+    visibility: s.visibility as SectionVisibility,
   }));
 }
 
@@ -309,6 +309,7 @@ export async function createSection(input: {
   description?: string | null;
   coverLetter?: string;
   showHeader?: boolean;
+  visibility?: SectionVisibility;
 }): Promise<{ id: string }> {
   if (USE_MOCK) return mock.createSection(input);
   // Derive cover_letter: first char of title after stripping leading ال
@@ -316,14 +317,14 @@ export async function createSection(input: {
     input.title.replace(/^ال/, '')[0] ||
     input.title[0] ||
     '';
-  const { data, error } = await supabase
-    .from('sections')
+  const { data, error } = await supabase.from('sections')
     .insert({
       title: input.title,
       parent_id: input.parentId,
       description: input.description ?? null,
       cover_letter: cl,
       show_header: input.showHeader ?? true,
+      visibility: input.visibility ?? 'all',
     })
     .select('id')
     .single();
@@ -331,7 +332,7 @@ export async function createSection(input: {
   return { id: data.id };
 }
 
-/** Edit a section node (title/description/parent/order/show_header). */
+/** Edit a section node (title/description/parent/order/show_header/visibility). */
 export async function updateSection(
   id: string,
   input: {
@@ -340,6 +341,7 @@ export async function updateSection(
     parentId?: string | null;
     order?: number;
     showHeader?: boolean;
+    visibility?: SectionVisibility;
   },
 ): Promise<void> {
   if (USE_MOCK) return mock.updateSection(id, input);
@@ -349,12 +351,14 @@ export async function updateSection(
     parent_id?: string | null;
     order?: number;
     show_header?: boolean;
+    visibility?: SectionVisibility;
   } = {};
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
   if (input.parentId !== undefined) patch.parent_id = input.parentId;
   if (input.order !== undefined) patch.order = input.order;
   if (input.showHeader !== undefined) patch.show_header = input.showHeader;
+  if (input.visibility !== undefined) patch.visibility = input.visibility;
   const { error } = await supabase.from('sections').update(patch).eq('id', id);
   if (error) throw error;
 }

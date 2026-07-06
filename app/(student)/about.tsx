@@ -113,6 +113,33 @@ export default function AboutScreen() {
         </Txt>
       </Card>
 
+      {/* ── التعريف بالشيخ (Item 8) ──────────────────────────────────────────── */}
+      <Pressable
+        onPress={() => router.push('/(student)/sheikh-info')}
+        accessibilityRole="button"
+        style={({ pressed }) => [
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            height: 52,
+            paddingHorizontal: 16,
+            borderRadius: radius.input,
+            backgroundColor: colors.surfaceWhite,
+            borderWidth: 1,
+            borderColor: colors.borderSand2,
+            marginTop: 20,
+          },
+          pressed && { opacity: 0.8 },
+        ]}
+      >
+        <Feather name="user" size={16} color={colors.primaryTeal} />
+        <Txt size={14} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
+          التعريف بالشيخ
+        </Txt>
+        <Feather name="chevron-left" size={16} color={colors.textGhost} />
+      </Pressable>
+
       {/* ── Telegram live broadcast (only when a channel URL is set) ─────────── */}
       {content.telegramUrl ? (
         <Card style={{ marginTop: 20, gap: 16 }}>

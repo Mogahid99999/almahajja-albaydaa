@@ -10,6 +10,7 @@
  */
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
+import { BlockedWordError, isBlockedWordError } from '@/api/reports';
 
 export type QuestionScope = 'general' | 'lecture';
 export type QuestionAudience = 'public' | 'sheikh';
@@ -114,7 +115,10 @@ export async function askQuestion(input: {
     p_audience: input.audience,
     p_body: input.body,
   });
-  if (error) throw error;
+  if (error) {
+    if (isBlockedWordError(error)) throw new BlockedWordError();
+    throw error;
+  }
   return data as string;
 }
 

@@ -71,6 +71,7 @@ export const queryKeys = {
   lectureNote: (lectureId: string) => ['notes', lectureId] as const,
   lectureBenefits: (lectureId: string) => ['benefits', lectureId] as const,
   adminBenefits: (lectureId?: string) => ['admin', 'benefits', lectureId ?? 'all'] as const,
+  reports: (status?: string) => ['admin', 'reports', status ?? 'all'] as const,
 
   // Beneficial reminders · التذكيرات النافعة (V7)
   adminBroadcasts: ['admin', 'broadcasts'] as const,
@@ -84,5 +85,6 @@ export const queryKeys = {
   adminUserDetail: (userId: string) => ['admin', 'user', userId] as const,
   aboutContent: ['appContent', 'about'] as const,
   supportContact: ['appContent', 'support'] as const,
+  qnaNotice: ['appContent', 'qnaNotice'] as const,
   adminConfig: ['admin', 'config'] as const,
 } as const;

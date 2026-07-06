@@ -122,7 +122,6 @@ export default function SectionScreen() {
           title={section.title}
           description={section.description}
           showHeader={section.showHeader}
-          coverLetter={section.coverLetter}
         />
       </View>
 

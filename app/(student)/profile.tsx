@@ -14,6 +14,8 @@ import { useRouter, Link } from 'expo-router';
 
 import { useCurrentUser, useSignOut } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { useHome } from '@/hooks/useSections';
+import { useTourStore } from '@/stores/tourStore';
 import { colors, radius, shadows } from '@/constants/theme';
 
 import { Card } from '@/components/ui/Card';
@@ -82,6 +84,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const signOut = useSignOut();
+  const { data: home } = useHome();
+  const startTour = useTourStore((s) => s.start);
 
   const miniPad = useMiniPlayerPad();
   const isGuest = user?.isGuest ?? true;
@@ -232,6 +236,26 @@ export default function ProfileScreen() {
           label="عن المنصة"
           onPress={() => router.push('/(student)/about')}
         />
+        {!isGuest ? (
+          <>
+            <Divider />
+            <LinkRow
+              icon="navigation"
+              label="إعادة عرض الجولة التعريفية"
+              onPress={() => {
+                startTour({
+                  sectionId: home?.sections[0]?.id ?? null,
+                  lectureId:
+                    home?.continueListening?.id ??
+                    home?.newlyAdded[0]?.id ??
+                    home?.featured[0]?.id ??
+                    null,
+                });
+                router.replace('/');
+              }}
+            />
+          </>
+        ) : null}
       </Card>
 
       {/* ── Playback settings (auto-advance) ─────────────────────────────────── */}

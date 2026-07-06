@@ -22,6 +22,7 @@ import {
 
 import type { MyQuestion, PublicQuestion, QuestionAudience, QuestionScope } from '@/api/questions';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { ReportSheet } from '@/components/reports/ReportSheet';
 import { Card, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -31,6 +32,7 @@ import {
   useMyQuestions,
   usePublicQuestions,
 } from '@/hooks/useQuestions';
+import { useReportContent } from '@/hooks/useReports';
 import { arSince } from '@/lib/format';
 
 function SegChip({
@@ -236,7 +238,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
   );
 }
 
-function PublicQuestionCard({ q }: { q: PublicQuestion }) {
+function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () => void }) {
   return (
     <Card style={styles.qCard}>
       <View style={styles.qMetaRow}>
@@ -247,6 +249,14 @@ function PublicQuestionCard({ q }: { q: PublicQuestion }) {
         <Txt size={11.5} color={colors.textGhost}>
           {arSince(q.createdAt)}
         </Txt>
+        <Pressable
+          onPress={onReport}
+          accessibilityLabel="الإبلاغ عن هذا السؤال"
+          hitSlop={6}
+          style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Feather name="flag" size={14} color={colors.textGhost} />
+        </Pressable>
       </View>
       <Txt size={14.5} weight="medium" color={colors.textInk} style={styles.qBody}>
         {q.body}
@@ -268,7 +278,15 @@ function PublicQuestionCard({ q }: { q: PublicQuestion }) {
   );
 }
 
-function MyQuestionCard({ q, onDelete }: { q: MyQuestion; onDelete: () => void }) {
+function MyQuestionCard({
+  q,
+  onDelete,
+  onReport,
+}: {
+  q: MyQuestion;
+  onDelete: () => void;
+  onReport: () => void;
+}) {
   const pending = q.status === 'pending';
   return (
     <Card style={styles.qCard}>
@@ -311,6 +329,14 @@ function MyQuestionCard({ q, onDelete }: { q: MyQuestion; onDelete: () => void }
         <Txt size={11.5} color={colors.textGhost}>
           {arSince(q.createdAt)}
         </Txt>
+        <Pressable
+          onPress={onReport}
+          accessibilityLabel="الإبلاغ عن هذا السؤال"
+          hitSlop={6}
+          style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Feather name="flag" size={14} color={colors.textGhost} />
+        </Pressable>
         <Pressable
           onPress={onDelete}
           accessibilityLabel="حذف سؤالي"
@@ -355,6 +381,8 @@ export function QuestionsBoard({
   const [tab, setTab] = useState<'public' | 'mine'>('public');
   const [pendingDelete, setPendingDelete] = useState<MyQuestion | null>(null);
   const deleteOwn = useDeleteOwnQuestion();
+  const [reportTarget, setReportTarget] = useState<PublicQuestion | MyQuestion | null>(null);
+  const reportContent = useReportContent();
 
   const publicQ = usePublicQuestions(scope, lectureId);
   const myQ = useMyQuestions(scope, lectureId, !isGuest);
@@ -366,9 +394,13 @@ export function QuestionsBoard({
   const renderItem = useCallback(
     ({ item }: { item: PublicQuestion | MyQuestion }) =>
       tab === 'public' ? (
-        <PublicQuestionCard q={item as PublicQuestion} />
+        <PublicQuestionCard q={item as PublicQuestion} onReport={() => setReportTarget(item)} />
       ) : (
-        <MyQuestionCard q={item as MyQuestion} onDelete={() => setPendingDelete(item as MyQuestion)} />
+        <MyQuestionCard
+          q={item as MyQuestion}
+          onDelete={() => setPendingDelete(item as MyQuestion)}
+          onReport={() => setReportTarget(item)}
+        />
       ),
     [tab],
   );
@@ -410,6 +442,22 @@ export function QuestionsBoard({
     />
   );
 
+  const reportSheet = (
+    <ReportSheet
+      visible={!!reportTarget}
+      pending={reportContent.isPending}
+      error={reportContent.error instanceof Error ? reportContent.error.message : undefined}
+      onClose={() => setReportTarget(null)}
+      onSubmit={(reason) => {
+        if (!reportTarget) return;
+        reportContent.mutate(
+          { contentType: 'question', contentId: reportTarget.id, reason: reason || undefined },
+          { onSuccess: () => setReportTarget(null) },
+        );
+      }}
+    />
+  );
+
   if (isLoading) {
     return (
       <View style={{ flex: 1 }}>
@@ -418,6 +466,7 @@ export function QuestionsBoard({
           <ActivityIndicator color={colors.primaryTeal} />
         </View>
         {confirmDialog}
+        {reportSheet}
       </View>
     );
   }
@@ -431,7 +480,12 @@ export function QuestionsBoard({
       renderItem={renderItem}
       initialNumToRender={10}
       ListHeaderComponent={header}
-      ListFooterComponent={confirmDialog}
+      ListFooterComponent={
+        <>
+          {confirmDialog}
+          {reportSheet}
+        </>
+      }
       ListEmptyComponent={
         tab === 'public' ? (
           <View style={styles.emptyBox}>

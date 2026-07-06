@@ -6,7 +6,7 @@ import type { SectionCard } from '@/api/types';
 import { colors, radius } from '@/constants/theme';
 import { arLectureCount } from '@/lib/format';
 import { usePrefetchSection } from '@/hooks/useSections';
-import { Card, SectionTitle, Txt } from '@/components/ui';
+import { Card, SectionIcon, SectionTitle, Txt } from '@/components/ui';
 
 type Props = {
   sections: SectionCard[];
@@ -14,7 +14,7 @@ type Props = {
 
 /**
  * "الأقسام العِلمية" — 2-column grid of section cards.
- * Each card shows a 42px letter tile (Amiri cover letter on light green bg),
+ * Each card shows a topic icon (matched to the section title, no tile/box),
  * the section title, and an Arabic lecture count.
  * Tapping navigates to `/section/[id]`.
  */
@@ -83,29 +83,17 @@ function SectionGridCard({
           gap: 12,
         }}
       >
-        {/* Letter tile */}
+        {/* Topic icon — no surrounding tile */}
         <View
           style={{
             width: 42,
             height: 42,
-            borderRadius: 12,
-            backgroundColor: '#eef0e9',
-            borderWidth: 1,
-            borderColor: '#d8e0d4',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
           }}
         >
-          <Txt
-            weight="display"
-            size={21}
-            color={colors.primaryTeal}
-            align="center"
-            centerGlyph
-          >
-            {section.coverLetter}
-          </Txt>
+          <SectionIcon title={section.title} size={28} color={colors.primaryTeal} />
         </View>
 
         {/* Text */}

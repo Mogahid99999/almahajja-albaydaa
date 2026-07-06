@@ -22,6 +22,7 @@ import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/
 import { getResumeTarget, hasResumableLesson } from '@/api/progress';
 import { useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
 import { Logo } from '@/components/ui/Logo';
+import { TourCard } from '@/components/onboarding/TourCard';
 import { UpdateGate } from '@/components/UpdateGate';
 import { colors } from '@/constants/theme';
 import {
@@ -44,7 +45,9 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient, reconcileContentListsAfterHydration } from '@/lib/queryClient';
 import { initConnectivity } from '@/lib/connectivity';
 import { flushOutbox, startOutbox } from '@/lib/outbox';
+import { getMostRecentlyActiveLectureId } from '@/lib/resumeCache';
 import { APP_VERSION } from '@/lib/version';
+import { queryKeys } from '@/constants/queryKeys';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 
 // ── Offline-first query persistence (V10 Feature D) ──────────────────────────
@@ -82,6 +85,27 @@ function shouldDehydrateQuery(query: Query): boolean {
   // answer-key sensitive, volatile).
   if (key[0] === 'quizzes') return key[1] === 'myStats';
   return PERSISTED_QUERY_ROOTS.has(String(key[0]));
+}
+
+/**
+ * Fired once, right after the persisted query cache finishes restoring from
+ * disk — same hook as reconcileContentListsAfterHydration, but also targets
+ * the one thing that set deliberately excludes: the single-lecture playback
+ * cache entry (`queryKeys.lecture`) for whichever lecture was most recently
+ * active per the local resume cache (src/lib/resumeCache.ts). Forces that
+ * entry to be treated as invalidated so the very next `playLecture()` call
+ * re-fetches a fresh signed URL + server position instead of trusting
+ * whatever was serialized to disk right before a possible force-kill (see
+ * queryClient.ts's `'lecture'` exclusion comment). `invalidateQueries` here
+ * only flags staleness — it doesn't itself force a network call for an
+ * inactive (not-yet-mounted) query, so this is safe to run offline too.
+ */
+function onPersistedCacheHydrated() {
+  reconcileContentListsAfterHydration();
+  const lastLectureId = getMostRecentlyActiveLectureId();
+  if (lastLectureId) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.lecture(lastLectureId) });
+  }
 }
 
 // Arabic-first: force RTL across the whole app — even when the phone's language
@@ -449,8 +473,10 @@ export default function RootLayout() {
       // already rendered), reconcile the "admin can add/remove/unpublish"
       // content-list roots (home/section/sections/lectures) against the server in
       // the background — see reconcileContentListsAfterHydration for why this is
-      // scoped instead of a blanket refetch-everything-on-launch.
-      onSuccess={reconcileContentListsAfterHydration}
+      // scoped instead of a blanket refetch-everything-on-launch. Also forces a
+      // targeted invalidation of the last-active lecture's playback cache entry
+      // — see onPersistedCacheHydrated above.
+      onSuccess={onPersistedCacheHydrated}
     >
       <SafeAreaProvider>
         <StatusBar style="dark" />
@@ -458,6 +484,7 @@ export default function RootLayout() {
           <UpdateGate>
             <AuthGate />
             <NotificationsBootstrap />
+            <TourCard />
             <Stack
               screenOptions={{
                 headerShown: false,

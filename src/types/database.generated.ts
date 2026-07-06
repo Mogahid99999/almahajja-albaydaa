@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       app_config: {
@@ -92,6 +117,24 @@ export type Database = {
           },
         ]
       }
+      blocked_words: {
+        Row: {
+          created_at: string
+          id: string
+          word: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          word: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          word?: string
+        }
+        Relationships: []
+      }
       broadcasts: {
         Row: {
           body: string
@@ -152,6 +195,36 @@ export type Database = {
           responded_at?: string | null
           status?: string
           to_user_id?: string
+        }
+        Relationships: []
+      }
+      content_reports: {
+        Row: {
+          content_id: string
+          content_type: string
+          created_at: string
+          id: string
+          reason: string | null
+          reporter_id: string | null
+          status: string
+        }
+        Insert: {
+          content_id: string
+          content_type: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          reporter_id?: string | null
+          status?: string
+        }
+        Update: {
+          content_id?: string
+          content_type?: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          reporter_id?: string | null
+          status?: string
         }
         Relationships: []
       }
@@ -389,6 +462,7 @@ export type Database = {
           display_name: string | null
           gender: string | null
           id: string
+          identity_oath_accepted_at: string | null
           last_opened_at: string | null
           role: Database["public"]["Enums"]["app_role"]
         }
@@ -397,6 +471,7 @@ export type Database = {
           display_name?: string | null
           gender?: string | null
           id: string
+          identity_oath_accepted_at?: string | null
           last_opened_at?: string | null
           role?: Database["public"]["Enums"]["app_role"]
         }
@@ -405,6 +480,7 @@ export type Database = {
           display_name?: string | null
           gender?: string | null
           id?: string
+          identity_oath_accepted_at?: string | null
           last_opened_at?: string | null
           role?: Database["public"]["Enums"]["app_role"]
         }
@@ -723,6 +799,7 @@ export type Database = {
           show_header: boolean
           title: string
           updated_at: string
+          visibility: string
         }
         Insert: {
           cover_image?: string | null
@@ -735,6 +812,7 @@ export type Database = {
           show_header?: boolean
           title: string
           updated_at?: string
+          visibility?: string
         }
         Update: {
           cover_image?: string | null
@@ -747,6 +825,7 @@ export type Database = {
           show_header?: boolean
           title?: string
           updated_at?: string
+          visibility?: string
         }
         Relationships: [
           {
@@ -760,21 +839,27 @@ export type Database = {
       }
       sheikhs: {
         Row: {
+          bio: string | null
           created_at: string
           id: string
           name: string
+          photo_path: string | null
           user_id: string | null
         }
         Insert: {
+          bio?: string | null
           created_at?: string
           id?: string
           name: string
+          photo_path?: string | null
           user_id?: string | null
         }
         Update: {
+          bio?: string | null
           created_at?: string
           id?: string
           name?: string
+          photo_path?: string | null
           user_id?: string | null
         }
         Relationships: []
@@ -926,9 +1011,27 @@ export type Database = {
           status: string
         }[]
       }
+      admin_list_reports: {
+        Args: { p_status?: string }
+        Returns: {
+          content_body: string
+          content_id: string
+          content_type: string
+          created_at: string
+          id: string
+          reason: string
+          reporter_id: string
+          reporter_name: string
+          status: string
+        }[]
+      }
       admin_progress_analytics: { Args: never; Returns: Json }
       admin_set_benefit_status: {
         Args: { p_id: string; p_status: string }
+        Returns: undefined
+      }
+      admin_set_report_status: {
+        Args: { p_report_id: string; p_status: string }
         Returns: undefined
       }
       admin_user_detail: { Args: { p_user_id: string }; Returns: Json }
@@ -978,6 +1081,7 @@ export type Database = {
       }
       buddy_of: { Args: { p_user_id: string }; Returns: string }
       cancel_buddy: { Args: never; Returns: undefined }
+      contains_blocked_word: { Args: { p_text: string }; Returns: boolean }
       create_broadcast: {
         Args: { p_body: string; p_show_on_home?: boolean; p_title: string }
         Returns: string
@@ -1290,6 +1394,14 @@ export type Database = {
         Args: { p_lecture_ids: string[] }
         Returns: undefined
       }
+      report_content: {
+        Args: {
+          p_content_id: string
+          p_content_type: string
+          p_reason?: string
+        }
+        Returns: string
+      }
       respond_buddy_request: {
         Args: { p_accept: boolean; p_request_id: string }
         Returns: undefined
@@ -1322,13 +1434,21 @@ export type Database = {
           id: string
         }[]
       }
+      section_visible_to_viewer: {
+        Args: { p_gender: string; p_section_id: string }
+        Returns: boolean
+      }
       send_buddy_request: { Args: { p_to_user_id: string }; Returns: undefined }
       set_app_config: {
         Args: { p_key: string; p_value: string }
         Returns: undefined
       }
       set_own_profile: {
-        Args: { p_display_name?: string; p_gender?: string }
+        Args: {
+          p_display_name?: string
+          p_gender?: string
+          p_oath_accepted?: boolean
+        }
         Returns: undefined
       }
       set_question_hidden: {
@@ -1379,6 +1499,7 @@ export type Database = {
         | "question_answered"
         | "streak_reminder"
         | "beneficial_reminder"
+        | "content_reported"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1504,6 +1625,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["student", "admin", "publisher", "sheikh"],
@@ -1526,6 +1650,7 @@ export const Constants = {
         "question_answered",
         "streak_reminder",
         "beneficial_reminder",
+        "content_reported",
       ],
     },
   },
