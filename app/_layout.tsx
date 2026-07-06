@@ -479,7 +479,7 @@ export default function RootLayout() {
       onSuccess={onPersistedCacheHydrated}
     >
       <SafeAreaProvider>
-        <StatusBar style="dark" />
+        <StatusBar style="dark" backgroundColor="rgba(0, 0, 0, 0.08)" />
         <SessionGate fontsLoaded={fontsLoaded}>
           <UpdateGate>
             <AuthGate />
