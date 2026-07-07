@@ -1,36 +1,67 @@
-import { View } from 'react-native';
+import { useState } from 'react';
+import { Platform, StatusBar, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors } from '@/constants/theme';
-import { Logo, Txt } from '@/components/ui';
+import { colors, spacing } from '@/constants/theme';
+import { IconButton, Logo, Txt } from '@/components/ui';
+import { FeedbackSheet } from '@/components/feedback/FeedbackSheet';
 
 /**
- * Home screen top bar — logo + app title + subtitle.
+ * Home screen top bar — logo + full app name (with tashkeel) + subtitle, plus
+ * the إرسال ملاحظة entry point on the visual left (2nd child in this RTL row,
+ * see src/components/feedback/FeedbackSheet.tsx). Fixed/sticky: rendered
+ * ABOVE Home's <Screen scroll> (which is passed `topInset={false}` so it
+ * doesn't double-pad), so this owns the safe-area top inset itself and stays
+ * pinned while the page content scrolls beneath it — same pattern as
+ * Telegram/WhatsApp's chat-list header.
+ *
  * The search/notifications/profile icons that used to live here have moved
  * to the bottom nav bar (see src/components/navigation/BottomNavBar.tsx).
  */
 export function HomeHeader() {
+  const insets = useSafeAreaInsets();
+  const topInset =
+    Platform.OS === 'android' ? Math.max(insets.top, StatusBar.currentHeight ?? 0) : insets.top;
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
   return (
     <View
       style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingBottom: 18,
-        paddingTop: 4,
+        backgroundColor: colors.bgSand,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.borderSand,
+        paddingTop: topInset + 6,
+        paddingHorizontal: spacing.screenH,
+        paddingBottom: 8,
       }}
     >
-      {/* Right (RTL start): logo + title block */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-        <Logo size={40} />
-        <View>
-          <Txt weight="display" size={22} color={colors.primaryTeal} style={{ lineHeight: 26 }}>
-            المَحجّة البَيْضَاء
-          </Txt>
-          <Txt size={11} color={colors.textGhost} style={{ marginTop: 3, letterSpacing: 0.2 }}>
-            مجالس الدروس الشرعية
-          </Txt>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* Right (RTL start): logo + title block */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
+          <Logo size={40} />
+          <View>
+            {/* No custom lineHeight: Amiri's tashkeel marks (fatha/shadda/sukun)
+                need more vertical room than a tight override leaves, or Android
+                clips them — let the font's natural line height apply. */}
+            <Txt weight="display" size={22} color={colors.primaryTeal}>
+              المَحجّة البَيْضَاء
+            </Txt>
+            <Txt size={11} color={colors.textGhost} style={{ marginTop: 3, letterSpacing: 0.2 }}>
+              مجالس الدروس الشرعية
+            </Txt>
+          </View>
         </View>
+
+        {/* Left: إرسال ملاحظة */}
+        <IconButton
+          icon="message-circle"
+          variant="ghost"
+          onPress={() => setFeedbackOpen(true)}
+          accessibilityLabel="إرسال ملاحظة"
+        />
       </View>
+
+      <FeedbackSheet visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </View>
   );
 }

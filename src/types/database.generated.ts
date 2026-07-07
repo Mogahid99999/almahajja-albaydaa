@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       app_config: {
@@ -286,6 +261,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      feedback: {
+        Row: {
+          admin_note: string | null
+          category: string
+          created_at: string
+          device_info: Json
+          id: string
+          message: string
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          user_id: string | null
+        }
+        Insert: {
+          admin_note?: string | null
+          category: string
+          created_at?: string
+          device_info?: Json
+          id?: string
+          message: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Update: {
+          admin_note?: string | null
+          category?: string
+          created_at?: string
+          device_info?: Json
+          id?: string
+          message?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       lecture_benefits: {
         Row: {
@@ -997,6 +1011,10 @@ export type Database = {
         Returns: string
       }
       admin_dashboard_stats: { Args: never; Returns: Json }
+      admin_delete_feedback: {
+        Args: { p_feedback_id: string }
+        Returns: undefined
+      }
       admin_list_benefits: {
         Args: { p_lecture_id?: string }
         Returns: {
@@ -1009,6 +1027,21 @@ export type Database = {
           lecture_id: string
           lecture_title: string
           status: string
+        }[]
+      }
+      admin_list_feedback: {
+        Args: { p_status?: string }
+        Returns: {
+          admin_note: string
+          category: string
+          created_at: string
+          device_info: Json
+          id: string
+          message: string
+          resolved_at: string
+          status: string
+          user_id: string
+          user_name: string
         }[]
       }
       admin_list_reports: {
@@ -1032,6 +1065,10 @@ export type Database = {
       admin_reorder_sections: { Args: { p_ids: string[] }; Returns: undefined }
       admin_set_benefit_status: {
         Args: { p_id: string; p_status: string }
+        Returns: undefined
+      }
+      admin_set_feedback_status: {
+        Args: { p_admin_note?: string; p_feedback_id: string; p_status: string }
         Returns: undefined
       }
       admin_set_report_status: {
@@ -1084,6 +1121,7 @@ export type Database = {
         Returns: string
       }
       buddy_of: { Args: { p_user_id: string }; Returns: string }
+      can_read_storage_object: { Args: { p_key: string }; Returns: boolean }
       cancel_buddy: { Args: never; Returns: undefined }
       contains_blocked_word: { Args: { p_text: string }; Returns: boolean }
       create_broadcast: {
@@ -1463,6 +1501,10 @@ export type Database = {
       }
       start_quiz_attempt: { Args: { p_quiz_id: string }; Returns: string }
       streak_for_user: { Args: { p_user_id: string }; Returns: number }
+      submit_feedback: {
+        Args: { p_category: string; p_device_info?: Json; p_message: string }
+        Returns: string
+      }
       submit_quiz_attempt: { Args: { p_attempt_id: string }; Returns: Json }
       touch_last_opened: { Args: never; Returns: undefined }
       try_claim_goal_congrats: { Args: never; Returns: boolean }
@@ -1506,6 +1548,7 @@ export type Database = {
         | "streak_reminder"
         | "beneficial_reminder"
         | "content_reported"
+        | "feedback_received"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1631,9 +1674,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: ["student", "admin", "publisher", "sheikh"],
@@ -1657,6 +1697,7 @@ export const Constants = {
         "streak_reminder",
         "beneficial_reminder",
         "content_reported",
+        "feedback_received",
       ],
     },
   },

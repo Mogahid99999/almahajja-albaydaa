@@ -85,13 +85,11 @@ async function insertRow(token, table, row) {
   return parsed(res);
 }
 
-async function signUrl(token, bucket, path) {
-  const res = await fetch(`${URL}/storage/v1/object/sign/${bucket}/${encodeURIComponent(path)}`, {
-    method: 'POST',
-    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expiresIn: 60 }),
-  });
-  return parsed(res);
+// R2 read-gating (post-Supabase-Storage-migration) is a plain boolean RPC —
+// `denied` here means either the call itself failed, or it returned `false`.
+async function deniedReadObject(token, key) {
+  const r = await rpc(token, 'can_read_storage_object', { p_key: key });
+  return !r.ok || r.body !== true;
 }
 
 async function parsed(res) {
@@ -154,7 +152,7 @@ async function signInAnon() {
 // ---- fixtures ---------------------------------------------------------
 const ts = Date.now();
 const PW = `Ch3ckPw-${ts}`;
-const fixtures = { userIds: [], anonId: null, lectureId: null, objectPath: null };
+const fixtures = { userIds: [], anonId: null, lectureId: null, objectKey: null };
 
 async function setup() {
   const a = await createUser(`sec-check-a-${ts}@example.com`, PW);
@@ -165,16 +163,11 @@ async function setup() {
   const anon = await signInAnon();
   fixtures.anonId = anon.id;
 
-  // A real storage object + a draft lecture referencing it — draft/published
-  // read scoping (S2) can't be tested without a real object in the bucket.
-  const objectPath = `sec-check-${ts}.mp3`;
-  const up = await fetch(`${URL}/storage/v1/object/lectures/${objectPath}`, {
-    method: 'POST',
-    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'audio/mpeg' },
-    body: Buffer.from('sec-check'),
-  });
-  if (!up.ok) throw new Error(`upload fixture object: ${up.status} ${await up.text()}`);
-  fixtures.objectPath = objectPath;
+  // can_read_storage_object only checks DB state (lecture/attachment rows), not
+  // real bytes in R2 — a draft lecture referencing a phantom key is enough to
+  // test draft/published read scoping (S2).
+  const objectKey = `lectures/sec-check-${ts}.mp3`;
+  fixtures.objectKey = objectKey;
 
   const secRes = await fetch(`${URL}/rest/v1/sections?select=id&limit=1`, { headers: svcHeaders });
   const [section] = await secRes.json();
@@ -186,7 +179,7 @@ async function setup() {
     headers: { ...svcHeaders, Prefer: 'return=representation' },
     body: JSON.stringify({
       title: 'sec-check temp (draft)',
-      audio_path: objectPath,
+      audio_path: objectKey,
       section_id: section.id,
       status: 'draft',
     }),
@@ -208,9 +201,6 @@ async function teardown() {
   if (fixtures.lectureId) {
     await fetch(`${URL}/rest/v1/lectures?id=eq.${fixtures.lectureId}`, { method: 'DELETE', headers: svcHeaders });
   }
-  if (fixtures.objectPath) {
-    await fetch(`${URL}/storage/v1/object/lectures/${fixtures.objectPath}`, { method: 'DELETE', headers: svcHeaders });
-  }
   for (const id of fixtures.userIds) await deleteUser(id);
   if (fixtures.anonId) await deleteUser(fixtures.anonId);
 }
@@ -228,7 +218,7 @@ async function run() {
     isDenied(await rpc(noSession, 'get_public_questions', { p_search: null, p_lecture_id: null })),
   );
   record('anon: cannot select lectures', isDenied(await select(noSession, 'lectures', 'select=id&limit=1')));
-  record('anon: cannot read a storage object', isDenied(await signUrl(noSession, 'lectures', fixtures.objectPath)));
+  record('anon: cannot read a storage object', await deniedReadObject(noSession, fixtures.objectKey));
 
   // B) student A
   const lectures = await select(tokA, 'lectures', 'select=id,status');
@@ -251,7 +241,7 @@ async function run() {
     isDenied(await rpc(tokA, 'create_broadcast', { p_title: 'x', p_body: 'x', p_show_on_home: false })),
   );
 
-  record('student: cannot read draft lecture audio', isDenied(await signUrl(tokA, 'lectures', fixtures.objectPath)));
+  record('student: cannot read draft lecture audio', await deniedReadObject(tokA, fixtures.objectKey));
   record('student: cannot write to sections', isDenied(await insertRow(tokA, 'sections', { title: 'sec-check' })));
   record(
     'student: cannot write to lectures',

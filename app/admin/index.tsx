@@ -269,6 +269,8 @@ export default function AdminHome() {
         <Divider />
         <QuickLink title="مساحة الأسئلة" desc="أسئلة الطلاب: أجب أو أخفِ أو احذف أو احظر" href="/admin/questions" icon="help-circle" />
         <Divider />
+        <QuickLink title="ملاحظات الطلاب" desc="بلاغات مشكلات واقتراحات تحسين مع معلومات الجهاز" href="/admin/feedback" icon="message-circle" />
+        <Divider />
         <QuickLink title="إدارة المستخدمين" desc="الحسابات والحالة وكلمات السر" href="/admin/users" icon="user-check" />
       </Card>
 

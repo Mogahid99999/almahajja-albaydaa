@@ -8,13 +8,11 @@
  * app-layer concept (section_id null + status draft).
  */
 
-import { Platform } from 'react-native';
-
 import { USE_MOCK } from '@/config';
 import type { AppLectureStatus } from '@/config';
 import { supabase } from '@/lib/supabase';
-import { env } from '@/lib/env';
 import * as mock from '@/mock/api';
+import { deleteFromR2, uploadToR2 } from './storage';
 import type { AdminLectureRow, SectionEditData, SectionVisibility, UnclassifiedItem } from './types';
 
 export type { AdminLectureRow, SectionEditData, UnclassifiedItem } from './types';
@@ -27,72 +25,12 @@ export type PickedAudio = {
 };
 
 /**
- * Upload a picked audio file into the private `lectures` storage bucket and
- * return its storage path (what `lectures.audio_path` stores). The player mints
- * a signed URL from this path at playback time. Web (the admin surface) returns
- * a blob: uri from the picker; fetch→arrayBuffer works there and on native.
+ * Upload a picked audio file to R2 and return its object key (what
+ * `lectures.audio_path` stores). The player mints a signed URL from this key
+ * at playback time (src/api/lectures.ts → audioUrl).
  */
-/** Map a file extension → audio content-type (so ogg/wav land correctly). */
-const AUDIO_CONTENT_TYPE: Record<string, string> = {
-  mp3: 'audio/mpeg',
-  m4a: 'audio/mp4',
-  mp4: 'audio/mp4',
-  aac: 'audio/aac',
-  ogg: 'audio/ogg',
-  oga: 'audio/ogg',
-  opus: 'audio/ogg',
-  wav: 'audio/wav',
-  webm: 'audio/webm',
-  flac: 'audio/flac',
-};
-
 async function uploadLectureAudio(file: PickedAudio): Promise<string> {
-  const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();
-  const safeBase = file.name.replace(/\.[^.]*$/, '').replace(/[^\w-]/g, '_').slice(0, 40);
-  const path = `${Date.now()}-${safeBase || 'audio'}.${ext}`;
-
-  // Prefer a known type for the extension; the picker's mimeType is sometimes
-  // generic (application/octet-stream) which would break in-browser playback.
-  const contentType =
-    AUDIO_CONTENT_TYPE[ext] ??
-    (file.mimeType && file.mimeType.startsWith('audio/') ? file.mimeType : 'audio/mpeg');
-
-  if (Platform.OS === 'web') {
-    // Web is a blob: uri from the picker; buffering it is fine (already in memory).
-    const bytes = await fetch(file.uri).then((r) => r.arrayBuffer());
-    const { error } = await supabase.storage
-      .from('lectures')
-      .upload(path, bytes, { contentType, upsert: false });
-    if (error) throw error;
-    return path;
-  }
-
-  // Native (Issue 6): STREAM the file straight to Storage's REST endpoint from
-  // disk with the session token, rather than `fetch(uri).arrayBuffer()` (which
-  // buffers a whole long lecture in memory and can OOM). uploadAsync (legacy FS)
-  // streams a multipart-free binary body — the same thing supabase-js posts.
-  const { uploadAsync, FileSystemUploadType } = require('expo-file-system/legacy');
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('انتهت الجلسة — سجّل الدخول من جديد ثم أعد الرفع.');
-  const endpoint = `${env.supabaseUrl}/storage/v1/object/lectures/${encodeURIComponent(path)}`;
-  const res = await uploadAsync(endpoint, file.uri, {
-    httpMethod: 'POST',
-    uploadType: FileSystemUploadType.BINARY_CONTENT,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: env.supabaseAnonKey,
-      'Content-Type': contentType,
-      'x-upsert': 'false',
-      'cache-control': '3600',
-    },
-  });
-  if (res.status !== 200 && res.status !== 201) {
-    throw new Error(`تعذّر رفع ملف الصوت (${res.status}).`);
-  }
-  return path;
+  return uploadToR2('lecture', file);
 }
 
 /** Lectures awaiting classification (manual upload or, later, the bot). */
@@ -277,7 +215,7 @@ export async function deleteLecture(id: string): Promise<void> {
   const { error } = await supabase.from('lectures').delete().eq('id', id);
   if (error) throw error;
   if (row?.audio_path) {
-    await supabase.storage.from('lectures').remove([row.audio_path]);
+    await deleteFromR2(row.audio_path);
   }
 }
 

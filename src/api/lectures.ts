@@ -5,17 +5,14 @@ import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import { resolveAttachmentRows } from './attachments';
+import { getReadUrl } from './storage';
 import type { LectureCard, LecturePlayback, LectureRow } from './types';
 
 export type { LectureCard, LecturePlayback, LectureRow } from './types';
 
 async function audioUrl(path: string | null): Promise<string> {
   if (!path) return '';
-  const { data, error } = await supabase.storage
-    .from('lectures')
-    .createSignedUrl(path, 3600);
-  if (error || !data) return '';
-  return data.signedUrl;
+  return (await getReadUrl(path)) ?? '';
 }
 
 /** Everything the player needs for one lecture (incl. resume position + audio URL). */

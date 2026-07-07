@@ -22,6 +22,7 @@ export function Screen({
   contentStyle,
   refreshing,
   onRefresh,
+  topInset: applyTopInset = true,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -31,13 +32,20 @@ export function Screen({
   contentStyle?: ViewStyle;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** Set false when a fixed header above the Screen already owns the safe-area
+   * top inset (e.g. Home's sticky header) — skips the status-bar padding/scrim
+   * so content doesn't get double-spaced under it. */
+  topInset?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   // On Android, insets.top can briefly read 0 on first paint before the safe-area
   // measurement lands — StatusBar.currentHeight is a synchronous native constant,
   // so use it as a floor to avoid a one-frame flash of content under the status bar.
-  const topInset =
-    Platform.OS === 'android' ? Math.max(insets.top, StatusBar.currentHeight ?? 0) : insets.top;
+  const topInset = applyTopInset
+    ? Platform.OS === 'android'
+      ? Math.max(insets.top, StatusBar.currentHeight ?? 0)
+      : insets.top
+    : 0;
   const padding: ViewStyle = {
     paddingTop: topInset + 8,
     paddingHorizontal: padded ? spacing.screenH : 0,
@@ -69,13 +77,15 @@ export function Screen({
     return (
       <View style={[{ flex: 1, backgroundColor: background }, contentStyle]}>
         {/* Semi-transparent status bar scrim to fog any overlapping content */}
-        <View
-          style={{
-            height: topInset + 8,
-            backgroundColor: 'rgba(0, 0, 0, 0.15)',
-            zIndex: 100,
-          }}
-        />
+        {applyTopInset ? (
+          <View
+            style={{
+              height: topInset + 8,
+              backgroundColor: 'rgba(0, 0, 0, 0.15)',
+              zIndex: 100,
+            }}
+          />
+        ) : null}
         <View
           style={[
             { flex: 1, paddingHorizontal: padded ? spacing.screenH : 0, paddingBottom: bottomPad + insets.bottom },
@@ -110,14 +120,16 @@ export function Screen({
         }
       >
         {/* Semi-transparent status bar scrim to fog any overlapping content */}
-        <View
-          style={{
-            height: topInset + 8,
-            backgroundColor: 'rgba(0, 0, 0, 0.15)',
-            zIndex: 100,
-            marginHorizontal: padded ? -spacing.screenH : 0,
-          }}
-        />
+        {applyTopInset ? (
+          <View
+            style={{
+              height: topInset + 8,
+              backgroundColor: 'rgba(0, 0, 0, 0.15)',
+              zIndex: 100,
+              marginHorizontal: padded ? -spacing.screenH : 0,
+            }}
+          />
+        ) : null}
         {children}
       </ScrollView>
       {iosStatusBarScrim}

@@ -10,6 +10,7 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
+import { deleteFromR2, getReadUrl, uploadToR2 } from './storage';
 import type { Attachment, AttachmentOwnerRef, CreateAttachmentInput } from './types';
 
 export type {
@@ -38,34 +39,18 @@ export type PickedAttachmentFile = {
 };
 
 /**
- * Upload a picked file into the private `attachments` storage bucket and return
- * its storage path (what `attachments.storage_path` stores). Read paths mint a
- * signed URL from this path. Web (the admin surface) returns a blob: uri from
- * the picker; fetch→arrayBuffer works there and on native. Mirrors
- * `uploadLectureAudio` in admin.ts.
+ * Upload a picked file to R2 and return its object key (what
+ * `attachments.storage_path` stores). Read paths mint a signed URL from this
+ * key (see `signedUrl` below). Mirrors `uploadLectureAudio` in admin.ts.
  */
 export async function uploadAttachmentFile(file: PickedAttachmentFile): Promise<string> {
   if (USE_MOCK) return mock.uploadAttachmentFile(file);
-  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-  const safeBase = file.name.replace(/\.[^.]*$/, '').replace(/[^\w-]/g, '_').slice(0, 40);
-  const path = `${Date.now()}-${safeBase || 'file'}.${ext}`;
-  const bytes = await fetch(file.uri).then((r) => r.arrayBuffer());
-  const { error } = await supabase.storage
-    .from('attachments')
-    .upload(path, bytes, {
-      contentType: file.mimeType ?? 'application/octet-stream',
-      upsert: false,
-    });
-  if (error) throw error;
-  return path;
+  return uploadToR2('attachment', file);
 }
 
 /** Resolve storage_path → signed URL (60 min TTL). Used by all read paths. */
 async function signedUrl(path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage
-    .from('attachments')
-    .createSignedUrl(path, 3600);
-  return error || !data ? null : data.signedUrl;
+  return getReadUrl(path);
 }
 
 /** Shared row → Attachment mapper used by sections.ts and lectures.ts. */
@@ -182,7 +167,7 @@ export async function deleteAttachment(id: string): Promise<void> {
   const { error } = await supabase.from('attachments').delete().eq('id', id);
   if (error) throw error;
   if (att?.storage_path) {
-    await supabase.storage.from('attachments').remove([att.storage_path]);
+    await deleteFromR2(att.storage_path);
   }
 }
 

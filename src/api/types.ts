@@ -199,7 +199,8 @@ export type NotificationType =
   | 'buddy_request'
   | 'question_received'
   | 'question_answered'
-  | 'content_reported';
+  | 'content_reported'
+  | 'feedback_received';
 
 /**
  * Every notification type, in a stable order. Single source of truth for the
@@ -223,6 +224,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'question_received',
   'question_answered',
   'content_reported',
+  'feedback_received',
 ];
 
 /**

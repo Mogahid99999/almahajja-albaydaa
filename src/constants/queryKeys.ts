@@ -75,6 +75,7 @@ export const queryKeys = {
   lectureBenefits: (lectureId: string) => ['benefits', lectureId] as const,
   adminBenefits: (lectureId?: string) => ['admin', 'benefits', lectureId ?? 'all'] as const,
   reports: (status?: string) => ['admin', 'reports', status ?? 'all'] as const,
+  feedback: (status?: string) => ['admin', 'feedback', status ?? 'all'] as const,
 
   // Beneficial reminders · التذكيرات النافعة (V7)
   adminBroadcasts: ['admin', 'broadcasts'] as const,
