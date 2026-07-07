@@ -203,6 +203,7 @@ export default function SectionScreen() {
       <FlatList
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
+        showsVerticalScrollIndicator={false}
         data={lectures}
         keyExtractor={(lecture) => lecture.id}
         renderItem={renderLecture}

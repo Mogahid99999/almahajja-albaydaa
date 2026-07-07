@@ -1,23 +1,17 @@
 /**
- * SubsectionsScroller — horizontal RTL snap-scroller for sub-sections.
+ * SubsectionsScroller — 2-column wrap grid of sub-section cards.
  *
  * Renders ONLY when subsections.length > 0.
  *
- * Each card (152px wide):
- *   - Topic icon (25px, teal, no tile/box) + chevron-left (→ left = forward in RTL)
- *   - Amiri section name
- *   - Lecture count in Arabic-Indic
+ * Each card is two lines:
+ *   - Amiri section name on top
+ *   - Topic icon (20px, teal, no tile/box) + lecture count below it
  *
  * Tap → push router to /section/[id] for that child.
- *
- * Design ref: screens/صفحة القسم.dc.html › sub-sections block.
- * RTL note: the forward chevron on each card points LEFT (`chevron-left`)
- * because navigating deeper in RTL means going visually leftward.
  */
 import { useEffect } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { arLectureCount } from '@/lib/format';
 import { colors, fonts, radius } from '@/constants/theme';
@@ -50,17 +44,13 @@ export function SubsectionsScroller({ subsections }: Props) {
         <SectionTitle title="الأقسام الفرعية" />
       </View>
 
-      {/* Horizontal RTL scroll */}
-      <ScrollView
-        horizontal
-        contentContainerStyle={{
+      {/* Vertical 2-column wrap grid */}
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
           gap: 12,
-          paddingBottom: 4,
         }}
-        showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        snapToInterval={152 + 12} // card width + gap
-        snapToAlignment="start"
       >
         {subsections.map((sub) => (
           <Pressable
@@ -72,8 +62,7 @@ export function SubsectionsScroller({ subsections }: Props) {
             }
             style={({ pressed }) => ({
               opacity: pressed ? 0.75 : 1,
-              width: 152,
-              flexShrink: 0,
+              width: '47.5%' as const,
               backgroundColor: colors.surfaceCard,
               borderColor: colors.borderSand,
               borderWidth: 1,
@@ -81,57 +70,44 @@ export function SubsectionsScroller({ subsections }: Props) {
               padding: 15,
             })}
           >
-            {/* Top row: letter tile + forward chevron */}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              {/* Topic icon — no surrounding tile */}
-              <View
-                style={{
-                  width: 38,
-                  height: 38,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <SectionIcon title={sub.title} size={25} color={colors.primaryTeal} />
-              </View>
-
-              {/* chevron-left = forward in RTL */}
-              <Feather
-                name="chevron-left"
-                size={16}
-                color={colors.accentBrassSoft}
-              />
-            </View>
-
-            {/* Section name */}
+            {/* Section name — first line */}
             <Txt
               weight="display"
               size={16}
               color={colors.textInk}
-              style={{ marginTop: 12, lineHeight: 21 }}
+              style={{ lineHeight: 21 }}
               numberOfLines={2}
             >
               {sub.title}
             </Txt>
 
-            {/* Lecture count */}
-            <Txt
-              size={11}
-              color={colors.textGhost}
-              style={{ marginTop: 4 }}
-              tabular
+            {/* Icon + lecture count — second line */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 10,
+              }}
             >
-              {arLectureCount(sub.lectureCount)}
-            </Txt>
+              <View
+                style={{
+                  width: 30,
+                  height: 30,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <SectionIcon title={sub.title} size={20} color={colors.primaryTeal} />
+              </View>
+
+              <Txt size={11} color={colors.textGhost} tabular>
+                {arLectureCount(sub.lectureCount)}
+              </Txt>
+            </View>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
     </View>
   );
 }

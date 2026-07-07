@@ -82,6 +82,7 @@ export function BottomNavBar() {
         left: 0,
         right: 0,
         bottom: 0,
+        backgroundColor: colors.primaryTealDeep,
       }}
     >
       <View
@@ -89,7 +90,7 @@ export function BottomNavBar() {
           {
             backgroundColor: colors.primaryTealDeep,
             overflow: 'hidden',
-            paddingBottom: insets.bottom,
+            paddingBottom: Math.max(insets.bottom, 12),
           },
           shadows.miniPlayer,
         ]}

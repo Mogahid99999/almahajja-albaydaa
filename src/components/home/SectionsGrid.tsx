@@ -14,8 +14,8 @@ type Props = {
 
 /**
  * "الأقسام العِلمية" — 2-column grid of section cards.
- * Each card stacks a topic icon, then the section title, then an Arabic
- * lecture count — each on its own line, matching the sub-sections cards.
+ * Each card is two lines: the section title on top, then a smaller topic
+ * icon with the Arabic lecture count below it.
  * Tapping navigates to `/section/[id]`.
  */
 export function SectionsGrid({ sections }: Props) {
@@ -79,37 +79,41 @@ function SectionGridCard({
           padding: 15,
         }}
       >
-        {/* Topic icon — no surrounding tile */}
-        <View
-          style={{
-            width: 38,
-            height: 38,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <SectionIcon title={section.title} size={25} color={colors.primaryTeal} />
-        </View>
-
-        {/* Section title — own line, room to wrap */}
+        {/* Section title — first line */}
         <Txt
           weight="semibold"
           size={14}
           color={colors.textInk}
-          style={{ marginTop: 12, lineHeight: 19 }}
+          style={{ lineHeight: 19 }}
           numberOfLines={2}
         >
           {section.title}
         </Txt>
 
-        {/* Lecture count */}
-        <Txt
-          size={11}
-          color={colors.textGhost}
-          style={{ marginTop: 4 }}
+        {/* Icon + lecture count — second line */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            marginTop: 10,
+          }}
         >
-          {arLectureCount(section.lectureCount)}
-        </Txt>
+          <View
+            style={{
+              width: 30,
+              height: 30,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <SectionIcon title={section.title} size={20} color={colors.primaryTeal} />
+          </View>
+
+          <Txt size={11} color={colors.textGhost}>
+            {arLectureCount(section.lectureCount)}
+          </Txt>
+        </View>
       </Card>
     </Pressable>
   );
