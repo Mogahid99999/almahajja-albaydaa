@@ -216,22 +216,26 @@ export default function SectionScreen() {
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
         ListEmptyComponent={
-          /* Quiet empty state — no lectures in this section yet */
-          <View
-            style={{
-              paddingHorizontal: spacing.screenH,
-              paddingVertical: 32,
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <Txt size={13} color={colors.textMuted} align="center">
-              لا توجد محاضرات في هذا القسم بعد
-            </Txt>
-            <Txt size={11} color={colors.textGhost} align="center">
-              تابع قريباً
-            </Txt>
-          </View>
+          /* Quiet empty state — only when the section has neither lectures NOR
+             subsections; a section that's purely a subsection container (e.g.
+             العقيدة) is a normal, expected state and should stay silent. */
+          subsections.length === 0 ? (
+            <View
+              style={{
+                paddingHorizontal: spacing.screenH,
+                paddingVertical: 32,
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Txt size={13} color={colors.textMuted} align="center">
+                لا توجد محاضرات في هذا القسم بعد
+              </Txt>
+              <Txt size={11} color={colors.textGhost} align="center">
+                تابع قريباً
+              </Txt>
+            </View>
+          ) : null
         }
       />
     </Screen>

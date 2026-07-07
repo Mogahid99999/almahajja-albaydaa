@@ -122,6 +122,7 @@ export default function AdminUserDetailScreen() {
   const [notice, setNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [pendingBanAction, setPendingBanAction] = useState<'ban' | 'unban' | null>(null);
   const [pendingRole, setPendingRole] = useState<{ key: AppRole; label: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState(false);
 
   const profile = data?.profile;
 
@@ -225,6 +226,19 @@ export default function AdminUserDetailScreen() {
                 })}
               </View>
             </View>
+
+            {/* Delete account — permanent, cascades all personal data (mirrors
+                the in-app self-delete flow, now admin-only per product decision). */}
+            <Pressable
+              disabled={actions.deleteUser.isPending}
+              onPress={() => setPendingDelete(true)}
+              style={[styles.wideBtn, { backgroundColor: 'rgba(184,92,74,0.12)' }]}
+            >
+              <Feather name="trash-2" size={16} color={colors.stateDanger} />
+              <Txt size={13} weight="semibold" color={colors.stateDanger}>
+                حذف الحساب نهائيًا
+              </Txt>
+            </Pressable>
           </Card>
 
           {/* Edit data */}
@@ -405,6 +419,23 @@ export default function AdminUserDetailScreen() {
           });
         }}
         onCancel={() => setPendingRole(null)}
+      />
+
+      <ConfirmDialog
+        visible={pendingDelete}
+        title="حذف الحساب نهائيًا"
+        message="سيُحذف هذا الحساب وجميع بياناته — التقدم والملاحظات والأسئلة والإشعارات — حذفًا نهائيًا لا رجعة فيه."
+        confirmLabel="حذف الحساب"
+        destructive
+        pending={actions.deleteUser.isPending}
+        onConfirm={() => {
+          actions.deleteUser.mutate(undefined, {
+            onSuccess: () => router.replace('/admin/users'),
+            onError,
+            onSettled: () => setPendingDelete(false),
+          });
+        }}
+        onCancel={() => setPendingDelete(false)}
       />
     </AdminShell>
   );

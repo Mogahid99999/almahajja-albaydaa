@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   banUser,
   createUser,
+  deleteUser,
   getAdminUserDetail,
   getAdminUserList,
   setUserPassword,
@@ -85,6 +86,12 @@ export function useAdminUserActions(userId: string) {
     setRole: useMutation({
       mutationFn: (role: AppRole) => setUserRole(userId, role),
       onSuccess: invalidate,
+    }),
+    // Only invalidates the LIST — the detail query for this (now-gone) user is
+    // pointless to refetch; the caller navigates away on success instead.
+    deleteUser: useMutation({
+      mutationFn: () => deleteUser(userId),
+      onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
     }),
   };
 }

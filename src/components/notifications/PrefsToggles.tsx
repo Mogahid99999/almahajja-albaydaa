@@ -14,7 +14,6 @@ import { useNotificationPrefs, useSetNotificationPref } from '@/hooks/useNotific
 
 import { Card } from '@/components/ui/Card';
 import { Divider } from '@/components/ui/Divider';
-import { Rhombus } from '@/components/ui/Rhombus';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
 import {
@@ -45,7 +44,7 @@ function ToggleRow({
         gap: 12,
       }}
     >
-      {/* Rhombus-framed type icon (RTL: rightmost) */}
+      {/* Type icon (RTL: rightmost) */}
       <View
         style={{
           width: 34,
@@ -54,10 +53,7 @@ function ToggleRow({
           justifyContent: 'center',
         }}
       >
-        <Rhombus size={30} color="rgba(31,74,66,0.08)" />
-        <View style={{ position: 'absolute' }}>
-          <Feather name={notificationTypeIcon[type]} size={15} color={colors.primaryTeal} />
-        </View>
+        <Feather name={notificationTypeIcon[type]} size={15} color={colors.primaryTeal} />
       </View>
 
       <View style={{ flex: 1 }}>

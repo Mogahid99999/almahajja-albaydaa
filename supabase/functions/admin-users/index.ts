@@ -11,8 +11,10 @@
 //   ban          → ban the user (100y)          unban → lift the ban
 //   setPassword  → set a new password (no old)   updateEmail → change email
 //   updateProfile→ set display_name              setRole → student|publisher|admin|sheikh
+//   deleteUser   → permanently delete the account (cascades all personal rows)
 //
-// A caller may not ban or change the role of THEIR OWN account (anti-lockout).
+// A caller may not ban, delete, or change the role of THEIR OWN account
+// (anti-lockout).
 //
 // Deploy: multipart POST /v1/projects/{ref}/functions/deploy?slug=admin-users
 //         (metadata verify_jwt=true) — mirrors notify-on-publish.
@@ -182,6 +184,17 @@ Deno.serve(async (req) => {
           .eq("id", userId);
         if (pErr) return json({ error: pErr.message }, 500);
         return json({ ok: true, role });
+      }
+      case "deleteUser": {
+        // Anti-lockout, mirrors ban/setRole. Cascades remove all personal rows
+        // (progress, notes, notifications, prefs, push tokens, quiz attempts,
+        // buddy rows, benefits — every user-owned table references auth.users
+        // with `on delete cascade`; authored public content is `on delete set
+        // null`), same guarantee as the self-serve delete-account function.
+        if (isSelf) return json({ error: "cannot delete your own account" }, 400);
+        const { error: delErr } = await admin.auth.admin.deleteUser(userId);
+        if (delErr) return json({ error: delErr.message }, 500);
+        return json({ ok: true });
       }
       default:
         return json({ error: "unknown action" }, 400);

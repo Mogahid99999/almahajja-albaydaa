@@ -1,4 +1,5 @@
 import {
+  Platform,
   Text,
   type StyleProp,
   type TextProps,
@@ -39,14 +40,15 @@ export type TxtProps = Omit<TextProps, 'style'> & {
 };
 
 /**
- * On this app's forced-RTL setup, Android renders `textAlign: 'right'` flush
- * LEFT and `textAlign: 'left'` flush RIGHT for any Text whose box is wider
- * than its content (flex:1 boxes, full-width blocks) — confirmed on-device.
- * Text boxes that are already tight to their content (row siblings sized to
- * their own text) show no visible difference either way, so this swap is
- * safe everywhere. 'center'/'justify'/'auto' are unaffected and pass through.
+ * On this app's forced-RTL setup, Android (only) renders `textAlign: 'right'`
+ * flush LEFT and `textAlign: 'left'` flush RIGHT for any Text whose box is
+ * wider than its content (flex:1 boxes, full-width blocks) — confirmed
+ * on-device. iOS and web don't have this quirk, so the swap must stay
+ * Android-only or it inverts alignment everywhere else (confirmed broken on
+ * web admin panel). 'center'/'justify'/'auto' are unaffected and pass through.
  */
 function physicalAlign(align: TextStyle['textAlign']): TextStyle['textAlign'] {
+  if (Platform.OS !== 'android') return align;
   if (align === 'right') return 'left';
   if (align === 'left') return 'right';
   return align;

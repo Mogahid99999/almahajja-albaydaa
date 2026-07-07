@@ -14,7 +14,6 @@ import { useRouter } from 'expo-router';
 import { colors } from '@/constants/theme';
 import { useHomeBroadcasts } from '@/hooks/useBroadcasts';
 import { Card } from '@/components/ui/Card';
-import { Rhombus } from '@/components/ui/Rhombus';
 import { Txt } from '@/components/ui/Txt';
 
 const DISMISSED_KEY = 'riwaq-dismissed-broadcasts';
@@ -67,7 +66,7 @@ export function BroadcastCard() {
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-              {/* Rhombus-framed star (RTL: rightmost) */}
+              {/* Star (RTL: rightmost) */}
               <View
                 style={{
                   width: 42,
@@ -76,10 +75,7 @@ export function BroadcastCard() {
                   justifyContent: 'center',
                 }}
               >
-                <Rhombus size={38} color="rgba(201,164,99,0.16)" />
-                <View style={{ position: 'absolute' }}>
-                  <Feather name="star" size={17} color={colors.accentBrass} />
-                </View>
+                <Feather name="star" size={17} color={colors.accentBrass} />
               </View>
 
               <View style={{ flex: 1 }}>

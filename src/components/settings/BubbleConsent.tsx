@@ -15,7 +15,6 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { bubbleSupported, requestOverlayPermission } from '@/lib/bubble';
 
 import { Card } from '@/components/ui/Card';
-import { Rhombus } from '@/components/ui/Rhombus';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
 
@@ -45,10 +44,7 @@ export function BubbleConsent() {
           }}
         >
           <View style={{ width: 34, height: 34, alignItems: 'center', justifyContent: 'center' }}>
-            <Rhombus size={30} color="rgba(31,74,66,0.08)" />
-            <View style={{ position: 'absolute' }}>
-              <Feather name="bell" size={15} color={colors.primaryTeal} />
-            </View>
+            <Feather name="bell" size={15} color={colors.primaryTeal} />
           </View>
 
           <View style={{ flex: 1 }}>

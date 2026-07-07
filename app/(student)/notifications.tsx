@@ -72,19 +72,13 @@ const NotificationRow = memo(function NotificationRow({
         backgroundColor: item.read ? 'transparent' : colors.bgSandRaised,
       })}
     >
-      {/* Rhombus-framed type icon */}
+      {/* Type icon */}
       <View style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-        <Rhombus
-          size={34}
-          color={isBeneficial ? 'rgba(201,164,99,0.16)' : 'rgba(31,74,66,0.08)'}
+        <Feather
+          name={notificationTypeIcon[item.type]}
+          size={16}
+          color={isBeneficial ? colors.accentBrass : colors.primaryTeal}
         />
-        <View style={{ position: 'absolute' }}>
-          <Feather
-            name={notificationTypeIcon[item.type]}
-            size={16}
-            color={isBeneficial ? colors.accentBrass : colors.primaryTeal}
-          />
-        </View>
       </View>
 
       <View style={{ flex: 1 }}>

@@ -1,5 +1,5 @@
 /**
- * Transport controls: back-10s · play/pause (78px brass) · forward-10s.
+ * Transport controls: forward-10s · play/pause (78px brass) · back-10s.
  * Feather icons for rotate arrows, Feather play/pause for center button.
  */
 import { Feather } from '@expo/vector-icons';
@@ -28,31 +28,31 @@ export function TransportControls({ isPlaying }: Props) {
         gap: 22,
       }}
     >
-      {/* Next lecture (RTL: skip points left). Dim when there's no next. */}
+      {/* Previous lecture (RTL: sits on the right, opposite "next"). Dim when none. */}
       <Pressable
-        onPress={() => playNext()}
-        disabled={!hasNext}
+        onPress={() => playPrev()}
+        disabled={!hasPrev}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel="الدرس التالي"
-        accessibilityState={{ disabled: !hasNext }}
+        accessibilityLabel="الدرس السابق"
+        accessibilityState={{ disabled: !hasPrev }}
         style={({ pressed }) => ({
           width: 54,
           height: 54,
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: !hasNext ? 0.3 : pressed ? 0.6 : 1,
+          opacity: !hasPrev ? 0.3 : pressed ? 0.6 : 1,
         })}
       >
-        <Feather name="skip-back" size={26} color={colors.onTealIcon} />
+        <Feather name="skip-forward" size={26} color={colors.onTealIcon} />
       </Pressable>
 
-      {/* Back 10s */}
+      {/* Forward 10s (swapped to this side — was back-10) */}
       <Pressable
-        onPress={() => seekBy(-10)}
+        onPress={() => seekBy(10)}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel="رجوع ١٠ ثوانٍ"
+        accessibilityLabel="تقدم ١٠ ثوانٍ"
         style={({ pressed }) => ({
           width: 54,
           height: 54,
@@ -63,7 +63,7 @@ export function TransportControls({ isPlaying }: Props) {
           opacity: pressed ? 0.6 : 1,
         })}
       >
-        <Feather name="rotate-ccw" size={26} color={colors.onTealIcon} />
+        <Feather name="rotate-cw" size={26} color={colors.onTealIcon} />
         <Txt size={9} color={colors.onTealSecondary} weight="semibold" align="center">
           {toArabicDigits('10')}
         </Txt>
@@ -93,12 +93,12 @@ export function TransportControls({ isPlaying }: Props) {
         />
       </Pressable>
 
-      {/* Forward 10s */}
+      {/* Back 10s (swapped to this side — was forward-10) */}
       <Pressable
-        onPress={() => seekBy(10)}
+        onPress={() => seekBy(-10)}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel="تقدم ١٠ ثوانٍ"
+        accessibilityLabel="رجوع ١٠ ثوانٍ"
         style={({ pressed }) => ({
           width: 54,
           height: 54,
@@ -109,29 +109,29 @@ export function TransportControls({ isPlaying }: Props) {
           opacity: pressed ? 0.6 : 1,
         })}
       >
-        <Feather name="rotate-cw" size={26} color={colors.onTealIcon} />
+        <Feather name="rotate-ccw" size={26} color={colors.onTealIcon} />
         <Txt size={9} color={colors.onTealSecondary} weight="semibold" align="center">
           {toArabicDigits('10')}
         </Txt>
       </Pressable>
 
-      {/* Previous lecture (RTL: skip points right, opposite the "next" icon). Dim when none. */}
+      {/* Next lecture (RTL: skip points left — matches MiniPlayer's next button). Dim when there's no next. */}
       <Pressable
-        onPress={() => playPrev()}
-        disabled={!hasPrev}
+        onPress={() => playNext()}
+        disabled={!hasNext}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel="الدرس السابق"
-        accessibilityState={{ disabled: !hasPrev }}
+        accessibilityLabel="الدرس التالي"
+        accessibilityState={{ disabled: !hasNext }}
         style={({ pressed }) => ({
           width: 54,
           height: 54,
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: !hasPrev ? 0.3 : pressed ? 0.6 : 1,
+          opacity: !hasNext ? 0.3 : pressed ? 0.6 : 1,
         })}
       >
-        <Feather name="skip-forward" size={26} color={colors.onTealIcon} />
+        <Feather name="skip-back" size={26} color={colors.onTealIcon} />
       </Pressable>
     </View>
   );

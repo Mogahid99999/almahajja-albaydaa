@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, platformShadow, radius } from '@/constants/theme';
 import { queryKeys } from '@/constants/queryKeys';
 import { Txt, Screen, IconButton, RhombusEmblem, ConcentricMotif } from '@/components/ui';
+import { DownloadButton } from '@/components/DownloadButton';
 import { Waveform } from '@/components/player/Waveform';
 import { TransportControls } from '@/components/player/TransportControls';
 import { PlayerUtilityBar } from '@/components/player/PlayerUtilityBar';
@@ -219,6 +220,17 @@ export default function PlayerScreen() {
             >
               هذه المحاضرة تحتاج اتصالاً — أو حمّلها للاستماع بلا إنترنت
             </Txt>
+            {/* Make the "download it" half of the message actionable — the
+                notice used to just describe downloading without any control
+                to actually do it from this screen. */}
+            {id ? (
+              <View style={styles.offlineDownloadRow}>
+                <DownloadButton lectureId={id} size={20} onTeal />
+                <Txt size={12.5} weight="medium" color={colors.onTealSecondary}>
+                  تحميل المحاضرة
+                </Txt>
+              </View>
+            ) : null}
           </View>
         ) : loadError ? (
           <View style={styles.offlineNotice}>
@@ -342,6 +354,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     alignItems: 'center',
     gap: 12,
+  },
+  offlineDownloadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
   },
   retryButton: {
     backgroundColor: colors.accentBrass,

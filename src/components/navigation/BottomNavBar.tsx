@@ -8,6 +8,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
   type AnimatedStyle,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -42,6 +43,8 @@ export const BOTTOM_NAV_BAR_HEIGHT = 64;
 export const BOTTOM_NAV_CLEARANCE = BOTTOM_NAV_BAR_HEIGHT + 24;
 
 const SPRING = { damping: 16, stiffness: 160, mass: 0.6 };
+/** Icon color must feel instant on tap — a short crossfade, not the pill's spring. */
+const COLOR_TRANSITION_MS = 120;
 
 export function isTabRootPath(pathname: string): boolean {
   return TABS.some((t) => t.path === pathname);
@@ -161,15 +164,21 @@ function TabButton({
     };
   });
 
-  const colorStyle = useAnimatedStyle(() => {
-    const progress = 1 - Math.min(Math.abs(activeIndex.value - index), 1);
-    return {
-      color: interpolateColor(progress, [0, 1], [colors.onTealSecondary, colors.primaryTealDeep]),
-    };
-  });
-
   const pathname = usePathname();
   const isActive = TABS[index].path === pathname;
+
+  // Color is driven off `isActive` directly (synchronous with navigation),
+  // not off the pill's `activeIndex` spring — the spring hasn't moved yet at
+  // the instant of a tap, which is what made the icon stay inactive-colored
+  // for a beat before catching up.
+  const focus = useSharedValue(isActive ? 1 : 0);
+  useEffect(() => {
+    focus.value = withTiming(isActive ? 1 : 0, { duration: COLOR_TRANSITION_MS });
+  }, [isActive, focus]);
+
+  const colorStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(focus.value, [0, 1], [colors.onTealSecondary, colors.primaryTealDeep]),
+  }));
 
   return (
     <Pressable
