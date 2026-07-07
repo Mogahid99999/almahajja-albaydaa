@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 
 import { colors, fonts, radius } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
+import { preloadLecture } from '@/lib/audioController';
 import { useContentSearch } from '@/hooks/useSearch';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
@@ -130,7 +131,12 @@ export default function SearchScreen() {
           {lectures.map((l) => (
             <Pressable
               key={l.id}
-              onPress={() => router.push({ pathname: '/player/[id]', params: { id: l.id } })}
+              onPress={() => {
+                // Start playback the instant the tap lands, in parallel with
+                // navigation — see preloadLecture's doc comment in audioController.
+                void preloadLecture(l.id);
+                router.push({ pathname: '/player/[id]', params: { id: l.id } });
+              }}
               accessibilityRole="button"
             >
               <Card style={{ marginBottom: 10 }}>

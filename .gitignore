@@ -63,3 +63,9 @@ assets/Voice 015*
 modules/*/android/build/
 modules/*/ios/build/
 modules/*/build/
+
+# Landing/download page — fully independent Astro project, deployed separately
+landing/
+
+# Landing/download page v2 — plain HTML/CSS/JS, fully independent, deployed separately
+landing2/

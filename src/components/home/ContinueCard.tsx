@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import type { ResumeLecture } from '@/api/types';
 import { colors, radius, shadows } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
+import { preloadLecture } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 import { ConcentricMotif, ProgressBar, RhombusEmblem, Txt } from '@/components/ui';
 
@@ -27,12 +28,17 @@ export function ContinueCard({ continueListening }: Props) {
   const progress = durationSec > 0 ? positionSec / durationSec : 0;
 
   function handlePress() {
-    // Pass the fresh, currently-displayed position as `t` — same deep-link
-    // param a resume notification uses (app/player/[id].tsx honors it, guarded
-    // to never rewind). Belt-and-suspenders alongside the cache-invalidation
-    // fix (Phase 3.1): this entry point never has to trust the lecture-cache
-    // resume value at all, since it hands over the number it's already showing.
-    router.push(`/player/${id}?t=${Math.floor(positionSec)}`);
+    // Start playback the instant the tap lands, in parallel with the
+    // navigation — see preloadLecture's doc comment in audioController. Pass
+    // the fresh, currently-displayed position as the resume point directly
+    // (and as `t` below, same deep-link param a resume notification uses,
+    // honored by app/player/[id].tsx, guarded to never rewind):
+    // belt-and-suspenders alongside the cache-invalidation fix (Phase 3.1) —
+    // this entry point never has to trust the lecture-cache resume value at
+    // all, since it hands over the number it's already showing.
+    const startAtSec = Math.floor(positionSec);
+    void preloadLecture(id, { startAtSec });
+    router.push(`/player/${id}?t=${startAtSec}`);
   }
 
   return (

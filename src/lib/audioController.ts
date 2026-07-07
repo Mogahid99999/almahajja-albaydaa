@@ -34,8 +34,13 @@ const LECTURE_PLAYBACK_STALE = 30 * 60_000;
  * Warm a lecture's playback metadata (+ signed URL) into the same cache entry the
  * player reads (queryKeys.lecture). Makes auto-advance / the "next" button and the
  * resume card gapless. No-op offline (skipped by the caller) or while still fresh.
+ *
+ * Exported so lecture ROWS can warm themselves while just sitting on screen (see
+ * LectureRowItem) — tap-time preloading alone (`preloadLecture`) still pays the
+ * full signed-URL network round-trip for a lecture nobody has looked at yet; this
+ * is what makes a tap on an already-warmed row start with no network wait at all.
  */
-function prefetchPlayback(lectureId: string) {
+export function prefetchPlayback(lectureId: string) {
   void queryClient.prefetchQuery({
     queryKey: queryKeys.lecture(lectureId),
     queryFn: () => getLecturePlayback(lectureId),
@@ -61,6 +66,12 @@ let audioModeSet = false;
 // past-the-end target to the end). Finishes within this window are ignored so a
 // seek never trips completion / auto-advance (Issue 7).
 let seekGuardUntil = 0;
+// The lecture currently being loaded by `loadLecture` (set synchronously before
+// any await, cleared when it settles). Lets `preloadLecture` no-op a redundant
+// call for the SAME lecture that's already in flight — e.g. a row's onPress
+// starts the load, then the player screen mounts a beat later and would
+// otherwise kick off a second, wasted load (Issue: tap→play delay fix below).
+let pendingId: string | null = null;
 
 const store = () => usePlayerStore.getState();
 
@@ -381,6 +392,43 @@ export async function playLecture(
   if (currentId === lectureId && player) {
     return toggle();
   }
+  return loadLecture(lectureId, opts);
+}
+
+/**
+ * Start a lecture WITHOUT the toggle-if-already-current branch `playLecture`
+ * has — safe to fire eagerly the instant a row is tapped, in parallel with the
+ * `router.push` to the player screen, rather than waiting for that screen to
+ * mount. The player screen's own mount effect calls this too (as a fallback
+ * for entry points that don't pre-start it, e.g. a notification deep link);
+ * the `pendingId`/`currentId` checks make the second call a no-op instead of
+ * re-loading or — worse — pausing what the first call just started.
+ */
+export function preloadLecture(lectureId: string, opts?: { startAtSec?: number }) {
+  if (!lectureId) return Promise.resolve();
+  if (currentId === lectureId || pendingId === lectureId) return Promise.resolve();
+  return loadLecture(lectureId, opts);
+}
+
+async function loadLecture(lectureId: string, opts?: { startAtSec?: number }) {
+  // Switching to a genuinely different lecture — pause whatever's currently
+  // playing right away. Without this, a NEW lecture that fails to load (e.g.
+  // offline and not downloaded) left the OLD one playing silently behind the
+  // screen showing the "needs a connection" notice — reported as "opening a
+  // different lecture doesn't change anything" while offline.
+  if (currentId && currentId !== lectureId && player?.playing) {
+    player.pause();
+    store().setPlaying(false);
+  }
+  pendingId = lectureId;
+  try {
+    await loadLectureBody(lectureId, opts);
+  } finally {
+    if (pendingId === lectureId) pendingId = null;
+  }
+}
+
+async function loadLectureBody(lectureId: string, opts?: { startAtSec?: number }) {
   await ensureAudioMode();
 
   const localUri = localUriFor(lectureId);
@@ -535,8 +583,15 @@ export function pause() {
 /**
  * Close the player entirely (the MiniPlayer ×): persist the final position,
  * stop audio, drop the lock-screen/notification controls, and reset the store
- * so `currentLectureId` becomes null and the MiniPlayer unmounts. The player
- * instance is kept for reuse — the next playLecture() replaces its source.
+ * so `currentLectureId` becomes null and the MiniPlayer unmounts.
+ *
+ * The player instance is fully released (not just paused) — a paused player
+ * with its lock-screen session torn down was left in a state where the NEXT
+ * lecture's `player.replace()` + `.play()` could silently fail to actually
+ * produce audio (the JS store said "playing" but nothing came out), reported
+ * as "close a lecture, open another, it doesn't play". Releasing it here
+ * makes the next `playLecture()` create a brand-new player via
+ * `createAudioPlayer`, which always starts from a clean native state.
  */
 export function stop() {
   if (player) {
@@ -552,11 +607,18 @@ export function stop() {
     } catch {
       /* ignored */
     }
+    try {
+      player.remove();
+    } catch {
+      /* ignored */
+    }
   }
+  player = null;
   currentId = null;
   currentDuration = 0;
   currentSectionId = null;
   currentOrder = 0;
+  pendingId = null;
   store().reset();
 }
 

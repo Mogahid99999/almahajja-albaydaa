@@ -204,6 +204,8 @@ export default function SectionScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
         showsVerticalScrollIndicator={false}
+        persistentScrollbar={false}
+        overScrollMode="never"
         data={lectures}
         keyExtractor={(lecture) => lecture.id}
         renderItem={renderLecture}

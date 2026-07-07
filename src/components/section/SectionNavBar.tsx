@@ -10,7 +10,7 @@
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
-import { colors } from '@/constants/theme';
+import { colors, spacing } from '@/constants/theme';
 import { IconButton } from '@/components/ui/IconButton';
 import { Txt } from '@/components/ui/Txt';
 
@@ -29,9 +29,11 @@ export function SectionNavBar({ contextLabel }: Props) {
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 6,
-        // Negative horizontal to break out of Screen's 22px side padding
-        marginHorizontal: -22,
-        paddingHorizontal: 18,
+        // Negative horizontal to break out of the screen's side padding —
+        // derived from spacing.screenH (not hardcoded) so it always matches
+        // whatever inset the caller wraps this bar in.
+        marginHorizontal: -spacing.screenH,
+        paddingHorizontal: spacing.screenH - 4,
         marginBottom: 4,
       }}
     >

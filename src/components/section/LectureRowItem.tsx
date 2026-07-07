@@ -17,11 +17,14 @@
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { arDuration } from '@/lib/format';
 import { colors } from '@/constants/theme';
+import { isOnlineSync } from '@/lib/connectivity';
+import { localUriFor } from '@/lib/downloads';
+import { preloadLecture, prefetchPlayback } from '@/lib/audioController';
 import { DownloadButton } from '@/components/DownloadButton';
 import { LessonToolsSheet } from '@/components/player/LessonToolsSheet';
 import { Rhombus } from '@/components/ui/Rhombus';
@@ -36,6 +39,16 @@ export const LectureRowItem = memo(function LectureRowItem({ lecture }: Props) {
   const { id, title, durationSec, status, positionSec } = lecture;
   const [toolsOpen, setToolsOpen] = useState(false);
   const router = useRouter();
+
+  // Warm this row's signed playback URL while it just sits on screen (not only on
+  // tap) — a non-downloaded lecture otherwise pays the full network round-trip
+  // for getLecturePlayback() at the moment of the tap, which is exactly the
+  // perceptible delay preloadLecture()-on-tap alone can't remove. Skipped for an
+  // already-downloaded lecture (no network needed) and while offline (would just
+  // fail and retry uselessly on every re-render).
+  useEffect(() => {
+    if (!localUriFor(id) && isOnlineSync()) prefetchPlayback(id);
+  }, [id]);
 
   // ── Status circle styles & content ──────────────────────────────────────────
   let circleBg: string;
@@ -90,13 +103,20 @@ export const LectureRowItem = memo(function LectureRowItem({ lecture }: Props) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
-      onPress={() => router.push(`/player/${id}`)}
+      onPress={() => {
+        // Start playback the instant the tap lands — don't wait for the
+        // player screen's modal transition + mount to fire it (see
+        // preloadLecture's doc comment for why this removes the perceptible
+        // delay, streaming AND downloaded alike).
+        void preloadLecture(id);
+        router.push(`/player/${id}`);
+      }}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 13,
+        gap: 10,
         paddingVertical: 14,
-        paddingHorizontal: 16,
+        paddingHorizontal: 8,
         opacity: pressed ? 0.8 : 1,
       })}
     >
@@ -124,7 +144,7 @@ export const LectureRowItem = memo(function LectureRowItem({ lecture }: Props) {
           weight="semibold"
           color={titleColor}
           style={{ lineHeight: 19 }}
-          numberOfLines={1}
+          numberOfLines={2}
         >
           {title}
         </Txt>

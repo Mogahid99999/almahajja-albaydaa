@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 
 import { arDuration } from '@/lib/format';
 import { colors } from '@/constants/theme';
+import { preloadLecture } from '@/lib/audioController';
 import { DownloadButton } from '@/components/DownloadButton';
 import { RhombusEmblem } from '@/components/ui/Rhombus';
 import { Txt } from '@/components/ui/Txt';
@@ -31,7 +32,12 @@ export function DownloadedLectureRow({ lecture }: Props) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
-      onPress={() => router.push(`/player/${id}`)}
+      onPress={() => {
+        // Start playback the instant the tap lands, in parallel with the
+        // navigation — see preloadLecture's doc comment in audioController.
+        void preloadLecture(id);
+        router.push(`/player/${id}`);
+      }}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',

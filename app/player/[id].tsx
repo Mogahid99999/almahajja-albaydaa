@@ -23,7 +23,7 @@ import { TransportControls } from '@/components/player/TransportControls';
 import { PlayerUtilityBar } from '@/components/player/PlayerUtilityBar';
 import { LessonToolsRow } from '@/components/player/LessonToolsRow';
 import { PlayerAttachmentsStrip } from '@/components/attachments/PlayerAttachmentsStrip';
-import { playLecture, seekTo, stop } from '@/lib/audioController';
+import { playLecture, preloadLecture, seekTo, stop } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useLecturePlayback } from '@/hooks/useLecture';
 
@@ -61,14 +61,19 @@ export default function PlayerScreen() {
   // we surface a calm inline notice instead of a dead player / crash (V10 Feature D).
   const [unavailable, setUnavailable] = useState(false);
 
-  // On mount: if a different lecture (or nothing) is loaded, start this one. A
+  // On mount: start this lecture unless it's already current or already being
+  // loaded — the latter happens when the row that opened this screen already
+  // called `preloadLecture` itself (see LectureRowItem etc.), so playback
+  // begins the instant the tap lands instead of waiting for this screen's
+  // modal-transition + mount to finish. This is just the fallback for entry
+  // points that don't pre-start it (e.g. a notification deep link). A
   // deep-link `t` overrides the saved resume position (guarded so it never
   // rewinds a student who has since listened further — see playLecture).
   useEffect(() => {
-    if (id && usePlayerStore.getState().currentLectureId !== id) {
+    if (id) {
       setUnavailable(false);
       const startAtSec = t != null ? Number(t) : NaN;
-      playLecture(id, Number.isFinite(startAtSec) ? { startAtSec } : undefined).catch(() =>
+      void preloadLecture(id, Number.isFinite(startAtSec) ? { startAtSec } : undefined).catch(() =>
         setUnavailable(true),
       );
     }

@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import type { LectureCard } from '@/api/types';
 import { colors, radius, spacing } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
+import { preloadLecture } from '@/lib/audioController';
 import { SectionTitle, Txt } from '@/components/ui';
 
 /** Single cover tint used for all cards — matches the navbar's active gold accent. */
@@ -61,7 +62,12 @@ function FeaturedCard({
 
   return (
     <Pressable
-      onPress={() => router.push(`/player/${lecture.id}`)}
+      onPress={() => {
+        // Start playback the instant the tap lands, in parallel with the
+        // navigation — see preloadLecture's doc comment in audioController.
+        void preloadLecture(lecture.id);
+        router.push(`/player/${lecture.id}`);
+      }}
       accessibilityRole="button"
       accessibilityLabel={`تشغيل: ${lecture.title}`}
       style={({ pressed }) => ({ width: 158, opacity: pressed ? 0.85 : 1 })}

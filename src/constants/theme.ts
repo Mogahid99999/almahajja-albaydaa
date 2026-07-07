@@ -74,7 +74,7 @@ export const radius = {
 } as const;
 
 export const spacing = {
-  screenH: 22, // mobile horizontal screen padding
+  screenH: 14, // mobile horizontal screen padding
   adminContent: 30,
 } as const;
 

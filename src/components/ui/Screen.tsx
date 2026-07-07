@@ -96,6 +96,8 @@ export function Screen({
           contentStyle,
         ]}
         showsVerticalScrollIndicator={false}
+        persistentScrollbar={false}
+        overScrollMode="never"
         refreshControl={
           onRefresh ? (
             <RefreshControl
