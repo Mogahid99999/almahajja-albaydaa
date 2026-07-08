@@ -7,7 +7,7 @@
  * to commit the rate; the overlay springs back out.
  */
 import { Feather } from '@expo/vector-icons';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -53,15 +53,10 @@ export function PlayerUtilityBar({ lectureId, rate }: Props) {
   const baseX = useSharedValue(0);
   const lastEmitted = useSharedValue(rate);
 
-  // Keeps handlers created inside the worklet-capturing gesture below in sync
-  // with the latest committed rate without recreating the gesture needlessly.
-  const rateRef = useRef(rate);
-  rateRef.current = rate;
-
-  function openSlider() {
+  function openSlider(atRate: number) {
     setChipActive(true);
     setSliderVisible(true);
-    setLiveRate(rateRef.current);
+    setLiveRate(atRate);
   }
 
   function updateLiveRate(next: number) {
@@ -77,15 +72,19 @@ export function PlayerUtilityBar({ lectureId, rate }: Props) {
     setSliderVisible(false);
   }
 
+  // Rebuilt each render, so `rate` in this closure is always the latest
+  // committed value — no need to thread it through a ref (unsafe to read a
+  // plain ref's `.current` from a UI-thread worklet; only shared values and
+  // captured primitives like this are cross-thread safe).
   const dragGesture = Gesture.Pan()
     .activateAfterLongPress(220)
     .shouldCancelWhenOutside(false)
     .onStart(() => {
-      baseX.value = rateToTrackX(rateRef.current);
+      baseX.value = rateToTrackX(rate);
       trackX.value = baseX.value;
-      lastEmitted.value = rateRef.current;
+      lastEmitted.value = rate;
       progress.value = withSpring(1, { damping: 16, stiffness: 220 });
-      runOnJS(openSlider)();
+      runOnJS(openSlider)(rate);
     })
     .onUpdate((e) => {
       const nextX = Math.min(RATE_TRACK_WIDTH, Math.max(0, baseX.value + e.translationX));
@@ -107,7 +106,7 @@ export function PlayerUtilityBar({ lectureId, rate }: Props) {
       // Safety net: a cancelled/interrupted gesture (e.g. an OS alert) still
       // has to close the overlay and restore the previous rate.
       if (!success) {
-        runOnJS(commitRate)(rateRef.current);
+        runOnJS(commitRate)(rate);
         progress.value = withTiming(0, { duration: 160 }, (finished) => {
           if (finished) runOnJS(closeSlider)();
         });
