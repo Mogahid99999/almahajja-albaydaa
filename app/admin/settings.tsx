@@ -46,6 +46,16 @@ const SUPPORT_FIELDS: FieldDef[] = [
   },
 ];
 
+const SHARE_FIELDS: FieldDef[] = [
+  { key: 'share_app_url', label: 'رابط التطبيق', placeholder: 'https://almahajja.app' },
+  {
+    key: 'share_app_message',
+    label: 'نص المشاركة',
+    multiline: true,
+    fallback: 'جرّب تطبيق المحجة البيضاء لدروس العلم الشرعي',
+  },
+];
+
 const QNA_FIELDS: FieldDef[] = [
   {
     key: 'qna_notice_text',
@@ -127,6 +137,7 @@ export default function AdminSettings() {
       ...ABOUT_FIELDS,
       ...TELEGRAM_FIELDS,
       ...SUPPORT_FIELDS,
+      ...SHARE_FIELDS,
       ...QNA_FIELDS,
       ...REPORTS_FIELDS,
       ...APP_FIELDS,
@@ -199,6 +210,14 @@ export default function AdminSettings() {
         يظهر رابط التواصل عبر واتساب أسفل شاشة تسجيل الدخول.
       </Txt>
       <Card style={{ gap: 18 }}>{renderFields(SUPPORT_FIELDS)}</Card>
+
+      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
+        مشاركة التطبيق
+      </Txt>
+      <Txt size={12} color={colors.textMuted} style={{ marginBottom: 12 }}>
+        الرابط والنص المستخدمان في زر «شارك التطبيق» بصفحة الحساب.
+      </Txt>
+      <Card style={{ gap: 18 }}>{renderFields(SHARE_FIELDS)}</Card>
 
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
         صفحتا الأسئلة

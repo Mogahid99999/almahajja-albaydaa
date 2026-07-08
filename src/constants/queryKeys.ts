@@ -85,10 +85,12 @@ export const queryKeys = {
   // Admin V5 (dashboard / analytics / users / settings)
   adminStats: ['admin', 'stats'] as const,
   adminAnalytics: ['admin', 'analytics'] as const,
+  adminRatingsSummary: ['admin', 'ratingsSummary'] as const,
   adminUsers: (search: string) => ['admin', 'users', search] as const,
   adminUserDetail: (userId: string) => ['admin', 'user', userId] as const,
   aboutContent: ['appContent', 'about'] as const,
   supportContact: ['appContent', 'support'] as const,
   qnaNotice: ['appContent', 'qnaNotice'] as const,
+  shareContent: ['appContent', 'share'] as const,
   adminConfig: ['admin', 'config'] as const,
 } as const;

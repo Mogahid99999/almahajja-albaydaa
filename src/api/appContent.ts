@@ -102,6 +102,35 @@ export async function getQnaNotice(): Promise<{ text: string }> {
   }
 }
 
+/** Share-the-app keys — admin-editable link + phrase for the native share sheet. */
+const SHARE_KEYS = ['share_app_url', 'share_app_message'];
+const SHARE_FALLBACK = {
+  url: 'https://almahajja.app',
+  message: 'جرّب تطبيق المحجة البيضاء لدروس العلم الشرعي',
+};
+
+/**
+ * Share-the-app link + phrase (Feather "share-2" row on Profile). Falls back
+ * to a hardcoded default so Share never looks broken before an admin sets it.
+ */
+export async function getShareContent(): Promise<{ url: string; message: string }> {
+  if (USE_MOCK) return SHARE_FALLBACK;
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('key, value')
+      .in('key', SHARE_KEYS);
+    if (error || !data) return SHARE_FALLBACK;
+    const m = new Map(data.map((r) => [r.key, r.value]));
+    return {
+      url: m.get('share_app_url') || SHARE_FALLBACK.url,
+      message: m.get('share_app_message') || SHARE_FALLBACK.message,
+    };
+  } catch {
+    return SHARE_FALLBACK;
+  }
+}
+
 /** All config keys the admin Settings screen edits (About + Telegram + V4 gate). */
 export type AppConfigMap = Record<string, string>;
 
@@ -109,6 +138,7 @@ const SETTINGS_KEYS = [
   ...ABOUT_KEYS,
   ...SUPPORT_KEYS,
   ...QNA_KEYS,
+  ...SHARE_KEYS,
   'min_app_version',
   'app_download_url',
   'latest_app_version',

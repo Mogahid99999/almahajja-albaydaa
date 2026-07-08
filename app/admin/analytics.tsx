@@ -12,9 +12,9 @@ import { StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { Card, Divider, ProgressBar, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
-import { useAdminAnalytics } from '@/hooks/useAdminStats';
+import { useAdminAnalytics, useAdminRatingsSummary } from '@/hooks/useAdminStats';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
-import { arNum, arPercent, arSince } from '@/lib/format';
+import { arNum, arPercent, arSince, toArabicDigits } from '@/lib/format';
 import type { AdminStudentBrief } from '@/api/types';
 
 const DASH = '—';
@@ -103,9 +103,18 @@ function StudentList({
 export default function AdminAnalytics() {
   useAdminOnly();
   const { data, isLoading } = useAdminAnalytics();
+  const { data: ratings } = useAdminRatingsSummary();
 
   const n = (v: number | undefined) => (v === undefined ? DASH : arNum(v));
   const sections = data?.sections ?? [];
+  const ratingLabel =
+    ratings && ratings.totalRatings > 0
+      ? `متوسط التقييم (${arNum(ratings.totalRatings)} تقييمًا)`
+      : 'متوسط التقييم';
+  const ratingValue =
+    ratings && ratings.totalRatings > 0
+      ? toArabicDigits(ratings.avgStars.toFixed(1).replace('.', '٫'))
+      : DASH;
 
   return (
     <AdminShell active="analytics" breadcrumb="تحليلات التقدم العلمي">
@@ -122,6 +131,7 @@ export default function AdminAnalytics() {
         <CountTile label="أكمل ٥ دروس" value={n(data?.completed5)} icon="check-circle" />
         <CountTile label="أكمل ١٠ دروس" value={n(data?.completed10)} icon="award" />
         <CountTile label="أكمل قسمًا كاملًا" value={n(data?.completedSection)} icon="folder" />
+        <CountTile label={ratingLabel} value={ratingValue} icon="star" />
       </View>
 
       {/* Per-section average progress */}

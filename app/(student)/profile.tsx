@@ -8,7 +8,7 @@
  * Route: /(student)/profile
  * Design tokens: manuscript-warm palette, RTL, calm tone.
  */
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Linking, Pressable, Share, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, Link } from 'expo-router';
 
@@ -16,6 +16,7 @@ import { useCurrentUser, useDeleteAccount, useSignOut } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useHome } from '@/hooks/useSections';
+import { useShareContent } from '@/hooks/useAppContent';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { useTourStore } from '@/stores/tourStore';
 import { colors, radius, shadows } from '@/constants/theme';
@@ -114,6 +115,13 @@ export default function ProfileScreen() {
   };
   const { data: home, refetch: refetchHome } = useHome();
   const startTour = useTourStore((s) => s.start);
+  const { data: shareContent } = useShareContent();
+
+  const onShare = () => {
+    const message = shareContent?.message || 'جرّب تطبيق المحجة البيضاء لدروس العلم الشرعي';
+    const url = shareContent?.url || 'https://almahajja.app';
+    void Share.share({ message: `${message}\n${url}` });
+  };
 
   const miniPad = useMiniPlayerPad();
   const { refreshing, onRefresh } = usePullToRefresh([refetchUser, refetchHome]);
@@ -270,6 +278,14 @@ export default function ProfileScreen() {
           icon="info"
           label="عن المنصة"
           onPress={() => router.push('/(student)/about')}
+        />
+        <Divider />
+        <LinkRow icon="share-2" label="شارك التطبيق" onPress={onShare} />
+        <Divider />
+        <LinkRow
+          icon="shield"
+          label="سياسة الخصوصية"
+          onPress={() => Linking.openURL('https://www.almahajja.app/Privacy')}
         />
         {!isGuest ? (
           <>

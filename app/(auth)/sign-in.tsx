@@ -49,7 +49,7 @@ export default function SignInScreen() {
       </View>
 
       <Card style={{ padding: 20, overflow: 'hidden' }}>
-        <ConcentricMotif size={180} color="rgba(31,74,66,0.05)" style={{ top: -40, left: -40 }} />
+        <ConcentricMotif size={180} color="rgba(31,74,66,0.05)" style={{ top: -40 }} />
         <Txt weight="semibold" size={16} style={[arabicTextStyle, { marginBottom: 16 }]}>
           تسجيل الدخول
         </Txt>
@@ -140,7 +140,7 @@ export default function SignInScreen() {
           onPress={() => Linking.openURL(supportUrl)}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="تواصل مع الدعم الفني عبر واتساب"
+          accessibilityLabel="تواصل مع الدعم الفني عبر تيليجرام"
           style={({ pressed }) => [
             {
               flexDirection: 'row',
@@ -153,7 +153,7 @@ export default function SignInScreen() {
             pressed && { opacity: 0.6 },
           ]}
         >
-          <FontAwesome name="whatsapp" size={15} color={colors.accentBrassMuted} />
+          <FontAwesome name="telegram" size={15} color={colors.accentBrassMuted} />
           <Txt size={12} color={colors.textMuted}>
             هل لديك مشكلة؟ تواصل مع الدعم الفني للمنصة
           </Txt>

@@ -13,7 +13,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, I18nManager, Platform, View } from 'react-native';
 import RNRestart from 'react-native-restart';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -41,6 +41,8 @@ import {
 import { pickPhrase } from '@/lib/notificationPhrases';
 import { recordAppOpen } from '@/lib/notificationState';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
+import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
+import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient, reconcileContentListsAfterHydration } from '@/lib/queryClient';
@@ -280,6 +282,7 @@ function NotificationsBootstrap() {
   const setToken = useNotificationsStore((s) => s.setToken);
   const setRegistered = useNotificationsStore((s) => s.setRegistered);
   const registered = useNotificationsStore((s) => s.registered);
+  const [ratingPromptVisible, setRatingPromptVisible] = useState(false);
 
   // Foreground presentation handler — set once, independent of auth.
   useEffect(() => {
@@ -391,6 +394,37 @@ function NotificationsBootstrap() {
     return () => sub.remove();
   }, [user]);
 
+  // Star-rating prompt: track cumulative foreground time (not one continuous
+  // session — summed across app opens) and offer the prompt once the running
+  // total crosses the next threshold (src/lib/ratingPrompt.ts). Native only —
+  // web is the admin dashboard, not the student app.
+  useEffect(() => {
+    if (!user || Platform.OS === 'web') return;
+    let sessionStart = Date.now();
+    const flushElapsed = () => {
+      const elapsedSec = (Date.now() - sessionStart) / 1000;
+      void addForegroundSeconds(elapsedSec);
+    };
+    const maybePrompt = () => {
+      void shouldShowRatingPrompt().then((show) => {
+        if (show) setRatingPromptVisible(true);
+      });
+    };
+    maybePrompt();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        sessionStart = Date.now();
+        maybePrompt();
+      } else if (state === 'background') {
+        flushElapsed();
+      }
+    });
+    return () => {
+      flushElapsed();
+      sub.remove();
+    };
+  }, [user]);
+
   // Floating bubble (Phase 9, experimental, flag-gated): on the native unlock
   // trigger, surface a resume bubble over other apps if eligible; a tap opens
   // the player at the paused second. No-ops entirely until the native module is
@@ -450,7 +484,12 @@ function NotificationsBootstrap() {
     };
   }, [user, router]);
 
-  return null;
+  return (
+    <RatingPromptModal
+      visible={ratingPromptVisible}
+      onClose={() => setRatingPromptVisible(false)}
+    />
+  );
 }
 
 export default function RootLayout() {

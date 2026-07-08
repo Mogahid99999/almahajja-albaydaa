@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getAdminDashboardStats } from '@/api/adminStats';
 import { getAdminProgressAnalytics } from '@/api/adminAnalytics';
+import { getAdminRatingsSummary } from '@/api/ratings';
 import { queryKeys } from '@/constants/queryKeys';
 
 /**
@@ -25,6 +26,15 @@ export function useAdminAnalytics() {
   return useQuery({
     queryKey: queryKeys.adminAnalytics,
     queryFn: getAdminProgressAnalytics,
+    staleTime: 60_000,
+  });
+}
+
+/** Average app-rating tile (star rating, not lecture ratings). */
+export function useAdminRatingsSummary() {
+  return useQuery({
+    queryKey: queryKeys.adminRatingsSummary,
+    queryFn: getAdminRatingsSummary,
     staleTime: 60_000,
   });
 }

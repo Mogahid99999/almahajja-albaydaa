@@ -10,8 +10,6 @@
  * Arrays are mutable so admin "create/publish" and "save progress" feel real
  * for the duration of a session.
  */
-import { Asset } from 'expo-asset';
-
 import type { AppLectureStatus } from '@/config';
 import type {
   AttachmentType,
@@ -21,11 +19,6 @@ import type {
 } from '@/api/types';
 
 const now = '2026-06-26T00:00:00.000Z';
-
-/** A real bundled recording, for end-to-end playback testing. */
-const REAL_AUDIO = Asset.fromModule(
-  require('../../assets/sample-lecture.mp3'),
-).uri;
 
 // --- Domain entities (supersets of the DB rows, so they're assignable up) -----
 export type DSheikh = { id: string; name: string; created_at: string };
@@ -164,8 +157,6 @@ export const lectures: DLecture[] = [
   lec('l-kt-3', 'باب الأصل الثالث: معرفة نبيكم ﷺ', 'kitab-tawheed', 'sh-1', 2, 1920),
   lec('l-kt-4', 'باب فضل التوحيد وما يكفّر من الذنوب', 'kitab-tawheed', 'sh-1', 3, 1605),
   lec('l-kt-5', 'باب الدعاء إلى شهادة أن لا إله إلا الله', 'kitab-tawheed', 'sh-2', 4, 1740),
-  // Real bundled recording for end-to-end playback testing.
-  lec('l-real', 'محاضرة تجريبية — تسجيل حقيقي', 'kitab-tawheed', 'sh-1', 6, 510, 'published', REAL_AUDIO),
 
   // الأصول الثلاثة
   lec('l-ut-1', 'مقدمة الأصول الثلاثة', 'usool-thalatha', 'sh-1', 0, 1490),

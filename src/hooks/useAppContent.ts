@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getAboutContent, getAppConfigForAdmin, getQnaNotice, getSupportContact, setAppConfig } from '@/api/appContent';
+import { getAboutContent, getAppConfigForAdmin, getQnaNotice, getShareContent, getSupportContact, setAppConfig } from '@/api/appContent';
 import { queryKeys } from '@/constants/queryKeys';
 
 /** Student-facing About content (falls back to the original copy). Rarely edited. */
@@ -30,6 +30,15 @@ export function useQnaNotice() {
   });
 }
 
+/** Share-the-app link + phrase (falls back to a hardcoded default). Rarely edited. */
+export function useShareContent() {
+  return useQuery({
+    queryKey: queryKeys.shareContent,
+    queryFn: getShareContent,
+    staleTime: 30 * 60_000,
+  });
+}
+
 /** Admin Settings — all editable config keys. */
 export function useAdminConfig() {
   return useQuery({
@@ -48,6 +57,7 @@ export function useSetAppConfig() {
       qc.invalidateQueries({ queryKey: queryKeys.adminConfig });
       qc.invalidateQueries({ queryKey: queryKeys.aboutContent });
       qc.invalidateQueries({ queryKey: queryKeys.supportContact });
+      qc.invalidateQueries({ queryKey: queryKeys.shareContent });
     },
   });
 }

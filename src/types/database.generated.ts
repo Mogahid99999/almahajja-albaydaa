@@ -32,6 +32,30 @@ export type Database = {
         }
         Relationships: []
       }
+      app_ratings: {
+        Row: {
+          created_at: string
+          id: string
+          message: string | null
+          stars: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          stars: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          stars?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       attachments: {
         Row: {
           body: string | null
@@ -1071,6 +1095,13 @@ export type Database = {
         }[]
       }
       admin_progress_analytics: { Args: never; Returns: Json }
+      admin_ratings_summary: {
+        Args: never
+        Returns: {
+          avg_stars: number
+          total_ratings: number
+        }[]
+      }
       admin_reorder_sections: { Args: { p_ids: string[] }; Returns: undefined }
       admin_set_benefit_status: {
         Args: { p_id: string; p_status: string }
@@ -1525,6 +1556,10 @@ export type Database = {
         Returns: string
       }
       submit_quiz_attempt: { Args: { p_attempt_id: string }; Returns: Json }
+      submit_rating: {
+        Args: { p_message?: string; p_stars: number }
+        Returns: undefined
+      }
       touch_last_opened: { Args: never; Returns: undefined }
       try_claim_goal_congrats: { Args: never; Returns: boolean }
       update_broadcast: {
