@@ -117,12 +117,17 @@ function onPersistedCacheHydrated() {
 // locale) we restart ONCE to apply it. `isRTL` is true on every launch afterwards
 // (the pref persists natively), so this never loops. Web can't restart and is LTR
 // admin-only, so it's skipped there.
-// On Android this is also enforced natively in MainApplication.kt (before the
-// first frame), so the restart below never fires there in a real build; it
-// remains as the iOS fallback. Expo Go ignores this project's native Android
-// code (it runs its own generic host), so isRTL can still read false there —
-// skip the restart in Expo Go since `react-native-restart` has no native
-// module to call in that environment (RNRestart is null → throws).
+// iOS also enforces this natively in AppDelegate.swift (RCTI18nUtil, before
+// the first frame), so the restart below never fires there in a real build;
+// it remains as a fallback for a Debug build running an older native binary
+// that predates that change. Android has NO equivalent native enforcement in
+// MainApplication.kt — it currently relies entirely on the restart below to
+// apply forceRTL, which happens to work but isn't guaranteed the way the iOS
+// path now is. (TODO: mirror the AppDelegate.swift fix in MainApplication.kt.)
+// Expo Go ignores this project's native Android/iOS code (it runs its own
+// generic host), so isRTL can still read false there — skip the restart in
+// Expo Go since `react-native-restart` has no native module to call in that
+// environment (RNRestart is null → throws).
 // swapLeftAndRightInRTL(false) keeps left/right styles PHYSICAL in RTL
 // (textAlign 'right' means the right edge, absolute right:0 means the right
 // edge) — without it RN mirrors them and every text lands on the left.
