@@ -44,6 +44,7 @@ type NavKey =
   | 'contributions'
   | 'reports'
   | 'feedback'
+  | 'ratings'
   | 'analytics'
   | 'users'
   | 'settings';
@@ -70,6 +71,7 @@ const NAV_ITEMS: {
   { key: 'contributions', label: 'مشاركات الدارسين', href: '/admin/contributions', icon: 'message-square', adminOnly: true },
   { key: 'reports', label: 'البلاغات', href: '/admin/reports', icon: 'flag', adminOnly: true },
   { key: 'feedback', label: 'ملاحظات الطلاب', href: '/admin/feedback', icon: 'message-circle', adminOnly: true },
+  { key: 'ratings', label: 'تقييمات التطبيق', href: '/admin/ratings', icon: 'thumbs-up', adminOnly: true },
   { key: 'analytics', label: 'تحليلات التقدم', href: '/admin/analytics', icon: 'trending-up', adminOnly: true },
   { key: 'users', label: 'إدارة المستخدمين', href: '/admin/users', icon: 'user-check', adminOnly: true },
   { key: 'settings', label: 'الإعدادات وعن المنصة', href: '/admin/settings', icon: 'settings', adminOnly: true },

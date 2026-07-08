@@ -1048,6 +1048,7 @@ export type Database = {
         Args: { p_feedback_id: string }
         Returns: undefined
       }
+      admin_delete_rating: { Args: { p_rating_id: string }; Returns: undefined }
       admin_list_benefits: {
         Args: { p_lecture_id?: string }
         Returns: {
@@ -1073,6 +1074,17 @@ export type Database = {
           message: string
           resolved_at: string
           status: string
+          user_id: string
+          user_name: string
+        }[]
+      }
+      admin_list_ratings: {
+        Args: never
+        Returns: {
+          created_at: string
+          id: string
+          message: string
+          stars: number
           user_id: string
           user_name: string
         }[]

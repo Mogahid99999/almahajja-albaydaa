@@ -30,3 +30,32 @@ export async function getAdminRatingsSummary(): Promise<AdminRatingsSummary> {
     totalRatings: Number(row?.total_ratings ?? 0),
   };
 }
+
+export type AdminRatingRow = {
+  id: string;
+  stars: number;
+  message: string | null;
+  userId: string | null;
+  userName: string | null;
+  createdAt: string;
+};
+
+export async function adminListRatings(): Promise<AdminRatingRow[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase.rpc('admin_list_ratings');
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    stars: r.stars,
+    message: r.message ?? null,
+    userId: r.user_id ?? null,
+    userName: r.user_name ?? null,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function adminDeleteRating(ratingId: string): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.rpc('admin_delete_rating', { p_rating_id: ratingId });
+  if (error) throw error;
+}

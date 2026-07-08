@@ -108,7 +108,7 @@ export default function RegisterScreen() {
           />
         </Field>
 
-        <Field label="البريد الإلكتروني">
+        <Field label="البريد الإلكتروني (اختياري)">
           <TextInput
             value={email}
             onChangeText={setEmail}
@@ -124,7 +124,7 @@ export default function RegisterScreen() {
           <TextInput
             value={password}
             onChangeText={setPassword}
-            placeholder="٦ أحرف على الأقل"
+            placeholder="8 أحرف أو ارقام على الأقل"
             placeholderTextColor={colors.textGhost}
             secureTextEntry
             style={inputStyle}

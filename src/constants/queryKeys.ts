@@ -86,6 +86,7 @@ export const queryKeys = {
   adminStats: ['admin', 'stats'] as const,
   adminAnalytics: ['admin', 'analytics'] as const,
   adminRatingsSummary: ['admin', 'ratingsSummary'] as const,
+  adminRatingsList: ['admin', 'ratingsList'] as const,
   adminUsers: (search: string) => ['admin', 'users', search] as const,
   adminUserDetail: (userId: string) => ['admin', 'user', userId] as const,
   aboutContent: ['appContent', 'about'] as const,

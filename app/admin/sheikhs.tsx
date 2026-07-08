@@ -154,7 +154,7 @@ function SheikhAccountCard() {
     const n = name.trim();
     const e = email.trim().toLowerCase();
     if (!n || !e || password.length < 6) {
-      setError('أكمل الاسم والبريد وكلمة مرور من ٦ أحرف فأكثر.');
+      setError('أكمل الاسم والبريد وكلمة مرور من 8 أحرف فأكثر.');
       return;
     }
     setError('');
