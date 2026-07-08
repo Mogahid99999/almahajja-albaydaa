@@ -17,7 +17,7 @@
 //         (metadata verify_jwt=true) — mirrors admin-users.
 // =============================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { PutObjectCommand, S3Client } from "npm:@aws-sdk/client-s3@3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "npm:@aws-sdk/client-s3@3";
 import { getSignedUrl } from "npm:@aws-sdk/s3-request-presigner@3";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -34,7 +34,11 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const KEY_PREFIX = { lecture: "lectures", attachment: "attachments" } as const;
+const KEY_PREFIX = {
+  lecture: "lectures",
+  attachment: "attachments",
+  broadcast: "broadcasts",
+} as const;
 
 // Mirrors the allow-lists 0040_storage_draft_scope.sql put on the old buckets.
 const ALLOWED_CONTENT_TYPES: Record<keyof typeof KEY_PREFIX, string[]> = {
@@ -46,6 +50,8 @@ const ALLOWED_CONTENT_TYPES: Record<keyof typeof KEY_PREFIX, string[]> = {
     "application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif",
     "application/epub+zip", "text/plain",
   ],
+  // بروادكاست images only — the التذكيرات النافعة admin image picker.
+  broadcast: ["image/jpeg", "image/png", "image/webp", "image/gif"],
 };
 
 const s3 = new S3Client({
@@ -56,6 +62,49 @@ const s3 = new S3Client({
     secretAccessKey: R2_SECRET_ACCESS_KEY,
   },
 });
+
+const UNCLASSIFIED_FOLDER = "_unclassified";
+
+/** Path-segment-safe name — strips separators/control chars, keeps letters (incl. Arabic). */
+function sanitize(name: string): string {
+  return name.trim().replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").slice(0, 80);
+}
+
+// A ranged GetObjectCommand (1 byte) rather than HeadObjectCommand — R2
+// returned a hanging/failed response for HeadObjectCommand in practice, while
+// GetObjectCommand (already used by r2-read-url) is proven reliable here.
+async function objectExists(key: string): Promise<boolean> {
+  try {
+    await s3.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key, Range: "bytes=0-0" }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Collision-safe `lectures/<section>/<lesson>.<ext>` key — uses the admin's
+ * exact section + lecture names (CLAUDE.md: "the file name must match the one
+ * designated by the admin"), only appending " (n)" if that exact name is
+ * already taken. A lecture with no section yet (still in the unclassified
+ * queue) lands under `lectures/_unclassified/` — classifying it later does
+ * not move the object; only the DB row's section changes.
+ */
+async function uniqueLectureKey(
+  folder: string | undefined,
+  displayName: string | undefined,
+  ext: string,
+): Promise<string> {
+  const section = sanitize(folder ?? "") || UNCLASSIFIED_FOLDER;
+  const base = sanitize(displayName ?? "") || "محاضرة";
+  let candidate = `lectures/${section}/${base}.${ext}`;
+  let n = 2;
+  while (await objectExists(candidate)) {
+    candidate = `lectures/${section}/${base} (${n}).${ext}`;
+    n++;
+  }
+  return candidate;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -73,14 +122,22 @@ Deno.serve(async (req) => {
   const { data: isManager } = await callerClient.rpc("is_content_manager");
   if (!isManager) return json({ error: "forbidden" }, 403);
 
-  let body: { kind?: string; fileName?: string; contentType?: string };
+  let body: {
+    kind?: string;
+    fileName?: string;
+    contentType?: string;
+    /** Lecture only: the section title, so audio lands in a matching R2 folder. */
+    folder?: string;
+    /** Lecture only: the admin-entered lesson title — used verbatim (sanitized) as the file name. */
+    displayName?: string;
+  };
   try {
     body = await req.json();
   } catch {
     return json({ error: "invalid json" }, 400);
   }
-  const { kind, fileName, contentType } = body;
-  if (kind !== "lecture" && kind !== "attachment") {
+  const { kind, fileName, contentType, folder, displayName } = body;
+  if (kind !== "lecture" && kind !== "attachment" && kind !== "broadcast") {
     return json({ error: "invalid kind" }, 400);
   }
   if (!fileName || !contentType) {
@@ -91,11 +148,9 @@ Deno.serve(async (req) => {
   }
 
   const ext = (fileName.split(".").pop() || "bin").toLowerCase();
-  const safeBase = fileName
-    .replace(/\.[^.]*$/, "")
-    .replace(/[^\w-]/g, "_")
-    .slice(0, 40);
-  const key = `${KEY_PREFIX[kind]}/${Date.now()}-${safeBase || "file"}.${ext}`;
+  const key = kind === "lecture"
+    ? await uniqueLectureKey(folder, displayName, ext)
+    : `${KEY_PREFIX[kind]}/${Date.now()}-${sanitize(fileName.replace(/\.[^.]*$/, "")) || "file"}.${ext}`;
 
   const uploadUrl = await getSignedUrl(
     s3,

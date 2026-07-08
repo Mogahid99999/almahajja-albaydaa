@@ -27,10 +27,22 @@ export type PickedAudio = {
 /**
  * Upload a picked audio file to R2 and return its object key (what
  * `lectures.audio_path` stores). The player mints a signed URL from this key
- * at playback time (src/api/lectures.ts → audioUrl).
+ * at playback time (src/api/lectures.ts → audioUrl). The object lands at
+ * `lectures/<section title>/<lecture title>.<ext>` (or `lectures/_unclassified/`
+ * when uploaded before classification) — the admin's own names, not a
+ * timestamp+slug — so the R2 bucket mirrors the app's section/lesson structure.
  */
-async function uploadLectureAudio(file: PickedAudio): Promise<string> {
-  return uploadToR2('lecture', file);
+async function uploadLectureAudio(
+  file: PickedAudio,
+  sectionId: string | null,
+  title: string,
+): Promise<string> {
+  let folder: string | null = null;
+  if (sectionId) {
+    const { data } = await supabase.from('sections').select('title').eq('id', sectionId).single();
+    folder = data?.title ?? null;
+  }
+  return uploadToR2('lecture', file, { folder, displayName: title });
 }
 
 /** Lectures awaiting classification (manual upload or, later, the bot). */
@@ -100,7 +112,9 @@ export async function createLecture(input: {
 }): Promise<{ id: string }> {
   if (USE_MOCK) return mock.createLecture(input);
   const dbStatus = input.status === 'unclassified' ? 'draft' : input.status;
-  const audioPath = input.audioFile ? await uploadLectureAudio(input.audioFile) : null;
+  const audioPath = input.audioFile
+    ? await uploadLectureAudio(input.audioFile, input.sectionId, input.title)
+    : null;
   const { data, error } = await supabase
     .from('lectures')
     .insert({

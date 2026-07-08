@@ -117,6 +117,9 @@ export type Database = {
           created_by: string | null
           deleted_at: string | null
           id: string
+          image_path: string | null
+          link_label: string | null
+          link_url: string | null
           published_at: string | null
           show_on_home: boolean
           title: string
@@ -128,6 +131,9 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           id?: string
+          image_path?: string | null
+          link_label?: string | null
+          link_url?: string | null
           published_at?: string | null
           show_on_home?: boolean
           title: string
@@ -139,6 +145,9 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           id?: string
+          image_path?: string | null
+          link_label?: string | null
+          link_url?: string | null
           published_at?: string | null
           show_on_home?: boolean
           title?: string
@@ -1125,7 +1134,14 @@ export type Database = {
       cancel_buddy: { Args: never; Returns: undefined }
       contains_blocked_word: { Args: { p_text: string }; Returns: boolean }
       create_broadcast: {
-        Args: { p_body: string; p_show_on_home?: boolean; p_title: string }
+        Args: {
+          p_body: string
+          p_image_path?: string
+          p_link_label?: string
+          p_link_url?: string
+          p_show_on_home?: boolean
+          p_title: string
+        }
         Returns: string
       }
       delete_broadcast: { Args: { p_id: string }; Returns: undefined }
@@ -1171,6 +1187,9 @@ export type Database = {
         Returns: {
           body: string
           id: string
+          image_path: string
+          link_label: string
+          link_url: string
           published_at: string
           show_on_home: boolean
           title: string
@@ -1512,6 +1531,9 @@ export type Database = {
         Args: {
           p_body: string
           p_id: string
+          p_image_path?: string
+          p_link_label?: string
+          p_link_url?: string
           p_show_on_home: boolean
           p_title: string
         }

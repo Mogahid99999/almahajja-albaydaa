@@ -8,14 +8,16 @@
  * keep their wording); deleting soft-deletes and clears the inbox rows.
  */
 import { Feather } from '@expo/vector-icons';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Switch,
   TextInput,
   View,
+  type ImageStyle,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
@@ -27,10 +29,13 @@ import { Card, Divider, Rhombus, Txt, cardRowStyle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useAdminBroadcasts,
+  useBroadcastImageUrl,
   useCreateBroadcast,
   useDeleteBroadcast,
   useUpdateBroadcast,
+  useUploadBroadcastImage,
 } from '@/hooks/useBroadcasts';
+import { getDocumentAsync } from '@/lib/documentPicker';
 import { arNum } from '@/lib/format';
 
 /** "٤ تموز ٢٠٢٦" style short Arabic date for the list rows. */
@@ -105,15 +110,28 @@ export default function RemindersScreen() {
   const create = useCreateBroadcast();
   const update = useUpdateBroadcast();
   const remove = useDeleteBroadcast();
+  const uploadImage = useUploadBroadcastImage();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [showOnHome, setShowOnHome] = useState(true);
+  const [imagePath, setImagePath] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkLabel, setLinkLabel] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pendingDelete, setPendingDelete] = useState<Broadcast | null>(null);
   const [confirmingSend, setConfirmingSend] = useState(false);
+
+  // Editing an existing reminder: resolve its stored image key to a preview URL.
+  const { data: existingImageUrl } = useBroadcastImageUrl(
+    editingId && !imagePreview ? imagePath : null,
+  );
+  useEffect(() => {
+    if (existingImageUrl) setImagePreview(existingImageUrl);
+  }, [existingImageUrl]);
 
   const pending = create.isPending || update.isPending;
 
@@ -122,6 +140,10 @@ export default function RemindersScreen() {
     setTitle('');
     setBody('');
     setShowOnHome(true);
+    setImagePath(null);
+    setImagePreview(null);
+    setLinkUrl('');
+    setLinkLabel('');
     setError('');
   }
 
@@ -130,8 +152,38 @@ export default function RemindersScreen() {
     setTitle(b.title);
     setBody(b.body);
     setShowOnHome(b.showOnHome);
+    setImagePath(b.imagePath);
+    setImagePreview(null);
+    setLinkUrl(b.linkUrl ?? '');
+    setLinkLabel(b.linkLabel ?? '');
     setError('');
     setNotice('');
+  }
+
+  async function pickImage() {
+    setError('');
+    try {
+      const res = await getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true, multiple: false });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      uploadImage.mutate(
+        { uri: asset.uri, name: asset.name, mimeType: asset.mimeType },
+        {
+          onSuccess: (key) => {
+            setImagePath(key);
+            setImagePreview(asset.uri);
+          },
+          onError: () => setError('تعذّر رفع الصورة.'),
+        },
+      );
+    } catch {
+      setError('تعذّر اختيار الصورة.');
+    }
+  }
+
+  function removeImage() {
+    setImagePath(null);
+    setImagePreview(null);
   }
 
   function submit() {
@@ -143,9 +195,17 @@ export default function RemindersScreen() {
     }
     setError('');
     setNotice('');
+    const input = {
+      title: t,
+      body: b,
+      showOnHome,
+      imagePath,
+      linkUrl: linkUrl.trim() || null,
+      linkLabel: linkLabel.trim() || null,
+    };
     if (editingId) {
       update.mutate(
-        { id: editingId, input: { title: t, body: b, showOnHome } },
+        { id: editingId, input },
         {
           onSuccess: () => {
             setNotice('حُفظ التعديل.');
@@ -162,7 +222,14 @@ export default function RemindersScreen() {
   }
 
   function confirmSend() {
-    const input = { title: title.trim(), body: body.trim(), showOnHome };
+    const input = {
+      title: title.trim(),
+      body: body.trim(),
+      showOnHome,
+      imagePath,
+      linkUrl: linkUrl.trim() || null,
+      linkLabel: linkLabel.trim() || null,
+    };
     create.mutate(input, {
       onSuccess: () => {
         setNotice('أُرسل التذكير إلى جميع الدارسين.');
@@ -223,6 +290,54 @@ export default function RemindersScreen() {
             textAlign="right"
             multiline
             style={[styles.input, styles.bodyInput]}
+          />
+        </View>
+
+        {/* Optional image (shown on the detail page + as a rich push image) */}
+        <View style={styles.imageRow}>
+          {imagePreview ? (
+            <View style={styles.imagePreviewWrap}>
+              <Image source={{ uri: imagePreview }} style={styles.imagePreview} />
+              <Pressable
+                onPress={removeImage}
+                accessibilityLabel="إزالة الصورة"
+                style={({ pressed }) => [styles.removeImageBtn, pressed && { opacity: 0.7 }]}
+              >
+                <Feather name="x" size={13} color={colors.onTealPrimary} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={pickImage}
+              disabled={uploadImage.isPending}
+              style={({ pressed }) => [styles.pickImageBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Feather name="image" size={16} color={colors.primaryTeal} />
+              <Txt size={13} weight="medium" color={colors.primaryTeal}>
+                {uploadImage.isPending ? 'جارٍ رفع الصورة...' : 'إضافة صورة (اختياري)'}
+              </Txt>
+            </Pressable>
+          )}
+        </View>
+
+        {/* Optional action button (link to a URL, or an in-app route like /(student)/...) */}
+        <View style={{ gap: 10, marginTop: 12 }}>
+          <TextInput
+            value={linkLabel}
+            onChangeText={setLinkLabel}
+            placeholder="نص الزر (اختياري) — مثال: اطّلع أكثر"
+            placeholderTextColor={colors.textGhost}
+            textAlign="right"
+            style={styles.input}
+          />
+          <TextInput
+            value={linkUrl}
+            onChangeText={setLinkUrl}
+            placeholder="رابط الزر (اختياري) — https://…"
+            placeholderTextColor={colors.textGhost}
+            textAlign="left"
+            autoCapitalize="none"
+            style={[styles.input, { textAlign: 'left' }]}
           />
         </View>
 
@@ -380,6 +495,46 @@ const styles = StyleSheet.create({
     minHeight: 120,
     textAlignVertical: 'top',
   },
+
+  imageRow: {
+    marginTop: 12,
+  } as ViewStyle,
+
+  pickImageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.borderSand2,
+    backgroundColor: colors.surfaceInset,
+  } as ViewStyle,
+
+  imagePreviewWrap: {
+    alignSelf: 'flex-start',
+  } as ViewStyle,
+
+  imagePreview: {
+    width: 140,
+    height: 90,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceInset,
+  } as ImageStyle,
+
+  removeImageBtn: {
+    position: 'absolute',
+    top: -8,
+    left: -8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.stateDanger,
+  } as ViewStyle,
 
   switchRow: {
     flexDirection: 'row',

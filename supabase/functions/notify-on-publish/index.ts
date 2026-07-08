@@ -13,8 +13,25 @@
 // Env (auto-injected by Supabase): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // =============================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { GetObjectCommand, S3Client } from "npm:@aws-sdk/client-s3@3";
+import { getSignedUrl } from "npm:@aws-sdk/s3-request-presigner@3";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+
+// R2 (Cloudflare) — only used to attach a rich image to a beneficial-reminder
+// push (row.data.imagePath, see migration 0064_broadcasts_image_link.sql).
+// Falls back to no image if these secrets aren't set (older deploys).
+const R2_ENDPOINT = Deno.env.get("R2_ENDPOINT");
+const R2_BUCKET = Deno.env.get("R2_BUCKET");
+const R2_ACCESS_KEY_ID = Deno.env.get("R2_ACCESS_KEY_ID");
+const R2_SECRET_ACCESS_KEY = Deno.env.get("R2_SECRET_ACCESS_KEY");
+const r2 = R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY
+  ? new S3Client({
+      region: "auto",
+      endpoint: R2_ENDPOINT,
+      credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
+    })
+  : null;
 
 type NotificationRow = {
   user_id: string;
@@ -121,6 +138,26 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Beneficial-reminder image (0064): mint a presigned R2 GET for
+  // row.data.imagePath and attach it as richContent.image — Expo Push forwards
+  // this to FCM as a BigPictureStyle image on Android (and an iOS attachment
+  // when a Notification Service Extension is present). Best-effort: a signing
+  // failure must never block the push itself.
+  let richContent: { image: string } | undefined;
+  const imagePath = (row.data as Record<string, unknown> | null)?.imagePath;
+  if (r2 && typeof imagePath === "string" && imagePath) {
+    try {
+      const image = await getSignedUrl(
+        r2,
+        new GetObjectCommand({ Bucket: R2_BUCKET, Key: imagePath }),
+        { expiresIn: 3600 },
+      );
+      richContent = { image };
+    } catch (e) {
+      console.log("reminder image presign failed (non-blocking):", e);
+    }
+  }
+
   // Gently audible (the §14 silent choice was reversed — user-approved). Route to
   // the SAME 'default-v2' channel the local notifications use (importance HIGH +
   // default system sound, no vibration) so a new-content push reaches every
@@ -135,6 +172,7 @@ Deno.serve(async (req) => {
     sound: "default",
     channelId: "default-v2",
     priority: "high",
+    ...(richContent ? { richContent } : {}),
     ...(badge !== undefined ? { badge } : {}),
   }));
 

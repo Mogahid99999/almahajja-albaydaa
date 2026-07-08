@@ -9,7 +9,7 @@ import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
 
-export type StorageKind = 'lecture' | 'attachment';
+export type StorageKind = 'lecture' | 'attachment' | 'broadcast';
 
 /** A picked file (lecture audio or attachment) ready to upload. */
 export type PickedFile = {
@@ -51,7 +51,7 @@ const AUDIO_CONTENT_TYPE: Record<string, string> = {
 };
 
 function resolveContentType(kind: StorageKind, file: PickedFile): string {
-  if (kind === 'attachment') return file.mimeType ?? 'application/octet-stream';
+  if (kind === 'attachment' || kind === 'broadcast') return file.mimeType ?? 'application/octet-stream';
   // Prefer a known type for the extension; the picker's mimeType is sometimes
   // generic (application/octet-stream) which would break in-browser playback.
   const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();
@@ -61,17 +61,34 @@ function resolveContentType(kind: StorageKind, file: PickedFile): string {
   );
 }
 
+/** Lecture-only naming hints — the section title (R2 folder) and the admin's
+ * exact lesson title (used verbatim, sanitized, as the object's file name). */
+export type LectureUploadNaming = {
+  folder?: string | null;
+  displayName?: string | null;
+};
+
 /**
  * Upload a picked file (lecture audio or attachment) to R2 and return its
  * object key — what `lectures.audio_path` / `attachments.storage_path` store.
  * Mints a presigned PUT via r2-upload-url, then streams the bytes straight to
  * R2; the R2 secret key never reaches the client.
  */
-export async function uploadToR2(kind: StorageKind, file: PickedFile): Promise<string> {
+export async function uploadToR2(
+  kind: StorageKind,
+  file: PickedFile,
+  naming?: LectureUploadNaming,
+): Promise<string> {
   const contentType = resolveContentType(kind, file);
   const { uploadUrl, key } = await invokeR2<{ uploadUrl: string; key: string }>(
     'r2-upload-url',
-    { kind, fileName: file.name, contentType },
+    {
+      kind,
+      fileName: file.name,
+      contentType,
+      folder: naming?.folder ?? undefined,
+      displayName: naming?.displayName ?? undefined,
+    },
   );
 
   if (Platform.OS === 'web') {
@@ -104,16 +121,23 @@ export async function uploadToR2(kind: StorageKind, file: PickedFile): Promise<s
 /**
  * Resolve an object key → a short-lived (60 min) signed GET URL, gated by
  * `can_read_storage_object` (draft/published rules, migration 0063). Returns
- * null if the key is missing or the read is denied — callers treat this the
- * same as a failed signed-URL mint did before.
+ * null when the backend was reached and explicitly denied/errored (unknown
+ * key, unpublished lecture, etc.) — callers treat that as "not available",
+ * same as a failed signed-URL mint did before. A network-level failure (the
+ * function was never reached at all) THROWS instead: `getLecturePlayback`'s
+ * query then errors and React Query retries, rather than silently caching an
+ * empty URL as if it were a valid (if absent) result for the full staleTime —
+ * a transient network hiccup must not look identical to "not available" for
+ * up to 45 minutes (useLecture.ts's staleTime).
  */
 export async function getReadUrl(key: string): Promise<string | null> {
-  try {
-    const { url } = await invokeR2<{ url: string }>('r2-read-url', { key });
-    return url ?? null;
-  } catch {
-    return null;
+  const { data, error } = await supabase.functions.invoke('r2-read-url', { body: { key } });
+  if (error) {
+    if (!(error as any).context) throw error; // no HTTP response at all — transient
+    return null; // backend responded (even non-2xx) — an intentional denial
   }
+  if (data?.error) return null;
+  return data?.url ?? null;
 }
 
 /** Best-effort delete of an R2 object (mirrors the old storage.remove([path])). */

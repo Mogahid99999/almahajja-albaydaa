@@ -7,11 +7,11 @@
  *
  * Route: /(student)/reminder/[id]
  */
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { colors, shadows } from '@/constants/theme';
-import { useBroadcast } from '@/hooks/useBroadcasts';
+import { colors, radius, shadows } from '@/constants/theme';
+import { useBroadcast, useBroadcastImageUrl } from '@/hooks/useBroadcasts';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { arNum } from '@/lib/format';
 
@@ -37,7 +37,18 @@ export default function ReminderDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useBroadcast(id ?? '');
+  const { data: imageUrl } = useBroadcastImageUrl(data?.imagePath ?? null);
   const miniPad = useMiniPlayerPad();
+
+  function openLink() {
+    const url = data?.linkUrl;
+    if (!url) return;
+    if (url.startsWith('/')) {
+      router.push(url as Parameters<typeof router.push>[0]);
+    } else {
+      void Linking.openURL(url);
+    }
+  }
 
   return (
     <Screen bottomPad={miniPad || 24} padded>
@@ -87,6 +98,21 @@ export default function ReminderDetailScreen() {
             </Txt>
           </View>
 
+          {/* ── Image (optional) ──────────────────────────────────────────────── */}
+          {imageUrl ? (
+            <Image
+              source={{ uri: imageUrl }}
+              style={{
+                width: '100%',
+                aspectRatio: 16 / 9,
+                borderRadius: radius.card,
+                marginBottom: 16,
+                backgroundColor: colors.surfaceInset,
+              }}
+              resizeMode="cover"
+            />
+          ) : null}
+
           {/* ── Body card ─────────────────────────────────────────────────────── */}
           <Card style={[{ overflow: 'hidden' }, shadows.feature]}>
             <ConcentricMotif
@@ -105,6 +131,29 @@ export default function ReminderDetailScreen() {
               {data.body}
             </Txt>
           </Card>
+
+          {/* ── Action button (optional) ─────────────────────────────────────── */}
+          {data.linkUrl ? (
+            <Pressable
+              onPress={openLink}
+              style={({ pressed }) => [
+                {
+                  marginTop: 18,
+                  height: 48,
+                  borderRadius: radius.sm,
+                  backgroundColor: colors.primaryTeal,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+                shadows.button,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Txt weight="semibold" size={14.5} color={colors.onTealPrimary}>
+                {data.linkLabel || 'اطّلع أكثر'}
+              </Txt>
+            </Pressable>
+          ) : null}
 
           {/* ── Bottom motif accent ───────────────────────────────────────────── */}
           <View style={{ alignItems: 'center', marginTop: 32 }}>

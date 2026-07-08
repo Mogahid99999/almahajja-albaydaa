@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import { createUser } from './adminUsers';
 import { uploadAttachmentFile, type PickedAttachmentFile } from './attachments';
+import { getReadUrl } from './storage';
 import type { SheikhOption } from './types';
 
 export type { SheikhOption } from './types';
@@ -26,11 +27,9 @@ export type SheikhProfile = {
   photoUrl: string | null;
 };
 
-/** Resolve a `sheikhs.photo_path` → signed URL (60 min TTL), same bucket/TTL
- * convention as `attachments.ts`'s private `signedUrl()`. */
+/** Resolve a `sheikhs.photo_path` (R2 key, `attachments/` prefix) → signed URL. */
 async function sheikhPhotoSignedUrl(path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage.from('attachments').createSignedUrl(path, 3600);
-  return error || !data ? null : data.signedUrl;
+  return getReadUrl(path);
 }
 
 /** Sheikh list incl. bio + a resolved photo URL — for the admin bio editor and

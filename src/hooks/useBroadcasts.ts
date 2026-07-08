@@ -4,11 +4,14 @@ import {
   createBroadcast,
   deleteBroadcast,
   getBroadcast,
+  getBroadcastImageUrl,
   getHomeBroadcasts,
   listBroadcasts,
   updateBroadcast,
+  uploadBroadcastImage,
   type BroadcastInput,
 } from '@/api/broadcasts';
+import type { PickedFile } from '@/api/storage';
 import { queryKeys } from '@/constants/queryKeys';
 
 /** Admin/publisher list of every broadcast, newest first. */
@@ -68,5 +71,22 @@ export function useDeleteBroadcast() {
   return useMutation({
     mutationFn: (id: string) => deleteBroadcast(id),
     onSuccess: invalidate,
+  });
+}
+
+/** Upload a reminder image (admin form) — returns the R2 object key. */
+export function useUploadBroadcastImage() {
+  return useMutation({
+    mutationFn: (file: PickedFile) => uploadBroadcastImage(file),
+  });
+}
+
+/** Resolve an existing reminder's image key to a signed preview URL (edit mode). */
+export function useBroadcastImageUrl(imagePath: string | null) {
+  return useQuery({
+    queryKey: ['broadcastImageUrl', imagePath],
+    queryFn: () => getBroadcastImageUrl(imagePath as string),
+    enabled: !!imagePath,
+    staleTime: 30 * 60_000,
   });
 }
