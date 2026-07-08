@@ -42,14 +42,28 @@ export type CurrentUser = {
 };
 
 /**
+ * Default country code used when a typed number doesn't already carry one —
+ * Supabase's phone auth requires strict E.164 (no leading 0, always a country
+ * code), but the product requirement is "accept whatever the user types," so
+ * the app fills in the code rather than asking the user to think about format.
+ */
+const DEFAULT_COUNTRY_CODE = '249';
+
+/**
  * Phone is a real sign-in credential (phone+password) but is NEVER OTP-verified
  * — the project has `sms_autoconfirm` on and no SMS provider configured, so
- * whatever the user types is accepted as-is. Strip everything but digits so
- * "+249 91 234 5678" and "0912345678" both normalize to a stable value Supabase
- * treats consistently on both registration and sign-in.
+ * whatever the user types is accepted, just reshaped into valid E.164:
+ * strip everything but digits, drop a local trunk "0" prefix if present, and
+ * prepend the default country code unless the number is already long enough
+ * to plausibly carry one (or already starts with it). "0912345678",
+ * "912345678", and "+249 91 234 5678" all normalize to the same "249912345678".
  */
 export function normalizePhone(raw: string): string {
-  return raw.replace(/[^0-9]/g, '');
+  const digits = raw.replace(/[^0-9]/g, '');
+  if (!digits) return digits;
+  const local = digits.startsWith('0') ? digits.slice(1) : digits;
+  if (local.startsWith(DEFAULT_COUNTRY_CODE) || local.length > 9) return local;
+  return DEFAULT_COUNTRY_CODE + local;
 }
 
 /**
@@ -545,4 +559,58 @@ export async function verifyPasswordResetCode(email: string, code: string): Prom
 export async function updatePassword(newPassword: string): Promise<void> {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw error;
+}
+
+/**
+ * Change password (signed-in user): requires the CURRENT password first — the
+ * session alone isn't treated as sufficient proof here (unlike the admin's
+ * "set new password with no old" action), so this re-authenticates with
+ * whatever identifier the account has (email or phone, whichever exists) +
+ * the typed current password before writing the new one. Re-signing in as
+ * the SAME already-authenticated uid is a normal Supabase re-auth pattern —
+ * it just refreshes the session, no destructive side effect.
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  if (USE_MOCK) {
+    return updatePassword(newPassword);
+  }
+  const { data } = await supabase.auth.getUser();
+  const u = data.user;
+  if (!u) throw new Error('لا يوجد حساب');
+  const { error: verifyError } = u.email
+    ? await supabase.auth.signInWithPassword({ email: u.email, password: currentPassword })
+    : await supabase.auth.signInWithPassword({ phone: u.phone ?? '', password: currentPassword });
+  if (verifyError) throw new Error('كلمة المرور الحالية غير صحيحة');
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+/**
+ * Self-service phone change — UNLIKE email, this is a single instant step: no
+ * OTP is ever sent (project has `sms_autoconfirm` on), so the user can change
+ * their own phone freely. Mirrors the admin's phone edit but from the client
+ * with the user's own session instead of the service role.
+ */
+export async function changePhone(phone: string): Promise<CurrentUser> {
+  if (USE_MOCK) {
+    const raw = await AsyncStorage.getItem(MOCK_SESSION_KEY);
+    const cur = raw ? (JSON.parse(raw) as CurrentUser) : null;
+    if (!cur) throw new Error('لا يوجد حساب');
+    const next: CurrentUser = { ...cur, phone: normalizePhone(phone) };
+    await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(next));
+    return next;
+  }
+  const { data, error } = await supabase.auth.updateUser({ phone: normalizePhone(phone) });
+  if (error) throw error;
+  const u = data.user;
+  const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
+  return {
+    id: u.id,
+    email: u.email ?? '',
+    phone: u.phone ?? null,
+    role,
+    isGuest: u.is_anonymous ?? false,
+    displayName: (u.user_metadata?.display_name as string) ?? null,
+    gender: (u.user_metadata?.gender as Gender) ?? null,
+  };
 }

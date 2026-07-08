@@ -154,4 +154,6 @@ export const updateUserName = (userId: string, displayName: string) =>
   invokeAdmin({ action: 'updateProfile', userId, displayName });
 export const setUserRole = (userId: string, role: AppRole) =>
   invokeAdmin({ action: 'setRole', userId, role });
+export const updateUserGender = (userId: string, gender: Gender) =>
+  invokeAdmin({ action: 'updateGender', userId, gender });
 export const deleteUser = (userId: string) => invokeAdmin({ action: 'deleteUser', userId });

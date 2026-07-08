@@ -108,7 +108,7 @@ export default function RegisterScreen() {
           />
         </Field>
 
-        <Field label="البريد الإلكتروني (اختياري)">
+        <Field label="البريد الإلكتروني">
           <TextInput
             value={email}
             onChangeText={setEmail}

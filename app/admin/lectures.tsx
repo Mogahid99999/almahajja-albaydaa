@@ -36,6 +36,7 @@ import {
   useSheikhs,
   useUpdateLecture,
 } from '@/hooks/useAdmin';
+import { useSectionsFlat } from '@/hooks/useSections';
 import { playLecture } from '@/lib/audioController';
 import { arDuration, arNum, toArabicDigits } from '@/lib/format';
 import { usePlayerStore } from '@/stores/playerStore';
@@ -340,6 +341,8 @@ export default function LecturesScreen() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
 
   const [filter, setFilter] = useState<StatusFilter>('all');
+  const [sectionFilter, setSectionFilter] = useState<string | null>(null);
+  const { data: sections = [] } = useSectionsFlat();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminLectureRow | null>(null);
   // A confirm step before any action that would newly PUBLISH a lecture — that
@@ -368,10 +371,32 @@ export default function LecturesScreen() {
     return c;
   }, [lectures]);
 
-  const filtered = useMemo(
-    () => (filter === 'all' ? lectures : lectures.filter((l) => l.status === filter)),
-    [lectures, filter],
-  );
+  // Section filter matches the selected section AND all its nested sub-sections
+  // (a lecture filed under a sub-section still counts toward its parent's filter).
+  const sectionSubtreeIds = useMemo(() => {
+    if (!sectionFilter) return null;
+    const childrenByParent = new Map<string, string[]>();
+    for (const s of sections) {
+      const list = childrenByParent.get(s.parentId ?? '') ?? [];
+      list.push(s.id);
+      childrenByParent.set(s.parentId ?? '', list);
+    }
+    const ids = new Set<string>();
+    const stack = [sectionFilter];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (ids.has(id)) continue;
+      ids.add(id);
+      stack.push(...(childrenByParent.get(id) ?? []));
+    }
+    return ids;
+  }, [sectionFilter, sections]);
+
+  const filtered = useMemo(() => {
+    let out = filter === 'all' ? lectures : lectures.filter((l) => l.status === filter);
+    if (sectionSubtreeIds) out = out.filter((l) => l.sectionId && sectionSubtreeIds.has(l.sectionId));
+    return out;
+  }, [lectures, filter, sectionSubtreeIds]);
 
   function handleTogglePublish(row: AdminLectureRow) {
     if (row.status !== 'published') {
@@ -463,6 +488,26 @@ export default function LecturesScreen() {
           );
         })}
       </View>
+
+      {/* Section filter — matches the chosen section and all its sub-sections */}
+      <View style={styles.sectionFilterRow}>
+        <View style={{ flex: 1, maxWidth: 320 }}>
+          <TreePicker
+            value={sectionFilter}
+            onChange={setSectionFilter}
+            allowNull
+            label="تصفية حسب القسم"
+          />
+        </View>
+        {sectionFilter && (
+          <Pressable onPress={() => setSectionFilter(null)} style={styles.clearSectionBtn}>
+            <Feather name="x" size={13} color={colors.textMuted} />
+            <Txt size={12} color={colors.textMuted}>
+              إزالة
+            </Txt>
+          </Pressable>
+        )}
+      </View>
     </>
   );
 
@@ -539,8 +584,23 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 18,
+    marginBottom: 14,
     flexWrap: 'wrap',
+  } as ViewStyle,
+
+  sectionFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 18,
+  } as ViewStyle,
+
+  clearSectionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   } as ViewStyle,
 
   filterChip: {

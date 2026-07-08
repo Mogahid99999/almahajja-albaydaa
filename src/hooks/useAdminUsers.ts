@@ -10,10 +10,12 @@ import {
   setUserRole,
   unbanUser,
   updateUserEmail,
+  updateUserGender,
   updateUserName,
   updateUserPhone,
 } from '@/api/adminUsers';
 import type { AppRole } from '@/api/auth';
+import type { Gender } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 
 export function useAdminUsers(search: string) {
@@ -90,6 +92,10 @@ export function useAdminUserActions(userId: string) {
     }),
     setRole: useMutation({
       mutationFn: (role: AppRole) => setUserRole(userId, role),
+      onSuccess: invalidate,
+    }),
+    setGender: useMutation({
+      mutationFn: (gender: Gender) => updateUserGender(userId, gender),
       onSuccess: invalidate,
     }),
     // Only invalidates the LIST — the detail query for this (now-gone) user is

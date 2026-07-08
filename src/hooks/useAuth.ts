@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Platform } from 'react-native';
 
 import {
+  changePassword,
+  changePhone,
   deleteAccount,
   ensureSession,
   getCurrentUser,
@@ -10,7 +12,6 @@ import {
   requestPasswordReset,
   signIn,
   signOut,
-  updatePassword,
   updateProfile,
   verifyEmailChange,
 } from '@/api/auth';
@@ -115,10 +116,20 @@ export function useVerifyEmailChange() {
   });
 }
 
-/** Change password for the signed-in user (no "current password" needed — the session is the proof). */
-export function useUpdatePassword() {
+/** Change password for the signed-in user — requires the current password. */
+export function useChangePassword() {
   return useMutation({
-    mutationFn: (newPassword: string) => updatePassword(newPassword),
+    mutationFn: (vars: { currentPassword: string; newPassword: string }) =>
+      changePassword(vars.currentPassword, vars.newPassword),
+  });
+}
+
+/** Self-service phone change — instant, no OTP (mirrors admin's phone edit). */
+export function useChangePhone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (phone: string) => changePhone(phone),
+    onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
   });
 }
 

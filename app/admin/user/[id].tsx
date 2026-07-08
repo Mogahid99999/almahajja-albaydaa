@@ -41,6 +41,11 @@ const ROLES: { key: AppRole; label: string }[] = [
   { key: 'admin', label: 'مدير' },
 ];
 
+const GENDERS: { key: 'male' | 'female'; label: string }[] = [
+  { key: 'male', label: 'ذكر' },
+  { key: 'female', label: 'أنثى' },
+];
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
@@ -122,6 +127,7 @@ export default function AdminUserDetailScreen() {
   const [notice, setNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [pendingBanAction, setPendingBanAction] = useState<'ban' | 'unban' | null>(null);
   const [pendingRole, setPendingRole] = useState<{ key: AppRole; label: string } | null>(null);
+  const [pendingGender, setPendingGender] = useState<{ key: 'male' | 'female'; label: string } | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
 
   const profile = data?.profile;
@@ -278,6 +284,33 @@ export default function AdminUserDetailScreen() {
               onSave={(v) => actions.setPhone.mutate(v, { onSuccess: () => flash('تم تحديث رقم الهاتف'), onError })}
             />
             <Divider />
+            <View style={{ gap: 8 }}>
+              <Txt size={12} color={colors.textMuted}>
+                النوع
+              </Txt>
+              <View style={styles.roleRow}>
+                {GENDERS.map((g) => {
+                  const active = g.key === profile.gender;
+                  return (
+                    <Pressable
+                      key={g.key}
+                      disabled={active || actions.setGender.isPending}
+                      onPress={() => setPendingGender(g)}
+                      style={[styles.roleChip, active && styles.roleChipActive]}
+                    >
+                      <Txt
+                        size={12}
+                        weight={active ? 'semibold' : 'regular'}
+                        color={active ? colors.onTealPrimary : colors.textMuted}
+                      >
+                        {g.label}
+                      </Txt>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+            <Divider />
             <EditableField
               label="كلمة سر جديدة (بدون معرفة القديمة)"
               initial=""
@@ -430,6 +463,24 @@ export default function AdminUserDetailScreen() {
           });
         }}
         onCancel={() => setPendingRole(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingGender}
+        title="تغيير النوع"
+        message={`تعيين نوع هذا الحساب كـ«${pendingGender?.label ?? ''}»؟`}
+        confirmLabel="تأكيد"
+        destructive={false}
+        pending={actions.setGender.isPending}
+        onConfirm={() => {
+          if (!pendingGender) return;
+          actions.setGender.mutate(pendingGender.key, {
+            onSuccess: () => flash('تم تغيير النوع'),
+            onError,
+            onSettled: () => setPendingGender(null),
+          });
+        }}
+        onCancel={() => setPendingGender(null)}
       />
 
       <ConfirmDialog

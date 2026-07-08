@@ -11,6 +11,7 @@
 //   ban          → ban the user (100y)          unban → lift the ban
 //   setPassword  → set a new password (no old)   updateEmail → change email
 //   updateProfile→ set display_name              setRole → student|publisher|admin|sheikh
+//   updateGender → set profiles.gender (male|female)
 //   updatePhone  → set phone, ALWAYS phone_confirm:true (no SMS/OTP ever sent —
 //                  admin edits are instant, mirrors updateEmail's email_confirm)
 //   deleteUser   → permanently delete the account (cascades all personal rows)
@@ -30,9 +31,15 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const BAN_FOREVER = "876000h"; // ~100 years
 const VALID_ROLES = ["student", "publisher", "admin", "sheikh"];
 
-/** Digits only — mirrors src/api/auth.ts's normalizePhone (phone is never OTP-verified). */
+const DEFAULT_COUNTRY_CODE = "249";
+
+/** Mirrors src/api/auth.ts's normalizePhone — reshapes into valid E.164 (phone is never OTP-verified). */
 function normalizePhone(raw: string): string {
-  return raw.replace(/[^0-9]/g, "");
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return digits;
+  const local = digits.startsWith("0") ? digits.slice(1) : digits;
+  if (local.startsWith(DEFAULT_COUNTRY_CODE) || local.length > 9) return local;
+  return DEFAULT_COUNTRY_CODE + local;
 }
 
 const CORS = {
@@ -187,6 +194,18 @@ Deno.serve(async (req) => {
         await mustUpdate(admin, userId, { user_metadata: { display_name: name } });
         await admin.from("profiles").update({ display_name: name }).eq("id", userId);
         return json({ ok: true });
+      }
+      case "updateGender": {
+        const gender = body.gender;
+        if (gender !== "male" && gender !== "female") {
+          return json({ error: "invalid gender" }, 400);
+        }
+        const { error: gErr } = await admin
+          .from("profiles")
+          .update({ gender })
+          .eq("id", userId);
+        if (gErr) return json({ error: gErr.message }, 500);
+        return json({ ok: true, gender });
       }
       case "setRole": {
         if (isSelf) return json({ error: "cannot change your own role" }, 400);

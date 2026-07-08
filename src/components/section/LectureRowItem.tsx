@@ -144,7 +144,6 @@ export const LectureRowItem = memo(function LectureRowItem({ lecture }: Props) {
           weight="semibold"
           color={titleColor}
           style={{ lineHeight: 19 }}
-          numberOfLines={2}
         >
           {title}
         </Txt>

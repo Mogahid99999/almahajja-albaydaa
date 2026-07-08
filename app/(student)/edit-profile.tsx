@@ -3,49 +3,67 @@
  *
  * Name and gender are entered once at registration under an identity oath
  * (Item 10) and are permanently read-only afterward for every account, shown
- * here for reference only. Phone (if the account was phone-registered) is
- * also shown read-only — only admin can edit it (see admin/user/[id].tsx).
+ * here for reference only.
  *
- * Email is a two-step change: saving a new address sends a 6-digit code to
- * it (does NOT apply immediately anymore — email is now the password-recovery
- * channel, so an unverified/typo'd address must never silently become it),
- * and entering that code completes the change. Password change needs no
- * "current password" — the signed-in session itself is the proof of identity.
+ * Phone, email, and password are collapsed-by-default rows (tap to expand) so
+ * the screen reads as a calm settings list instead of three forms stacked on
+ * top of each other — only one section is open at a time.
+ *
+ * Phone is a self-service, INSTANT change — no OTP is ever sent (project has
+ * `sms_autoconfirm` on), unlike email. Email is a two-step change: saving a
+ * new address sends a 6-digit code to it (does NOT apply immediately — email
+ * is the password-recovery channel, so an unverified/typo'd address must
+ * never silently become it), and entering that code completes the change.
+ *
+ * Password change requires the CURRENT password (re-authenticates before
+ * writing the new one) — unlike the admin's "set new password with no old"
+ * action, the session alone isn't treated as sufficient proof here.
  *
  * Only reachable by registered users (the profile screen gates the entry on
  * !isGuest).
  *
  * Route: /(student)/edit-profile
  */
+import { Feather } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import type { Gender } from '@/api/types';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
+  useChangePassword,
+  useChangePhone,
   useCurrentUser,
   useRequestEmailChange,
-  useUpdatePassword,
   useVerifyEmailChange,
 } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 import { Card } from '@/components/ui/Card';
+import { Divider } from '@/components/ui/Divider';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
-import { useRouter } from 'expo-router';
 
 const GENDER_LABEL: Record<Gender, string> = { male: 'ذكر', female: 'أنثى' };
 const OTP_LENGTH = 6; // must match Supabase `mailer_otp_length` — see reset-password.tsx
+
+type Section = 'phone' | 'email' | 'password' | null;
 
 export default function EditProfileScreen() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const requestEmailChange = useRequestEmailChange();
   const verifyEmailChange = useVerifyEmailChange();
-  const updatePassword = useUpdatePassword();
+  const changePassword = useChangePassword();
+  const changePhone = useChangePhone();
   const miniPad = useMiniPlayerPad();
+
+  // Only one of phone/email/password is open at a time — keeps the screen a
+  // calm list of rows instead of three forms competing for attention.
+  const [open, setOpen] = useState<Section>(null);
+  const toggle = (s: Exclude<Section, null>) => setOpen((cur) => (cur === s ? null : s));
 
   const [email, setEmail] = useState(user?.email ?? '');
   // Non-null once a code has been sent — the address it was sent to.
@@ -55,6 +73,12 @@ export default function EditProfileScreen() {
     null,
   );
 
+  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [phoneNotice, setPhoneNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(
+    null,
+  );
+
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordNotice, setPasswordNotice] = useState<{
@@ -89,28 +113,53 @@ export default function EditProfileScreen() {
           setPendingEmail(null);
           setEmailCode('');
           setEmailNotice({ msg: 'تم تحديث البريد الإلكتروني بنجاح', type: 'success' });
+          setOpen(null);
         },
         onError: (e) => setEmailNotice({ msg: arError((e as Error).message), type: 'error' }),
       },
     );
   };
 
-  const passwordValid = newPassword.length >= 6 && newPassword === confirmPassword;
-  const onSavePassword = () => {
-    if (!passwordValid) return;
-    setPasswordNotice(null);
-    updatePassword.mutate(newPassword, {
+  const phoneDigits = phone.replace(/[^0-9]/g, '');
+  const phoneChanged = phoneDigits.length >= 8 && phoneDigits !== (user?.phone ?? '');
+  const onSavePhone = () => {
+    if (!phoneChanged) return;
+    setPhoneNotice(null);
+    changePhone.mutate(phoneDigits, {
       onSuccess: () => {
-        setNewPassword('');
-        setConfirmPassword('');
-        setPasswordNotice({ msg: 'تم تغيير كلمة المرور بنجاح', type: 'success' });
+        setPhoneNotice({ msg: 'تم تحديث رقم الهاتف بنجاح', type: 'success' });
+        setOpen(null);
       },
-      onError: (e) => setPasswordNotice({ msg: arError((e as Error).message), type: 'error' }),
+      onError: (e) => setPhoneNotice({ msg: arError((e as Error).message), type: 'error' }),
     });
   };
 
+  const passwordValid =
+    currentPassword.length > 0 && newPassword.length >= 6 && newPassword === confirmPassword;
+  const onSavePassword = () => {
+    if (!passwordValid) return;
+    setPasswordNotice(null);
+    changePassword.mutate(
+      { currentPassword, newPassword },
+      {
+        onSuccess: () => {
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+          setPasswordNotice({ msg: 'تم تغيير كلمة المرور بنجاح', type: 'success' });
+          setOpen(null);
+        },
+        onError: (e) => setPasswordNotice({ msg: arError((e as Error).message), type: 'error' }),
+      },
+    );
+  };
+
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    // Extra bottom padding (beyond the usual mini-player clearance) — the
+    // password section is the tallest expandable row (3 fields + button) and
+    // without this its Save button could land under the system nav bar with
+    // no more room to scroll past it.
+    <Screen bottomPad={(miniPad || 24) + 60} padded>
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{
@@ -140,7 +189,7 @@ export default function EditProfileScreen() {
         </View>
 
         {/* Gender — locked after registration (Item 10 identity oath) */}
-        <View style={{ marginBottom: 18 }}>
+        <View>
           <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
             النوع
           </Txt>
@@ -151,203 +200,250 @@ export default function EditProfileScreen() {
           </View>
         </View>
 
-        {/* Phone — sign-in credential; only the admin can edit it (no self-service, no OTP) */}
-        <View style={{ marginBottom: 10 }}>
-          <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
-            رقم الهاتف
-          </Txt>
-          <View style={readOnlyBoxStyle}>
-            <Txt size={14} color={colors.textInk}>
-              {user?.phone || '—'}
-            </Txt>
-          </View>
-        </View>
-
-        <Txt size={11} color={colors.textGhost} style={{ marginBottom: 18 }}>
-          لا يمكن تعديل الاسم أو الجنس أو رقم الهاتف من هنا — تواصل مع الإدارة عند الحاجة
+        <Txt size={11} color={colors.textGhost} style={{ marginTop: 12 }}>
+          لا يمكن تعديل الاسم أو الجنس من هنا — تواصل مع الإدارة عند الحاجة
         </Txt>
+      </Card>
 
-        {/* Email — two-step change: a code is sent to the new address and must be
-            confirmed before it takes effect (email is the password-recovery channel). */}
-        {pendingEmail ? (
-          <View>
-            <Txt size={13} color={colors.textMuted} style={{ marginBottom: 12, lineHeight: 20 }}>
-              أرسلنا رمزاً مكوّناً من {OTP_LENGTH} أرقام إلى{' '}
-              <Txt size={13} weight="semibold" color={colors.textSlate}>
-                {pendingEmail}
-              </Txt>
-            </Txt>
+      <Card padded={false} style={{ marginTop: 16, overflow: 'hidden' }}>
+        {/* ── Phone ── */}
+        <SettingRow
+          label="رقم الهاتف"
+          value={user?.phone || '—'}
+          expanded={open === 'phone'}
+          onToggle={() => toggle('phone')}
+        />
+        {open === 'phone' ? (
+          <View style={sectionBodyStyle}>
             <TextInput
-              value={emailCode}
-              onChangeText={(t) => setEmailCode(t.replace(/[^0-9]/g, '').slice(0, OTP_LENGTH))}
-              placeholder={'_'.repeat(OTP_LENGTH)}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="09xxxxxxxx"
               placeholderTextColor={colors.textGhost}
-              keyboardType="number-pad"
-              maxLength={OTP_LENGTH}
-              style={[inputStyle, { textAlign: 'center', letterSpacing: 8, fontSize: 20 }]}
-            />
-            <Pressable
-              onPress={onConfirmCode}
-              disabled={verifyEmailChange.isPending || emailCode.trim().length < OTP_LENGTH}
-              style={[
-                {
-                  marginTop: 14,
-                  backgroundColor: colors.primaryTeal,
-                  borderRadius: radius.input,
-                  paddingVertical: 14,
-                  alignItems: 'center',
-                  opacity:
-                    verifyEmailChange.isPending || emailCode.trim().length < OTP_LENGTH ? 0.6 : 1,
-                },
-                shadows.button,
-              ]}
-            >
-              <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
-                {verifyEmailChange.isPending ? 'جارٍ التأكيد…' : 'تأكيد الرمز'}
-              </Txt>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setPendingEmail(null);
-                setEmailCode('');
-                setEmailNotice(null);
-              }}
-              hitSlop={8}
-              style={{ alignItems: 'center', marginTop: 12 }}
-            >
-              <Txt size={12.5} weight="semibold" color={colors.textMuted}>
-                رجوع
-              </Txt>
-            </Pressable>
-          </View>
-        ) : (
-          <View>
-            <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
-              البريد الإلكتروني
-            </Txt>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="example@gmail.com"
-              placeholderTextColor={colors.textGhost}
-              autoCapitalize="none"
-              keyboardType="email-address"
+              keyboardType="phone-pad"
               style={inputStyle}
             />
-            {emailInvalid ? (
-              <Txt size={11} color={colors.stateDanger} style={{ marginTop: 6 }}>
-                أدخل بريدًا إلكترونيًا صحيحًا
-              </Txt>
-            ) : (
-              <Txt size={11} color={colors.textGhost} style={{ marginTop: 6 }}>
-                بريد تسجيل الدخول واستعادة كلمة المرور — تغييره يتطلب تأكيد رمز يُرسل إليه
-              </Txt>
-            )}
             <Pressable
-              onPress={onSendCode}
-              disabled={requestEmailChange.isPending || !emailChanged}
-              style={[
-                {
-                  marginTop: 16,
-                  backgroundColor: colors.primaryTeal,
-                  borderRadius: radius.input,
-                  paddingVertical: 14,
-                  alignItems: 'center',
-                  opacity: requestEmailChange.isPending || !emailChanged ? 0.6 : 1,
-                },
-                shadows.button,
-              ]}
+              onPress={onSavePhone}
+              disabled={changePhone.isPending || !phoneChanged}
+              style={[saveButtonStyle, { opacity: changePhone.isPending || !phoneChanged ? 0.6 : 1 }]}
             >
-              <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
-                {requestEmailChange.isPending ? 'جارٍ الإرسال…' : 'إرسال رمز التأكيد'}
+              <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+                {changePhone.isPending ? 'جارٍ الحفظ…' : 'حفظ رقم الهاتف'}
               </Txt>
             </Pressable>
           </View>
-        )}
-
-        {emailNotice ? (
-          <Txt
-            size={12}
-            color={emailNotice.type === 'error' ? colors.stateDanger : colors.stateSuccess}
-            style={{ marginTop: 12 }}
-          >
-            {emailNotice.msg}
-          </Txt>
         ) : null}
-      </Card>
+        {phoneNotice ? <NoticeRow notice={phoneNotice} /> : null}
 
-      {/* Change password — no "current password" needed, the session already proves identity */}
-      <Card style={{ padding: 20, marginTop: 16 }}>
-        <Txt weight="semibold" size={15} color={colors.textInk} style={{ marginBottom: 16 }}>
-          تغيير كلمة المرور
-        </Txt>
+        <Divider />
 
-        <View style={{ marginBottom: 14 }}>
-          <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
-            كلمة المرور الجديدة
-          </Txt>
-          <TextInput
-            value={newPassword}
-            onChangeText={setNewPassword}
-            placeholder="٦ أحرف على الأقل"
-            placeholderTextColor={colors.textGhost}
-            secureTextEntry
-            autoCapitalize="none"
-            style={inputStyle}
-          />
-        </View>
-
-        <View>
-          <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
-            تأكيد كلمة المرور
-          </Txt>
-          <TextInput
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="أعد كتابة كلمة المرور"
-            placeholderTextColor={colors.textGhost}
-            secureTextEntry
-            autoCapitalize="none"
-            style={inputStyle}
-          />
-          {confirmPassword.length > 0 && newPassword !== confirmPassword ? (
-            <Txt size={11} color={colors.stateDanger} style={{ marginTop: 6 }}>
-              كلمتا المرور غير متطابقتين
-            </Txt>
-          ) : null}
-        </View>
-
-        {passwordNotice ? (
-          <Txt
-            size={12}
-            color={passwordNotice.type === 'error' ? colors.stateDanger : colors.stateSuccess}
-            style={{ marginTop: 12 }}
-          >
-            {passwordNotice.msg}
-          </Txt>
+        {/* ── Email — two-step: a code is sent to the new address and must be
+              confirmed before it takes effect (email is the password-recovery
+              channel). ── */}
+        <SettingRow
+          label="البريد الإلكتروني"
+          value={user?.email || '—'}
+          expanded={open === 'email'}
+          onToggle={() => toggle('email')}
+        />
+        {open === 'email' ? (
+          <View style={sectionBodyStyle}>
+            {pendingEmail ? (
+              <>
+                <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 10, lineHeight: 19 }}>
+                  أرسلنا رمزاً مكوّناً من {OTP_LENGTH} أرقام إلى{' '}
+                  <Txt size={12.5} weight="semibold" color={colors.textSlate}>
+                    {pendingEmail}
+                  </Txt>
+                </Txt>
+                <TextInput
+                  value={emailCode}
+                  onChangeText={(t) => setEmailCode(t.replace(/[^0-9]/g, '').slice(0, OTP_LENGTH))}
+                  placeholder={'_'.repeat(OTP_LENGTH)}
+                  placeholderTextColor={colors.textGhost}
+                  keyboardType="number-pad"
+                  maxLength={OTP_LENGTH}
+                  style={[inputStyle, { textAlign: 'center', letterSpacing: 8, fontSize: 18 }]}
+                />
+                <Pressable
+                  onPress={onConfirmCode}
+                  disabled={verifyEmailChange.isPending || emailCode.trim().length < OTP_LENGTH}
+                  style={[
+                    saveButtonStyle,
+                    { opacity: verifyEmailChange.isPending || emailCode.trim().length < OTP_LENGTH ? 0.6 : 1 },
+                  ]}
+                >
+                  <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+                    {verifyEmailChange.isPending ? 'جارٍ التأكيد…' : 'تأكيد الرمز'}
+                  </Txt>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setPendingEmail(null);
+                    setEmailCode('');
+                    setEmailNotice(null);
+                  }}
+                  hitSlop={8}
+                  style={{ alignItems: 'center', marginTop: 10 }}
+                >
+                  <Txt size={12} weight="semibold" color={colors.textMuted}>
+                    رجوع
+                  </Txt>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="example@gmail.com"
+                  placeholderTextColor={colors.textGhost}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  style={inputStyle}
+                />
+                {emailInvalid ? (
+                  <Txt size={11} color={colors.stateDanger} style={{ marginTop: 6 }}>
+                    أدخل بريدًا إلكترونيًا صحيحًا
+                  </Txt>
+                ) : (
+                  <Txt size={11} color={colors.textGhost} style={{ marginTop: 6 }}>
+                    تغيير البريد يتطلب تأكيد رمز يُرسل إليه
+                  </Txt>
+                )}
+                <Pressable
+                  onPress={onSendCode}
+                  disabled={requestEmailChange.isPending || !emailChanged}
+                  style={[
+                    saveButtonStyle,
+                    { opacity: requestEmailChange.isPending || !emailChanged ? 0.6 : 1 },
+                  ]}
+                >
+                  <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+                    {requestEmailChange.isPending ? 'جارٍ الإرسال…' : 'إرسال رمز التأكيد'}
+                  </Txt>
+                </Pressable>
+              </>
+            )}
+          </View>
         ) : null}
+        {emailNotice ? <NoticeRow notice={emailNotice} /> : null}
 
-        <Pressable
-          onPress={onSavePassword}
-          disabled={updatePassword.isPending || !passwordValid}
-          style={[
-            {
-              marginTop: 18,
-              backgroundColor: colors.primaryTeal,
-              borderRadius: radius.input,
-              paddingVertical: 14,
-              alignItems: 'center',
-              opacity: updatePassword.isPending || !passwordValid ? 0.6 : 1,
-            },
-            shadows.button,
-          ]}
-        >
-          <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
-            {updatePassword.isPending ? 'جارٍ الحفظ…' : 'تغيير كلمة المرور'}
-          </Txt>
-        </Pressable>
+        <Divider />
+
+        {/* ── Password — requires the current password first ── */}
+        <SettingRow
+          label="كلمة المرور"
+          value="تغيير كلمة المرور"
+          expanded={open === 'password'}
+          onToggle={() => toggle('password')}
+        />
+        {open === 'password' ? (
+          <View style={sectionBodyStyle}>
+            <TextInput
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder="كلمة المرور الحالية"
+              placeholderTextColor={colors.textGhost}
+              secureTextEntry
+              autoCapitalize="none"
+              style={[inputStyle, { marginBottom: 10 }]}
+            />
+            <TextInput
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="كلمة المرور الجديدة (٦ أحرف على الأقل)"
+              placeholderTextColor={colors.textGhost}
+              secureTextEntry
+              autoCapitalize="none"
+              style={[inputStyle, { marginBottom: 10 }]}
+            />
+            <TextInput
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="أعد كتابة كلمة المرور الجديدة"
+              placeholderTextColor={colors.textGhost}
+              secureTextEntry
+              autoCapitalize="none"
+              style={inputStyle}
+            />
+            {confirmPassword.length > 0 && newPassword !== confirmPassword ? (
+              <Txt size={11} color={colors.stateDanger} style={{ marginTop: 6 }}>
+                كلمتا المرور غير متطابقتين
+              </Txt>
+            ) : null}
+            <Pressable
+              onPress={onSavePassword}
+              disabled={changePassword.isPending || !passwordValid}
+              style={[saveButtonStyle, { opacity: changePassword.isPending || !passwordValid ? 0.6 : 1 }]}
+            >
+              <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+                {changePassword.isPending ? 'جارٍ الحفظ…' : 'تغيير كلمة المرور'}
+              </Txt>
+            </Pressable>
+          </View>
+        ) : null}
+        {passwordNotice ? <NoticeRow notice={passwordNotice} /> : null}
       </Card>
     </Screen>
+  );
+}
+
+/** Collapsed row: label + current value + chevron. Tap to expand/collapse. */
+function SettingRow({
+  label,
+  value,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  value: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onToggle}
+      style={({ pressed }) => [
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 18,
+          paddingVertical: 16,
+        },
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <Feather
+        name={expanded ? 'chevron-up' : 'chevron-left'}
+        size={18}
+        color={colors.textFaint}
+      />
+      <View style={{ flex: 1, alignItems: 'flex-end', marginRight: 12 }}>
+        <Txt size={14} weight="semibold" color={colors.textInk} numberOfLines={1}>
+          {label}
+        </Txt>
+        {!expanded ? (
+          <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+            {value}
+          </Txt>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function NoticeRow({ notice }: { notice: { msg: string; type: 'success' | 'error' } }) {
+  return (
+    <Txt
+      size={12}
+      color={notice.type === 'error' ? colors.stateDanger : colors.stateSuccess}
+      style={{ paddingHorizontal: 18, paddingBottom: 14, marginTop: -6 }}
+    >
+      {notice.msg}
+    </Txt>
   );
 }
 
@@ -355,7 +451,7 @@ export default function EditProfileScreen() {
 function arError(msg: string): string {
   const m = (msg ?? '').toLowerCase();
   if (m.includes('already') || m.includes('registered') || m.includes('exists'))
-    return 'هذا البريد مستخدم في حساب آخر.';
+    return 'هذا البريد أو الرقم مستخدم في حساب آخر.';
   if (m.includes('invalid') && m.includes('email')) return 'بريد إلكتروني غير صالح.';
   if (m.includes('expired') || (m.includes('invalid') && (m.includes('token') || m.includes('otp'))))
     return 'الرمز غير صحيح أو انتهت صلاحيته. اطلب رمزاً جديداً.';
@@ -365,8 +461,13 @@ function arError(msg: string): string {
   return msg || 'تعذّر الحفظ.';
 }
 
+const sectionBodyStyle = {
+  paddingHorizontal: 18,
+  paddingBottom: 18,
+};
+
 const inputStyle = {
-  minHeight: 46,
+  minHeight: 44,
   borderWidth: 1,
   borderColor: colors.borderSand2,
   borderRadius: radius.input,
@@ -379,6 +480,17 @@ const inputStyle = {
   fontSize: 14,
   color: colors.textInk,
 };
+
+const saveButtonStyle = [
+  {
+    marginTop: 12,
+    backgroundColor: colors.primaryTeal,
+    borderRadius: radius.input,
+    paddingVertical: 12,
+    alignItems: 'center' as const,
+  },
+  shadows.button,
+];
 
 const readOnlyBoxStyle = {
   minHeight: 46,

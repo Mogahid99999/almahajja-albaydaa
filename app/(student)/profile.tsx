@@ -120,9 +120,10 @@ export default function ProfileScreen() {
   const isGuest = user?.isGuest ?? true;
   const email = user?.email ?? '';
   const name = user?.displayName?.trim() || '';
+  const studentLabel = user?.gender === 'female' ? 'طالبة علم' : 'طالب علم';
   // The heading shows the NAME (not the email). Guests are simply "ضيف".
-  const heading = name || (isGuest ? 'ضيف' : email || 'طالب علم');
-  const roleLabel = user?.role === 'admin' ? 'مدير' : isGuest ? 'ضيف' : 'طالب علم';
+  const heading = name || (isGuest ? 'ضيف' : email || studentLabel);
+  const roleLabel = user?.role === 'admin' ? 'مدير' : isGuest ? 'ضيف' : studentLabel;
   const avatarChar = name ? avatarInitial(name) : email ? avatarInitial(email) : '';
 
   return (
