@@ -6,10 +6,13 @@ import {
   ensureSession,
   getCurrentUser,
   register,
+  requestEmailChange,
   requestPasswordReset,
   signIn,
   signOut,
+  updatePassword,
   updateProfile,
+  verifyEmailChange,
 } from '@/api/auth';
 import type { Gender, HomeData } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
@@ -39,21 +42,27 @@ export function useEnsureSession() {
   });
 }
 
+/** `identifier` is either an email or a phone number — see `signIn`'s doc comment. */
 export function useSignIn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { email: string; password: string }) =>
-      signIn(vars.email, vars.password),
+    mutationFn: (vars: { identifier: string; password: string }) =>
+      signIn(vars.identifier, vars.password),
     onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
   });
 }
 
-/** Register: link name+email+password+gender onto the current anon account (Task 2 / 26.2). */
+/** Register: link name+phone(+optional email)+password+gender onto the current anon account. */
 export function useRegister() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { name: string; email: string; password: string; gender: Gender }) =>
-      register(vars.name, vars.email, vars.password, vars.gender),
+    mutationFn: (vars: {
+      name: string;
+      phone: string;
+      email: string;
+      password: string;
+      gender: Gender;
+    }) => register(vars.name, vars.phone, vars.email, vars.password, vars.gender),
     onSuccess: (user) => {
       qc.setQueryData(queryKeys.currentUser, user);
       // Phase 3.6 safety net: `register()` links onto the SAME auth.uid() (no new
@@ -81,13 +90,35 @@ export function useRegister() {
   });
 }
 
-/** Edit display name / email / gender of the signed-in account (Task 2 / 26.2). */
+/** Edit display name / gender of the signed-in account (Task 2 / 26.2). */
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (fields: { displayName?: string; email?: string; gender?: Gender }) =>
-      updateProfile(fields),
+    mutationFn: (fields: { displayName?: string; gender?: Gender }) => updateProfile(fields),
     onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
+  });
+}
+
+/** Step 1 of the two-step email add/change — sends a code to the new address. */
+export function useRequestEmailChange() {
+  return useMutation({
+    mutationFn: (email: string) => requestEmailChange(email),
+  });
+}
+
+/** Step 2 — verify the code, completing the email change. */
+export function useVerifyEmailChange() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { email: string; code: string }) => verifyEmailChange(vars.email, vars.code),
+    onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
+  });
+}
+
+/** Change password for the signed-in user (no "current password" needed — the session is the proof). */
+export function useUpdatePassword() {
+  return useMutation({
+    mutationFn: (newPassword: string) => updatePassword(newPassword),
   });
 }
 

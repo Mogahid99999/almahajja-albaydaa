@@ -11,6 +11,8 @@
 //   ban          → ban the user (100y)          unban → lift the ban
 //   setPassword  → set a new password (no old)   updateEmail → change email
 //   updateProfile→ set display_name              setRole → student|publisher|admin|sheikh
+//   updatePhone  → set phone, ALWAYS phone_confirm:true (no SMS/OTP ever sent —
+//                  admin edits are instant, mirrors updateEmail's email_confirm)
 //   deleteUser   → permanently delete the account (cascades all personal rows)
 //
 // A caller may not ban, delete, or change the role of THEIR OWN account
@@ -27,6 +29,11 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 const BAN_FOREVER = "876000h"; // ~100 years
 const VALID_ROLES = ["student", "publisher", "admin", "sheikh"];
+
+/** Digits only — mirrors src/api/auth.ts's normalizePhone (phone is never OTP-verified). */
+function normalizePhone(raw: string): string {
+  return raw.replace(/[^0-9]/g, "");
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -66,6 +73,7 @@ Deno.serve(async (req) => {
     userId?: string;
     password?: string;
     email?: string;
+    phone?: string;
     displayName?: string;
     role?: string;
     gender?: string;
@@ -80,7 +88,11 @@ Deno.serve(async (req) => {
   // createUser is the one action that has no target userId yet.
   if (action === "createUser") {
     const email = (body.email ?? "").trim().toLowerCase();
-    if (!/.+@.+\..+/.test(email)) return json({ error: "invalid email" }, 400);
+    const phone = normalizePhone(body.phone ?? "");
+    // At least one identifier is required — mirrors self-registration, which
+    // now requires a phone (email optional).
+    if (email && !/.+@.+\..+/.test(email)) return json({ error: "invalid email" }, 400);
+    if (!email && phone.length < 8) return json({ error: "email or phone required" }, 400);
     // Same minimum as self-registration (app/(auth)/register.tsx) and the
     // admin form's «٦ أحرف على الأقل» label — they previously disagreed (6 vs
     // 8), so valid submissions failed with an opaque "password too short".
@@ -92,9 +104,9 @@ Deno.serve(async (req) => {
     const gender = body.gender === "male" || body.gender === "female" ? body.gender : null;
     try {
       const { data: created, error: cErr } = await admin.auth.admin.createUser({
-        email,
+        ...(email ? { email, email_confirm: true } : {}),
+        ...(phone ? { phone, phone_confirm: true } : {}),
         password: body.password,
-        email_confirm: true,
         user_metadata: { display_name: name, role, ...(gender ? { gender } : {}) },
         app_metadata: { role },
       });
@@ -160,6 +172,14 @@ Deno.serve(async (req) => {
           email: body.email.trim().toLowerCase(),
           email_confirm: true,
         });
+        return json({ ok: true });
+      }
+      case "updatePhone": {
+        const phone = normalizePhone(body.phone ?? "");
+        if (phone.length < 8) return json({ error: "invalid phone" }, 400);
+        // phone_confirm:true — admin edits never trigger an SMS/OTP (matches
+        // updateEmail's email_confirm:true instant-apply).
+        await mustUpdate(admin, userId, { phone, phone_confirm: true });
         return json({ ok: true });
       }
       case "updateProfile": {

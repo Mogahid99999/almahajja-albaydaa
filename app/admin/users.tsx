@@ -128,6 +128,7 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
   const create = useCreateUser();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<AppRole>('student');
   const [gender, setGender] = useState<Gender | null>(null);
@@ -135,18 +136,30 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
   const close = () => {
     setName('');
     setEmail('');
+    setPhone('');
     setPassword('');
     setRole('student');
     setGender(null);
     onClose();
   };
 
-  const valid = /.+@.+\..+/.test(email.trim()) && password.trim().length >= 6 && !!gender;
+  const emailOk = email.trim().length === 0 || /.+@.+\..+/.test(email.trim());
+  const phoneDigits = phone.replace(/[^0-9]/g, '');
+  // At least one identifier is required — mirrors self-registration (phone required, email optional).
+  const hasIdentifier = /.+@.+\..+/.test(email.trim()) || phoneDigits.length >= 8;
+  const valid = emailOk && hasIdentifier && password.trim().length >= 6 && !!gender;
 
   const submit = () => {
     if (!gender) return;
     create.mutate(
-      { email: email.trim(), password: password.trim(), displayName: name.trim(), role, gender },
+      {
+        email: email.trim(),
+        phone: phoneDigits,
+        password: password.trim(),
+        displayName: name.trim(),
+        role,
+        gender,
+      },
       {
         onSuccess: () => {
           notify('تم', 'أُنشئ الحساب بنجاح.');
@@ -175,7 +188,7 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
               style={styles.modalInput}
             />
           </Field>
-          <Field label="البريد الإلكتروني">
+          <Field label="البريد الإلكتروني (اختياري إن أُدخل رقم الهاتف)">
             <TextInput
               value={email}
               onChangeText={setEmail}
@@ -183,6 +196,16 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
               placeholderTextColor={colors.textGhost}
               keyboardType="email-address"
               autoCapitalize="none"
+              style={styles.modalInput}
+            />
+          </Field>
+          <Field label="رقم الهاتف (اختياري إن أُدخل بريد)">
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="09xxxxxxxx"
+              placeholderTextColor={colors.textGhost}
+              keyboardType="phone-pad"
               style={styles.modalInput}
             />
           </Field>

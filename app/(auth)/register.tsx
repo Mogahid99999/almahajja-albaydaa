@@ -24,6 +24,7 @@ const OATH_TEXT =
 export default function RegisterScreen() {
   const router = useRouter();
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [gender, setGender] = useState<Gender | null>(null);
@@ -33,9 +34,15 @@ export default function RegisterScreen() {
   const register = useRegister();
 
   const trimmedName = name.trim();
+  const trimmedPhone = phone.trim();
   const trimmedEmail = email.trim();
+  // Email is optional — phone is the required identifier (Task: phone registration).
+  const emailOk = trimmedEmail.length === 0 || trimmedEmail.includes('@');
   const canSubmit =
-    trimmedName.length > 0 && trimmedEmail.includes('@') && password.length >= 6;
+    trimmedName.length > 0 &&
+    trimmedPhone.replace(/[^0-9]/g, '').length >= 8 &&
+    emailOk &&
+    password.length >= 6;
 
   const onSubmit = () => {
     if (!canSubmit) return;
@@ -51,7 +58,7 @@ export default function RegisterScreen() {
     if (!oathChecked || !gender) return;
     setOathVisible(false);
     register.mutate(
-      { name: trimmedName, email: trimmedEmail, password, gender },
+      { name: trimmedName, phone: trimmedPhone, email: trimmedEmail, password, gender },
       // Land on the profile so the new name/identity is confirmed — coherent from
       // every entry point (profile CTA, sign-in link, journey gate, Home banner).
       { onSuccess: () => router.replace('/(student)/profile') },
@@ -90,7 +97,18 @@ export default function RegisterScreen() {
           />
         </Field>
 
-        <Field label="البريد الإلكتروني">
+        <Field label="رقم الهاتف">
+          <TextInput
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="09xxxxxxxx"
+            placeholderTextColor={colors.textGhost}
+            keyboardType="phone-pad"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="البريد الإلكتروني (اختياري)">
           <TextInput
             value={email}
             onChangeText={setEmail}

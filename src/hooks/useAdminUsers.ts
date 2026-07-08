@@ -11,6 +11,7 @@ import {
   unbanUser,
   updateUserEmail,
   updateUserName,
+  updateUserPhone,
 } from '@/api/adminUsers';
 import type { AppRole } from '@/api/auth';
 import { queryKeys } from '@/constants/queryKeys';
@@ -77,6 +78,10 @@ export function useAdminUserActions(userId: string) {
     }),
     setEmail: useMutation({
       mutationFn: (email: string) => updateUserEmail(userId, email),
+      onSuccess: invalidate,
+    }),
+    setPhone: useMutation({
+      mutationFn: (phone: string) => updateUserPhone(userId, phone),
       onSuccess: invalidate,
     }),
     setName: useMutation({

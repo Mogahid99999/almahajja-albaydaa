@@ -124,7 +124,8 @@ async function invokeAdmin(body: Record<string, unknown>): Promise<any> {
 }
 
 export const createUser = (input: {
-  email: string;
+  email?: string;
+  phone?: string;
   password: string;
   displayName: string;
   role: AppRole;
@@ -133,7 +134,8 @@ export const createUser = (input: {
 }) =>
   invokeAdmin({
     action: 'createUser',
-    email: input.email,
+    email: input.email ?? '',
+    phone: input.phone ?? '',
     password: input.password,
     displayName: input.displayName,
     role: input.role,
@@ -146,6 +148,8 @@ export const setUserPassword = (userId: string, password: string) =>
   invokeAdmin({ action: 'setPassword', userId, password });
 export const updateUserEmail = (userId: string, email: string) =>
   invokeAdmin({ action: 'updateEmail', userId, email });
+export const updateUserPhone = (userId: string, phone: string) =>
+  invokeAdmin({ action: 'updatePhone', userId, phone });
 export const updateUserName = (userId: string, displayName: string) =>
   invokeAdmin({ action: 'updateProfile', userId, displayName });
 export const setUserRole = (userId: string, role: AppRole) =>

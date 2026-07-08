@@ -268,6 +268,17 @@ export default function AdminUserDetailScreen() {
             />
             <Divider />
             <EditableField
+              label="رقم الهاتف (بدون إرسال تحقق)"
+              initial={profile.phone ?? ''}
+              placeholder="09xxxxxxxx"
+              actionLabel="حفظ"
+              keyboardType="phone-pad"
+              pending={actions.setPhone.isPending}
+              validate={(v, i) => v.replace(/[^0-9]/g, '').length >= 8 && v.trim() !== i}
+              onSave={(v) => actions.setPhone.mutate(v, { onSuccess: () => flash('تم تحديث رقم الهاتف'), onError })}
+            />
+            <Divider />
+            <EditableField
               label="كلمة سر جديدة (بدون معرفة القديمة)"
               initial=""
               placeholder="٦ أحرف على الأقل"

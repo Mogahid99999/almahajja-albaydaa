@@ -7,6 +7,14 @@
  * the actual `onSeek` is committed on release (so we don't fire dozens of seeks
  * mid-drag). Fraction is computed from touch x / container width, mirrored under
  * global RTL so a tap lands on the time under the finger.
+ *
+ * Uses `pageX` (absolute screen coordinate) minus the container's own measured
+ * offset — NOT `nativeEvent.locationX`. On a move event RN reports `locationX`
+ * relative to whichever child view is currently under the finger, not the
+ * responder that granted the gesture; since the row is 48 separate sibling
+ * bars (~6-8px each), locationX reset to a near-0 range every time the finger
+ * crossed a bar boundary, making a long drag land on an essentially random
+ * position (reported: dragging between minutes jumps to the wrong second).
  */
 import {
   I18nManager,
@@ -33,7 +41,9 @@ type Props = {
 };
 
 export function Waveform({ positionSec, durationSec, onSeek }: Props) {
+  const containerRef = useRef<View>(null);
   const containerWidthRef = useRef<number>(0);
+  const containerPageXRef = useRef<number>(0);
   // Live fraction while a drag is in progress (null = not dragging → follow
   // playback position). Keeps the bars + time label under the finger.
   const [dragFraction, setDragFraction] = useState<number | null>(null);
@@ -43,32 +53,42 @@ export function Waveform({ positionSec, durationSec, onSeek }: Props) {
   const playedCount = Math.round(BAR_HEIGHTS.length * shownFraction);
   const shownPositionSec = dragFraction != null ? dragFraction * durationSec : positionSec;
 
-  function handleLayout(e: LayoutChangeEvent) {
-    containerWidthRef.current = e.nativeEvent.layout.width;
+  function measureContainer() {
+    containerRef.current?.measure((_x, _y, _w, _h, pageX) => {
+      containerPageXRef.current = pageX;
+    });
   }
 
-  /** Touch x → playback fraction [0,1], mirrored under global RTL (0s on right). */
-  function fractionFromX(x: number): number {
+  function handleLayout(e: LayoutChangeEvent) {
+    containerWidthRef.current = e.nativeEvent.layout.width;
+    measureContainer();
+  }
+
+  /** Absolute screen x → playback fraction [0,1], mirrored under global RTL (0s on right). */
+  function fractionFromPageX(pageX: number): number {
     const w = containerWidthRef.current;
     if (w <= 0) return 0;
-    const raw = Math.min(1, Math.max(0, x / w));
+    const raw = Math.min(1, Math.max(0, (pageX - containerPageXRef.current) / w));
     return I18nManager.isRTL ? 1 - raw : raw;
   }
 
   function onGrant(e: GestureResponderEvent) {
     if (durationSec <= 0) return;
-    setDragFraction(fractionFromX(e.nativeEvent.locationX));
+    // Re-measure in case layout shifted since the last onLayout — this is the
+    // fix (see file header): pageX + a fresh absolute offset, never locationX.
+    measureContainer();
+    setDragFraction(fractionFromPageX(e.nativeEvent.pageX));
   }
   function onMove(e: GestureResponderEvent) {
     if (durationSec <= 0) return;
-    setDragFraction(fractionFromX(e.nativeEvent.locationX));
+    setDragFraction(fractionFromPageX(e.nativeEvent.pageX));
   }
   function onRelease(e: GestureResponderEvent) {
     if (durationSec <= 0) {
       setDragFraction(null);
       return;
     }
-    const fraction = fractionFromX(e.nativeEvent.locationX);
+    const fraction = fractionFromPageX(e.nativeEvent.pageX);
     setDragFraction(null);
     onSeek(fraction * durationSec);
   }
@@ -76,6 +96,7 @@ export function Waveform({ positionSec, durationSec, onSeek }: Props) {
   return (
     <View>
       <View
+        ref={containerRef}
         onLayout={handleLayout}
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}

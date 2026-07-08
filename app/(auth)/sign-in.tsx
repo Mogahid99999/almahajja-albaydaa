@@ -13,7 +13,7 @@ import { useSupportContact } from '@/hooks/useAppContent';
 // Arabic message rather than leaking English into this Arabic-first screen.
 function arabicSignInError(message: string): string {
   const known: Record<string, string> = {
-    'Invalid login credentials': 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
+    'Invalid login credentials': 'البريد الإلكتروني أو رقم الهاتف أو كلمة المرور غير صحيحة',
     'Email not confirmed': 'يرجى تأكيد بريدك الإلكتروني أولاً',
     'Too many requests': 'محاولات كثيرة جداً، حاول مرة أخرى بعد قليل',
   };
@@ -22,7 +22,7 @@ function arabicSignInError(message: string): string {
 
 export default function SignInScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const signIn = useSignIn();
@@ -33,7 +33,7 @@ export default function SignInScreen() {
   // guests can stay here to register), so a returning sign-in must navigate itself.
   // Land on Home; AuthGate then redirects to /admin if the account is an admin.
   const onSubmit = () =>
-    signIn.mutate({ email, password }, { onSuccess: () => router.replace('/') });
+    signIn.mutate({ identifier, password }, { onSuccess: () => router.replace('/') });
 
   return (
     <Screen scroll={false} contentStyle={{ justifyContent: 'center' }}>
@@ -54,14 +54,14 @@ export default function SignInScreen() {
           تسجيل الدخول
         </Txt>
 
-        <Field label="البريد الإلكتروني">
+        <Field label="البريد الإلكتروني أو رقم الهاتف">
           <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="example@gmail.com"
+            value={identifier}
+            onChangeText={setIdentifier}
+            placeholder="example@gmail.com أو 09xxxxxxxx"
             placeholderTextColor={colors.textGhost}
             autoCapitalize="none"
-            keyboardType="email-address"
+            keyboardType="default"
             style={inputStyle}
           />
         </Field>

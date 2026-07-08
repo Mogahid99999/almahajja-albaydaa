@@ -33,11 +33,24 @@ export type AppRole = 'admin' | 'student' | 'publisher' | 'sheikh';
 export type CurrentUser = {
   id: string;
   email: string;
+  /** E.164-ish digits only (see {@link normalizePhone}), or null if never set. */
+  phone: string | null;
   role: AppRole;
   isGuest: boolean;
   displayName: string | null;
   gender: Gender | null;
 };
+
+/**
+ * Phone is a real sign-in credential (phone+password) but is NEVER OTP-verified
+ * — the project has `sms_autoconfirm` on and no SMS provider configured, so
+ * whatever the user types is accepted as-is. Strip everything but digits so
+ * "+249 91 234 5678" and "0912345678" both normalize to a stable value Supabase
+ * treats consistently on both registration and sign-in.
+ */
+export function normalizePhone(raw: string): string {
+  return raw.replace(/[^0-9]/g, '');
+}
 
 /**
  * Sync gender/name into `profiles` (SECURITY DEFINER; students may set only
@@ -148,6 +161,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       isGuest: u.isGuest ?? false,
       displayName: u.displayName ?? null,
       gender: u.gender ?? null,
+      phone: u.phone ?? null,
     };
   }
   // getSession() reads the session from async-storage WITHOUT a network round-trip
@@ -161,6 +175,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   return {
     id: u.id,
     email: u.email ?? '',
+    phone: u.phone ?? null,
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) ?? null,
@@ -187,6 +202,7 @@ export async function signInAnonymously(): Promise<CurrentUser> {
     const user: CurrentUser = {
       id: 'mock-guest',
       email: '',
+      phone: null,
       role: 'student',
       isGuest: true,
       displayName: null,
@@ -202,6 +218,7 @@ export async function signInAnonymously(): Promise<CurrentUser> {
   return {
     id: u.id,
     email: u.email ?? '',
+    phone: u.phone ?? null,
     role: 'student',
     isGuest: true,
     displayName: null,
@@ -209,8 +226,17 @@ export async function signInAnonymously(): Promise<CurrentUser> {
   };
 }
 
-export async function signIn(email: string, password: string): Promise<CurrentUser> {
-  const e = email.trim().toLowerCase();
+/**
+ * Sign in with EITHER an email or a phone number + password — the two share one
+ * "البريد الإلكتروني أو رقم الهاتف" field (Task: phone registration). An
+ * identifier containing '@' is treated as an email; anything else is
+ * normalized to digits and sent as `phone` (Supabase's `signInWithPassword`
+ * accepts either field, mutually exclusive).
+ */
+export async function signIn(identifier: string, password: string): Promise<CurrentUser> {
+  const raw = identifier.trim();
+  const isEmail = raw.includes('@');
+  const e = isEmail ? raw.toLowerCase() : '';
   if (USE_MOCK) {
     const match = Object.values(DEMO_ACCOUNTS!).find(
       (a) => a.email === e && a.password === password,
@@ -219,6 +245,7 @@ export async function signIn(email: string, password: string): Promise<CurrentUs
     const user: CurrentUser = {
       id: `mock-${match.role}`,
       email: e,
+      phone: null,
       role: match.role,
       isGuest: false,
       displayName: null,
@@ -233,13 +260,16 @@ export async function signIn(email: string, password: string): Promise<CurrentUs
   if (pre.session && (pre.session.user.is_anonymous ?? false)) {
     await storeGuestSession(pre.session);
   }
-  const { data, error } = await supabase.auth.signInWithPassword({ email: e, password });
+  const { data, error } = await supabase.auth.signInWithPassword(
+    isEmail ? { email: e, password } : { phone: normalizePhone(raw), password },
+  );
   if (error) throw error;
   const u = data.user!;
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
     email: u.email ?? e,
+    phone: u.phone ?? null,
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) ?? null,
@@ -248,25 +278,33 @@ export async function signIn(email: string, password: string): Promise<CurrentUs
 }
 
 /**
- * Register (Task 2): link name + email + password onto the CURRENT anonymous
- * account so no progress is lost — same auth uid, so all `user_lecture_progress`
- * rows carry over and start syncing across devices. `is_anonymous` flips to false
- * immediately (email confirmation is disabled on the project), so رحلتي العلمية
- * unlocks right away. Data-minimisation: only name + email + gender (26.2 —
- * required for the gender-segregated study buddy) are collected.
+ * Register (Task 2, extended for phone registration): link name + phone
+ * (required) + password onto the CURRENT anonymous account so no progress is
+ * lost — same auth uid, so all `user_lecture_progress` rows carry over and
+ * start syncing across devices. Email is now OPTIONAL — set in a second,
+ * separate `updateUser` call so a missing/invalid email never blocks the
+ * phone+password linking. `is_anonymous` flips to false immediately: phone
+ * confirmation is disabled project-wide (`sms_autoconfirm`, mirrors
+ * `mailer_autoconfirm`) so no OTP is ever sent for the phone, and email
+ * confirmation is likewise disabled for this first-time set (see
+ * `mailer_autoconfirm` — distinct from the "secure email CHANGE" flow that
+ * gates a later self-service edit, see {@link requestEmailChange}).
  */
 export async function register(
   name: string,
+  phone: string,
   email: string,
   password: string,
   gender: Gender,
 ): Promise<CurrentUser> {
+  const p = normalizePhone(phone);
   const e = email.trim().toLowerCase();
   const display = name.trim();
   if (USE_MOCK) {
     const user: CurrentUser = {
       id: 'mock-guest',
       email: e,
+      phone: p || null,
       role: 'student',
       isGuest: false,
       displayName: display || null,
@@ -276,20 +314,30 @@ export async function register(
     return user;
   }
   const { data, error } = await supabase.auth.updateUser({
-    email: e,
+    phone: p,
     password,
     data: { display_name: display, gender },
   });
   if (error) throw error;
+  let u = data.user;
+  if (e) {
+    // Best-effort: registration must not fail because of the OPTIONAL email.
+    // Only trust it as saved if this call actually succeeded — otherwise the
+    // returned user must NOT claim an email that never made it to the server
+    // (e.g. "already registered"), or the profile screen would show an email
+    // that silently isn't there.
+    const emailResult = await supabase.auth.updateUser({ email: e }).catch(() => null);
+    if (emailResult?.data.user) u = emailResult.data.user;
+  }
   // This uid is no longer a guest — restoring its stored tokens after a
   // sign-out would silently log back into the registered account.
   await clearStoredGuestSession();
   await syncOwnProfile({ gender, displayName: display, oathAccepted: true });
-  const u = data.user;
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
-    email: u.email ?? e,
+    email: u.email ?? '',
+    phone: u.phone ?? p,
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) || display || null,
@@ -298,13 +346,12 @@ export async function register(
 }
 
 /**
- * Edit the profile (Task 2): update the display name, email, and/or gender of
- * the signed-in account. Name + gender live in `user_metadata` (and are synced
- * into `profiles` for the buddy SQL); email uses Supabase's email-change flow.
+ * Edit the profile (Task 2): update the display name and/or gender of the
+ * signed-in account (both live in `user_metadata`, synced into `profiles` for
+ * the buddy SQL). Email is NOT handled here — see {@link requestEmailChange}.
  */
 export async function updateProfile(fields: {
   displayName?: string;
-  email?: string;
   gender?: Gender;
 }): Promise<CurrentUser> {
   if (USE_MOCK) {
@@ -314,19 +361,17 @@ export async function updateProfile(fields: {
     const next: CurrentUser = {
       ...cur,
       displayName: fields.displayName !== undefined ? fields.displayName.trim() || null : cur.displayName,
-      email: fields.email !== undefined ? fields.email.trim().toLowerCase() : cur.email,
       gender: fields.gender ?? cur.gender,
     };
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(next));
     return next;
   }
-  const payload: Parameters<typeof supabase.auth.updateUser>[0] = {};
-  if (fields.email !== undefined) payload.email = fields.email.trim().toLowerCase();
   const meta: Record<string, string> = {};
   if (fields.displayName !== undefined) meta.display_name = fields.displayName.trim();
   if (fields.gender !== undefined) meta.gender = fields.gender;
-  if (Object.keys(meta).length) payload.data = meta;
-  const { data, error } = await supabase.auth.updateUser(payload);
+  const { data, error } = await supabase.auth.updateUser(
+    Object.keys(meta).length ? { data: meta } : {},
+  );
   if (error) throw error;
   if (fields.displayName !== undefined || fields.gender !== undefined) {
     await syncOwnProfile({ gender: fields.gender, displayName: fields.displayName });
@@ -336,6 +381,54 @@ export async function updateProfile(fields: {
   return {
     id: u.id,
     email: u.email ?? '',
+    phone: u.phone ?? null,
+    role,
+    isGuest: u.is_anonymous ?? false,
+    displayName: (u.user_metadata?.display_name as string) ?? null,
+    gender: (u.user_metadata?.gender as Gender) ?? null,
+  };
+}
+
+/**
+ * Step 1 of the self-service email add/change: send a confirmation code to
+ * the NEW address. Only takes effect once {@link verifyEmailChange} succeeds
+ * (project has `mailer_secure_email_change_enabled=true` + a custom
+ * `email_change` template rendering `{{ .Token }}`, mirroring the recovery
+ * OTP-code flow) — required because email is now the password-recovery
+ * channel for phone-registered accounts too, so an unverified typo must never
+ * silently become it.
+ */
+export async function requestEmailChange(email: string): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.auth.updateUser({ email: email.trim().toLowerCase() });
+  if (error) throw error;
+}
+
+/**
+ * Step 2: verify the 6-digit code sent to the new address, completing the
+ * email change. Mirrors {@link verifyPasswordResetCode}'s shape exactly.
+ */
+export async function verifyEmailChange(email: string, code: string): Promise<CurrentUser> {
+  if (USE_MOCK) {
+    const raw = await AsyncStorage.getItem(MOCK_SESSION_KEY);
+    const cur = raw ? (JSON.parse(raw) as CurrentUser) : null;
+    if (!cur) throw new Error('لا يوجد حساب');
+    const next: CurrentUser = { ...cur, email: email.trim().toLowerCase() };
+    await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(next));
+    return next;
+  }
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: code.trim(),
+    type: 'email_change',
+  });
+  if (error) throw error;
+  const u = data.user!;
+  const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
+  return {
+    id: u.id,
+    email: u.email ?? '',
+    phone: u.phone ?? null,
     role,
     isGuest: u.is_anonymous ?? false,
     displayName: (u.user_metadata?.display_name as string) ?? null,
