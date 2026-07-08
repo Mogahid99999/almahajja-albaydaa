@@ -14,8 +14,8 @@ type Router = ReturnType<typeof useRouter>;
 
 const TOOLS: { icon: keyof typeof Feather.glyphMap; label: string; path: string }[] = [
   { icon: 'edit-3', label: 'ملاحظاتي', path: 'lecture-note' },
-  { icon: 'award', label: 'فوائد الدارسين', path: 'lecture-benefits' },
-  { icon: 'help-circle', label: 'أسئلة الدرس', path: 'lecture-questions' },
+  { icon: 'award', label: 'الفوائد', path: 'lecture-benefits' },
+  { icon: 'help-circle', label: 'الأسئلة', path: 'lecture-questions' },
 ];
 
 export function LessonToolsSheet({

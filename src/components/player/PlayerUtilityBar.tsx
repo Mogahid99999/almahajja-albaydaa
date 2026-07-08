@@ -1,33 +1,36 @@
 /**
  * Bottom utility bar (absolute-positioned, 26px from bottom).
- * Three chips on rgba(255,255,255,0.07) rounded backgrounds:
- *   1. Speed chip — cycles PLAYBACK_RATES, displays in Arabic-Indic with ٫ decimal.
- *   2. Download chip — DownloadButton.
- *   3. Minimize icon — chevron-down → router.back().
+ * Speed chip always shows the current rate (e.g. "١٫٠×"). Press and hold it
+ * to drag a slider (0.8×–2.0×, 0.1 steps) that pops up centered on screen —
+ * the finger's horizontal movement (not its absolute position) drives the
+ * thumb, so the drag can wander anywhere on screen once it starts. Release
+ * to commit the rate; the overlay springs back out.
  */
 import { Feather } from '@expo/vector-icons';
-import { Pressable, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRef, useState } from 'react';
+import { View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { colors } from '@/constants/theme';
 import { Txt } from '@/components/ui';
-import { DownloadButton } from '@/components/DownloadButton';
-import { toArabicDigits } from '@/lib/format';
 import { setRate } from '@/lib/audioController';
-import { PLAYBACK_RATES, type PlaybackRate } from '@/stores/playerStore';
+import { type PlaybackRate } from '@/stores/playerStore';
+import { PlaybackRateSlider, RATE_TRACK_WIDTH, rateToTrackX, trackXToRate } from './PlaybackRateSlider';
+import { formatRate } from './rateFormat';
 
 const CHIP_BG = 'rgba(255,255,255,0.07)';
+const CHIP_BG_ACTIVE = 'rgba(255,255,255,0.14)';
 const CHIP_RADIUS = 14;
 const CHIP_PADDING_V = 11;
 const CHIP_PADDING_H = 15;
-
-/** Format a PlaybackRate as Arabic-Indic with ٫ decimal, e.g. 0.75→"٠٫٧٥×", 1→"١٫٠×". */
-function formatRate(rate: PlaybackRate): string {
-  // Always show one decimal place.
-  const str = rate.toFixed(1); // "0.75" | "1.0" | "1.25" | etc.
-  return `${toArabicDigits(str.replace('.', '٫'))}×`;
-}
 
 type Props = {
   lectureId: string;
@@ -35,14 +38,85 @@ type Props = {
 };
 
 export function PlayerUtilityBar({ lectureId, rate }: Props) {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  function cycleRate() {
-    const idx = PLAYBACK_RATES.indexOf(rate);
-    const next = PLAYBACK_RATES[(idx + 1) % PLAYBACK_RATES.length];
-    setRate(next);
+  const [sliderVisible, setSliderVisible] = useState(false);
+  const [liveRate, setLiveRate] = useState(rate);
+  const [chipActive, setChipActive] = useState(false);
+
+  // Track position (px) and pop-in progress (0→1) driven straight from the
+  // gesture worklet on the UI thread — the overlay just reads these.
+  const trackX = useSharedValue(rateToTrackX(rate));
+  const progress = useSharedValue(0);
+  // Where the drag started, and the last rate reported to JS (to only cross
+  // the bridge when the snapped value actually changes, not every pixel).
+  const baseX = useSharedValue(0);
+  const lastEmitted = useSharedValue(rate);
+
+  // Keeps handlers created inside the worklet-capturing gesture below in sync
+  // with the latest committed rate without recreating the gesture needlessly.
+  const rateRef = useRef(rate);
+  rateRef.current = rate;
+
+  function openSlider() {
+    setChipActive(true);
+    setSliderVisible(true);
+    setLiveRate(rateRef.current);
   }
+
+  function updateLiveRate(next: number) {
+    setLiveRate(next);
+  }
+
+  function commitRate(next: number) {
+    setRate(next as PlaybackRate);
+    setChipActive(false);
+  }
+
+  function closeSlider() {
+    setSliderVisible(false);
+  }
+
+  const dragGesture = Gesture.Pan()
+    .activateAfterLongPress(220)
+    .shouldCancelWhenOutside(false)
+    .onStart(() => {
+      baseX.value = rateToTrackX(rateRef.current);
+      trackX.value = baseX.value;
+      lastEmitted.value = rateRef.current;
+      progress.value = withSpring(1, { damping: 16, stiffness: 220 });
+      runOnJS(openSlider)();
+    })
+    .onUpdate((e) => {
+      const nextX = Math.min(RATE_TRACK_WIDTH, Math.max(0, baseX.value + e.translationX));
+      trackX.value = nextX;
+      const nextRate = trackXToRate(nextX);
+      if (nextRate !== lastEmitted.value) {
+        lastEmitted.value = nextRate;
+        runOnJS(updateLiveRate)(nextRate);
+      }
+    })
+    .onEnd(() => {
+      const finalRate = trackXToRate(trackX.value);
+      runOnJS(commitRate)(finalRate);
+      progress.value = withTiming(0, { duration: 160 }, (finished) => {
+        if (finished) runOnJS(closeSlider)();
+      });
+    })
+    .onFinalize((_e, success) => {
+      // Safety net: a cancelled/interrupted gesture (e.g. an OS alert) still
+      // has to close the overlay and restore the previous rate.
+      if (!success) {
+        runOnJS(commitRate)(rateRef.current);
+        progress.value = withTiming(0, { duration: 160 }, (finished) => {
+          if (finished) runOnJS(closeSlider)();
+        });
+      }
+    });
+
+  const chipStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: withSpring(chipActive ? 1.04 : 1, { damping: 14, stiffness: 260 }) }],
+  }));
 
   return (
     <View
@@ -54,74 +128,46 @@ export function PlayerUtilityBar({ lectureId, rate }: Props) {
         bottom: 26 + insets.bottom,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: 'flex-start',
       }}
     >
-      {/* Speed chip */}
-      <Pressable
-        onPress={cycleRate}
-        hitSlop={4}
-        accessibilityRole="button"
-        accessibilityLabel={`سرعة التشغيل ${formatRate(rate)}`}
-        style={({ pressed }) => ({
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 7,
-          backgroundColor: CHIP_BG,
-          borderRadius: CHIP_RADIUS,
-          paddingVertical: CHIP_PADDING_V,
-          paddingHorizontal: CHIP_PADDING_H,
-          opacity: pressed ? 0.7 : 1,
-        })}
-      >
-        <Feather name="clock" size={16} color={colors.accentBrass} />
-        <Txt
-          size={13}
-          color={colors.onTealPrimary}
-          weight="semibold"
-          tabular
-          style={{ minWidth: 30, textAlign: 'center' }}
+      {/* Speed chip — press and hold to drag the rate slider open. */}
+      <GestureDetector gesture={dragGesture}>
+        <Animated.View
+          accessibilityRole="adjustable"
+          accessibilityLabel={`سرعة التشغيل ${formatRate(rate)}، اضغط مطولاً لتغييرها`}
+          style={[
+            {
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 7,
+              backgroundColor: chipActive ? CHIP_BG_ACTIVE : CHIP_BG,
+              borderRadius: CHIP_RADIUS,
+              paddingVertical: CHIP_PADDING_V,
+              paddingHorizontal: CHIP_PADDING_H,
+            },
+            chipStyle,
+          ]}
         >
-          {formatRate(rate)}
-        </Txt>
-      </Pressable>
+          <Feather name="clock" size={16} color={colors.accentBrass} />
+          <Txt
+            size={13}
+            color={colors.onTealPrimary}
+            weight="semibold"
+            tabular
+            style={{ minWidth: 30, textAlign: 'center' }}
+          >
+            {formatRate(rate)}
+          </Txt>
+        </Animated.View>
+      </GestureDetector>
 
-      {/* Download chip */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          backgroundColor: CHIP_BG,
-          borderRadius: CHIP_RADIUS,
-          paddingVertical: CHIP_PADDING_V,
-          paddingHorizontal: CHIP_PADDING_H,
-        }}
-      >
-        <DownloadButton lectureId={lectureId} onTeal size={17} />
-        <Txt size={13} color={colors.onTealIcon} weight="medium">
-          تحميل
-        </Txt>
-      </View>
-
-      {/* Minimize — chevron-down → router.back() */}
-      <Pressable
-        onPress={() => router.back()}
-        hitSlop={4}
-        accessibilityRole="button"
-        accessibilityLabel="تصغير المشغل"
-        style={({ pressed }) => ({
-          width: 46,
-          height: 46,
-          backgroundColor: CHIP_BG,
-          borderRadius: CHIP_RADIUS,
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: pressed ? 0.7 : 1,
-        })}
-      >
-        <Feather name="chevron-down" size={18} color={colors.onTealIcon} />
-      </Pressable>
+      <PlaybackRateSlider
+        visible={sliderVisible}
+        trackX={trackX}
+        progress={progress}
+        liveRate={liveRate}
+      />
     </View>
   );
 }

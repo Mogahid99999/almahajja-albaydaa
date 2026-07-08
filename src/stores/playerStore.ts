@@ -6,8 +6,11 @@ import { create } from 'zustand';
  * lives in `src/lib/audioController.ts`, which is the only writer of these
  * setters — components read this store and call the controller to act.
  */
-export type PlaybackRate = 0.75 | 1.0 | 1.25 | 1.5 | 2.0;
-export const PLAYBACK_RATES: PlaybackRate[] = [0.75, 1.0, 1.25, 1.5, 2.0];
+export type PlaybackRate = number;
+/** Playback speed slider bounds (PlayerUtilityBar): 0.8×–2.0× in 0.1 steps. */
+export const RATE_MIN = 0.8;
+export const RATE_MAX = 2.0;
+export const RATE_STEP = 0.1;
 
 type PlayerState = {
   currentLectureId: string | null;

@@ -16,6 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, I18nManager, Platform, View } from 'react-native';
 import RNRestart from 'react-native-restart';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { checkBannedAndSignOut } from '@/api/auth';
@@ -529,27 +530,39 @@ export default function RootLayout() {
       // — see onPersistedCacheHydrated above.
       onSuccess={onPersistedCacheHydrated}
     >
-      <SafeAreaProvider>
-        {/* SDK 56's expo-status-bar has no backgroundColor prop (Android 15
-            edge-to-edge is always on) — the status-bar fog is Screen.tsx's job. */}
-        <StatusBar style="dark" />
-        <SessionGate fontsLoaded={fontsLoaded}>
-          <UpdateGate>
-            <AuthGate />
-            <NotificationsBootstrap />
-            <TourCard />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: colors.bgSand },
-              }}
-            >
-              {/* Full-screen player presented modally over the student app. */}
-              <Stack.Screen name="player/[id]" options={{ presentation: 'modal' }} />
-            </Stack>
-          </UpdateGate>
-        </SessionGate>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          {/* SDK 56's expo-status-bar has no backgroundColor prop (Android 15
+              edge-to-edge is always on) — the status-bar fog is Screen.tsx's job. */}
+          <StatusBar style="dark" />
+          <SessionGate fontsLoaded={fontsLoaded}>
+            <UpdateGate>
+              <AuthGate />
+              <NotificationsBootstrap />
+              <TourCard />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: colors.bgSand },
+                }}
+              >
+                {/* Full-screen player presented modally over the student app. iOS's
+                    native `modal` presentation already peeks the screen beneath and
+                    supports swipe-down-to-dismiss out of the box. Android's `modal`
+                    presentation has neither, so the player screen itself renders the
+                    peek gap + swipe gesture on top of a `transparentModal` there. */}
+                <Stack.Screen
+                  name="player/[id]"
+                  options={{
+                    presentation: Platform.OS === 'android' ? 'transparentModal' : 'modal',
+                    animation: Platform.OS === 'android' ? 'slide_from_bottom' : undefined,
+                  }}
+                />
+              </Stack>
+            </UpdateGate>
+          </SessionGate>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     </PersistQueryClientProvider>
   );
 }

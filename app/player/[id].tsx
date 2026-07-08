@@ -9,11 +9,19 @@
  * Design reference: screens/مشغل الصوت.dc.html
  */
 import { useEffect, useState } from 'react';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { Platform, Pressable, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { colors, platformShadow, radius } from '@/constants/theme';
 import { queryKeys } from '@/constants/queryKeys';
@@ -42,6 +50,46 @@ export default function PlayerScreen() {
     if (router.canGoBack()) router.back();
     else router.replace('/');
   };
+
+  // Android peek-sheet + swipe-to-minimize (V·player). iOS's native `modal`
+  // presentation already peeks the screen beneath and handles the swipe-down
+  // gesture itself; Android's `modal` presentation does neither, so it's
+  // reproduced here: the screen renders as a `transparentModal` (see
+  // app/_layout.tsx) inset from the top by PEEK_TOP_RATIO, with a drag handle
+  // that lets a downward swipe collapse the player the same way the chevron
+  // button does.
+  const { height: windowHeight } = useWindowDimensions();
+  const isAndroid = Platform.OS === 'android';
+  const PEEK_TOP_RATIO = 0.1;
+  const topGap = Math.round(windowHeight * PEEK_TOP_RATIO);
+  const translateY = useSharedValue(0);
+  const dragGesture = Gesture.Pan()
+    .activeOffsetY(12)
+    .failOffsetX([-20, 20])
+    .onUpdate((e) => {
+      translateY.value = Math.max(0, e.translationY);
+    })
+    .onEnd((e) => {
+      const shouldDismiss = e.translationY > windowHeight * 0.22 || e.velocityY > 800;
+      if (shouldDismiss) {
+        // Fire the navigation pop immediately instead of waiting for this tween to
+        // finish: the native stack's own `slide_from_bottom` pop transition takes
+        // over the rest of the way down, so the two transitions overlap into one
+        // visible motion instead of running back-to-back (which was leaving Android
+        // on an empty frame for ~1s between the JS tween finishing and the native
+        // pop finally starting).
+        translateY.value = withTiming(windowHeight, { duration: 220 });
+        runOnJS(collapse)();
+      } else {
+        translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
+      }
+    });
+  const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
+  // Backdrop dims out as the sheet is dragged down — the same "content follows
+  // the finger, chrome fades with it" feel as iOS's native modal dismiss.
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.min(1, translateY.value / windowHeight),
+  }));
 
   // Lecture metadata (eyebrow, sectionTitle) — loaded once from the API.
   const { data } = useLecturePlayback(id);
@@ -116,7 +164,7 @@ export default function PlayerScreen() {
   // Keep the title clear of the pinned controls (≈176px waveform+transport block).
   const titleAreaReserve = (hasAttachments ? 208 : 150) + 176;
 
-  return (
+  const playerScreen = (
     <Screen scroll={false} background={colors.primaryTeal} bottomPad={0} padded={false}>
       {/* Faint concentric-circle motif behind the artwork */}
       <ConcentricMotif
@@ -157,15 +205,8 @@ export default function PlayerScreen() {
           {sectionTitle}
         </Txt>
 
-        {/* Right: overflow (no-op) */}
-        <IconButton
-          icon="more-vertical"
-          size={42}
-          iconSize={18}
-          color={colors.onTealIcon}
-          style={styles.topBarBtn}
-          accessibilityLabel="المزيد من الخيارات"
-        />
+        {/* Right: spacer — balances the collapse button so the section label stays centered */}
+        <View style={styles.topBarSpacer} />
       </View>
 
       {/* ── Emblem + title — top-anchored; a long title wraps into the whole
@@ -280,6 +321,38 @@ export default function PlayerScreen() {
       <PlayerUtilityBar lectureId={id} rate={rate} />
     </Screen>
   );
+
+  if (!isAndroid) {
+    return playerScreen;
+  }
+
+  // Android: dimmed backdrop (the actual screen beneath, presented via
+  // `transparentModal`, shows through the peek gap) + a rounded-top sheet that
+  // starts `topGap` below the screen top. The drag gesture wraps the WHOLE
+  // sheet (not just the grabber handle) so a swipe-to-dismiss starts from
+  // anywhere on the player, iOS-style — `activeOffsetY`/`failOffsetX` on the
+  // gesture itself (above) are what keep taps on buttons and horizontal
+  // waveform-scrub drags working normally underneath it.
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <Animated.View style={backdropStyle}>
+        <Pressable
+          style={[styles.peekBackdrop, { height: topGap }]}
+          onPress={collapse}
+          accessibilityRole="button"
+          accessibilityLabel="تصغير المشغل"
+        />
+      </Animated.View>
+      <GestureDetector gesture={dragGesture}>
+        <Animated.View style={[styles.sheet, { top: topGap }, sheetStyle]}>
+          <View style={styles.grabberZone}>
+            <View style={styles.grabber} />
+          </View>
+          <View style={styles.sheetBody}>{playerScreen}</View>
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
 }
 
 /** Isolated so the position tick only re-renders the waveform, not the whole screen. */
@@ -292,6 +365,39 @@ function PlayerWaveformLive() {
 }
 
 const styles = StyleSheet.create({
+  // Android peek-sheet (see `isAndroid` branch above) — dimmed strip over the
+  // screen beneath, revealed through the `transparentModal`'s peek gap.
+  peekBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.primaryTeal,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  grabberZone: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  grabber: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  sheetBody: {
+    flex: 1,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -302,6 +408,10 @@ const styles = StyleSheet.create({
   topBarBtn: {
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 13,
+  },
+  topBarSpacer: {
+    width: 42,
+    height: 42,
   },
   topBarLabel: {
     flex: 1,

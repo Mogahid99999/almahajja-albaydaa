@@ -1,6 +1,6 @@
 /**
  * «أدوات الدرس» — compact chip row pinned above the player utility bar (V6):
- *   ملاحظاتي · فوائد الدارسين · أسئلة الدرس
+ *   ملاحظاتي · فوائد الدارسين · أسئلة الدرس · تحميل
  * Each opens a full screen (roomy for reading/writing) over the modal player.
  * A subtle brass dot on ملاحظاتي marks an existing note.
  */
@@ -13,6 +13,7 @@ import { Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useLectureNote } from '@/hooks/useNotes';
+import { DownloadButton } from '@/components/DownloadButton';
 
 type Router = ReturnType<typeof useRouter>;
 
@@ -98,14 +99,35 @@ export function LessonToolsRow({ lectureId }: { lectureId: string }) {
       />
       <ToolChip
         icon="award"
-        label="فوائد الدارسين"
+        label="الفوائد"
         onPress={() => push(router, `/(student)/lecture-benefits/${lectureId}`)}
       />
       <ToolChip
         icon="help-circle"
-        label="أسئلة الدرس"
+        label="الأسئلة"
         onPress={() => push(router, `/(student)/lecture-questions/${lectureId}`)}
       />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="تحميل الدرس"
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 7,
+          paddingVertical: 9,
+          paddingHorizontal: 13,
+          borderRadius: radius.pill,
+          borderWidth: 1,
+          borderColor: 'rgba(201,164,99,0.4)',
+          backgroundColor: 'rgba(255,255,255,0.06)',
+          opacity: pressed ? 0.7 : 1,
+        })}
+      >
+        <Feather name="download" size={14} color={colors.accentBrass} />
+        <Txt size={12.5} weight="medium" color={colors.onTealPrimary}>
+          تحميل
+        </Txt>
+      </Pressable>
     </View>
   );
 }
