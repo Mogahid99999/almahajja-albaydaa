@@ -66,6 +66,27 @@ let audioModeSet = false;
 // past-the-end target to the end). Finishes within this window are ignored so a
 // seek never trips completion / auto-advance (Issue 7).
 let seekGuardUntil = 0;
+// True once the current track has reached its natural end. A player in that
+// native ENDED state cannot be reliably revived with `replace()` + `play()`
+// (same class of bug that made stop() fully release the instance), so the next
+// load recreates the player from scratch instead of reusing it. Cleared when a
+// fresh player starts. This is the fix for "auto-advance leaves the next lecture
+// silent until you fully close and reopen the player".
+let justFinished = false;
+// The lecture id we have already auto-advanced FROM, so a repeated
+// `didJustFinish` for the same ended track can never fire auto-advance twice.
+// Naturally resets when the next track becomes current (its id differs).
+let lastAutoAdvancedFrom: string | null = null;
+// Monotonic load token. Each `loadLecture` bumps it and captures its own value;
+// after any await, a load whose token is no longer current bails before mutating
+// shared player state. This makes rapid track switching deterministic — tap A
+// then quickly tap B (or an auto-advance racing a manual tap) — the LAST
+// requested lecture always wins, and a slow-resolving earlier load can never
+// clobber it or flash its track onto the screen.
+let loadGen = 0;
+
+/** Options accepted by the load path. `restart` forces playback from 0:00. */
+type LoadOpts = { startAtSec?: number; restart?: boolean };
 // The lecture currently being loaded by `loadLecture` (set synchronously before
 // any await, cleared when it settles). Lets `preloadLecture` no-op a redundant
 // call for the SAME lecture that's already in flight — e.g. a row's onPress
@@ -192,10 +213,17 @@ function onStatus(status: AudioStatus) {
     void persist(clampedPosition);
   }
 
-  if (status.didJustFinish && currentId) {
+  if (status.didJustFinish && currentId && currentId !== lastAutoAdvancedFrom) {
     // Ignore a finish that a just-issued seek produced (Issue 7) — it is not a
     // real end-of-lecture, so it must not mark complete or auto-advance.
     if (Date.now() < seekGuardUntil) return;
+    // Remember which track we've handled so a repeated `didJustFinish` for the
+    // same ended track can't fire completion / auto-advance twice.
+    lastAutoAdvancedFrom = currentId;
+    // The track ended — the native player is now in an ENDED state; flag it so
+    // the next load recreates the player instead of trying to `replace()` on a
+    // dead instance (which would start the next lecture silent).
+    justFinished = true;
     // Force completion (position = duration → ≥90% threshold).
     void persist(currentDuration || status.currentTime || 0, true);
     invalidateProgressViews();
@@ -342,21 +370,57 @@ function persist(positionSec: number, finished = false) {
   }).catch(() => {});
 }
 
+/** Create a fresh player for `source` with its status + media-control listeners. */
+function createPlayer(source: string): AudioPlayer {
+  const p = createAudioPlayer({ uri: source }, { updateInterval: 1000 });
+  p.addListener('playbackStatusUpdate', onStatus);
+  // Lock-screen / notification prev·next (from our expo-audio patch) arrive as a
+  // `mediaControlAction` event; route them through the same section-aware
+  // controller the in-app buttons use. Event name isn't in expo-audio's types.
+  (p.addListener as (name: string, cb: (e: { action?: string }) => void) => void)(
+    'mediaControlAction',
+    (e) => {
+      if (e?.action === 'next') playNext();
+      else if (e?.action === 'prev') playPrev();
+    },
+  );
+  return p;
+}
+
+/** Fully release the current player (drop its lock-screen session + listeners). */
+function teardownPlayer() {
+  if (!player) return;
+  try {
+    player.pause();
+  } catch {
+    /* ignored */
+  }
+  try {
+    player.setActiveForLockScreen(false);
+  } catch {
+    /* ignored */
+  }
+  try {
+    player.remove();
+  } catch {
+    /* ignored */
+  }
+  player = null;
+}
+
 /** Create-or-replace the player for `source`, seek to `positionSec`, and play. */
 async function startPlayer(source: string, positionSec: number) {
+  // If the previous track reached its natural end, the native player is in an
+  // ENDED state that `replace()` + `play()` can't reliably restart from (it goes
+  // silent — the same failure stop() avoids by fully releasing). Recreate it from
+  // scratch here. A mid-play switch (next/prev while still playing) keeps the
+  // cheaper, gapless `replace()` path below.
+  if (player && justFinished) {
+    teardownPlayer();
+  }
+  justFinished = false;
   if (!player) {
-    player = createAudioPlayer({ uri: source }, { updateInterval: 1000 });
-    player.addListener('playbackStatusUpdate', onStatus);
-    // Lock-screen / notification prev·next (from our expo-audio patch) arrive as a
-    // `mediaControlAction` event; route them through the same section-aware
-    // controller the in-app buttons use. Event name isn't in expo-audio's types.
-    (player.addListener as (name: string, cb: (e: { action?: string }) => void) => void)(
-      'mediaControlAction',
-      (e) => {
-        if (e?.action === 'next') playNext();
-        else if (e?.action === 'prev') playPrev();
-      },
-    );
+    player = createPlayer(source);
   } else {
     player.replace({ uri: source });
   }
@@ -384,10 +448,7 @@ async function startPlayer(source: string, positionSec: number) {
  * background (seeking forward only). A streaming lecture must await its signed
  * URL, so it still resolves metadata first.
  */
-export async function playLecture(
-  lectureId: string,
-  opts?: { startAtSec?: number },
-) {
+export async function playLecture(lectureId: string, opts?: LoadOpts) {
   if (!lectureId) return;
   if (currentId === lectureId && player) {
     return toggle();
@@ -404,13 +465,13 @@ export async function playLecture(
  * the `pendingId`/`currentId` checks make the second call a no-op instead of
  * re-loading or — worse — pausing what the first call just started.
  */
-export function preloadLecture(lectureId: string, opts?: { startAtSec?: number }) {
+export function preloadLecture(lectureId: string, opts?: LoadOpts) {
   if (!lectureId) return Promise.resolve();
   if (currentId === lectureId || pendingId === lectureId) return Promise.resolve();
   return loadLecture(lectureId, opts);
 }
 
-async function loadLecture(lectureId: string, opts?: { startAtSec?: number }) {
+async function loadLecture(lectureId: string, opts?: LoadOpts) {
   // Switching to a genuinely different lecture — pause whatever's currently
   // playing right away. Without this, a NEW lecture that fails to load (e.g.
   // offline and not downloaded) left the OLD one playing silently behind the
@@ -420,16 +481,20 @@ async function loadLecture(lectureId: string, opts?: { startAtSec?: number }) {
     player.pause();
     store().setPlaying(false);
   }
+  const gen = ++loadGen;
   pendingId = lectureId;
   try {
-    await loadLectureBody(lectureId, opts);
+    await loadLectureBody(lectureId, gen, opts);
   } finally {
     if (pendingId === lectureId) pendingId = null;
   }
 }
 
-async function loadLectureBody(lectureId: string, opts?: { startAtSec?: number }) {
+async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) {
   await ensureAudioMode();
+  // A newer load superseded us while awaiting audio-mode setup — abandon this
+  // one so it can't commit a stale track over the newer one (rapid switching).
+  if (gen !== loadGen) return;
 
   const localUri = localUriFor(lectureId);
   const meta = localUri ? readDownloadMeta(lectureId) : null;
@@ -448,12 +513,18 @@ async function loadLectureBody(lectureId: string, opts?: { startAtSec?: number }
     if (opts?.startAtSec != null && opts.startAtSec > positionSec) {
       positionSec = opts.startAtSec;
     }
+    // Replay-from-start (toggling play on a lecture that ran to its end) wins
+    // over every resume source above.
+    if (opts?.restart) positionSec = 0;
 
     currentId = lectureId;
     currentDuration = meta.durationSec;
     currentSectionId = null; // unknown until the background refresh lands
     currentOrder = 0;
     lastSavedAt = Date.now();
+    // The new track is now current — clear the auto-advance guard so THIS track
+    // (including a replay of the same id) can auto-advance when it finishes.
+    lastAutoAdvancedFrom = null;
     resetTrackProgress(positionSec);
 
     store().setTrack({
@@ -476,8 +547,10 @@ async function loadLectureBody(lectureId: string, opts?: { startAtSec?: number }
         if (data.durationSec > 0) currentDuration = data.durationSec;
         resolveNext();
         resolvePrev();
+        // Never let the server's (end-of-track) resume position yank a
+        // deliberate replay-from-start back to the end.
         const here = player?.currentTime ?? positionSec;
-        if (data.positionSec > here) void seekTo(data.positionSec);
+        if (!opts?.restart && data.positionSec > here) void seekTo(data.positionSec);
       })
       .catch(() => {});
     return;
@@ -532,6 +605,12 @@ async function loadLectureBody(lectureId: string, opts?: { startAtSec?: number }
     source = localUri;
   }
 
+  // The signed-URL round-trip is the widest await in the load — a newer tap or
+  // auto-advance may have superseded us while it was in flight. Bail before
+  // committing so the stale lecture never clobbers the newer one (or plays over
+  // it). This is the race the load token above exists for.
+  if (gen !== loadGen) return;
+
   // Streamed-only lectures have no local sidecar (downloads.ts) to fall back
   // on if the query cache served a stale pre-force-kill position — consult
   // the resume cache here too and take whichever is larger, never rewind.
@@ -543,12 +622,17 @@ async function loadLectureBody(lectureId: string, opts?: { startAtSec?: number }
   if (opts?.startAtSec != null && opts.startAtSec > positionSec) {
     positionSec = opts.startAtSec;
   }
+  // Replay-from-start wins over every resume source above.
+  if (opts?.restart) positionSec = 0;
 
   currentId = lectureId;
   currentDuration = durationSec;
   currentSectionId = sectionId;
   currentOrder = order;
   lastSavedAt = Date.now();
+  // The new track is now current — clear the auto-advance guard so THIS track
+  // (including a replay of the same id) can auto-advance when it finishes.
+  lastAutoAdvancedFrom = null;
   resetTrackProgress(positionSec);
 
   store().setTrack({ id: lectureId, title, sheikhName, durationSec, positionSec });
@@ -566,6 +650,14 @@ export function toggle() {
     void persist(player.currentTime ?? store().positionSec);
     invalidateProgressViews();
   } else {
+    // Resuming a track that already ran to its natural end: the native player is
+    // in an ENDED state where a bare play() is a silent no-op. Reload it fresh
+    // from the start so "play" actually replays the finished lecture — reached
+    // for the last lecture in a section, or when auto-advance is off.
+    if (justFinished && currentId) {
+      void loadLecture(currentId, { restart: true });
+      return;
+    }
     player.play();
     store().setPlaying(true);
   }
@@ -619,6 +711,8 @@ export function stop() {
   currentSectionId = null;
   currentOrder = 0;
   pendingId = null;
+  justFinished = false;
+  lastAutoAdvancedFrom = null;
   store().reset();
 }
 

@@ -207,6 +207,22 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 export async function ensureSession(): Promise<CurrentUser | null> {
   const existing = await getCurrentUser();
   if (existing) return existing;
+  // No live session found. Before minting a BRAND-NEW anonymous user — which
+  // would orphan the device's guest identity + all its progress and reads to
+  // the user as "logged out after updating the app" — try to restore the
+  // device guest from its sidecar tokens (DEVICE_GUEST_KEY). This recovers the
+  // SAME anon uid in the case that broke people across updates: the primary
+  // Supabase auth-token in storage got wiped by a failed token refresh (a
+  // rotation race, or a transient/offline error right at cold start), while the
+  // device-guest tokens stored separately are still valid. Only a genuine
+  // first install (nothing to restore) falls through to a new anonymous user.
+  if (Platform.OS !== 'web') {
+    const restored = await restoreGuestSession();
+    if (restored) {
+      const user = await getCurrentUser();
+      if (user) return user;
+    }
+  }
   return signInAnonymously();
 }
 
