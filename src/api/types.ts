@@ -328,6 +328,8 @@ export type LectureCard = {
   sheikhName: string | null;
   durationSec: number;
   coverLetter: string;
+  /** Parent section title — used to pick the card's subject-icon badge. */
+  sectionTitle: string | null;
 };
 
 /** One curated pick in the admin «المختارات» list (drafts/unclassified visible). */
@@ -369,6 +371,8 @@ export type LectureRow = {
   status: LectureProgressStatus;
   positionSec: number;
   order: number;
+  /** Audio file size in bytes, shown next to the download button. Null when unknown (older rows). */
+  fileSizeBytes: number | null;
 };
 
 export type SectionHeaderData = {

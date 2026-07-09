@@ -20,13 +20,15 @@ import { useRouter } from 'expo-router';
 import { memo, useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { arDuration } from '@/lib/format';
+import { arDownloadSpeed, arDuration, arFileSize, toArabicDigits } from '@/lib/format';
 import { colors } from '@/constants/theme';
 import { isOnlineSync } from '@/lib/connectivity';
 import { localUriFor } from '@/lib/downloads';
 import { preloadLecture, prefetchPlayback } from '@/lib/audioController';
 import { DownloadButton } from '@/components/DownloadButton';
+import { useDownload } from '@/hooks/useDownloads';
 import { LessonToolsSheet } from '@/components/player/LessonToolsSheet';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Rhombus } from '@/components/ui/Rhombus';
 import { Txt } from '@/components/ui/Txt';
 import type { LectureRow } from '@/api/types';
@@ -36,9 +38,10 @@ type Props = {
 };
 
 export const LectureRowItem = memo(function LectureRowItem({ lecture }: Props) {
-  const { id, title, durationSec, status, positionSec } = lecture;
+  const { id, title, durationSec, status, positionSec, fileSizeBytes } = lecture;
   const [toolsOpen, setToolsOpen] = useState(false);
   const router = useRouter();
+  const { status: downloadStatus, progress: downloadProgress, speedBps } = useDownload(id);
 
   // Warm this row's signed playback URL while it just sits on screen (not only on
   // tap) — a non-downloaded lecture otherwise pays the full network round-trip
@@ -173,10 +176,41 @@ export const LectureRowItem = memo(function LectureRowItem({ lecture }: Props) {
             {statusLabel}
           </Txt>
         </View>
+
+        {/* Download progress + speed — only while this lecture is downloading */}
+        {downloadStatus === 'downloading' && (
+          <View style={{ marginTop: 6 }}>
+            <ProgressBar value={downloadProgress} height={3} tint="brass" />
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                marginTop: 3,
+              }}
+            >
+              <Txt size={10} color={colors.textGhost} tabular>
+                {toArabicDigits(String(Math.round(downloadProgress * 100)))}٪
+              </Txt>
+              {!!speedBps && (
+                <Txt size={10} color={colors.textGhost} tabular>
+                  {arDownloadSpeed(speedBps)}
+                </Txt>
+              )}
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* Download button (RTL left side) */}
-      <View onStartShouldSetResponder={() => true}>
+      {/* File size (idle only — download progress replaces it above) + download button (RTL left side) */}
+      <View
+        onStartShouldSetResponder={() => true}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+      >
+        {downloadStatus === 'idle' && fileSizeBytes != null && (
+          <Txt size={10.5} color={colors.textGhost} tabular>
+            {arFileSize(fileSizeBytes)}
+          </Txt>
+        )}
         <DownloadButton lectureId={id} size={18} />
       </View>
 

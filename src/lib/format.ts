@@ -103,3 +103,10 @@ export function arFileSize(bytes: number): string {
   const text = mb >= 10 ? mb.toFixed(0) : mb.toFixed(1);
   return `${toArabicDigits(text.replace('.', '٫'))} ميجابايت`;
 }
+
+/** Bytes/sec → "١٫٢ م.ب/ث" compact download-speed label (in-progress download row). */
+export function arDownloadSpeed(bytesPerSec: number): string {
+  const mb = Math.max(0, bytesPerSec) / (1024 * 1024);
+  const text = mb >= 10 ? mb.toFixed(0) : mb.toFixed(1);
+  return `${toArabicDigits(text.replace('.', '٫'))} م.ب/ث`;
+}

@@ -44,6 +44,8 @@ export type DLecture = {
   /** In mock mode this holds a directly-playable URL (DB stores a storage path). */
   audio_path: string;
   duration_sec: number | null;
+  /** Derived from duration_sec at a plausible spoken-lecture bitrate (mock stand-in for the admin-captured real file size). */
+  audio_size_bytes: number | null;
   order: number;
   status: AppLectureStatus;
   /** null while a lecture is unclassified (waiting in the admin review queue). */
@@ -133,6 +135,9 @@ export const sections: DSection[] = [
 ];
 
 // --- Lectures -----------------------------------------------------------------
+/** ~64kbps mono spoken-audio bitrate — a plausible stand-in for a real recording's byte size. */
+const MOCK_AUDIO_BYTES_PER_SEC = 8 * 1024;
+
 let lectureSeq = 0;
 function lec(
   id: string,
@@ -145,8 +150,9 @@ function lec(
   audioOverride?: string,
 ): DLecture {
   return {
-    id, title, audio_path: audioOverride ?? AUDIO(++lectureSeq), duration_sec, order, status,
-    section_id, sheikh_id, created_at: now, updated_at: now,
+    id, title, audio_path: audioOverride ?? AUDIO(++lectureSeq), duration_sec,
+    audio_size_bytes: Math.round(duration_sec * MOCK_AUDIO_BYTES_PER_SEC),
+    order, status, section_id, sheikh_id, created_at: now, updated_at: now,
   };
 }
 
@@ -363,12 +369,15 @@ export function addLecture(input: {
   order: number;
   duration_sec?: number | null;
   status: AppLectureStatus;
+  audio_size_bytes?: number | null;
 }): DLecture {
+  const durationSec = input.duration_sec ?? 1500;
   const created: DLecture = {
     id: `l-new-${Date.now()}`,
     title: input.title,
     audio_path: AUDIO(lectures.length + 1),
-    duration_sec: input.duration_sec ?? 1500,
+    duration_sec: durationSec,
+    audio_size_bytes: input.audio_size_bytes ?? Math.round(durationSec * MOCK_AUDIO_BYTES_PER_SEC),
     order: input.order,
     status: input.status,
     section_id: input.section_id,

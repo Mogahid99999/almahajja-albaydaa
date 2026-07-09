@@ -34,20 +34,67 @@ export function useDownload(lectureId: string) {
   }, [lectureId, entry, set]);
 
   const download = useCallback(async () => {
-    set(lectureId, { status: 'downloading', progress: 0 });
+    set(lectureId, {
+      status: 'downloading',
+      progress: 0,
+      bytesWritten: 0,
+      totalBytes: undefined,
+      speedBps: undefined,
+    });
     try {
       const pb = await getLecturePlayback(lectureId);
       if (!pb.audioUrl) throw new Error('لا يوجد ملف صوتي للتحميل');
-      const uri = await downloadLecture(lectureId, pb.audioUrl, {
-        id: pb.id,
-        title: pb.title,
-        sheikhName: pb.sheikhName,
-        durationSec: pb.durationSec,
-        sectionTitle: pb.sectionTitle,
+
+      // Throttle store writes to ~4/sec — the native side can fire onProgress
+      // once per chunk (hundreds of times for a large file), and writing every
+      // tick would re-render the row on every chunk (see GLITCH_LOG #20 note
+      // in useDownloadedIds above for why unthrottled zustand ticks are unsafe
+      // here).
+      let lastTickAt = Date.now();
+      let lastBytes = 0;
+      const onProgress = ({ bytesWritten, totalBytes }: { bytesWritten: number; totalBytes: number }) => {
+        const now = Date.now();
+        const dt = (now - lastTickAt) / 1000;
+        if (dt < 0.25) return;
+        const speedBps = dt > 0 ? (bytesWritten - lastBytes) / dt : 0;
+        lastTickAt = now;
+        lastBytes = bytesWritten;
+        set(lectureId, {
+          progress: totalBytes > 0 ? Math.min(1, bytesWritten / totalBytes) : 0,
+          bytesWritten,
+          totalBytes: totalBytes > 0 ? totalBytes : undefined,
+          speedBps: Math.max(0, speedBps),
+        });
+      };
+
+      const uri = await downloadLecture(
+        lectureId,
+        pb.audioUrl,
+        {
+          id: pb.id,
+          title: pb.title,
+          sheikhName: pb.sheikhName,
+          durationSec: pb.durationSec,
+          sectionTitle: pb.sectionTitle,
+        },
+        onProgress,
+      );
+      set(lectureId, {
+        status: 'downloaded',
+        progress: 1,
+        localUri: uri,
+        bytesWritten: undefined,
+        totalBytes: undefined,
+        speedBps: undefined,
       });
-      set(lectureId, { status: 'downloaded', progress: 1, localUri: uri });
     } catch (e) {
-      set(lectureId, { status: 'error', error: (e as Error).message });
+      set(lectureId, {
+        status: 'error',
+        error: (e as Error).message,
+        bytesWritten: undefined,
+        totalBytes: undefined,
+        speedBps: undefined,
+      });
     }
   }, [lectureId, set]);
 
@@ -60,6 +107,9 @@ export function useDownload(lectureId: string) {
     status: entry?.status ?? 'idle',
     progress: entry?.progress ?? 0,
     localUri: entry?.localUri,
+    bytesWritten: entry?.bytesWritten,
+    totalBytes: entry?.totalBytes,
+    speedBps: entry?.speedBps,
     download,
     remove,
   };

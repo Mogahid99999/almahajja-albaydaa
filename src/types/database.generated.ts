@@ -401,6 +401,7 @@ export type Database = {
       lectures: {
         Row: {
           audio_path: string | null
+          audio_size_bytes: number | null
           created_at: string
           duration_sec: number | null
           id: string
@@ -413,6 +414,7 @@ export type Database = {
         }
         Insert: {
           audio_path?: string | null
+          audio_size_bytes?: number | null
           created_at?: string
           duration_sec?: number | null
           id?: string
@@ -425,6 +427,7 @@ export type Database = {
         }
         Update: {
           audio_path?: string | null
+          audio_size_bytes?: number | null
           created_at?: string
           duration_sec?: number | null
           id?: string
@@ -1263,6 +1266,7 @@ export type Database = {
       get_featured_lectures: {
         Args: never
         Returns: {
+          audio_size_bytes: number | null
           completed: boolean
           duration_sec: number
           lecture_id: string

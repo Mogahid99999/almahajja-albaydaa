@@ -22,6 +22,8 @@ export type PickedAudio = {
   uri: string;
   name: string;
   mimeType?: string | null;
+  /** Byte length of the file that will actually be uploaded (post-compression on web) — stored as lectures.audio_size_bytes for the student-facing size label. */
+  size?: number | null;
 };
 
 /**
@@ -125,6 +127,7 @@ export async function createLecture(input: {
       duration_sec: input.durationSec ?? null,
       status: dbStatus,
       audio_path: audioPath,
+      audio_size_bytes: input.audioFile?.size ?? null,
     })
     .select('id')
     .single();

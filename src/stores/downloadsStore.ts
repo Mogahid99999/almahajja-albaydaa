@@ -17,6 +17,12 @@ export type DownloadEntry = {
   progress: number;
   localUri?: string;
   error?: string;
+  /** Live transfer stats while status === 'downloading' (undefined once settled). */
+  bytesWritten?: number;
+  /** -1/undefined when the server didn't send Content-Length (indeterminate progress). */
+  totalBytes?: number;
+  /** Bytes/sec, smoothed over the last throttled tick. */
+  speedBps?: number;
 };
 
 type DownloadsState = {

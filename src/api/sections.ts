@@ -85,6 +85,7 @@ export async function getHomeData(): Promise<HomeData> {
     sheikhName: l.sheikh_name ?? null,
     durationSec: l.duration_sec ?? 0,
     coverLetter: l.section_title?.[0] ?? '◆',
+    sectionTitle: l.section_title ?? null,
   }));
 
   const featured: LectureCard[] = (page.featured ?? []).map((l) => ({
@@ -93,6 +94,7 @@ export async function getHomeData(): Promise<HomeData> {
     sheikhName: l.sheikh_name ?? null,
     durationSec: l.duration_sec ?? 0,
     coverLetter: l.section_title?.[0] ?? '◆',
+    sectionTitle: l.section_title ?? null,
   }));
 
   const cl = page.continue_listening;
@@ -140,6 +142,7 @@ type SectionPageRpc = {
     id: string;
     title: string;
     duration_sec: number;
+    audio_size_bytes: number | null;
     order: number;
     sheikh_name: string | null;
     position_sec: number;
@@ -201,6 +204,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
       status: l.completed ? 'completed' : pos > 0 ? 'in_progress' : 'new',
       positionSec: pos,
       order: l.order,
+      fileSizeBytes: l.audio_size_bytes ?? null,
     };
   });
 

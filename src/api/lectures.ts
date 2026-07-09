@@ -117,7 +117,7 @@ export async function getRecentLectures(limit = 40): Promise<LectureRow[]> {
   const { data, error } = await supabase
     .from('lectures')
     .select(
-      'id, title, duration_sec, order, sheikhs(name), user_lecture_progress(position_sec, completed)',
+      'id, title, duration_sec, audio_size_bytes, order, sheikhs(name), user_lecture_progress(position_sec, completed)',
     )
     .eq('status', 'published')
     .not('section_id', 'is', null)
@@ -139,6 +139,7 @@ export async function getRecentLectures(limit = 40): Promise<LectureRow[]> {
       status: isDone ? 'completed' : pos > 0 ? 'in_progress' : 'new',
       positionSec: pos,
       order: l.order ?? 0,
+      fileSizeBytes: l.audio_size_bytes ?? null,
     };
   });
 }
@@ -164,6 +165,7 @@ export async function getFeaturedLectures(): Promise<LectureRow[]> {
       status: isDone ? 'completed' : pos > 0 ? 'in_progress' : 'new',
       positionSec: pos,
       order: l.order ?? 0,
+      fileSizeBytes: l.audio_size_bytes ?? null,
     };
   });
 }
@@ -189,6 +191,7 @@ export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {
       sheikhName: sheikh?.name ?? null,
       durationSec: l.duration_sec ?? 0,
       coverLetter: sec?.title?.[0] ?? '◆',
+      sectionTitle: sec?.title ?? null,
     };
   });
 }

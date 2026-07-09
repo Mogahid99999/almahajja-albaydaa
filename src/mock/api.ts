@@ -69,6 +69,7 @@ function lectureCard(l: db.DLecture): LectureCard {
     sheikhName: db.sheikhName(l.sheikh_id),
     durationSec: l.duration_sec ?? 0,
     coverLetter: parent?.cover_letter ?? '✦',
+    sectionTitle: parent?.title ?? null,
   };
 }
 
@@ -145,6 +146,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
       status: progressStatus(l.id),
       positionSec: db.progress[l.id]?.position_sec ?? 0,
       order: l.order,
+      fileSizeBytes: l.audio_size_bytes ?? null,
     }));
 
   return {
@@ -302,6 +304,7 @@ export async function getRecentLectures(limit = 40): Promise<LectureRow[]> {
       status: progressStatus(l.id),
       positionSec: db.progress[l.id]?.position_sec ?? 0,
       order: l.order,
+      fileSizeBytes: l.audio_size_bytes ?? null,
     }));
 }
 
@@ -320,6 +323,7 @@ export async function getFeaturedLectures(): Promise<LectureRow[]> {
       status: progressStatus(l.id),
       positionSec: db.progress[l.id]?.position_sec ?? 0,
       order: l.order,
+      fileSizeBytes: l.audio_size_bytes ?? null,
     }));
 }
 
@@ -638,8 +642,8 @@ export async function createLecture(input: {
   order: number;
   durationSec?: number | null;
   status: AppLectureStatus;
-  /** Ignored in mock — the live path uploads it to the `lectures` bucket. */
-  audioFile?: { uri: string; name: string; mimeType?: string | null } | null;
+  /** The uri/name/mimeType are ignored in mock — the live path uploads them to the `lectures` bucket. `size` is kept so the mock size label matches what was actually picked. */
+  audioFile?: { uri: string; name: string; mimeType?: string | null; size?: number | null } | null;
 }) {
   await delay();
   return db.addLecture({
@@ -649,6 +653,7 @@ export async function createLecture(input: {
     order: input.order,
     duration_sec: input.durationSec ?? null,
     status: input.status,
+    audio_size_bytes: input.audioFile?.size ?? null,
   });
 }
 

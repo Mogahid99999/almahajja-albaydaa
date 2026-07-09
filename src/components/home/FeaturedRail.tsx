@@ -2,10 +2,15 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { LectureCard } from '@/api/types';
-import { colors, radius, spacing } from '@/constants/theme';
+import { colors, radius, shadows, spacing } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
 import { preloadLecture } from '@/lib/audioController';
 import { SectionTitle, Txt } from '@/components/ui';
+import { SectionIcon } from '@/components/ui/SectionIcon';
+
+/** Card is 158×158 — the subject badge straddles its right edge, centered vertically. */
+const CARD_SIZE = 158;
+const BADGE_SIZE = 34;
 
 /** Single cover tint used for all cards — matches the navbar's active gold accent. */
 const COVER_TINTS = [{ from: '#786422', to: '#786422' }];
@@ -138,22 +143,42 @@ function FeaturedCard({
           />
         </View>
 
-        {/* Duration chip — top-right (RTL: top-start) */}
+        {/* Duration chip — left side (RTL: end) */}
         <View
           style={{
             position: 'absolute',
-            top: 12,
-            right: 12,
+            bottom: 12,
+            left: 12,
             backgroundColor: 'rgba(0,0,0,0.18)',
             borderRadius: 20,
             paddingHorizontal: 8,
             paddingVertical: 3,
           }}
         >
-          <Txt size={10} color="rgba(255,255,255,0.85)" tabular>
+          <Txt size={13} color="rgba(255,255,255,0.85)" tabular>
             {arDuration(lecture.durationSec)}
           </Txt>
         </View>
+      </View>
+
+      {/* Subject badge — straddles the card's right edge, half in / half out */}
+      <View
+        style={{
+          position: 'absolute',
+          top: CARD_SIZE / 2 - BADGE_SIZE / 2,
+          right: -BADGE_SIZE / 2,
+          width: BADGE_SIZE,
+          height: BADGE_SIZE,
+          borderRadius: BADGE_SIZE / 2,
+          backgroundColor: colors.surfaceCard,
+          borderWidth: 1,
+          borderColor: colors.borderSand2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...shadows.subtle,
+        }}
+      >
+        <SectionIcon title={lecture.sectionTitle ?? ''} size={18} color={colors.primaryTeal} />
       </View>
 
       {/* Title */}

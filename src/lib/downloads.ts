@@ -55,6 +55,9 @@ type ManifestEntry = DownloadMeta & {
 };
 type Manifest = Record<string, ManifestEntry>;
 
+/** Fired as the transfer streams in — `totalBytes` is -1 when the server omitted Content-Length. */
+export type DownloadProgressCallback = (data: { bytesWritten: number; totalBytes: number }) => void;
+
 function appDir(): Directory {
   const dir = new Directory(Paths.document, APP_FOLDER);
   if (!dir.exists) dir.create({ intermediates: true });
@@ -262,6 +265,7 @@ async function downloadLecturePublic(
   lectureId: string,
   url: string,
   meta: DownloadMeta,
+  onProgress?: DownloadProgressCallback,
 ): Promise<string> {
   const manifest = readManifest();
   const prior = manifest[lectureId];
@@ -289,7 +293,7 @@ async function downloadLecturePublic(
   // file first, then copy its bytes into the SAF-created public file.
   const tempFile = new File(Paths.cache, `${lectureId}-${Date.now()}.tmp`);
   if (tempFile.exists) tempFile.delete();
-  await File.downloadFileAsync(url, tempFile);
+  await File.downloadFileAsync(url, tempFile, { onProgress });
   try {
     const safUri = await StorageAccessFramework.createFileAsync(sectionDirUri, base, 'audio/mpeg');
     const base64 = await tempFile.base64();
@@ -311,9 +315,10 @@ export async function downloadLecture(
   lectureId: string,
   url: string,
   meta: DownloadMeta,
+  onProgress?: DownloadProgressCallback,
 ): Promise<string> {
   if (isWeb) throw new Error('التحميل غير مدعوم على الويب');
-  if (isAndroid) return downloadLecturePublic(lectureId, url, meta);
+  if (isAndroid) return downloadLecturePublic(lectureId, url, meta, onProgress);
 
   const manifest = readManifest();
   const prior = manifest[lectureId];
@@ -332,7 +337,7 @@ export async function downloadLecture(
   const relativePath = relativePathFor(meta, manifest);
   const dest = fileFor(relativePath);
   if (dest.exists) dest.delete();
-  const file = await File.downloadFileAsync(url, dest);
+  const file = await File.downloadFileAsync(url, dest, { onProgress });
   manifest[lectureId] = { ...meta, relativePath };
   writeManifest(manifest);
   return file.uri;
@@ -440,6 +445,7 @@ export function getDownloadedCards(): LectureCard[] {
     sheikhName: m.sheikhName,
     durationSec: m.durationSec,
     coverLetter: m.sectionTitle?.[0] ?? '◆',
+    sectionTitle: m.sectionTitle ?? null,
   }));
 }
 
