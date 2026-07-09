@@ -2,7 +2,7 @@ import { Stack, usePathname } from 'expo-router';
 import { View } from 'react-native';
 
 import { MiniPlayer } from '@/components/MiniPlayer';
-import { BottomNavBar, isTabRootPath } from '@/components/navigation/BottomNavBar';
+import { BottomNavBar } from '@/components/navigation/BottomNavBar';
 import { useHydrateDownloads } from '@/hooks/useDownloads';
 
 /**
@@ -20,9 +20,10 @@ export default function StudentLayout() {
   const pathname = usePathname();
   const noteScreenOpen = pathname.startsWith('/lecture-note');
 
-  // The bottom nav bar only shows on the 5 top-level tab screens — hidden on
-  // every pushed detail screen (section pages, quizzes, player, etc.).
-  const showNavBar = isTabRootPath(pathname) && !noteScreenOpen;
+  // The bottom nav bar is visible on every screen in the student app so
+  // navigation is always reachable — hidden only on the notes editor, where
+  // it would sit behind the keyboard-avoiding editor and its own bar.
+  const showNavBar = !noteScreenOpen;
 
   return (
     <View style={{ flex: 1 }}>

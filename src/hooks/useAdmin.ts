@@ -10,12 +10,13 @@ import {
   getNextLectureOrder,
   getSectionsEditData,
   getUnclassifiedLectures,
+  reorderLectures,
   reorderSections,
   setLectureStatus,
   updateLecture,
   updateSection,
 } from '@/api/admin';
-import type { FlatSectionNode } from '@/api/types';
+import type { AdminLectureRow, FlatSectionNode } from '@/api/types';
 import type { PickedAttachmentFile } from '@/api/attachments';
 import {
   createSheikh,
@@ -182,6 +183,42 @@ export function useReorderSections() {
       // The student app orders by the same numbers (home grid + section pages).
       void qc.invalidateQueries({ queryKey: queryKeys.home });
       void qc.invalidateQueries({ queryKey: ['section'] });
+    },
+  });
+}
+
+/**
+ * Persist a drag-and-drop sibling reorder for lectures within one section.
+ * Optimistic: rows re-sort in the admin-lectures cache immediately by their
+ * new position; a server failure rolls it back and refetches.
+ */
+export function useReorderLectures() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => reorderLectures(ids),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: queryKeys.adminLectures });
+      const previous = qc.getQueryData<AdminLectureRow[]>(queryKeys.adminLectures);
+      if (previous) {
+        const pos = new Map(ids.map((id, i) => [id, i + 1]));
+        const next = previous
+          .map((l) => (pos.has(l.id) ? { ...l, order: pos.get(l.id)! } : l))
+          .sort((a, b) => {
+            if (a.sectionId !== b.sectionId) return 0;
+            return a.order - b.order;
+          });
+        qc.setQueryData(queryKeys.adminLectures, next);
+      }
+      return { previous };
+    },
+    onError: (_e, _ids, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKeys.adminLectures, ctx.previous);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminLectures });
+      // The student app's section page orders lectures by the same numbers.
+      void qc.invalidateQueries({ queryKey: ['section'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.home });
     },
   });
 }

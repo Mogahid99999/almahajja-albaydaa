@@ -10,9 +10,10 @@
  *   - Delete (with confirmation; removes audio from storage too).
  */
 import { Feather } from '@expo/vector-icons';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  PanResponder,
   Pressable,
   StyleSheet,
   TextInput,
@@ -32,6 +33,7 @@ import type { AppLectureStatus } from '@/config';
 import {
   useAdminLectures,
   useDeleteLecture,
+  useReorderLectures,
   useSetLectureStatus,
   useSheikhs,
   useUpdateLecture,
@@ -39,6 +41,7 @@ import {
 import { useSectionsFlat } from '@/hooks/useSections';
 import { playLecture } from '@/lib/audioController';
 import { arDuration, arNum, toArabicDigits } from '@/lib/format';
+import { notify } from '@/lib/notify';
 import { usePlayerStore } from '@/stores/playerStore';
 
 type StatusFilter = 'all' | AppLectureStatus;
@@ -221,30 +224,66 @@ function LectureEditor({
 
 // ─── Lecture row ──────────────────────────────────────────────────────────────
 
+/** Drag interaction callbacks, stable via refs in the parent (mirrors sections.tsx). */
+type LectureDragHandlers = {
+  onDragStart: (row: AdminLectureRow) => void;
+  onDragMove: (pageY: number) => void;
+  onDragEnd: (commit: boolean) => void;
+};
+
 function LectureRow({
   row,
   isCurrent,
   isPlaying,
   isEditing,
+  dragEnabled,
   onPlay,
   onTogglePublish,
   onEdit,
   onDelete,
+  drag,
 }: {
   row: AdminLectureRow;
   isCurrent: boolean;
   isPlaying: boolean;
   isEditing: boolean;
+  /** Reordering is only well-defined for a full, single-section, all-statuses list. */
+  dragEnabled: boolean;
   onPlay: () => void;
   onTogglePublish: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  drag: LectureDragHandlers;
 }) {
   const meta = STATUS_META[row.status];
   const canTogglePublish = row.status !== 'unclassified';
 
+  // The handlers live in a ref so one PanResponder (created once) always calls
+  // the latest closures — recreating it mid-gesture would drop the touch.
+  const dragRef = useRef({ row, drag });
+  dragRef.current = { row, drag };
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => dragEnabled,
+      onMoveShouldSetPanResponder: () => dragEnabled,
+      onPanResponderGrant: () => dragRef.current.drag.onDragStart(dragRef.current.row),
+      onPanResponderMove: (_e, g) => dragRef.current.drag.onDragMove(g.moveY),
+      onPanResponderRelease: () => dragRef.current.drag.onDragEnd(true),
+      onPanResponderTerminate: () => dragRef.current.drag.onDragEnd(false),
+      onPanResponderTerminationRequest: () => false,
+    }),
+  ).current;
+
   return (
     <View style={styles.row}>
+      {/* Drag handle — only active when the list shows one section's full,
+          unfiltered lecture set (see `dragEnabled` in the screen component). */}
+      {dragEnabled ? (
+        <View {...pan.panHandlers} accessibilityLabel="اسحب لإعادة الترتيب" style={styles.dragHandle}>
+          <Feather name="menu" size={14} color={colors.textGhost} />
+        </View>
+      ) : null}
+
       {/* Play */}
       <Pressable
         onPress={onPlay}
@@ -392,11 +431,83 @@ export default function LecturesScreen() {
     return ids;
   }, [sectionFilter, sections]);
 
+  // Drag-and-drop reordering is only well-defined when the visible rows are
+  // EXACTLY one section's full lecture set (every status): reordering a
+  // filtered subset would leave hidden siblings with stale "order" values
+  // that collide with the newly-assigned 1..n, corrupting the true order.
+  const dragEnabled =
+    filter === 'all' && !!sectionFilter && sectionSubtreeIds?.size === 1;
+
   const filtered = useMemo(() => {
     let out = filter === 'all' ? lectures : lectures.filter((l) => l.status === filter);
     if (sectionSubtreeIds) out = out.filter((l) => l.sectionId && sectionSubtreeIds.has(l.sectionId));
+    if (dragEnabled) out = [...out].sort((a, b) => a.order - b.order);
     return out;
-  }, [lectures, filter, sectionSubtreeIds]);
+  }, [lectures, filter, sectionSubtreeIds, dragEnabled]);
+
+  // ── Drag-and-drop reorder (siblings within the filtered section) ──────────
+  const reorderLectures = useReorderLectures();
+  const rowRefs = useRef(new Map<string, View | null>());
+  const dragMeta = useRef<{
+    dragged: AdminLectureRow;
+    slots: { id: string; midY: number }[];
+    insertIndex: number;
+  } | null>(null);
+  const [dragVisual, setDragVisual] = useState<{ draggedId: string; targetId: string | null } | null>(
+    null,
+  );
+
+  const registerRowRef = useCallback((id: string, ref: View | null) => {
+    rowRefs.current.set(id, ref);
+  }, []);
+
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+
+  const onDragStart = useCallback((row: AdminLectureRow) => {
+    const sibs = filteredRef.current.filter((l) => l.id !== row.id);
+    const slots: { id: string; midY: number }[] = [];
+    dragMeta.current = { dragged: row, slots, insertIndex: -1 };
+    setDragVisual({ draggedId: row.id, targetId: null });
+    for (const s of sibs) {
+      rowRefs.current.get(s.id)?.measureInWindow((_x, y, _w, h) => {
+        slots.push({ id: s.id, midY: y + h / 2 });
+        slots.sort((a, b) => a.midY - b.midY);
+      });
+    }
+  }, []);
+
+  const onDragMove = useCallback((pageY: number) => {
+    const meta = dragMeta.current;
+    if (!meta || meta.slots.length === 0) return;
+    let idx = 0;
+    while (idx < meta.slots.length && meta.slots[idx].midY < pageY) idx++;
+    if (idx !== meta.insertIndex) {
+      meta.insertIndex = idx;
+      const target = meta.slots[Math.min(idx, meta.slots.length - 1)];
+      setDragVisual({ draggedId: meta.dragged.id, targetId: target?.id ?? null });
+    }
+  }, []);
+
+  const onDragEnd = useCallback(
+    (commit: boolean) => {
+      const meta = dragMeta.current;
+      dragMeta.current = null;
+      setDragVisual(null);
+      if (!commit || !meta || meta.insertIndex < 0) return;
+      const ids = meta.slots.map((s) => s.id);
+      ids.splice(meta.insertIndex, 0, meta.dragged.id);
+      reorderLectures.mutate(ids, {
+        onError: (e) => notify('تعذّر حفظ الترتيب', (e as Error).message),
+      });
+    },
+    [reorderLectures],
+  );
+
+  const dragHandlers = useMemo(
+    () => ({ onDragStart, onDragMove, onDragEnd }),
+    [onDragStart, onDragMove, onDragEnd],
+  );
 
   function handleTogglePublish(row: AdminLectureRow) {
     if (row.status !== 'published') {
@@ -417,16 +528,26 @@ export default function LecturesScreen() {
 
   const renderItem = useCallback(
     ({ item: row, index }: { item: AdminLectureRow; index: number }) => (
-      <View style={[cardRowStyle(index === 0, index === filtered.length - 1), { maxWidth: 860 }]}>
+      <View
+        ref={(r) => registerRowRef(row.id, r)}
+        style={[
+          cardRowStyle(index === 0, index === filtered.length - 1),
+          { maxWidth: 860 },
+          dragVisual?.draggedId === row.id && styles.rowDragging,
+          dragVisual?.targetId === row.id && styles.rowDropTarget,
+        ]}
+      >
         <LectureRow
           row={row}
           isCurrent={currentLectureId === row.id}
           isPlaying={isPlaying}
           isEditing={editingId === row.id}
+          dragEnabled={dragEnabled}
           onPlay={() => void playLecture(row.id)}
           onTogglePublish={() => handleTogglePublish(row)}
           onEdit={() => setEditingId((cur) => (cur === row.id ? null : row.id))}
           onDelete={() => setPendingDelete(row)}
+          drag={dragHandlers}
         />
         {editingId === row.id ? (
           <LectureEditor
@@ -445,7 +566,18 @@ export default function LecturesScreen() {
         ) : null}
       </View>
     ),
-    [filtered.length, currentLectureId, isPlaying, editingId, sheikhs, updateLecture],
+    [
+      filtered.length,
+      currentLectureId,
+      isPlaying,
+      editingId,
+      sheikhs,
+      updateLecture,
+      dragEnabled,
+      dragHandlers,
+      dragVisual,
+      registerRowRef,
+    ],
   );
 
   const separator = useCallback(
@@ -508,6 +640,27 @@ export default function LecturesScreen() {
           </Pressable>
         )}
       </View>
+
+      {dragEnabled ? (
+        <View style={styles.dragHint}>
+          <Feather name="menu" size={12} color={colors.primaryTeal600} style={{ marginLeft: 6 }} />
+          <Txt size={12} color={colors.primaryTeal600}>
+            اسحب من مقبض ≡ لإعادة ترتيب محاضرات هذا القسم
+          </Txt>
+        </View>
+      ) : sectionFilter && filter === 'all' ? (
+        <View style={styles.dragHint}>
+          <Txt size={12} color={colors.textGhost}>
+            إعادة الترتيب بالسحب متاحة فقط للأقسام التي لا تحتوي أقساماً فرعية.
+          </Txt>
+        </View>
+      ) : sectionFilter ? (
+        <View style={styles.dragHint}>
+          <Txt size={12} color={colors.textGhost}>
+            اختر «الكل» في تصفية الحالة لتفعيل إعادة الترتيب بالسحب.
+          </Txt>
+        </View>
+      ) : null}
     </>
   );
 
@@ -601,6 +754,30 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 8,
     paddingHorizontal: 10,
+  } as ViewStyle,
+
+  dragHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+    marginTop: -8,
+  } as ViewStyle,
+
+  dragHandle: {
+    width: 30,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  } as ViewStyle,
+
+  rowDragging: {
+    opacity: 0.55,
+    backgroundColor: 'rgba(44,97,87,0.06)',
+  } as ViewStyle,
+
+  rowDropTarget: {
+    backgroundColor: 'rgba(201,164,99,0.14)',
   } as ViewStyle,
 
   filterChip: {

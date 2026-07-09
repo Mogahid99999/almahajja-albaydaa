@@ -11,6 +11,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Divider, Rhombus, Screen, Txt } from '@/components/ui';
 import { QuizStatusPill } from '@/components/quiz/QuizStatusPill';
 import { SectionNavBar } from '@/components/section/SectionNavBar';
@@ -53,7 +54,7 @@ export default function QuizIntroScreen() {
 
   if (isLoading) {
     return (
-      <Screen scroll={false} padded bottomPad={40}>
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <SectionNavBar contextLabel={null} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
@@ -64,7 +65,7 @@ export default function QuizIntroScreen() {
 
   if (!quiz) {
     return (
-      <Screen scroll={false} padded bottomPad={40}>
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <SectionNavBar contextLabel={null} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Txt size={15} weight="semibold" color={colors.textMuted} align="center">
@@ -103,7 +104,7 @@ export default function QuizIntroScreen() {
   }
 
   return (
-    <Screen scroll padded bottomPad={40}>
+    <Screen scroll padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
       <SectionNavBar contextLabel={quiz.sectionTitle} />
 
       {/* Header */}

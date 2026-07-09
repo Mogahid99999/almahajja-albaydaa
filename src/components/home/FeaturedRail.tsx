@@ -161,7 +161,7 @@ function FeaturedCard({
         weight="display"
         size={15}
         color={colors.textInk}
-        style={{ marginTop: 10, lineHeight: 22 }}
+        style={{ marginTop: 10, lineHeight: 15 * 1.5 }}
         numberOfLines={2}
       >
         {lecture.title}

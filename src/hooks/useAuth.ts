@@ -15,9 +15,32 @@ import {
   updateProfile,
   verifyEmailChange,
 } from '@/api/auth';
+import { unregisterPushToken } from '@/api/notifications';
 import type { Gender, HomeData } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
+import { stop as stopPlayback } from '@/lib/audioController';
+import { cancelAllLocalNotifications } from '@/lib/notifications';
+import { useNotificationsStore } from '@/stores/notificationsStore';
 import { useTourStore } from '@/stores/tourStore';
+
+/**
+ * Shared cleanup for BOTH sign-out and account deletion: whatever the
+ * outgoing account left running on this device must not survive it —
+ * otherwise the next user (a guest, or someone else on a shared device)
+ * inherits audio still playing in the background and reminders/badges that
+ * were scheduled off the outgoing account's own progress/prefs. Runs before
+ * the session actually drops, so nothing here depends on the old session
+ * still being valid except `unregisterToken` (handled separately, see
+ * useSignOut) — this part is pure device-local cleanup.
+ */
+async function stopDeviceSideEffects(): Promise<void> {
+  stopPlayback();
+  await cancelAllLocalNotifications();
+  // Force the NEXT signed-in/guest session to register its own push token
+  // rather than silently skipping it (NotificationsBootstrap only registers
+  // once per JS run via this `registered` flag).
+  useNotificationsStore.getState().setRegistered(false);
+}
 
 /** Current signed-in user (with role + isGuest). `null` only before the anon session boots. */
 export function useCurrentUser() {
@@ -146,6 +169,14 @@ export function useSignOut() {
     // session must exist BEFORE qc.clear(), otherwise a refetch triggered by the
     // clear reads the dying session and writes the stale user back into the cache.
     mutationFn: async () => {
+      // Drop this device's push-token row for the OUTGOING account BEFORE the
+      // session clears (it needs the still-valid session to identify whose
+      // row to delete) — otherwise that account keeps receiving its pushes on
+      // this device forever, looking like "notifications still work after
+      // logging out".
+      const deviceToken = useNotificationsStore.getState().token;
+      if (deviceToken) await unregisterPushToken(deviceToken);
+      await stopDeviceSideEffects();
       const restored = await signOut();
       const guest =
         restored ??
@@ -166,6 +197,10 @@ export function useDeleteAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
+      // Same device-local cleanup as useSignOut (audio + local reminders/badge).
+      // The push-token ROW itself doesn't need an explicit delete here — the
+      // delete-account Edge Function's cascade already removes it server-side.
+      await stopDeviceSideEffects();
       const restored = await deleteAccount();
       const guest =
         restored ??

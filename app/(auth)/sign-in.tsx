@@ -1,7 +1,7 @@
 import { Feather, FontAwesome } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Pressable, TextInput, View } from 'react-native';
+import { Linking, Platform, Pressable, TextInput, View } from 'react-native';
 
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
@@ -133,6 +133,28 @@ export default function SignInScreen() {
           </Txt>
         </Pressable>
       </Link>
+
+      {/* Guest-first (CLAUDE.md): a guest session already exists behind this
+          screen (SessionGate), so "continue as guest" never signs anything in
+          or out — it just leaves the sign-in screen. `back()` returns to
+          wherever the student came from (e.g. رحلتي العلمية's gate pushed this
+          screen); when there's nothing to go back to (e.g. this screen was
+          reached via `replace` right after signing out), land on Home instead.
+          Native only — web IS the staff/admin dashboard with no guest session,
+          so AuthGate would just bounce a "guest" tap straight back here. */}
+      {Platform.OS !== 'web' ? (
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="المتابعة كضيف دون تسجيل الدخول"
+          style={({ pressed }) => [{ alignItems: 'center', marginTop: 16 }, pressed && { opacity: 0.6 }]}
+        >
+          <Txt size={12.5} color={colors.textGhost}>
+            المتابعة كضيف
+          </Txt>
+        </Pressable>
+      ) : null}
 
       {/* Support contact — only when an admin has set a WhatsApp link (empty = hidden) */}
       {supportUrl ? (

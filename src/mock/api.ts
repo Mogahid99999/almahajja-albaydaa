@@ -500,6 +500,11 @@ export async function registerPushToken(_token: string, _platform: string): Prom
   // No-op store in mock — the live path upserts public.push_tokens.
 }
 
+/** Mirrors registerPushToken — no-op in mock mode. */
+export async function unregisterPushToken(_token: string): Promise<void> {
+  await delay();
+}
+
 export async function getNotificationPrefs(): Promise<NotificationPrefs> {
   await delay();
   // Absence of an override = ON, so the resolved map is always exhaustive.

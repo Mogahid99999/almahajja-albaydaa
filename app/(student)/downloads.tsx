@@ -15,6 +15,7 @@ import { useDownloadedLectures } from '@/hooks/useDownloads';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { colors } from '@/constants/theme';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
 import { Divider } from '@/components/ui/Divider';
 import { IconButton } from '@/components/ui/IconButton';
@@ -30,7 +31,7 @@ export default function DownloadsScreen() {
   const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
       {/* ── Nav row ──────────────────────────────────────────────────────────── */}
       <View
         style={{

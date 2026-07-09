@@ -56,15 +56,27 @@ export function initConnectivity(): void {
 
   if (Platform.OS === 'web') return; // web: leave onlineManager on its default (online)
 
-  // Drive onlineManager off the real device connectivity stream.
+  // Drive onlineManager off the real device connectivity stream. Debounced: on a
+  // weak/borderline signal `expo-network` can flip isConnected/isInternetReachable
+  // every couple of seconds even though the underlying connection never really
+  // drops. Without this, each flicker read as a full offline→online edge and
+  // re-fired every `onReconnect` listener (audioController's stream-recovery
+  // among them), producing a visible reload/retry loop in sync with the flicker
+  // instead of the intended "recover once after a real drop".
+  const DEBOUNCE_MS = 1500;
   onlineManager.setEventListener((setOnline) => {
     let sub: { remove: () => void } | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      sub = Network.addNetworkStateListener((state) => setOnline(deriveOnline(state)));
+      sub = Network.addNetworkStateListener((state) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => setOnline(deriveOnline(state)), DEBOUNCE_MS);
+      });
     } catch {
       /* listener unsupported — the seed below still sets a sane initial value */
     }
     return () => {
+      if (timer) clearTimeout(timer);
       try {
         sub?.remove();
       } catch {

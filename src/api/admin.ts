@@ -216,6 +216,18 @@ export async function updateLecture(
 }
 
 /**
+ * Persist a drag-and-drop reorder: `ids` are SIBLING lecture ids (same
+ * section_id) in their new order; the RPC (migration 0067) rewrites their
+ * "order" to 1..n. The server rejects a mixed-section list, so a drag can
+ * never move a lecture into another section by accident.
+ */
+export async function reorderLectures(ids: string[]): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.rpc('admin_reorder_lectures', { p_ids: ids });
+  if (error) throw error;
+}
+
+/**
  * Delete a lecture: remove the DB row (progress + attachments cascade via FK)
  * then best-effort delete its audio object from the `lectures` bucket.
  */

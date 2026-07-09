@@ -1,8 +1,10 @@
 /**
- * بحث — lecture/section search, opened from the bottom nav bar.
+ * بحث — search across every content type, opened from the bottom nav bar.
  *
- * Server-side ilike search over published content only (search_content RPC,
- * migration 0058) — same debounce pattern as buddy-search.tsx.
+ * Server-side full-text search (Postgres tsvector, prefix-matched) over
+ * published content only (search_content RPC, migration 0068), covering
+ * sections, lectures, sheikhs, attachments, lecture_benefits (فوائد), and
+ * questions — same debounce pattern as buddy-search.tsx.
  *
  * Route: /(student)/search
  */
@@ -23,6 +25,49 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
 
+/** One result row — same icon-chip + two-line layout for every category. */
+function ResultRow({
+  icon,
+  title,
+  subtitle,
+  onPress,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button">
+      <Card style={{ marginBottom: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              backgroundColor: colors.surfaceInset,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Feather name={icon} size={18} color={colors.primaryTeal} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Txt size={14.5} weight="medium" color={colors.textInk} numberOfLines={1}>
+              {title}
+            </Txt>
+            <Txt size={11.5} color={colors.textMuted} style={{ marginTop: 2 }} numberOfLines={1}>
+              {subtitle}
+            </Txt>
+          </View>
+          <Feather name="chevron-left" size={18} color={colors.textGhost} />
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
 export default function SearchScreen() {
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -32,7 +77,19 @@ export default function SearchScreen() {
   const hasQuery = query.trim() !== '';
   const lectures = data?.lectures ?? [];
   const sections = data?.sections ?? [];
-  const noResults = hasQuery && !isLoading && lectures.length === 0 && sections.length === 0;
+  const sheikhs = data?.sheikhs ?? [];
+  const attachments = data?.attachments ?? [];
+  const benefits = data?.benefits ?? [];
+  const questions = data?.questions ?? [];
+  const noResults =
+    hasQuery &&
+    !isLoading &&
+    lectures.length === 0 &&
+    sections.length === 0 &&
+    sheikhs.length === 0 &&
+    attachments.length === 0 &&
+    benefits.length === 0 &&
+    questions.length === 0;
 
   return (
     <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
@@ -55,7 +112,7 @@ export default function SearchScreen() {
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="ابحث عن درس أو قسم…"
+        placeholder="ابحث عن درس أو قسم أو شيخ…"
         placeholderTextColor={colors.textGhost}
         autoFocus
         style={{
@@ -78,7 +135,7 @@ export default function SearchScreen() {
         <View style={{ paddingVertical: 40, alignItems: 'center', gap: 8 }}>
           <Feather name="search" size={24} color={colors.textGhost} />
           <Txt size={13} color={colors.textMuted} align="center">
-            ابدأ بكتابة اسم الدرس أو القسم
+            ابدأ بكتابة اسم الدرس أو القسم أو الشيخ
           </Txt>
         </View>
       ) : isLoading && isFetching ? (
@@ -95,75 +152,85 @@ export default function SearchScreen() {
       ) : (
         <>
           {sections.map((s) => (
-            <Pressable
-              key={s.id}
+            <ResultRow
+              key={`section-${s.id}`}
+              icon="folder"
+              title={s.title}
+              subtitle="قسم"
               onPress={() => router.push({ pathname: '/section/[id]', params: { id: s.id } })}
-              accessibilityRole="button"
-            >
-              <Card style={{ marginBottom: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <View
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 12,
-                      backgroundColor: colors.surfaceInset,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="folder" size={18} color={colors.primaryTeal} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Txt size={14.5} weight="medium" color={colors.textInk}>
-                      {s.title}
-                    </Txt>
-                    <Txt size={11.5} color={colors.textMuted} style={{ marginTop: 2 }}>
-                      قسم
-                    </Txt>
-                  </View>
-                  <Feather name="chevron-left" size={18} color={colors.textGhost} />
-                </View>
-              </Card>
-            </Pressable>
+            />
           ))}
 
           {lectures.map((l) => (
-            <Pressable
-              key={l.id}
+            <ResultRow
+              key={`lecture-${l.id}`}
+              icon="play"
+              title={l.title}
+              subtitle={
+                [l.sheikhName, l.sectionTitle].filter(Boolean).join(' · ') || arDuration(l.durationSec)
+              }
               onPress={() => {
                 // Start playback the instant the tap lands, in parallel with
                 // navigation — see preloadLecture's doc comment in audioController.
                 void preloadLecture(l.id);
                 router.push({ pathname: '/player/[id]', params: { id: l.id } });
               }}
-              accessibilityRole="button"
-            >
-              <Card style={{ marginBottom: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <View
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 12,
-                      backgroundColor: colors.surfaceInset,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="play" size={16} color={colors.primaryTeal} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Txt size={14.5} weight="medium" color={colors.textInk} numberOfLines={1}>
-                      {l.title}
-                    </Txt>
-                    <Txt size={11.5} color={colors.textMuted} style={{ marginTop: 2 }} numberOfLines={1}>
-                      {[l.sheikhName, l.sectionTitle].filter(Boolean).join(' · ') || arDuration(l.durationSec)}
-                    </Txt>
-                  </View>
-                </View>
-              </Card>
-            </Pressable>
+            />
+          ))}
+
+          {sheikhs.map((sh) => (
+            <ResultRow
+              key={`sheikh-${sh.id}`}
+              icon="user"
+              title={sh.name}
+              subtitle="شيخ"
+              onPress={() => router.push('/(student)/sheikh-info')}
+            />
+          ))}
+
+          {benefits.map((b) => (
+            <ResultRow
+              key={`benefit-${b.id}`}
+              icon="star"
+              title={b.snippet}
+              subtitle={`فائدة · ${b.lectureTitle}`}
+              onPress={() =>
+                router.push({ pathname: '/(student)/lecture-benefits/[id]', params: { id: b.lectureId } })
+              }
+            />
+          ))}
+
+          {questions.map((q) => (
+            <ResultRow
+              key={`question-${q.id}`}
+              icon="help-circle"
+              title={q.bodySnippet}
+              subtitle={q.scope === 'lecture' ? `سؤال · ${q.lectureTitle}` : 'سؤال عام'}
+              onPress={() =>
+                q.scope === 'lecture' && q.lectureId
+                  ? router.push({
+                      pathname: '/(student)/lecture-questions/[id]',
+                      params: { id: q.lectureId },
+                    })
+                  : router.push('/(student)/questions')
+              }
+            />
+          ))}
+
+          {attachments.map((a) => (
+            <ResultRow
+              key={`attachment-${a.id}`}
+              icon="paperclip"
+              title={a.title}
+              subtitle={`مرفق · ${a.lectureTitle ?? a.sectionTitle ?? ''}`}
+              onPress={() =>
+                a.lectureId
+                  ? router.push({ pathname: '/player/[id]', params: { id: a.lectureId } })
+                  : a.sectionId
+                    ? router.push({ pathname: '/section/[id]', params: { id: a.sectionId } })
+                    : undefined
+              }
+            />
           ))}
         </>
       )}

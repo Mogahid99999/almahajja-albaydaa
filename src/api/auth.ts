@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 import { DEMO_ACCOUNTS, USE_MOCK } from '@/config';
-import { supabase } from '@/lib/supabase';
+import { LAST_SESSION_KEY, supabase } from '@/lib/supabase';
 import type { Gender } from './types';
 
 export type AppRole = 'admin' | 'student' | 'publisher' | 'sheikh';
@@ -157,6 +157,28 @@ async function restoreGuestSession(): Promise<boolean> {
   }
 }
 
+/**
+ * Recover ANY session (guest or registered) this device most recently held,
+ * for when the primary GoTrue storage entry has gone missing — see
+ * LAST_SESSION_KEY's doc comment in src/lib/supabase.ts for why that happens.
+ * Unlike restoreGuestSession, a non-anonymous result is never rejected here:
+ * this isn't "logging back in" from scratch, only reusing tokens the device
+ * already legitimately held a moment ago — and setSession() itself rejects
+ * anything the server no longer honors (revoked/expired), so there's nothing
+ * extra to guard against.
+ */
+async function restoreLastKnownSession(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_SESSION_KEY);
+    if (!raw) return false;
+    const stored = JSON.parse(raw) as StoredGuestSession;
+    const { data, error } = await supabase.auth.setSession(stored);
+    return !error && !!data.session && !!data.user;
+  } catch {
+    return false;
+  }
+}
+
 // Real accounts (seed scripts, admin-users edge function) always write `role`
 // into user_metadata, so this only ever fires for an account created without
 // it — safe to default to the least-privileged role.
@@ -208,15 +230,27 @@ export async function ensureSession(): Promise<CurrentUser | null> {
   const existing = await getCurrentUser();
   if (existing) return existing;
   // No live session found. Before minting a BRAND-NEW anonymous user — which
-  // would orphan the device's guest identity + all its progress and reads to
-  // the user as "logged out after updating the app" — try to restore the
-  // device guest from its sidecar tokens (DEVICE_GUEST_KEY). This recovers the
-  // SAME anon uid in the case that broke people across updates: the primary
-  // Supabase auth-token in storage got wiped by a failed token refresh (a
-  // rotation race, or a transient/offline error right at cold start), while the
-  // device-guest tokens stored separately are still valid. Only a genuine
-  // first install (nothing to restore) falls through to a new anonymous user.
+  // would orphan the device's identity (guest OR a registered account) and
+  // read to the user as "logged out after updating the app" — try to recover
+  // it. The primary Supabase auth-token in storage can get wiped by a failed
+  // token refresh (a rotation race, or a transient/offline error right at
+  // cold start) even though the session itself was fine; two sidecar copies
+  // exist to recover from that:
+  //  1. LAST_SESSION_KEY — whatever session (guest or registered) was most
+  //     recently valid on this device. Covers a registered account exactly
+  //     as well as a guest, since it's just replaying tokens the device
+  //     already held.
+  //  2. DEVICE_GUEST_KEY — the device's dedicated anon identity, restored
+  //     after a deliberate sign-out. Kept as a second try in case (1) is
+  //     empty/stale but this device still has its guest sidecar.
+  // Only a genuine first install (nothing to restore anywhere) falls through
+  // to a new anonymous user.
   if (Platform.OS !== 'web') {
+    const recovered = await restoreLastKnownSession();
+    if (recovered) {
+      const user = await getCurrentUser();
+      if (user) return user;
+    }
     const restored = await restoreGuestSession();
     if (restored) {
       const user = await getCurrentUser();

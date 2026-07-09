@@ -15,6 +15,7 @@ import { useBroadcast, useBroadcastImageUrl } from '@/hooks/useBroadcasts';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { arNum } from '@/lib/format';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { ConcentricMotif, Rhombus } from '@/components/ui/Rhombus';
@@ -51,7 +52,7 @@ export default function ReminderDetailScreen() {
   }
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
       {/* ── Nav row ──────────────────────────────────────────────────────────── */}
       <View
         style={{

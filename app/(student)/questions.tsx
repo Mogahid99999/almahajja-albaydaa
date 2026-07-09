@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { IconButton, Screen, Txt } from '@/components/ui';
 import { QuestionsBoard } from '@/components/questions/QuestionsBoard';
 import { colors } from '@/constants/theme';
@@ -42,7 +43,10 @@ export default function QuestionsScreen() {
         </Txt>
       ) : null}
 
-      <QuestionsBoard scope="general" bottomPad={miniPad + insets.bottom + 24} />
+      <QuestionsBoard
+        scope="general"
+        bottomPad={miniPad + insets.bottom + 24 + BOTTOM_NAV_CLEARANCE}
+      />
     </Screen>
   );
 }

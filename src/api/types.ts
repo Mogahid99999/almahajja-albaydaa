@@ -127,10 +127,49 @@ export type SearchSectionResult = {
   coverLetter: string | null;
 };
 
+/** A sheikh row in the search screen's results. */
+export type SearchSheikhResult = {
+  id: string;
+  name: string;
+};
+
+/** An attachment row in the search screen's results. */
+export type SearchAttachmentResult = {
+  id: string;
+  type: string;
+  title: string;
+  sectionId: string | null;
+  lectureId: string | null;
+  sectionTitle: string | null;
+  lectureTitle: string | null;
+};
+
+/** A فائدة (lecture benefit) row in the search screen's results. */
+export type SearchBenefitResult = {
+  id: string;
+  lectureId: string;
+  lectureTitle: string;
+  snippet: string;
+};
+
+/** A question row in the search screen's results. */
+export type SearchQuestionResult = {
+  id: string;
+  scope: 'general' | 'lecture';
+  lectureId: string | null;
+  lectureTitle: string | null;
+  bodySnippet: string;
+  answerSnippet: string;
+};
+
 /** Combined search_content() response. */
 export type SearchResults = {
   lectures: SearchLectureResult[];
   sections: SearchSectionResult[];
+  sheikhs: SearchSheikhResult[];
+  attachments: SearchAttachmentResult[];
+  benefits: SearchBenefitResult[];
+  questions: SearchQuestionResult[];
 };
 
 /** Everything the رحلتي العلمية page header needs, in one round-trip. */

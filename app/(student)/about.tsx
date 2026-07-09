@@ -17,6 +17,7 @@ import { colors, radius, shadows } from '@/constants/theme';
 import { ABOUT_FALLBACK } from '@/api/appContent';
 import { useAboutContent } from '@/hooks/useAppContent';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
 import { ConcentricMotif } from '@/components/ui/Rhombus';
 import { Divider } from '@/components/ui/Divider';
@@ -33,7 +34,7 @@ export default function AboutScreen() {
   const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
       {/* ── Nav row ──────────────────────────────────────────────────────────── */}
       <View
         style={{

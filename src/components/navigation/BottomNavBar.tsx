@@ -46,10 +46,6 @@ const SPRING = { damping: 16, stiffness: 160, mass: 0.6 };
 /** Icon color must feel instant on tap — a short crossfade, not the pill's spring. */
 const COLOR_TRANSITION_MS = 120;
 
-export function isTabRootPath(pathname: string): boolean {
-  return TABS.some((t) => t.path === pathname);
-}
-
 function activeIndexFor(pathname: string): number {
   const i = TABS.findIndex((t) => t.path === pathname);
   return i === -1 ? 0 : i;

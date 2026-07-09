@@ -51,6 +51,24 @@ export async function registerPushToken(token: string, platform: string): Promis
   if (error) throw error;
 }
 
+/**
+ * Drop this device's push-token row for the CURRENTLY signed-in user. Called
+ * right before sign-out (while the session is still valid) so a stale
+ * `push_tokens` row for the account being left behind can never keep
+ * receiving that account's push notifications on this device afterwards.
+ * Must run BEFORE the auth session is cleared — `requireUserId()` needs it.
+ * Best-effort: a failed cleanup must never block sign-out itself.
+ */
+export async function unregisterPushToken(token: string): Promise<void> {
+  if (USE_MOCK) return mock.unregisterPushToken(token);
+  try {
+    const userId = await requireUserId();
+    await supabase.from('push_tokens').delete().eq('user_id', userId).eq('token', token);
+  } catch {
+    // Non-fatal — sign-out must proceed regardless.
+  }
+}
+
 // --- Engagement / weekly goal ------------------------------------------------
 /**
  * Stamp `profiles.last_opened_at = now()` for the signed-in user (drives the

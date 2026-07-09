@@ -22,6 +22,7 @@ import {
 import type { LectureBenefit } from '@/api/benefits';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ReportSheet } from '@/components/reports/ReportSheet';
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, IconButton, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -170,7 +171,7 @@ export default function LectureBenefitsScreen() {
   const miniPad = useMiniPlayerPad();
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
       <View
         style={{
           flexDirection: 'row',

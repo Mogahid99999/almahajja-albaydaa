@@ -22,6 +22,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import type { SheikhProfile } from '@/api/sheikhs';
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Divider, IconButton, Rhombus, Screen, Txt } from '@/components/ui';
 import { ConcentricMotif } from '@/components/ui/Rhombus';
 import { colors, shadows } from '@/constants/theme';
@@ -207,7 +208,12 @@ export default function SheikhInfoScreen() {
   const others = primary ? sheikhs.filter((s) => s.id !== primary.id) : sheikhs;
 
   return (
-    <Screen bottomPad={miniPad || 24} padded refreshing={refreshing} onRefresh={onRefresh}>
+    <Screen
+      bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE}
+      padded
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <View
         style={{
           flexDirection: 'row',

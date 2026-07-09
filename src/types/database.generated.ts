@@ -1114,6 +1114,7 @@ export type Database = {
           total_ratings: number
         }[]
       }
+      admin_reorder_lectures: { Args: { p_ids: string[] }; Returns: undefined }
       admin_reorder_sections: { Args: { p_ids: string[] }; Returns: undefined }
       admin_set_benefit_status: {
         Args: { p_id: string; p_status: string }

@@ -21,6 +21,7 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { useBuddySearch, useSendBuddyRequest } from '@/hooks/useBuddy';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
@@ -49,7 +50,7 @@ export default function BuddySearchScreen() {
   };
 
   return (
-    <Screen bottomPad={miniPad || 24} padded>
+    <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{

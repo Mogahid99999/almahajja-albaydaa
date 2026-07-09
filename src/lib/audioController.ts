@@ -85,8 +85,20 @@ let lastAutoAdvancedFrom: string | null = null;
 // clobber it or flash its track onto the screen.
 let loadGen = 0;
 
-/** Options accepted by the load path. `restart` forces playback from 0:00. */
-type LoadOpts = { startAtSec?: number; restart?: boolean };
+/** Options accepted by the load path. `restart` forces playback from 0:00.
+ * `_isErrorRetry` is internal-only (see `onStatus`'s error handling below) — it
+ * marks a load as a silent auto-retry so it doesn't reset `errorRetryCount`. */
+type LoadOpts = { startAtSec?: number; restart?: boolean; _isErrorRetry?: boolean };
+
+// A streamed track's `status.error` is often a transient hiccup (weak/flapping
+// signal) rather than a real failure — expo-audio has no built-in retry, so left
+// alone every hiccup immediately surfaced the hard "تعذّر تشغيل" notice. Give it a
+// couple of silent rebuild attempts first; only the last one — the track that
+// really can't play — reaches the user. Reset whenever a genuinely new load
+// starts (loadLectureBody, below), so this can't itself become an infinite loop.
+const MAX_ERROR_RETRIES = 2;
+const ERROR_RETRY_DELAY_MS = 1500;
+let errorRetryCount = 0;
 
 // Force the next startPlayer to recreate the native player from scratch rather
 // than `replace()`. Set by connectivity recovery: a stream that stalled or
@@ -239,9 +251,22 @@ function onStatus(status: AudioStatus) {
   // (a fresh load, or the SDK's own recovery) so a resolved failure doesn't keep
   // showing the retry UI.
   if (status.error) {
-    s.setLoading(false);
-    s.setPlaying(false);
-    s.setLoadError(status.error);
+    const id = currentId;
+    if (id && errorRetryCount < MAX_ERROR_RETRIES) {
+      // Silent retry: rebuild the player from where it failed, no error shown yet.
+      errorRetryCount++;
+      const at = player?.currentTime ?? s.positionSec;
+      forceFreshPlayer = true;
+      s.setLoading(true);
+      setTimeout(() => {
+        if (currentId !== id) return; // superseded by a newer load — drop it
+        void loadLecture(id, { startAtSec: at, _isErrorRetry: true });
+      }, ERROR_RETRY_DELAY_MS);
+    } else {
+      s.setLoading(false);
+      s.setPlaying(false);
+      s.setLoadError(status.error);
+    }
   } else if (s.loadError) {
     s.setLoadError(null);
   }
@@ -532,6 +557,7 @@ async function loadLecture(lectureId: string, opts?: LoadOpts) {
 }
 
 async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) {
+  if (!opts?._isErrorRetry) errorRetryCount = 0;
   await ensureAudioMode();
   // A newer load superseded us while awaiting audio-mode setup — abandon this
   // one so it can't commit a stale track over the newer one (rapid switching).
@@ -796,6 +822,13 @@ export function setRate(rate: PlaybackRate) {
 // offline won't fire this — expo-audio's own buffering resumes that case, shown
 // meanwhile via `isStalled`. Registered once at module load; the callback runs
 // later, so referencing the module state below is safe.
+let lastReconnectRecoverAt = 0;
+// Floor between two recovery attempts. A borderline signal can report several
+// offline→online edges within a few seconds; without this floor each one kicked
+// off its own full player rebuild, racing/aborting the previous one and
+// producing a visible reload loop instead of one clean recovery.
+const RECONNECT_RECOVER_COOLDOWN_MS = 4000;
+
 onReconnect(() => {
   if (!currentId) return;
   const s = store();
@@ -804,6 +837,9 @@ onReconnect(() => {
   const shouldRecover =
     s.loadError != null || s.isStalled || (s.isPlaying && !!player && !player.playing);
   if (!shouldRecover) return;
+  const now = Date.now();
+  if (now - lastReconnectRecoverAt < RECONNECT_RECOVER_COOLDOWN_MS) return;
+  lastReconnectRecoverAt = now;
   // Resume from where it stalled (never rewind); rebuild the native player since
   // a stalled/errored instance may not revive via a bare replace().
   const at = player?.currentTime ?? s.positionSec;

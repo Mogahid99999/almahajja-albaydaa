@@ -430,6 +430,25 @@ export async function scheduleSeriesReminder(
   }
 }
 
+/**
+ * Cancel EVERY locally-scheduled reminder on this device (daily remembrance,
+ * every resume ladder, every series reminder) and drop the launcher badge.
+ * Called on sign-out / account deletion: all of the above were scheduled off
+ * the ACCOUNT being left behind (its progress, its prefs), so they must never
+ * keep firing for whoever uses the device next (a guest, or a different
+ * account). No-ops where notifications are unsupported.
+ */
+export async function cancelAllLocalNotifications(): Promise<void> {
+  const N = nm();
+  if (!N) return;
+  try {
+    await N.cancelAllScheduledNotificationsAsync();
+    await N.setBadgeCountAsync(0);
+  } catch {
+    // Non-fatal — sign-out must proceed regardless.
+  }
+}
+
 /** Cancel a pending series reminder (e.g. the section was finished). */
 export async function cancelSeriesReminder(sectionId: string): Promise<void> {
   const N = nm();

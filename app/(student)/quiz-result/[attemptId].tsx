@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Divider, Screen, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useAttemptResult } from '@/hooks/useQuizzes';
@@ -21,7 +22,7 @@ export default function QuizResultScreen() {
 
   if (isLoading || !result) {
     return (
-      <Screen scroll={false} padded bottomPad={40}>
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
         </View>
@@ -32,7 +33,7 @@ export default function QuizResultScreen() {
   const passed = result.passed === true;
 
   return (
-    <Screen scroll padded bottomPad={40}>
+    <Screen scroll padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
       {/* Header */}
       <View style={{ alignItems: 'center', marginTop: 30, gap: 12 }}>
         <View

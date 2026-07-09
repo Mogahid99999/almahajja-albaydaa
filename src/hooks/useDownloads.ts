@@ -9,6 +9,7 @@ import {
   getDownloadedCards,
   listDownloadedIds,
   localUriFor,
+  verifyDownloads,
 } from '@/lib/downloads';
 import { useDownloadsStore, type DownloadEntry } from '@/stores/downloadsStore';
 
@@ -51,7 +52,7 @@ export function useDownload(lectureId: string) {
   }, [lectureId, set]);
 
   const remove = useCallback(() => {
-    deleteLecture(lectureId);
+    void deleteLecture(lectureId);
     removeEntry(lectureId);
   }, [lectureId, removeEntry]);
 
@@ -89,10 +90,15 @@ export function useDownloadedIds(): string[] {
 export function useHydrateDownloads(): void {
   const set = useDownloadsStore((s) => s.set);
   useEffect(() => {
-    for (const id of listDownloadedIds()) {
-      const uri = localUriFor(id);
-      if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });
-    }
+    void (async () => {
+      // Public (Android) downloads are user-visible and can be moved/deleted
+      // outside the app — prune stale manifest entries before trusting them.
+      await verifyDownloads();
+      for (const id of listDownloadedIds()) {
+        const uri = localUriFor(id);
+        if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });
+      }
+    })();
   }, [set]);
 }
 

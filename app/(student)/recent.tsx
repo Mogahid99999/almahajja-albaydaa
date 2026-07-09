@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Divider, IconButton, Screen, Txt, cardRowStyle } from '@/components/ui';
 import { LectureRowItem } from '@/components/section/LectureRowItem';
 import { colors } from '@/constants/theme';
@@ -51,7 +52,7 @@ export default function RecentLecturesScreen() {
 
   if (isLoading) {
     return (
-      <Screen scroll={false} bottomPad={118} padded>
+      <Screen scroll={false} bottomPad={118 + BOTTOM_NAV_CLEARANCE} padded>
         {header}
         <View style={{ paddingVertical: 60, alignItems: 'center' }}>
           <ActivityIndicator color={colors.primaryTeal} />
@@ -64,7 +65,7 @@ export default function RecentLecturesScreen() {
     <Screen scroll={false} bottomPad={0} padded>
       <FlatList
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 + BOTTOM_NAV_CLEARANCE }}
         data={lectures}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}

@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { IconButton, Screen, Txt } from '@/components/ui';
 import { QuestionsBoard } from '@/components/questions/QuestionsBoard';
 import { colors } from '@/constants/theme';
@@ -53,7 +54,7 @@ export default function LectureQuestionsScreen() {
         <QuestionsBoard
           scope="lecture"
           lectureId={id}
-          bottomPad={miniPad + insets.bottom + 24}
+          bottomPad={miniPad + insets.bottom + 24 + BOTTOM_NAV_CLEARANCE}
         />
       ) : null}
     </Screen>

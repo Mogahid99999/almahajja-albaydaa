@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Pressable,
   StyleSheet,
   Switch,
@@ -248,137 +249,146 @@ export default function SheikhInboxScreen() {
   });
 
   return (
-    <Screen bottomPad={40}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-          <Logo size={40} />
-          <View>
-            <Txt weight="display" size={20} color={colors.primaryTeal}>
-              أسئلة طلبة العلم
-            </Txt>
-            <Txt size={12} color={colors.textMuted} style={{ marginTop: 2 }}>
-              أجب بما يفتح الله به عليك
-            </Txt>
-          </View>
-        </View>
-        <View style={styles.headerActions}>
-          <Pressable
-            onPress={() => setShowSettings((s) => !s)}
-            accessibilityLabel="إعدادات التنبيهات"
-            style={({ pressed }) => [
-              styles.iconBtn,
-              showSettings && styles.iconBtnActive,
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Feather
-              name="bell"
-              size={17}
-              color={showSettings ? colors.primaryTeal : colors.textMuted}
-            />
-          </Pressable>
-          <Pressable
-            onPress={async () => {
-              try {
-                await signOut.mutateAsync();
-              } catch {
-                // Session is cleared locally even on server errors.
-              }
-              router.replace('/');
-            }}
-            disabled={signOut.isPending}
-            accessibilityLabel="تسجيل الخروج"
-            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.7 }]}
-          >
-            <Feather name="log-out" size={17} color={colors.textMuted} />
-          </Pressable>
-        </View>
-      </View>
-
-      {showSettings ? (
-        <Card style={styles.settingsCard}>
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Txt size={13.5} weight="semibold" color={colors.textInk}>
-                تنبيه سؤال جديد
+    // KeyboardAvoidingView + `padding` (same fix as ملاحظاتي's note editor):
+    // the app is edge-to-edge, so an open keyboard OVERLAYS the screen rather
+    // than resizing it. Without this the composer TextInput — which can sit
+    // anywhere down this scrollable list, not just at the top — was left
+    // covered by the keyboard with no way to see what was being typed.
+    // Screen's own ScrollView auto-scrolls the focused input into whatever
+    // room this frees up.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <Screen bottomPad={40}>
+        {/* ── Header ── */}
+        <View style={styles.header}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+            <Logo size={40} />
+            <View>
+              <Txt weight="display" size={20} color={colors.primaryTeal}>
+                أسئلة طلبة العلم
               </Txt>
-              <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 3, lineHeight: 18 }}>
-                إشعار عند وصول سؤال جديد من طالب علم
+              <Txt size={12} color={colors.textMuted} style={{ marginTop: 2 }}>
+                أجب بما يفتح الله به عليك
               </Txt>
             </View>
-            <Switch
-              value={questionAlerts}
-              onValueChange={(next) =>
-                setPref.mutate({ type: 'question_received', enabled: next })
-              }
-              trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}
-              thumbColor={colors.surfaceWhite}
-              ios_backgroundColor={colors.surfaceInset}
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => setShowSettings((s) => !s)}
+              accessibilityLabel="إعدادات التنبيهات"
+              style={({ pressed }) => [
+                styles.iconBtn,
+                showSettings && styles.iconBtnActive,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Feather
+                name="bell"
+                size={17}
+                color={showSettings ? colors.primaryTeal : colors.textMuted}
+              />
+            </Pressable>
+            <Pressable
+              onPress={async () => {
+                try {
+                  await signOut.mutateAsync();
+                } catch {
+                  // Session is cleared locally even on server errors.
+                }
+                router.replace('/');
+              }}
+              disabled={signOut.isPending}
+              accessibilityLabel="تسجيل الخروج"
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Feather name="log-out" size={17} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        </View>
+
+        {showSettings ? (
+          <Card style={styles.settingsCard}>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1 }}>
+                <Txt size={13.5} weight="semibold" color={colors.textInk}>
+                  تنبيه سؤال جديد
+                </Txt>
+                <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 3, lineHeight: 18 }}>
+                  إشعار عند وصول سؤال جديد من طالب علم
+                </Txt>
+              </View>
+              <Switch
+                value={questionAlerts}
+                onValueChange={(next) =>
+                  setPref.mutate({ type: 'question_received', enabled: next })
+                }
+                trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}
+                thumbColor={colors.surfaceWhite}
+                ios_backgroundColor={colors.surfaceInset}
+              />
+            </View>
+          </Card>
+        ) : null}
+
+        <Divider />
+
+        {/* ── Filters ── */}
+        <View style={styles.filters}>
+          <View style={styles.filterRow}>
+            <FilterChip label="الكل" active={scope === 'all'} onPress={() => setScope('all')} />
+            <FilterChip label="عامة" active={scope === 'general'} onPress={() => setScope('general')} />
+            <FilterChip label="الدروس" active={scope === 'lecture'} onPress={() => setScope('lecture')} />
+          </View>
+          <View style={styles.filterRow}>
+            <FilterChip
+              label="بانتظار الرد"
+              active={status === 'pending'}
+              onPress={() => setStatus('pending')}
+            />
+            <FilterChip
+              label="تمت الإجابة"
+              active={status === 'answered'}
+              onPress={() => setStatus('answered')}
             />
           </View>
-        </Card>
-      ) : null}
-
-      <Divider />
-
-      {/* ── Filters ── */}
-      <View style={styles.filters}>
-        <View style={styles.filterRow}>
-          <FilterChip label="الكل" active={scope === 'all'} onPress={() => setScope('all')} />
-          <FilterChip label="عامة" active={scope === 'general'} onPress={() => setScope('general')} />
-          <FilterChip label="الدروس" active={scope === 'lecture'} onPress={() => setScope('lecture')} />
         </View>
-        <View style={styles.filterRow}>
-          <FilterChip
-            label="بانتظار الرد"
-            active={status === 'pending'}
-            onPress={() => setStatus('pending')}
-          />
-          <FilterChip
-            label="تمت الإجابة"
-            active={status === 'answered'}
-            onPress={() => setStatus('answered')}
-          />
-        </View>
-      </View>
 
-      {/* ── List ── */}
-      {isLoading ? (
-        <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-          <ActivityIndicator color={colors.primaryTeal} />
-        </View>
-      ) : (questions ?? []).length === 0 ? (
-        <View style={{ paddingVertical: 60, alignItems: 'center', gap: 8 }}>
-          <Feather name="inbox" size={26} color={colors.textGhost} />
-          <Txt size={14} color={colors.textMuted} align="center">
-            {status === 'pending' ? 'لا أسئلة بانتظار الرد' : 'لا أسئلة مجابة بعد'}
-          </Txt>
-        </View>
-      ) : (
-        <>
-          <Txt size={12} color={colors.textGhost} style={{ marginBottom: 10 }}>
-            {arNum((questions ?? []).length)} سؤال
-          </Txt>
-          {(questions ?? []).map((q) => (
-            <QuestionCard key={q.id} q={q} onDelete={() => setPendingDelete(q)} />
-          ))}
-        </>
-      )}
+        {/* ── List ── */}
+        {isLoading ? (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator color={colors.primaryTeal} />
+          </View>
+        ) : (questions ?? []).length === 0 ? (
+          <View style={{ paddingVertical: 60, alignItems: 'center', gap: 8 }}>
+            <Feather name="inbox" size={26} color={colors.textGhost} />
+            <Txt size={14} color={colors.textMuted} align="center">
+              {status === 'pending' ? 'لا أسئلة بانتظار الرد' : 'لا أسئلة مجابة بعد'}
+            </Txt>
+          </View>
+        ) : (
+          <>
+            <Txt size={12} color={colors.textGhost} style={{ marginBottom: 10 }}>
+              {arNum((questions ?? []).length)} سؤال
+            </Txt>
+            {(questions ?? []).map((q) => (
+              <QuestionCard key={q.id} q={q} onDelete={() => setPendingDelete(q)} />
+            ))}
+          </>
+        )}
 
-      <ConfirmDialog
-        visible={!!pendingDelete}
-        title="حذف السؤال"
-        message="سيُحذف السؤال نهائياً ولن يظهر لأحد. هل أنت متأكد؟"
-        confirmLabel="حذف"
-        pending={deleteQuestion.isPending}
-        onConfirm={() => {
-          if (!pendingDelete) return;
-          deleteQuestion.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
-        }}
-        onCancel={() => setPendingDelete(null)}
-      />
-    </Screen>
+        <ConfirmDialog
+          visible={!!pendingDelete}
+          title="حذف السؤال"
+          message="سيُحذف السؤال نهائياً ولن يظهر لأحد. هل أنت متأكد؟"
+          confirmLabel="حذف"
+          pending={deleteQuestion.isPending}
+          onConfirm={() => {
+            if (!pendingDelete) return;
+            deleteQuestion.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }
 

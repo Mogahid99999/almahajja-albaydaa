@@ -27,6 +27,7 @@ import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import type { LectureRow } from '@/api/types';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Chip } from '@/components/ui/Chip';
 import { Divider } from '@/components/ui/Divider';
 import { Screen } from '@/components/ui/Screen';
@@ -91,7 +92,7 @@ export default function SectionScreen() {
   // ── Not found / error ────────────────────────────────────────────────────────
   if (!data) {
     return (
-      <Screen scroll={false} padded bottomPad={118}>
+      <Screen scroll={false} padded bottomPad={118 + BOTTOM_NAV_CLEARANCE}>
         <SectionNavBar contextLabel={null} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Txt size={15} weight="semibold" color={colors.textMuted} align="center">
@@ -202,7 +203,7 @@ export default function SectionScreen() {
     >
       <FlatList
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: miniPad + insets.bottom + 24 + BOTTOM_NAV_CLEARANCE }}
         showsVerticalScrollIndicator={false}
         persistentScrollbar={false}
         overScrollMode="never"

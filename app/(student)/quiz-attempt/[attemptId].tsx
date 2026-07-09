@@ -12,6 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, View } from 'react-native';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Screen, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useAttemptQuestions, useSaveAnswer, useSubmitAttempt } from '@/hooks/useQuizzes';
@@ -112,7 +113,7 @@ export default function QuizAttemptScreen() {
 
   if (isLoading || !data) {
     return (
-      <Screen scroll={false} padded bottomPad={40}>
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
         </View>
@@ -122,7 +123,7 @@ export default function QuizAttemptScreen() {
 
   if (questions.length === 0) {
     return (
-      <Screen scroll={false} padded bottomPad={40}>
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Txt size={15} weight="semibold" color={colors.textMuted} align="center">
             لا توجد أسئلة في هذا الاختبار بعد
@@ -135,7 +136,7 @@ export default function QuizAttemptScreen() {
   const isLast = index === questions.length - 1;
 
   return (
-    <Screen scroll padded bottomPad={40}>
+    <Screen scroll padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
       {/* Top bar: exit + progress + timer */}
       <View
         style={{
