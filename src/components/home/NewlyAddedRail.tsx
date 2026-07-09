@@ -2,14 +2,13 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { LectureCard } from '@/api/types';
-import { colors, radius, shadows, spacing } from '@/constants/theme';
+import { colors, radius, spacing } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
 import { preloadLecture } from '@/lib/audioController';
 import { SectionTitle, Txt } from '@/components/ui';
 import { SectionIcon } from '@/components/ui/SectionIcon';
 
-/** Card is 158×158 — the subject badge straddles its right edge, centered vertically. */
-const CARD_SIZE = 158;
+/** Diameter of the subject-icon badge straddling the card's top-right corner. */
 const BADGE_SIZE = 34;
 
 /** Single cover tint used for all cards — matches the navbar's active gold accent. */
@@ -161,24 +160,19 @@ function NewlyAddedCard({
         </View>
       </View>
 
-      {/* Subject badge — straddles the card's right edge, half in / half out */}
+      {/* Subject icon — top-right corner, fully inside the card, no badge background */}
       <View
         style={{
           position: 'absolute',
-          top: CARD_SIZE / 2 - BADGE_SIZE / 2,
-          right: -BADGE_SIZE / 2,
+          top: 10,
+          right: 10,
           width: BADGE_SIZE,
           height: BADGE_SIZE,
-          borderRadius: BADGE_SIZE / 2,
-          backgroundColor: colors.surfaceCard,
-          borderWidth: 1,
-          borderColor: colors.borderSand2,
           alignItems: 'center',
           justifyContent: 'center',
-          ...shadows.subtle,
         }}
       >
-        <SectionIcon title={lecture.sectionTitle ?? ''} size={18} color={colors.primaryTeal} />
+        <SectionIcon title={lecture.sectionTitle ?? ''} size={18} color="rgb(241, 233, 217)" />
       </View>
 
       {/* Title */}
