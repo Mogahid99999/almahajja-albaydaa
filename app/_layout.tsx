@@ -550,12 +550,21 @@ export default function RootLayout() {
                     native `modal` presentation already peeks the screen beneath and
                     supports swipe-down-to-dismiss out of the box. Android's `modal`
                     presentation has neither, so the player screen itself renders the
-                    peek gap + swipe gesture on top of a `transparentModal` there. */}
+                    peek gap + swipe gesture on top of a `transparentModal` there.
+                    `contentStyle` must be overridden to transparent here — the Stack's
+                    own screenOptions.contentStyle (bgSand, above) would otherwise win
+                    and paint the WHOLE native screen surface opaque cream even for
+                    `transparentModal`, hiding the (student) screen beneath for the
+                    entire drag + the native pop transition (the ~200ms blank-screen
+                    flash on swipe-down-to-dismiss). iOS's opaque `modal` doesn't need
+                    this — UIKit manages the peek/backing natively there. */}
                 <Stack.Screen
                   name="player/[id]"
                   options={{
                     presentation: Platform.OS === 'android' ? 'transparentModal' : 'modal',
                     animation: Platform.OS === 'android' ? 'slide_from_bottom' : undefined,
+                    contentStyle:
+                      Platform.OS === 'android' ? { backgroundColor: 'transparent' } : undefined,
                   }}
                 />
               </Stack>

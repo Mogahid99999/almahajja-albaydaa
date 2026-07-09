@@ -98,7 +98,9 @@ export default function HomeScreen() {
           <JourneyHomeCard />
 
           {/* Dua card */}
-          <DuaCard />
+          <View style={{ marginTop: 12 }}>
+            <DuaCard />
+          </View>
         </View>
       </Screen>
     </View>

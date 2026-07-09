@@ -58,13 +58,17 @@ export function TransportControls({ isPlaying }: Props) {
           height: 54,
           alignItems: 'center',
           justifyContent: 'center',
-          flexDirection: 'column',
-          gap: 1,
           opacity: pressed ? 0.6 : 1,
         })}
       >
         <Feather name="rotate-cw" size={26} color={colors.onTealIcon} />
-        <Txt size={9} color={colors.onTealSecondary} weight="semibold" align="center">
+        <Txt
+          size={9}
+          color={colors.onTealSecondary}
+          weight="semibold"
+          align="center"
+          style={{ position: 'absolute', top: 36, width: 54 }}
+        >
           {toArabicDigits('10')}
         </Txt>
       </Pressable>
@@ -104,13 +108,17 @@ export function TransportControls({ isPlaying }: Props) {
           height: 54,
           alignItems: 'center',
           justifyContent: 'center',
-          flexDirection: 'column',
-          gap: 1,
           opacity: pressed ? 0.6 : 1,
         })}
       >
         <Feather name="rotate-ccw" size={26} color={colors.onTealIcon} />
-        <Txt size={9} color={colors.onTealSecondary} weight="semibold" align="center">
+        <Txt
+          size={9}
+          color={colors.onTealSecondary}
+          weight="semibold"
+          align="center"
+          style={{ position: 'absolute', top: 36, width: 54 }}
+        >
           {toArabicDigits('10')}
         </Txt>
       </Pressable>
