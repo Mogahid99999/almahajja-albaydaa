@@ -100,6 +100,7 @@ export default function PlayerScreen() {
   const storeTitle = usePlayerStore((s) => s.title);
   const storeSheikhName = usePlayerStore((s) => s.sheikhName);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const isStalled = usePlayerStore((s) => s.isStalled);
   const rate = usePlayerStore((s) => s.rate);
   // Phase 3.5 — expo-audio's own reported load/playback failure (e.g. a
   // transient "Source error"), surfaced via onStatus in audioController.
@@ -303,6 +304,20 @@ export default function PlayerScreen() {
               <PlayerWaveformLive />
             </View>
 
+            {/* Calm "reconnecting" hint while a streamed track re-buffers on a
+                weak/lost signal — so a stall never reads as a frozen player. */}
+            {isStalled ? (
+              <Txt
+                size={12}
+                weight="medium"
+                color={colors.onTealSecondary}
+                align="center"
+                style={styles.reconnectingHint}
+              >
+                ‏…جارٍ إعادة الاتصال
+              </Txt>
+            ) : null}
+
             {/* ── Transport controls ── */}
             <View style={styles.transportWrapper}>
               <TransportControls isPlaying={isPlaying} />
@@ -480,5 +495,9 @@ const styles = StyleSheet.create({
   },
   transportWrapper: {
     marginTop: 16,
+  },
+  reconnectingHint: {
+    marginTop: 10,
+    opacity: 0.9,
   },
 });

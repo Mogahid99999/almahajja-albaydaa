@@ -32,6 +32,15 @@ type PlayerState = {
    * whenever a new track loads (`setTrack`) or a load/retry succeeds.
    */
   loadError: string | null;
+  /**
+   * The current STREAMED track is re-buffering mid-playback (weak or lost
+   * signal) — `AudioStatus.isBuffering` while already loaded. Surfaced as a calm
+   * "reconnecting" hint so a stalled stream doesn't read as a frozen player;
+   * distinct from `isLoading` (the initial open). Auto-clears the moment audio
+   * flows again, and connectivity recovery (audioController) re-attempts on a
+   * full reconnect.
+   */
+  isStalled: boolean;
 };
 
 type PlayerActions = {
@@ -50,6 +59,7 @@ type PlayerActions = {
   setNext: (nextLectureId: string | null) => void;
   setPrev: (prevLectureId: string | null) => void;
   setLoadError: (loadError: string | null) => void;
+  setStalled: (isStalled: boolean) => void;
   reset: () => void;
 };
 
@@ -65,6 +75,7 @@ const initial: PlayerState = {
   nextLectureId: null,
   prevLectureId: null,
   loadError: null,
+  isStalled: false,
 };
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
@@ -82,6 +93,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
       // A new load attempt starts clean — any previous track's failure must not
       // bleed into this one.
       loadError: null,
+      isStalled: false,
     }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setLoading: (isLoading) => set({ isLoading }),
@@ -91,5 +103,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
   setNext: (nextLectureId) => set({ nextLectureId }),
   setPrev: (prevLectureId) => set({ prevLectureId }),
   setLoadError: (loadError) => set({ loadError }),
+  setStalled: (isStalled) => set({ isStalled }),
   reset: () => set(initial),
 }));

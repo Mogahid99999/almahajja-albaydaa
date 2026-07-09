@@ -18,7 +18,7 @@ import { COMPLETE_THRESHOLD, MAX_LISTEN_TICK_SEC } from '@/config';
 import { getLecturePlayback, getNextLecture, getPreviousLecture } from '@/api/lectures';
 import { saveLectureProgress } from '@/api/progress';
 import { queryKeys } from '@/constants/queryKeys';
-import { isOnlineSync } from '@/lib/connectivity';
+import { isOnlineSync, onReconnect } from '@/lib/connectivity';
 import { localUriFor, readDownloadMeta, updateDownloadPosition } from '@/lib/downloads';
 import { queryClient } from '@/lib/queryClient';
 import { readResumePosition, saveResumePosition } from '@/lib/resumeCache';
@@ -87,6 +87,36 @@ let loadGen = 0;
 
 /** Options accepted by the load path. `restart` forces playback from 0:00. */
 type LoadOpts = { startAtSec?: number; restart?: boolean };
+
+// Force the next startPlayer to recreate the native player from scratch rather
+// than `replace()`. Set by connectivity recovery: a stream that stalled or
+// errored while the network was gone may be in a native state a bare replace()
+// can't revive, so we rebuild it — same reasoning as the `justFinished` path.
+let forceFreshPlayer = false;
+
+// Hard ceiling on the signed-URL resolution before we stop waiting (weak/flaky
+// signal). Without it, `ensureQueryData` (networkMode 'offlineFirst', no wired
+// timeout) can hang far past what reads as "the player is stuck" to the user.
+// On timeout the load rejects → the player screen shows its calm offline/retry
+// notice instead of an endless spinner.
+const PLAYBACK_FETCH_TIMEOUT_MS = 15_000;
+
+/** Reject `p` if it hasn't settled within `ms` (used to bound the URL fetch). */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('playback fetch timed out')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
 // The lecture currently being loaded by `loadLecture` (set synchronously before
 // any await, cleared when it settles). Lets `preloadLecture` no-op a redundant
 // call for the SAME lecture that's already in flight — e.g. a row's onPress
@@ -189,6 +219,16 @@ function onStatus(status: AudioStatus) {
   s.setPosition(clampedPosition);
   s.setPlaying(status.playing);
   if (status.isLoaded) s.setLoading(false);
+
+  // Mid-playback re-buffering (weak/lost signal): the track is already loaded and
+  // has played into the timeline (position > 0) but has run dry waiting for more
+  // data. Surface it as a calm "reconnecting" hint (distinct from the initial-open
+  // spinner, which the position>0 gate keeps this off) so it never looks like a
+  // frozen player. Clears the instant audio flows again. A user pause reports
+  // isBuffering:false, so this won't false-positive on a deliberate pause.
+  const stalled =
+    !!status.isBuffering && status.isLoaded && clampedPosition > 0 && !status.didJustFinish;
+  if (stalled !== s.isStalled) s.setStalled(stalled);
 
   // Phase 3.5 — expo-audio surfaces a load/playback failure (e.g. logcat's
   // `PlaybackState state=ERROR(7) error="Source error"`) via `status.error`, which
@@ -415,10 +455,11 @@ async function startPlayer(source: string, positionSec: number) {
   // silent — the same failure stop() avoids by fully releasing). Recreate it from
   // scratch here. A mid-play switch (next/prev while still playing) keeps the
   // cheaper, gapless `replace()` path below.
-  if (player && justFinished) {
+  if (player && (justFinished || forceFreshPlayer)) {
     teardownPlayer();
   }
   justFinished = false;
+  forceFreshPlayer = false;
   if (!player) {
     player = createPlayer(source);
   } else {
@@ -582,11 +623,14 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
     // Reuse a freshly prefetched entry (gapless auto-advance / instant resume);
     // a stale or persisted entry is past the staleTime so it refetches a fresh
     // signed URL. Same cache entry the player screen reads (queryKeys.lecture).
-    const data = await queryClient.ensureQueryData({
-      queryKey: queryKeys.lecture(lectureId),
-      queryFn: () => getLecturePlayback(lectureId),
-      staleTime: LECTURE_PLAYBACK_STALE,
-    });
+    const data = await withTimeout(
+      queryClient.ensureQueryData({
+        queryKey: queryKeys.lecture(lectureId),
+        queryFn: () => getLecturePlayback(lectureId),
+        staleTime: LECTURE_PLAYBACK_STALE,
+      }),
+      PLAYBACK_FETCH_TIMEOUT_MS,
+    );
     title = data.title;
     sheikhName = data.sheikhName;
     durationSec = data.durationSec;
@@ -712,6 +756,7 @@ export function stop() {
   currentOrder = 0;
   pendingId = null;
   justFinished = false;
+  forceFreshPlayer = false;
   lastAutoAdvancedFrom = null;
   store().reset();
 }
@@ -744,3 +789,24 @@ export function setRate(rate: PlaybackRate) {
   store().setRate(rate);
   player?.setPlaybackRate(rate);
 }
+
+// ── Connectivity recovery ────────────────────────────────────────────────────
+// When the network returns after a FULL drop (offline→online edge), recover a
+// streamed lecture that couldn't survive it. Weak signal that never went fully
+// offline won't fire this — expo-audio's own buffering resumes that case, shown
+// meanwhile via `isStalled`. Registered once at module load; the callback runs
+// later, so referencing the module state below is safe.
+onReconnect(() => {
+  if (!currentId) return;
+  const s = store();
+  // Recover when: the track errored out, it's sitting stalled (buffer ran dry),
+  // or the store intends to play but the native player has silently stopped.
+  const shouldRecover =
+    s.loadError != null || s.isStalled || (s.isPlaying && !!player && !player.playing);
+  if (!shouldRecover) return;
+  // Resume from where it stalled (never rewind); rebuild the native player since
+  // a stalled/errored instance may not revive via a bare replace().
+  const at = player?.currentTime ?? s.positionSec;
+  forceFreshPlayer = true;
+  void loadLecture(currentId, { startAtSec: at });
+});
