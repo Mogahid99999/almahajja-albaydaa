@@ -14,7 +14,7 @@ import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, I18nManager, Platform, View } from 'react-native';
+import { ActivityIndicator, AppState, I18nManager, LogBox, Platform, View } from 'react-native';
 import RNRestart from 'react-native-restart';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -53,6 +53,10 @@ import { getMostRecentlyActiveLectureId } from '@/lib/resumeCache';
 import { APP_VERSION } from '@/lib/version';
 import { queryKeys } from '@/constants/queryKeys';
 import { useNotificationsStore } from '@/stores/notificationsStore';
+
+// Benign dev-only warning: expo-notifications flags 'default' as an unknown
+// custom sound even though it's the built-in system sound name.
+LogBox.ignoreLogs(["Custom sound 'default' not found in native app."]);
 
 // ── Offline-first query persistence (V10 Feature D) ──────────────────────────
 // Persist the query cache to async-storage so a cold OFFLINE launch renders Home
@@ -558,11 +562,17 @@ export default function RootLayout() {
                     entire drag + the native pop transition (the ~200ms blank-screen
                     flash on swipe-down-to-dismiss). iOS's opaque `modal` doesn't need
                     this — UIKit manages the peek/backing natively there. */}
+                {/* Android animation is `fade`, not `slide_from_bottom`: the native
+                    slide moved the WHOLE transparent surface (dim backdrop included),
+                    so the backdrop strip visibly rode up the screen as a floating
+                    dark rectangle on every open. The player screen slides its own
+                    sheet up/down with Reanimated and derives the backdrop dim from
+                    the same value; the short native fade just overlaps it. */}
                 <Stack.Screen
                   name="player/[id]"
                   options={{
                     presentation: Platform.OS === 'android' ? 'transparentModal' : 'modal',
-                    animation: Platform.OS === 'android' ? 'slide_from_bottom' : undefined,
+                    animation: Platform.OS === 'android' ? 'fade' : undefined,
                     contentStyle:
                       Platform.OS === 'android' ? { backgroundColor: 'transparent' } : undefined,
                   }}

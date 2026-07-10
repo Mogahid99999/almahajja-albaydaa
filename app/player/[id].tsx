@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -43,52 +44,69 @@ export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
 
-  // Collapse the modal player. When it was opened as the entry screen (a
-  // notification deep-link, or a fast-refresh that landed here) there's no
-  // history to pop, so GO_BACK isn't handled — fall back to Home instead.
-  const collapse = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
-  };
-
   // Android peek-sheet + swipe-to-minimize (V·player). iOS's native `modal`
   // presentation already peeks the screen beneath and handles the swipe-down
   // gesture itself; Android's `modal` presentation does neither, so it's
   // reproduced here: the screen renders as a `transparentModal` (see
   // app/_layout.tsx) inset from the top by PEEK_TOP_RATIO, with a drag handle
   // that lets a downward swipe collapse the player the same way the chevron
-  // button does.
+  // button does. The native transition is a plain `fade`; the slide-up on open
+  // and slide-down on close are driven HERE by one shared value (translateY),
+  // which also derives the backdrop dim — sheet motion and dimming always move
+  // together, exactly like iOS's native sheet.
   const { height: windowHeight } = useWindowDimensions();
   const isAndroid = Platform.OS === 'android';
   const PEEK_TOP_RATIO = 0.1;
   const topGap = Math.round(windowHeight * PEEK_TOP_RATIO);
-  const translateY = useSharedValue(0);
+  // Full travel of the sheet from resting position to fully off-screen.
+  const sheetTravel = windowHeight - topGap;
+  // The Pan gesture activates only after 12px of downward travel — subtract it
+  // when tracking so the sheet starts moving from 0 instead of jumping 12px the
+  // instant the gesture activates.
+  const DRAG_ACTIVATION_PX = 12;
+  const translateY = useSharedValue(isAndroid ? sheetTravel : 0);
+  useEffect(() => {
+    if (isAndroid) {
+      translateY.value = withTiming(0, { duration: 340, easing: Easing.out(Easing.cubic) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Collapse the modal player. When it was opened as the entry screen (a
+  // notification deep-link, or a fast-refresh that landed here) there's no
+  // history to pop, so GO_BACK isn't handled — fall back to Home instead.
+  // On Android the sheet slides itself down WHILE the (fade) pop runs, so the
+  // two overlap into one iOS-like dismiss motion with no empty frame.
+  const collapse = () => {
+    if (isAndroid) {
+      translateY.value = withTiming(sheetTravel, {
+        duration: 240,
+        easing: Easing.in(Easing.cubic),
+      });
+    }
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
   const dragGesture = Gesture.Pan()
-    .activeOffsetY(12)
+    .activeOffsetY(DRAG_ACTIVATION_PX)
     .failOffsetX([-20, 20])
     .onUpdate((e) => {
-      translateY.value = Math.max(0, e.translationY);
+      translateY.value = Math.max(0, e.translationY - DRAG_ACTIVATION_PX);
     })
     .onEnd((e) => {
       const shouldDismiss = e.translationY > windowHeight * 0.22 || e.velocityY > 800;
       if (shouldDismiss) {
-        // Fire the navigation pop immediately instead of waiting for this tween to
-        // finish: the native stack's own `slide_from_bottom` pop transition takes
-        // over the rest of the way down, so the two transitions overlap into one
-        // visible motion instead of running back-to-back (which was leaving Android
-        // on an empty frame for ~1s between the JS tween finishing and the native
-        // pop finally starting).
-        translateY.value = withTiming(windowHeight, { duration: 220 });
         runOnJS(collapse)();
       } else {
         translateY.value = withSpring(0, { damping: 22, stiffness: 220 });
       }
     });
   const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
-  // Backdrop dims out as the sheet is dragged down — the same "content follows
-  // the finger, chrome fades with it" feel as iOS's native modal dismiss.
+  // Backdrop dim is derived from the sheet's own position — fades in as the
+  // sheet rises on open, follows the finger during a drag, fades out on dismiss.
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: 1 - Math.min(1, translateY.value / windowHeight),
+    opacity: 1 - Math.min(1, Math.max(0, translateY.value / sheetTravel)),
   }));
 
   // Lecture metadata (eyebrow, sectionTitle) — loaded once from the API.
@@ -166,7 +184,16 @@ export default function PlayerScreen() {
   const titleAreaReserve = (hasAttachments ? 208 : 150) + 176;
 
   const playerScreen = (
-    <Screen scroll={false} background={colors.primaryTeal} bottomPad={0} padded={false}>
+    // topInset off on Android: the sheet rests well below the status bar, so the
+    // Screen's dark status-bar scrim band has nothing to fog — it rendered as a
+    // weird full-width rectangular shadow at the top of the sheet.
+    <Screen
+      scroll={false}
+      background={colors.primaryTeal}
+      bottomPad={0}
+      padded={false}
+      topInset={!isAndroid}
+    >
       {/* Faint concentric-circle motif behind the artwork */}
       <ConcentricMotif
         size={320}
@@ -343,16 +370,19 @@ export default function PlayerScreen() {
 
   // Android: dimmed backdrop (the actual screen beneath, presented via
   // `transparentModal`, shows through the peek gap) + a rounded-top sheet that
-  // starts `topGap` below the screen top. The drag gesture wraps the WHOLE
+  // starts `topGap` below the screen top. The backdrop covers the WHOLE screen
+  // behind the sheet (not just the peek strip) so it never reads as a floating
+  // dark rectangle while the sheet is in motion — only its exposed part is
+  // tappable, since the sheet sits on top. The drag gesture wraps the WHOLE
   // sheet (not just the grabber handle) so a swipe-to-dismiss starts from
   // anywhere on the player, iOS-style — `activeOffsetY`/`failOffsetX` on the
   // gesture itself (above) are what keep taps on buttons and horizontal
   // waveform-scrub drags working normally underneath it.
   return (
     <View style={StyleSheet.absoluteFill}>
-      <Animated.View style={backdropStyle}>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.peekBackdrop, backdropStyle]}>
         <Pressable
-          style={[styles.peekBackdrop, { height: topGap }]}
+          style={StyleSheet.absoluteFill}
           onPress={collapse}
           accessibilityRole="button"
           accessibilityLabel="تصغير المشغل"
@@ -380,13 +410,9 @@ function PlayerWaveformLive() {
 }
 
 const styles = StyleSheet.create({
-  // Android peek-sheet (see `isAndroid` branch above) — dimmed strip over the
-  // screen beneath, revealed through the `transparentModal`'s peek gap.
+  // Android peek-sheet (see `isAndroid` branch above) — full-screen dim behind
+  // the sheet; only the peek strip above the sheet is actually visible/tappable.
   peekBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   sheet: {
