@@ -36,7 +36,7 @@ export function JourneyHomeCard() {
       onPress={() => router.push('/(student)/journey')}
       accessibilityRole="button"
       accessibilityLabel="رحلتي العلمية"
-      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginTop: 8 })}
+      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginTop: 12 })}
     >
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>

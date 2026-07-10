@@ -74,7 +74,9 @@ export const radius = {
 } as const;
 
 export const spacing = {
-  screenH: 14, // mobile horizontal screen padding
+  // Base grid unit. Screens pad by this and every side-by-side card/tile
+  // gaps by this — so screen-edge-to-card and card-to-card are both 12px.
+  screenH: 12,
   adminContent: 30,
 } as const;
 

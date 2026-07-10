@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { Pressable, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 
 import type { SectionCard } from '@/api/types';
-import { colors, radius } from '@/constants/theme';
+import { colors, radius, spacing } from '@/constants/theme';
 import { arLectureCount } from '@/lib/format';
 import { usePrefetchSection } from '@/hooks/useSections';
 import { Card, SectionIcon, SectionTitle, Txt } from '@/components/ui';
@@ -20,8 +20,14 @@ type Props = {
  */
 export function SectionsGrid({ sections }: Props) {
   const router = useRouter();
+  const { width } = useWindowDimensions();
 
   if (sections.length === 0) return null;
+
+  // Exact 2-column width on the 12px grid: screen padding on both sides
+  // (spacing.screenH each) plus one 12px gap between the two columns.
+  const contentWidth = width - spacing.screenH * 2;
+  const cardWidth = (contentWidth - spacing.screenH) / 2;
 
   return (
     <View style={{ marginTop: 28 }}>
@@ -32,13 +38,14 @@ export function SectionsGrid({ sections }: Props) {
         style={{
           flexDirection: 'row',
           flexWrap: 'wrap',
-          gap: 12,
+          gap: spacing.screenH,
         }}
       >
         {sections.map((section) => (
           <SectionGridCard
             key={section.id}
             section={section}
+            width={cardWidth}
             onPress={() =>
               router.push({ pathname: '/section/[id]', params: { id: section.id } })
             }
@@ -51,9 +58,11 @@ export function SectionsGrid({ sections }: Props) {
 
 function SectionGridCard({
   section,
+  width,
   onPress,
 }: {
   section: SectionCard;
+  width: number;
   onPress: () => void;
 }) {
   // Warm this section's page while it's on screen, so the tap opens instantly.
@@ -68,8 +77,7 @@ function SectionGridCard({
       accessibilityRole="button"
       accessibilityLabel={section.title}
       style={({ pressed }) => ({
-        // Each card takes half width minus half the gap (6px per side)
-        width: '47.5%' as const,
+        width,
         opacity: pressed ? 0.8 : 1,
       })}
     >

@@ -18,7 +18,7 @@ export function QuestionsHomeCard() {
       onPress={() => router.push('/(student)/questions')}
       accessibilityRole="button"
       accessibilityLabel="ساحة الأسئلة"
-      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginTop: 8 })}
+      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginTop: 12 })}
     >
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>

@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { LectureCard } from '@/api/types';
@@ -14,18 +14,27 @@ const BADGE_SIZE = 34;
 /** Single cover tint used for all cards — matches the navbar's active gold accent. */
 const COVER_TINTS = [{ from: '#786422', to: '#786422' }];
 
+/** Cover tile aspect ratio — 4:3 (height = width × 0.75), a quarter shorter than a square. */
+const TILE_ASPECT = 0.75;
+
 type Props = {
   lectures: LectureCard[];
 };
 
 /**
  * «مختارات» — a horizontally scrolling rail of staff-curated lecture cards
- * (an editorial pick, not date-based). Each card is 158px wide; tapping opens
- * the player. Renders nothing when the curated list is empty.
+ * (an editorial pick, not date-based). Card width is computed so exactly 2
+ * land flush with 12px on both screen edges and 12px between them; further
+ * cards scroll in from off-screen. Renders nothing when the curated list is empty.
  */
 export function FeaturedRail({ lectures }: Props) {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   if (lectures.length === 0) return null;
+
+  // 2 cards flush with both edges: edge + card + gap + card + edge, all 12px.
+  const cardWidth = (width - spacing.screenH * 3) / 2;
+  const tileHeight = cardWidth * TILE_ASPECT;
 
   return (
     <View style={{ marginTop: 28 }}>
@@ -41,14 +50,22 @@ export function FeaturedRail({ lectures }: Props) {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{
-          gap: 14,
+          gap: spacing.screenH,
           paddingHorizontal: spacing.screenH,
           paddingBottom: 4,
         }}
       >
         {lectures.map((lecture, idx) => {
           const tint = COVER_TINTS[idx % COVER_TINTS.length]!;
-          return <FeaturedCard key={lecture.id} lecture={lecture} tint={tint} />;
+          return (
+            <FeaturedCard
+              key={lecture.id}
+              lecture={lecture}
+              tint={tint}
+              width={cardWidth}
+              height={tileHeight}
+            />
+          );
         })}
       </ScrollView>
     </View>
@@ -58,9 +75,13 @@ export function FeaturedRail({ lectures }: Props) {
 function FeaturedCard({
   lecture,
   tint,
+  width,
+  height,
 }: {
   lecture: LectureCard;
   tint: { from: string; to: string };
+  width: number;
+  height: number;
 }) {
   const router = useRouter();
 
@@ -74,13 +95,13 @@ function FeaturedCard({
       }}
       accessibilityRole="button"
       accessibilityLabel={`تشغيل: ${lecture.title}`}
-      style={({ pressed }) => ({ width: 158, opacity: pressed ? 0.85 : 1 })}
+      style={({ pressed }) => ({ width, opacity: pressed ? 0.85 : 1 })}
     >
       {/* Cover tile */}
       <View
         style={{
-          width: 158,
-          height: 158,
+          width,
+          height,
           borderRadius: radius.card,
           backgroundColor: tint.to,
           borderWidth: 1,

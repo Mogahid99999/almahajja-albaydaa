@@ -1,6 +1,6 @@
 import { ActivityIndicator, View } from 'react-native';
 
-import { colors } from '@/constants/theme';
+import { colors, spacing } from '@/constants/theme';
 import { useHome } from '@/hooks/useSections';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -59,18 +59,18 @@ export default function HomeScreen() {
         onRefresh={onRefresh}
       >
         {/* Gentle, dismissible register nudge (guests only) */}
-        <View style={{ paddingHorizontal: 22 }}>
+        <View style={{ paddingHorizontal: spacing.screenH }}>
           <GuestBanner />
         </View>
 
         {/* تذكير نافع — active admin broadcast (1-day window, dismissible) */}
-        <View style={{ paddingHorizontal: 22 }}>
+        <View style={{ paddingHorizontal: spacing.screenH }}>
           <BroadcastCard />
         </View>
 
         {/* Continue listening — full-width inside 22px padding */}
         {data?.continueListening ? (
-          <View style={{ paddingHorizontal: 22 }}>
+          <View style={{ paddingHorizontal: spacing.screenH }}>
             <ContinueCard continueListening={data.continueListening} />
           </View>
         ) : null}
@@ -82,7 +82,7 @@ export default function HomeScreen() {
         <FeaturedRail lectures={data?.featured ?? []} />
 
         {/* Sections grid — 22px padding */}
-        <View style={{ paddingHorizontal: 22 }}>
+        <View style={{ paddingHorizontal: spacing.screenH }}>
           {/* المداومة اليومية — quiet streak state (registered users only) */}
           <StreakCard />
 
