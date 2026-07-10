@@ -30,9 +30,9 @@ export function HomeHeader() {
         backgroundColor: colors.bgSand,
         borderBottomWidth: 1,
         borderBottomColor: colors.borderSand,
-        paddingTop: topInset + 6,
+        paddingTop: topInset + 2,
         paddingHorizontal: spacing.screenH,
-        paddingBottom: 8,
+        paddingBottom: 6,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -46,7 +46,7 @@ export function HomeHeader() {
             <Txt weight="display" size={22} color={colors.primaryTeal}>
               المَحجّة البَيْضَاء
             </Txt>
-            <Txt size={11} color={colors.textGhost} style={{ marginTop: 3, letterSpacing: 0.2 }}>
+            <Txt size={11} color={colors.textGhost} style={{ marginTop: -1, letterSpacing: 0.2 }}>
               مجالس الدروس الشرعية
             </Txt>
           </View>

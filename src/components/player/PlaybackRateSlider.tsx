@@ -35,8 +35,10 @@ const THUMB_SIZE = 18;
 const HIT_ZONE_HEIGHT = 32;
 const NORMAL_RATE = 1.0;
 /** Extra "magnetic" radius (px) around the ×1 mark — makes normal speed easy
- * to land on exactly without needing pixel-perfect precision. */
-const NORMAL_SNAP_PX = 10;
+ * to land on exactly without needing pixel-perfect precision. While the finger
+ * is inside this radius the THUMB itself also snaps onto the ×1 tick (not just
+ * the reported rate), so ×1.0 visibly "catches" the drag. */
+const NORMAL_SNAP_PX = 14;
 
 function snapRate(raw: number): number {
   'worklet';
@@ -95,16 +97,18 @@ export function PlaybackRateSlider({ rate, onCommit }: Props) {
     .minDistance(0)
     .onBegin((e) => {
       const x = Math.min(trackWidth, Math.max(0, e.x));
-      thumbX.value = x;
       const startRate = xToRate(x, trackWidth);
+      // Magnetic ×1: while the touch is in the snap zone the thumb rides the
+      // ×1 tick itself, so normal speed "catches" instead of needing precision.
+      thumbX.value = startRate === NORMAL_RATE ? rateToX(NORMAL_RATE, trackWidth) : x;
       lastEmitted.value = startRate;
       dragProgress.value = withSpring(1, { damping: 16, stiffness: 250 });
       runOnJS(updateBubble)(startRate);
     })
     .onUpdate((e) => {
       const x = Math.min(trackWidth, Math.max(0, e.x));
-      thumbX.value = x;
       const nextRate = xToRate(x, trackWidth);
+      thumbX.value = nextRate === NORMAL_RATE ? rateToX(NORMAL_RATE, trackWidth) : x;
       if (nextRate !== lastEmitted.value) {
         lastEmitted.value = nextRate;
         runOnJS(updateBubble)(nextRate);
@@ -112,6 +116,9 @@ export function PlaybackRateSlider({ rate, onCommit }: Props) {
     })
     .onEnd(() => {
       const finalRate = xToRate(thumbX.value, trackWidth);
+      // Settle the thumb onto the committed (stepped) rate's exact position so
+      // the visual never disagrees with the actual playback speed.
+      thumbX.value = withTiming(rateToX(finalRate, trackWidth), { duration: 120 });
       runOnJS(onCommit)(finalRate);
       dragProgress.value = withTiming(0, { duration: 160 });
     })

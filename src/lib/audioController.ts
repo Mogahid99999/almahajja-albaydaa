@@ -401,7 +401,9 @@ function resetTrackProgress(positionSec: number) {
 
 function persist(positionSec: number, finished = false) {
   if (!currentId) return Promise.resolve();
-  const pos = finished ? currentDuration : positionSec;
+  // On finish, save the full duration — but if the real duration never resolved
+  // (still 0), fall back to the last known position instead of resetting to 0.
+  const pos = finished ? currentDuration || positionSec : positionSec;
   // Mirror the resume position into the download sidecar (no-op unless the
   // lecture is downloaded) so it resumes at the same second when played OFFLINE,
   // where the server progress row is unreachable.
@@ -473,8 +475,11 @@ function teardownPlayer() {
   player = null;
 }
 
-/** Create-or-replace the player for `source`, seek to `positionSec`, and play. */
-async function startPlayer(source: string, positionSec: number) {
+/** Create-or-replace the player for `source`, seek to `positionSec`, and play.
+ * `gen` is the caller's load token — after the seek await, a superseded start
+ * (rapid track switching, or stop()) bails instead of seeking/playing whatever
+ * player instance is current by then. */
+async function startPlayer(source: string, positionSec: number, gen: number) {
   // If the previous track reached its natural end, the native player is in an
   // ENDED state that `replace()` + `play()` can't reliably restart from (it goes
   // silent — the same failure stop() avoids by fully releasing). Recreate it from
@@ -498,6 +503,7 @@ async function startPlayer(source: string, positionSec: number) {
       /* seek before load can throw — ignored, status will catch up */
     }
   }
+  if (gen !== loadGen || !player) return;
   player.play();
   store().setPlaying(true);
   // Bind/refresh the lock-screen + shade controls for whatever track just loaded.
@@ -544,6 +550,9 @@ async function loadLecture(lectureId: string, opts?: LoadOpts) {
   // screen showing the "needs a connection" notice — reported as "opening a
   // different lecture doesn't change anything" while offline.
   if (currentId && currentId !== lectureId && player?.playing) {
+    // Save the outgoing track's position first — the last periodic tick can be
+    // up to ~5s stale, and that listening progress would otherwise be lost.
+    void persist(player.currentTime ?? store().positionSec);
     player.pause();
     store().setPlaying(false);
   }
@@ -602,7 +611,7 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
       positionSec,
     });
     store().setLoading(true);
-    void startPlayer(localUri, positionSec);
+    void startPlayer(localUri, positionSec, gen);
 
     // Refresh section context (enables next/prev) + adopt the server resume
     // position if it's AHEAD. Fails silently offline — local playback is enough.
@@ -709,7 +718,7 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
   store().setLoading(true);
   resolveNext();
   resolvePrev();
-  await startPlayer(source, positionSec);
+  await startPlayer(source, positionSec, gen);
 }
 
 export function toggle() {
@@ -726,6 +735,14 @@ export function toggle() {
     // for the last lecture in a section, or when auto-advance is off.
     if (justFinished && currentId) {
       void loadLecture(currentId, { restart: true });
+      return;
+    }
+    // The track errored out (e.g. MiniPlayer play tap after a stream failure —
+    // it has no retry UI of its own): a bare play() on the dead instance is a
+    // silent no-op, so rebuild from where it stopped instead.
+    if (store().loadError && currentId) {
+      forceFreshPlayer = true;
+      void loadLecture(currentId, { startAtSec: player.currentTime ?? store().positionSec });
       return;
     }
     player.play();
@@ -784,6 +801,10 @@ export function stop() {
   justFinished = false;
   forceFreshPlayer = false;
   lastAutoAdvancedFrom = null;
+  // Invalidate any load still in flight — without this, closing the player
+  // while a (slow) lecture load was resolving let that load commit afterwards
+  // and start playing a track the user had just dismissed.
+  loadGen++;
   store().reset();
 }
 
