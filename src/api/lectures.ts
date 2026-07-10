@@ -112,7 +112,7 @@ export async function getPreviousLecture(
  * "أحدث الدروس" screen behind Home's «عرض الكل» next to أُضيف حديثاً. Classified
  * only (section_id not null), with the caller's own progress folded in.
  */
-export async function getRecentLectures(limit = 40): Promise<LectureRow[]> {
+export async function getRecentLectures(limit = 8): Promise<LectureRow[]> {
   if (USE_MOCK) return mock.getRecentLectures(limit);
   const { data, error } = await supabase
     .from('lectures')

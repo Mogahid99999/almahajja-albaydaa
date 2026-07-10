@@ -290,7 +290,7 @@ export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {
 }
 
 /** Newly-added published lectures, newest first — backs the أحدث الدروس screen. */
-export async function getRecentLectures(limit = 40): Promise<LectureRow[]> {
+export async function getRecentLectures(limit = 8): Promise<LectureRow[]> {
   await delay();
   return db.lectures
     .filter((l) => l.status === 'published' && l.section_id != null)

@@ -1,11 +1,19 @@
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { useState } from 'react';
+import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { LectureCard } from '@/api/types';
 import { colors, radius, spacing } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
 import { preloadLecture } from '@/lib/audioController';
-import { SectionTitle, Txt } from '@/components/ui';
+import { PaginationDots, SectionTitle, Txt } from '@/components/ui';
 import { SectionIcon } from '@/components/ui/SectionIcon';
 
 /** Diameter of the subject-icon badge straddling the card's top-right corner. */
@@ -31,11 +39,19 @@ type Props = {
 export function NewlyAddedRail({ lectures }: Props) {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const [activePage, setActivePage] = useState(0);
   if (lectures.length === 0) return null;
 
   // 2 cards flush with both edges: edge + card + gap + card + edge, all 12px.
   const cardWidth = (width - spacing.screenH * 3) / 2;
   const tileHeight = cardWidth * TILE_ASPECT;
+  const pageWidth = cardWidth * 2 + spacing.screenH;
+  const pageCount = Math.ceil(lectures.length / 2);
+
+  function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const page = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+    setActivePage(Math.max(0, Math.min(page, pageCount - 1)));
+  }
 
   return (
     <View>
@@ -50,6 +66,8 @@ export function NewlyAddedRail({ lectures }: Props) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={{
           gap: spacing.screenH,
           paddingHorizontal: spacing.screenH,
@@ -69,6 +87,8 @@ export function NewlyAddedRail({ lectures }: Props) {
           );
         })}
       </ScrollView>
+
+      <PaginationDots count={pageCount} activeIndex={activePage} />
     </View>
   );
 }

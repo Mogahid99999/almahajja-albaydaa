@@ -8,6 +8,7 @@ export { IconButton } from './IconButton';
 export { ProgressBar } from './ProgressBar';
 export { Chip } from './Chip';
 export { SectionTitle } from './SectionTitle';
+export { PaginationDots } from './PaginationDots';
 export { SectionIcon } from './SectionIcon';
 export { Screen } from './Screen';
 export { Logo } from './Logo';
