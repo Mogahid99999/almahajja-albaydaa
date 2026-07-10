@@ -114,7 +114,6 @@ export default function SearchScreen() {
         onChangeText={setQuery}
         placeholder="ابحث عن درس أو قسم أو شيخ…"
         placeholderTextColor={colors.textGhost}
-        autoFocus
         style={{
           height: 46,
           borderWidth: 1,

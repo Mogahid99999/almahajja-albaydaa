@@ -27,6 +27,9 @@ export default function RegisterScreen() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [gender, setGender] = useState<Gender | null>(null);
   const [genderError, setGenderError] = useState(false);
   const [oathVisible, setOathVisible] = useState(false);
@@ -38,11 +41,13 @@ export default function RegisterScreen() {
   const trimmedEmail = email.trim();
   // Email is optional — phone is the required identifier (Task: phone registration).
   const emailOk = trimmedEmail.length === 0 || trimmedEmail.includes('@');
+  const passwordsMatch = password === confirmPassword;
   const canSubmit =
     trimmedName.length > 0 &&
     trimmedPhone.replace(/[^0-9]/g, '').length >= 8 &&
     emailOk &&
-    password.length >= 6;
+    password.length >= 6 &&
+    passwordsMatch;
 
   const onSubmit = () => {
     if (!canSubmit) return;
@@ -74,17 +79,17 @@ export default function RegisterScreen() {
     <>
     <Screen scroll contentStyle={{ justifyContent: 'center', flexGrow: 1 }}>
       {/* Brand */}
-      <View style={{ alignItems: 'center', marginBottom: 24 }}>
-        <Logo size={52} />
-        <Txt weight="display" size={22} color={colors.primaryTeal} style={{ marginTop: 12 }}>
+      <View style={{ alignItems: 'center', marginBottom: 12 }}>
+        <Logo size={65} />
+        <Txt weight="display" size={20} color={colors.primaryTeal} style={{ marginTop: 8 }}>
           إنشاء حساب
         </Txt>
-        <Txt size={12} color={colors.textGhost} align="center" style={{ marginTop: 6, lineHeight: 19 }}>
+        <Txt size={12} color={colors.textGhost} align="center" style={{ marginTop: 4, lineHeight: 17 }}>
           سجّل لتتبّع رحلتك العلمية وحفظ تقدّمك عبر أجهزتك
         </Txt>
       </View>
 
-      <Card style={{ padding: 20, overflow: 'hidden' }}>
+      <Card style={{ padding: 16, overflow: 'hidden' }}>
         <ConcentricMotif size={180} color="rgba(31,74,66,0.05)" style={{ top: -40, left: -40 }} />
 
         <Field label="الاسم">
@@ -121,14 +126,56 @@ export default function RegisterScreen() {
         </Field>
 
         <Field label="كلمة المرور">
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="8 أحرف أو ارقام على الأقل"
-            placeholderTextColor={colors.textGhost}
-            secureTextEntry
-            style={inputStyle}
-          />
+          <View style={{ position: 'relative', justifyContent: 'center' }}>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="8 أحرف أو ارقام على الأقل"
+              placeholderTextColor={colors.textGhost}
+              secureTextEntry={!showPassword}
+              style={[inputStyle, { paddingLeft: 40 }]}
+            />
+            <Pressable
+              onPress={() => setShowPassword((v) => !v)}
+              hitSlop={8}
+              style={{ position: 'absolute', left: 12 }}
+            >
+              <Feather
+                name={showPassword ? 'eye-off' : 'eye'}
+                size={18}
+                color={colors.textGhost}
+              />
+            </Pressable>
+          </View>
+        </Field>
+
+        <Field label="تأكيد كلمة المرور">
+          <View style={{ position: 'relative', justifyContent: 'center' }}>
+            <TextInput
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="أعد إدخال كلمة المرور"
+              placeholderTextColor={colors.textGhost}
+              secureTextEntry={!showConfirmPassword}
+              style={[inputStyle, { paddingLeft: 40 }]}
+            />
+            <Pressable
+              onPress={() => setShowConfirmPassword((v) => !v)}
+              hitSlop={8}
+              style={{ position: 'absolute', left: 12 }}
+            >
+              <Feather
+                name={showConfirmPassword ? 'eye-off' : 'eye'}
+                size={18}
+                color={colors.textGhost}
+              />
+            </Pressable>
+          </View>
+          {confirmPassword.length > 0 && !passwordsMatch ? (
+            <Txt size={12} color={colors.stateDanger} style={{ marginTop: 6 }}>
+              كلمتا المرور غير متطابقتين
+            </Txt>
+          ) : null}
         </Field>
 
         {/* Required for رفيق الدراسة (26.2) — the buddy pairing is gender-segregated */}
@@ -160,7 +207,7 @@ export default function RegisterScreen() {
             {
               backgroundColor: colors.primaryTeal,
               borderRadius: radius.input,
-              paddingVertical: 14,
+              paddingVertical: 12,
               alignItems: 'center',
               opacity: register.isPending || !canSubmit ? 0.6 : 1,
             },
@@ -177,7 +224,7 @@ export default function RegisterScreen() {
       <Pressable
         hitSlop={8}
         onPress={() => router.replace('/sign-in')}
-        style={{ alignItems: 'center', marginTop: 18 }}
+        style={{ alignItems: 'center', marginTop: 12 }}
       >
         <Txt size={12.5} color={colors.textMuted}>
           لديك حساب؟{' '}
@@ -264,8 +311,8 @@ export default function RegisterScreen() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <View style={{ marginBottom: 14 }}>
-      <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
+    <View style={{ marginBottom: 12 }}>
+      <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 6 }}>
         {label}
       </Txt>
       {children}
@@ -274,7 +321,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputStyle = {
-  height: 46,
+  height: 42,
   borderWidth: 1,
   borderColor: colors.borderSand2,
   borderRadius: radius.input,

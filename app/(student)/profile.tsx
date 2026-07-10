@@ -194,10 +194,12 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* Name (never the email) */}
-          <Txt size={18} weight="display" color={colors.primaryTeal} align="center">
-            {heading}
-          </Txt>
+          {/* Name (never the email) — guests have no name yet, so skip this line */}
+          {!isGuest ? (
+            <Txt size={18} weight="display" color={colors.primaryTeal} align="center">
+              {heading}
+            </Txt>
+          ) : null}
 
           {/* Email only for registered users, quietly under the name */}
           {!isGuest && email ? (
@@ -218,7 +220,7 @@ export default function ProfileScreen() {
             }}
           >
             <Txt size={12} weight="semibold" color={colors.primaryTeal} align="center">
-              {roleLabel}
+              {isGuest ? 'مرحبا بك يا طالب العلم' : roleLabel}
             </Txt>
           </View>
 
