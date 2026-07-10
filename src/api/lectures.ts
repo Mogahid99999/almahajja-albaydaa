@@ -170,6 +170,23 @@ export async function getFeaturedLectures(): Promise<LectureRow[]> {
   });
 }
 
+/**
+ * Notification-open gender guard (owner-simplified: 0072). The push/inbox
+ * itself broadcasts to everyone again — this single-purpose check runs ONLY
+ * when a lecture is opened FROM a notification (push shade or inbox tap), so
+ * normal browsing takes on no extra round trip. True for an unclassified
+ * lecture (nothing to scope) or when the caller's gender matches the
+ * section's (and its ancestors') visibility; false otherwise.
+ */
+export async function isLectureVisibleToViewer(lectureId: string): Promise<boolean> {
+  if (USE_MOCK) return true;
+  const { data, error } = await supabase.rpc('lecture_visible_to_viewer', {
+    p_lecture_id: lectureId,
+  });
+  if (error) return true; // fail-open: never block a legitimate open on a network hiccup
+  return data ?? true;
+}
+
 /** Lecture cards for a set of ids — used by the downloads page. */
 export async function getLecturesByIds(ids: string[]): Promise<LectureCard[]> {
   if (USE_MOCK) return mock.getLecturesByIds(ids);

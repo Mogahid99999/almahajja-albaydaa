@@ -18,12 +18,13 @@ import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, I18nManager, LogBox, Platform, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, I18nManager, LogBox, Platform, View } from 'react-native';
 import RNRestart from 'react-native-restart';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { checkBannedAndSignOut } from '@/api/auth';
+import { isLectureVisibleToViewer } from '@/api/lectures';
 import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/notifications';
 import { getResumeTarget, hasResumableLesson } from '@/api/progress';
 import { useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
@@ -343,7 +344,17 @@ function NotificationsBootstrap() {
           typeof data.positionSec === 'number' && data.positionSec > 0
             ? `?t=${Math.round(data.positionSec)}`
             : '';
-        router.push(`/player/${data.lectureId}${t}`);
+        const lectureId = data.lectureId;
+        // Notification-open gender guard (0072): the push broadcasts to
+        // everyone, so this single check runs only here, right before
+        // opening from a notification — never on normal browsing.
+        void isLectureVisibleToViewer(lectureId).then((visible) => {
+          if (visible) {
+            router.push(`/player/${lectureId}${t}`);
+          } else {
+            Alert.alert('هذا الدرس ضمن قسم النساء', 'هذا المحتوى مخصص لقسم النساء.');
+          }
+        });
       } else if (data.sectionId) {
         router.push(`/(student)/section/${data.sectionId}`);
       } else if (data.route) {

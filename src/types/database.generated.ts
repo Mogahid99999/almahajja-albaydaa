@@ -1475,6 +1475,10 @@ export type Database = {
       is_content_manager: { Args: never; Returns: boolean }
       is_moderator: { Args: never; Returns: boolean }
       is_sheikh: { Args: never; Returns: boolean }
+      lecture_visible_to_viewer: {
+        Args: { p_lecture_id: string }
+        Returns: boolean
+      }
       list_quiz_result_rows: {
         Args: { p_quiz_id: string }
         Returns: {

@@ -9,12 +9,13 @@
  *
  * Route: /(student)/notifications  (opened from the Home header bell)
  */
-import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { memo, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { isLectureVisibleToViewer } from '@/api/lectures';
 import type { NotificationItem } from '@/api/types';
 import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
@@ -131,7 +132,16 @@ export default function NotificationsScreen() {
           typeof item.data.positionSec === 'number' && item.data.positionSec > 0
             ? `?t=${Math.round(item.data.positionSec)}`
             : '';
-        router.push(`/player/${item.data.lectureId}${t}`);
+        const lectureId = item.data.lectureId;
+        // Notification-open gender guard (0072) — see app/_layout.tsx for the
+        // matching cold-start/warm-tap path.
+        void isLectureVisibleToViewer(lectureId).then((visible) => {
+          if (visible) {
+            router.push(`/player/${lectureId}${t}`);
+          } else {
+            Alert.alert('هذا الدرس ضمن قسم النساء', 'هذا المحتوى مخصص لقسم النساء.');
+          }
+        });
       } else if (item.data.sectionId) {
         router.push(`/(student)/section/${item.data.sectionId}`);
       } else if (item.data.route) {
