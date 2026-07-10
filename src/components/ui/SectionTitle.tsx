@@ -21,14 +21,21 @@ export function SectionTitle({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        gap: 8,
         marginBottom: 12,
       }}
     >
-      <Txt weight="semibold" size={16} color={colors.textInk}>
+      <Txt
+        weight="semibold"
+        size={16}
+        color={colors.textInk}
+        numberOfLines={1}
+        style={{ flexShrink: 1 }}
+      >
         {title}
       </Txt>
       {actionLabel ? (
-        <Pressable onPress={onAction} hitSlop={8}>
+        <Pressable onPress={onAction} hitSlop={8} style={{ flexShrink: 0 }}>
           <Txt size={12.5} weight="medium" color={colors.accentBrassMuted}>
             {actionLabel}
           </Txt>
