@@ -5,14 +5,10 @@
  * fine control (0.8×–2.0×, 0.1 steps). A small value bubble pops up above
  * the thumb only while actively dragging, and fades out on release.
  *
- * `direction: 'ltr'` is forced on the track's own container — this app is
- * globally RTL, which auto-mirrors flex layout (row → row-reverse) but NOT
- * the raw pixel math used for the thumb/fill position, so left unset the
- * two would disagree (min/max ends would visually swap relative to the
- * fill). Pinning this one small subtree to ltr keeps every part of the
- * slider's own coordinate system consistent, independent of the app's
- * writing direction — the same way a numeric slider stays LTR in other
- * RTL apps.
+ * All positions (thumb/fill/bubble) are computed manually in JS as absolute
+ * left-offsets in px, not via flex direction — so this subtree is immune to
+ * the app's global RTL flex-mirroring by construction and needs no direction
+ * override.
  */
 import { useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
@@ -178,7 +174,6 @@ const styles = StyleSheet.create({
   wrap: {
     width: '50%',
     alignSelf: 'center',
-    direction: 'ltr',
   },
   hitZone: {
     height: HIT_ZONE_HEIGHT,
