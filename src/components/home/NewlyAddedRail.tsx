@@ -38,7 +38,7 @@ export function NewlyAddedRail({ lectures }: Props) {
   const tileHeight = cardWidth * TILE_ASPECT;
 
   return (
-    <View style={{ marginTop: 28 }}>
+    <View>
       <View style={{ paddingHorizontal: spacing.screenH }}>
         <SectionTitle
           title="أُضيف حديثاً"

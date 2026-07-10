@@ -54,7 +54,7 @@ export default function HomeScreen() {
         bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE}
         padded={false}
         topInset={false}
-        contentStyle={{ paddingTop: 14 }}
+        contentStyle={{ paddingTop: 18 }}
         refreshing={refreshing}
         onRefresh={onRefresh}
       >
@@ -68,9 +68,9 @@ export default function HomeScreen() {
           <BroadcastCard />
         </View>
 
-        {/* Continue listening — full-width inside 22px padding */}
+        {/* Continue listening — full width, own trailing gap before the rail below */}
         {data?.continueListening ? (
-          <View style={{ paddingHorizontal: spacing.screenH }}>
+          <View style={{ paddingHorizontal: spacing.screenH, marginBottom: 28 }}>
             <ContinueCard continueListening={data.continueListening} />
           </View>
         ) : null}
