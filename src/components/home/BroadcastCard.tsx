@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
 import { colors } from '@/constants/theme';

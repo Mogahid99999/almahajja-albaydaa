@@ -4,7 +4,7 @@
  * Each opens a full screen (roomy for reading/writing) over the modal player.
  * A subtle brass dot on ملاحظاتي marks an existing note.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

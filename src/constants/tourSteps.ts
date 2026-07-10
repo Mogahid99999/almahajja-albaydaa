@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 
 /**
  * The 5 fixed stops of the first-time tour (TourCard). Deliberately capped and

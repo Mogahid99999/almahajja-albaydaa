@@ -1,10 +1,14 @@
-import { Amiri_400Regular, Amiri_700Bold } from '@expo-google-fonts/amiri';
-import {
-  IBMPlexSansArabic_400Regular,
-  IBMPlexSansArabic_500Medium,
-  IBMPlexSansArabic_600SemiBold,
-  IBMPlexSansArabic_700Bold,
-} from '@expo-google-fonts/ibm-plex-sans-arabic';
+// Import each weight from its direct submodule, NOT the package index. Each
+// index does `export const X = require('./X.ttf')` for EVERY weight, and Metro
+// can't tree-shake those CommonJS side-effect requires — so importing from the
+// index bundles all 4 Amiri + all 7 IBM Plex weights (~1.5MB of unused fonts).
+// Direct submodule paths pull only the weights this app registers below.
+import { Amiri_400Regular } from '@expo-google-fonts/amiri/400Regular';
+import { Amiri_700Bold } from '@expo-google-fonts/amiri/700Bold';
+import { IBMPlexSansArabic_400Regular } from '@expo-google-fonts/ibm-plex-sans-arabic/400Regular';
+import { IBMPlexSansArabic_500Medium } from '@expo-google-fonts/ibm-plex-sans-arabic/500Medium';
+import { IBMPlexSansArabic_600SemiBold } from '@expo-google-fonts/ibm-plex-sans-arabic/600SemiBold';
+import { IBMPlexSansArabic_700Bold } from '@expo-google-fonts/ibm-plex-sans-arabic/700Bold';
 import type { Query } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';

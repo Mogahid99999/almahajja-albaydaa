@@ -7,7 +7,7 @@
  * on Home for one day. Editing updates the detail page (already-sent inbox rows
  * keep their wording); deleting soft-deletes and clears the inbox rows.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,

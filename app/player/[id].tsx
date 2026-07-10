@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, View, StyleSheet, useWindowDimensions } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

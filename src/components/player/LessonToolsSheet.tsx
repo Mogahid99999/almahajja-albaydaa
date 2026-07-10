@@ -2,7 +2,7 @@
  * Slide-up menu with the three lesson tools (V6) — opened from the utility
  * bar's tools icon next to تحميل. Same targets as the chip row.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Modal, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

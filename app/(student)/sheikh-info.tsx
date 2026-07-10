@@ -18,7 +18,7 @@ const DISPLAY_NAME_OVERRIDES: Record<string, string> = {
 };
 import { useMemo, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
 import type { SheikhProfile } from '@/api/sheikhs';

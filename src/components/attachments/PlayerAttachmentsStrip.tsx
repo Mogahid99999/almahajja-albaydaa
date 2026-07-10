@@ -5,7 +5,7 @@
  * single horizontal row of calm brass-outline chips, pinned just above the
  * utility bar. Renders nothing when the lecture has no attachments.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

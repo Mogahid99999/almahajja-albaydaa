@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Pressable, type ViewStyle } from 'react-native';
 
 import { colors, radius } from '@/constants/theme';

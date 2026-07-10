@@ -3,7 +3,7 @@
  * (items 4/6, shared mechanism). Same visual/structural pattern as
  * app/admin/contributions.tsx.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';

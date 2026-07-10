@@ -9,7 +9,7 @@
  *   - Inline edit (title / section / sheikh / order / publish).
  *   - Delete (with confirmation; removes audio from storage too).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,

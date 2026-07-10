@@ -5,7 +5,7 @@
  * per-student table. Row tap opens the attempt drill-down. Admin-only surface —
  * students never see each other's results (§12.6).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';

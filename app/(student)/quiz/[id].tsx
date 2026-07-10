@@ -6,7 +6,7 @@
  * resumes) an attempt; guests see a calm register nudge instead — quiz-taking
  * requires a registered account (results are personal & synced).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';

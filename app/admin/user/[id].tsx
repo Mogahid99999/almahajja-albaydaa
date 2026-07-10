@@ -5,7 +5,7 @@
  * Actions (via the admin-users Edge Function): إيقاف/تفعيل، تعيين كلمة سر بدون
  * القديمة، تعديل الاسم/البريد، تغيير الدور. All rollups are server-side.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {

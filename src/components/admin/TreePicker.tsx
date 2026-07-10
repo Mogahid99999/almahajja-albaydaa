@@ -10,7 +10,7 @@
  *   - Field shows full breadcrumb path joined with " › ", leaf in a teal-tint pill.
  *   - If `allowNull`, a "— المستوى الأعلى —" option sets null.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Modal,

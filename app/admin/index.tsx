@@ -6,7 +6,7 @@
  * All numerals via arNum. Cards flex-wrap so the page never scrolls sideways
  * on a phone.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';

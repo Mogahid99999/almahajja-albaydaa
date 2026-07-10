@@ -15,7 +15,7 @@
  *   - Submit / معاينة buttons
  *   - Tip card
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {

@@ -3,7 +3,7 @@
  * one place so the inbox rows and the prefs toggles phrase + ice each type
  * identically. new_quiz went live with Feature 12 (0018 publish fan-out).
  */
-import type { Feather } from '@expo/vector-icons';
+import type Feather from '@expo/vector-icons/Feather';
 import type { NotificationType } from '@/api/types';
 
 type FeatherName = keyof typeof Feather.glyphMap;

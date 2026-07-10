@@ -8,7 +8,7 @@
  * Same calm styling as PlaybackSettings / PrefsToggles.
  */
 import { Switch, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 
 import { colors } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settingsStore';

@@ -10,7 +10,7 @@
  * Route: /(student)/notifications  (opened from the Home header bell)
  */
 import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { memo, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

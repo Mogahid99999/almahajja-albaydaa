@@ -9,7 +9,7 @@
  * from إدارة المستخدمين). Anonymity: admins see the real name, but a quiet
  * «سُئل بلا اسم» hint marks anonymous questions.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,

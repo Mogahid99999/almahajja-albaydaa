@@ -10,7 +10,7 @@
  * router.replace (not push) is used throughout so the tour never bloats the
  * back stack and so leaving the player step actually closes its modal screen.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';

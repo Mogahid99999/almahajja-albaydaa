@@ -69,10 +69,6 @@
       "//": "expo-audio is patched (media notification prev/next, deep-link, duration) — build it from source so node_modules edits/patch-package apply instead of the prebuilt AAR.",
       "buildFromSource": [
         "expo-audio"
-      ],
-      "//exclude": "floating-bubble (PLAN_4 Phase 4.2): excluded from this Play Store submission so its SYSTEM_ALERT_WINDOW permission + native code aren't compiled in. Code stays in modules/ — remove from this list to re-enable once BUBBLE_ENABLED is flipped back on and a Play Console sensitive-permissions declaration is prepared.",
-      "exclude": [
-        "floating-bubble"
       ]
     }
   },

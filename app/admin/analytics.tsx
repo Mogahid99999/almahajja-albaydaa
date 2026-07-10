@@ -5,7 +5,7 @@
  * admin-PRIVATE student lists (good progress / started-then-stopped). Calm,
  * never student-vs-student — the lists are only ever visible to the admin here.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React from 'react';
 import { StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 

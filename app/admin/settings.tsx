@@ -6,7 +6,7 @@
  * intro/link, and (with a loud caution) the V4 update gate. Saving one field at
  * a time keeps each write independent.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
 

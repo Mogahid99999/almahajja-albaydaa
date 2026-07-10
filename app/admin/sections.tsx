@@ -6,7 +6,7 @@
  * "إضافة قسم" form with title, parent TreePicker (allowNull), description,
  * and a "إظهار الهيدر" toggle → useCreateSection().mutate(...)
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,

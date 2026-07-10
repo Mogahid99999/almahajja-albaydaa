@@ -3,7 +3,7 @@
  * actions (delete a lecture / section / sheikh). Works on web and native (RN
  * Alert is unreliable on react-native-web, so we render our own dialog).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Modal, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { Txt } from '@/components/ui';

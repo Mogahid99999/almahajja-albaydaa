@@ -6,7 +6,7 @@
  * خاصة بك»). Strictly private (own-rows RLS) — nobody else can read it.
  * Guests see the calm register nudge instead of the editor.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {

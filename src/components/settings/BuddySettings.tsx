@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, Pressable, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 
 import { colors, radius } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';

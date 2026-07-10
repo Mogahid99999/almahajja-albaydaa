@@ -5,7 +5,7 @@
  * safe — `lectures.sheikh_id` is ON DELETE SET NULL, so lectures keep playing,
  * the chip simply disappears.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useState } from 'react';
 import { Image, Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
 

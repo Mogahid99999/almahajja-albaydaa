@@ -11,7 +11,7 @@
  */
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, TextInput, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
 import type { BuddyCandidate } from '@/api/types';

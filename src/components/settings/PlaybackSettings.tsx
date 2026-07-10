@@ -4,7 +4,7 @@
  * audio controller when a lecture finishes. Same quiet styling as PrefsToggles.
  */
 import { Switch, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 
 import { colors } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settingsStore';

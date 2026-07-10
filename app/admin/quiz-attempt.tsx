@@ -4,7 +4,7 @@
  * One student's attempt: per-question right/wrong with the chosen and correct
  * options, completion time, and the student's other attempts.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';

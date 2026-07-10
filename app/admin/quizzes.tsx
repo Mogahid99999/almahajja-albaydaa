@@ -4,7 +4,7 @@
  * Quizzes grouped by section with status pills, quick publish/unpublish,
  * results link, edit and delete. Creation happens in /admin/quiz-edit.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';

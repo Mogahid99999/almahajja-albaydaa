@@ -6,7 +6,7 @@
  * points (derived, never stored). Saving diff-upserts questions so existing
  * student answers survive unrelated edits (see src/api/quizzes.ts).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {

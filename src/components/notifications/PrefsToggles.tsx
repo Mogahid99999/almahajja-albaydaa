@@ -5,7 +5,7 @@
  * counts, no badges — just quiet on/off control (CLAUDE.md calm tone).
  */
 import { Switch, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 
 import type { NotificationType } from '@/api/types';
 import { colors } from '@/constants/theme';

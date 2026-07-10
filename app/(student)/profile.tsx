@@ -9,7 +9,7 @@
  * Design tokens: manuscript-warm palette, RTL, calm tone.
  */
 import { Alert, Linking, Pressable, Share, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter, Link } from 'expo-router';
 
 import { useCurrentUser, useDeleteAccount, useSignOut } from '@/hooks/useAuth';

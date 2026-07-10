@@ -15,7 +15,7 @@
  *
  * Design ref: screens/صفحة القسم.dc.html › lectures block + Component class.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { memo, useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';

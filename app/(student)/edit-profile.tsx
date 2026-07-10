@@ -24,7 +24,7 @@
  *
  * Route: /(student)/edit-profile
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';

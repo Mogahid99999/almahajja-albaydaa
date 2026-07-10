@@ -9,7 +9,7 @@
  * Route: /(student)/about
  */
 import { Linking, Pressable, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
 import { colors, radius, shadows } from '@/constants/theme';

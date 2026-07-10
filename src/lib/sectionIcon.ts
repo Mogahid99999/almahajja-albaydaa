@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import type { MaterialCommunityIcons } from '@expo/vector-icons';
+import type MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 type MCIName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 

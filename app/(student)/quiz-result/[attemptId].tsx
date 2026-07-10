@@ -5,7 +5,7 @@
  * "received" note appears (no score); correct-answer detail renders only when
  * show_correct_answers is on. Personal results only — never compared (§12.6).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 

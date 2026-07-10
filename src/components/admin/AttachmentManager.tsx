@@ -6,7 +6,7 @@
  * Add form: type chips (PDF/كتاب/تفريغ/صورة/رابط) + title + a URL field (or a
  * transcript-text area for تفريغ). Mock-backed now; same hooks drive live later.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
 

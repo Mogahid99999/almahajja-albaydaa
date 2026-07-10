@@ -3,7 +3,7 @@
  * and above the attachments (PRD §12.2). One clear standalone card per section
  * node; renders nothing when the node has no published quizzes.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
 

@@ -7,7 +7,7 @@
  * lecture; editing that lecture's own content happens in its normal editor.
  * All writes are is_content_manager-gated DEFINER RPCs.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 

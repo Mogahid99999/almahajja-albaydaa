@@ -1,5 +1,5 @@
 import { Pressable, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 
 import type { WeekProgress } from '@/api/types';
 import { colors } from '@/constants/theme';

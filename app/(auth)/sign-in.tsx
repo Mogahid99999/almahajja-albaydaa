@@ -1,4 +1,5 @@
-import { Feather, FontAwesome } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Platform, Pressable, TextInput, View } from 'react-native';

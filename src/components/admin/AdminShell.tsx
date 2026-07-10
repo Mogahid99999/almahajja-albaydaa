@@ -7,7 +7,7 @@
  *   top bar gains a hamburger that opens the same nav as an overlay drawer, and
  *   content fills the full width (single column). No horizontal overflow.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React, { type ReactNode, useState } from 'react';
 import {

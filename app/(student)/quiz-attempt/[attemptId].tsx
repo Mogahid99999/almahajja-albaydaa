@@ -7,7 +7,7 @@
  * a calm countdown seeded from the SERVER's remaining seconds that auto-submits
  * at zero. Already-submitted attempts redirect straight to their result.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, View } from 'react-native';

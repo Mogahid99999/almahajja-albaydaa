@@ -2,7 +2,7 @@
  * Transport controls: forward-10s · play/pause (78px brass) · back-10s.
  * Feather icons for rotate arrows, Feather play/pause for center button.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Pressable, View } from 'react-native';
 
 import { colors, shadows } from '@/constants/theme';

@@ -4,7 +4,7 @@
  * Searchable, status-filterable list of accounts (rendered as stacked cards so
  * it never overflows a phone). Each card opens the per-user detail + actions.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {

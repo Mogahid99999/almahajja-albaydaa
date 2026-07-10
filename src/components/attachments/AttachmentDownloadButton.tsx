@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { ActivityIndicator, Pressable } from 'react-native';
 
 import type { Attachment } from '@/api/types';

@@ -3,7 +3,7 @@
  * migration 0061. Same visual/structural pattern as app/admin/reports.tsx,
  * minus the content-specific actions (no hide/ban here — just triage status).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 

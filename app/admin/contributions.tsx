@@ -7,7 +7,7 @@
  *   «الأسئلة» — every question incl. sheikh-only + anonymous (real asker shown
  *     to admin); حذف · حظر السائل. Answering stays the sheikh's job.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import {
   ActivityIndicator,

@@ -8,7 +8,7 @@
  *
  * Empty state: calm message "لا توجد محاضرات واردة".
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useState } from 'react';
 import {
   Pressable,

@@ -7,7 +7,7 @@
  * and a delete action. Anonymity: the RPC already replaced anonymous askers
  * with «سائل» — this screen never sees their identity.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {

@@ -4,7 +4,7 @@
  * action so the row, the player strip, and the admin manager stay consistent.
  */
 import { Linking } from 'react-native';
-import type { Feather } from '@expo/vector-icons';
+import type Feather from '@expo/vector-icons/Feather';
 import type { useRouter } from 'expo-router';
 
 import type { Attachment, AttachmentType } from '@/api/types';

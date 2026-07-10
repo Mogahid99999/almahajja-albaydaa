@@ -18,7 +18,7 @@
  * the app from opening on a network hiccup. Web (admin dashboard) is exempt
  * from both mechanisms.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useQuery } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { useState, type ReactNode } from 'react';

@@ -7,7 +7,7 @@
  * `onRemove` is provided (admin), trailing reorder + delete controls are shown
  * instead of the open/download affordance.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 

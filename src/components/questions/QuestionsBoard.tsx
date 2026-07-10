@@ -6,7 +6,7 @@
  * plus a compose card (body + إخفاء الاسم + للعامة/للشيخ فقط), registered-only —
  * guests get the calm quiz-style register nudge.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {

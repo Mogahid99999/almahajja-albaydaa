@@ -5,7 +5,7 @@
  * is_content_manager-aware useAdminLectures() hook. Candidates are filtered
  * client-side to status === 'published' AND not already in the curated set.
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useMemo, useState } from 'react';
 import {
   Modal,

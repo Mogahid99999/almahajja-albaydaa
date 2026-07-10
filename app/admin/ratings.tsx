@@ -3,7 +3,7 @@
  * Same visual/structural pattern as app/admin/feedback.tsx, simplified (no
  * triage status — just a list + delete).
  */
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 
