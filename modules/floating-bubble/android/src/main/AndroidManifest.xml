@@ -1,7 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- Draw the resume bubble over other apps. Special permission: the user must
-       still grant it in system settings (behind the in-app consent toggle);
-       without this declaration Settings.canDrawOverlays() is always false even
-       when the app-op is allowed, so the bubble could never surface. -->
-  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-</manifest>
