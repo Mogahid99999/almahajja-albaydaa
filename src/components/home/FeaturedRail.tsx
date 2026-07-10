@@ -53,7 +53,7 @@ export function FeaturedRail({ lectures }: Props) {
   }
 
   return (
-    <View style={{ marginTop: 28 }}>
+    <View style={{ marginTop: 12 }}>
       <View style={{ paddingHorizontal: spacing.screenH }}>
         <SectionTitle
           title="مختارات"

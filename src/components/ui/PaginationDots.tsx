@@ -1,13 +1,15 @@
-import { I18nManager, View } from 'react-native';
+import { View } from 'react-native';
 
 import { colors } from '@/constants/theme';
 
 /**
  * Small dot row marking scroll position under a horizontal rail (one dot per
- * "page" of cards). `I18nManager.isRTL` isn't reliably true in every runtime
- * this app ships to (see app/_layout.tsx's note on Expo Go), so the row
- * direction is picked explicitly rather than assumed from native mirroring —
- * the first dot (page 0, where the rail starts) always renders rightmost.
+ * "page" of cards). Verified on-device that a plain `flexDirection: 'row'`
+ * View does NOT get auto-mirrored by native RTL here the way `ScrollView`'s
+ * own RTL-aware scrolling does (confirmed: the rail's cards render correctly
+ * right-to-left while a same-build `row` dot row rendered left-to-right) —
+ * so `row-reverse` is hardcoded rather than derived from `I18nManager.isRTL`,
+ * guaranteeing the first dot (page 0, where the rail starts) renders rightmost.
  */
 export function PaginationDots({ count, activeIndex }: { count: number; activeIndex: number }) {
   if (count <= 1) return null;
@@ -15,7 +17,7 @@ export function PaginationDots({ count, activeIndex }: { count: number; activeIn
   return (
     <View
       style={{
-        flexDirection: I18nManager.isRTL ? 'row' : 'row-reverse',
+        flexDirection: 'row-reverse',
         justifyContent: 'center',
         gap: 6,
         marginTop: 14,
