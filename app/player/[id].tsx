@@ -35,6 +35,7 @@ import { LessonToolsRow } from '@/components/player/LessonToolsRow';
 import { PlayerAttachmentsStrip } from '@/components/attachments/PlayerAttachmentsStrip';
 import { playLecture, preloadLecture, seekTo, stop } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
+import { useTourStore } from '@/stores/tourStore';
 import { useLecturePlayback } from '@/hooks/useLecture';
 
 export default function PlayerScreen() {
@@ -112,6 +113,12 @@ export default function PlayerScreen() {
   // Lecture metadata (eyebrow, sectionTitle) — loaded once from the API.
   const { data } = useLecturePlayback(id);
 
+  // The guided tour's "player" step lands here just to show what the screen
+  // looks like — it must never start real audio playback on a lecture the
+  // student didn't choose (e.g. the newest "Recently Added" item used as the
+  // tour's placeholder lectureId).
+  const isTourActive = useTourStore((s) => s.isActive);
+
   // Live playback state from the shared store — per-field selectors so a
   // position tick (every ~1s while playing) only re-renders the Waveform leaf
   // below, not this whole screen (artwork, title, top bar).
@@ -138,7 +145,7 @@ export default function PlayerScreen() {
   // deep-link `t` overrides the saved resume position (guarded so it never
   // rewinds a student who has since listened further — see playLecture).
   useEffect(() => {
-    if (id) {
+    if (id && !isTourActive) {
       setUnavailable(false);
       const startAtSec = t != null ? Number(t) : NaN;
       void preloadLecture(id, Number.isFinite(startAtSec) ? { startAtSec } : undefined).catch(() =>
@@ -146,7 +153,7 @@ export default function PlayerScreen() {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, t]);
+  }, [id, t, isTourActive]);
 
   // Retry a failed load (Phase 3.5): the player is already "on" this lecture id,
   // so a plain playLecture(id) would just toggle play/pause (see its early
