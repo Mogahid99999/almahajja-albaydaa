@@ -65,12 +65,12 @@ export const queryKeys = {
   sheikhs: ['sheikhs'] as const,
 
   // Q&A · Notes · Benefits (V6)
-  publicQuestions: (scope: string, lectureId?: string) =>
-    ['questions', 'public', scope, lectureId ?? 'all'] as const,
-  myQuestions: (scope: string, lectureId?: string) =>
-    ['questions', 'mine', scope, lectureId ?? 'all'] as const,
-  questionInbox: (scope?: string, status?: string) =>
-    ['questions', 'inbox', scope ?? 'all', status ?? 'all'] as const,
+  publicQuestions: (scope: string, lectureId?: string, category?: string) =>
+    ['questions', 'public', scope, lectureId ?? 'all', category ?? 'all'] as const,
+  myQuestions: (scope: string, lectureId?: string, category?: string) =>
+    ['questions', 'mine', scope, lectureId ?? 'all', category ?? 'all'] as const,
+  questionInbox: (scope?: string, status?: string, category?: string) =>
+    ['questions', 'inbox', scope ?? 'all', status ?? 'all', category ?? 'all'] as const,
   lectureNote: (lectureId: string) => ['notes', lectureId] as const,
   lectureBenefits: (lectureId: string) => ['benefits', lectureId] as const,
   adminBenefits: (lectureId?: string) => ['admin', 'benefits', lectureId ?? 'all'] as const,

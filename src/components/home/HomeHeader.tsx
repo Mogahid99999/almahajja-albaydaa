@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Platform, StatusBar, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/constants/theme';
 import { IconButton, Logo, Txt } from '@/components/ui';
 import { FeedbackSheet } from '@/components/feedback/FeedbackSheet';
+import { useCurrentUser } from '@/hooks/useAuth';
 
 /**
  * Home screen top bar — logo + full app name (with tashkeel) + subtitle, plus
@@ -19,10 +21,13 @@ import { FeedbackSheet } from '@/components/feedback/FeedbackSheet';
  * to the bottom nav bar (see src/components/navigation/BottomNavBar.tsx).
  */
 export function HomeHeader() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const topInset =
     Platform.OS === 'android' ? Math.max(insets.top, StatusBar.currentHeight ?? 0) : insets.top;
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const { data: user } = useCurrentUser();
+  const isGuest = user?.isGuest ?? true;
 
   return (
     <View
@@ -52,13 +57,23 @@ export function HomeHeader() {
           </View>
         </View>
 
-        {/* Left: إرسال ملاحظة */}
-        <IconButton
-          icon="message-circle"
-          variant="ghost"
-          onPress={() => setFeedbackOpen(true)}
-          accessibilityLabel="إرسال ملاحظة"
-        />
+        {/* Left: تسجيل الدخول (guests only) + إرسال ملاحظة */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {isGuest ? (
+            <IconButton
+              icon="log-in"
+              variant="ghost"
+              onPress={() => router.push('/sign-in')}
+              accessibilityLabel="تسجيل الدخول"
+            />
+          ) : null}
+          <IconButton
+            icon="message-circle"
+            variant="ghost"
+            onPress={() => setFeedbackOpen(true)}
+            accessibilityLabel="إرسال ملاحظة"
+          />
+        </View>
       </View>
 
       <FeedbackSheet visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />

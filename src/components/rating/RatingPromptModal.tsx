@@ -1,4 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, TextInput, View, type ViewStyle } from 'react-native';
 
@@ -24,11 +25,10 @@ function Star({
       hitSlop={8}
       style={({ pressed }) => [{ padding: 4 }, pressed && { opacity: 0.7 }]}
     >
-      <Feather
-        name="star"
+      <MaterialCommunityIcons
+        name={filled ? 'star' : 'star-outline'}
         size={32}
         color={filled ? colors.accentBrass : colors.borderSand2}
-        style={filled ? { opacity: 1 } : undefined}
       />
     </Pressable>
   );

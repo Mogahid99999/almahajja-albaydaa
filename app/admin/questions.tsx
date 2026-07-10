@@ -22,7 +22,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import type { InboxQuestion, QuestionScope, QuestionStatus } from '@/api/questions';
+import type { InboxQuestion, QuestionCategory, QuestionScope, QuestionStatus } from '@/api/questions';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Txt } from '@/components/ui';
@@ -122,8 +122,13 @@ function QuestionCard({
         </View>
       </View>
 
-      {/* Secondary tags: audience + anonymity hint */}
+      {/* Secondary tags: category + audience + anonymity hint */}
       <View style={styles.tagRow}>
+        <View style={[styles.badge, q.category === 'fatwa' && styles.badgePrivate]}>
+          <Txt size={10.5} weight="semibold" color={q.category === 'fatwa' ? colors.accentBrassMuted : colors.textMuted}>
+            {q.category === 'fatwa' ? 'فتوى شرعية' : 'سؤال عام'}
+          </Txt>
+        </View>
         {q.audience === 'sheikh' ? (
           <View style={[styles.badge, styles.badgePrivate]}>
             <Txt size={10.5} weight="semibold" color={colors.accentBrassMuted}>
@@ -280,6 +285,7 @@ export default function AdminQuestions() {
   useAdminOnly();
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [status, setStatus] = useState<QuestionStatus>('pending');
+  const [category, setCategory] = useState<QuestionCategory | 'all'>('all');
   const [pendingDelete, setPendingDelete] = useState<InboxQuestion | null>(null);
   const [pendingBlock, setPendingBlock] = useState<InboxQuestion | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -295,6 +301,7 @@ export default function AdminQuestions() {
   const { data: questions, isLoading } = useQuestionInbox({
     scope: scope === 'all' ? undefined : scope,
     status,
+    category: category === 'all' ? undefined : category,
   });
 
   const list = questions ?? [];
@@ -330,10 +337,15 @@ export default function AdminQuestions() {
         <FilterChip label="عامة" active={scope === 'general'} onPress={() => setScope('general')} />
         <FilterChip label="الدروس" active={scope === 'lecture'} onPress={() => setScope('lecture')} />
       </View>
-      <View style={[styles.filterRow, { marginBottom: 18 }]}>
+      <View style={styles.filterRow}>
         <FilterChip label="بانتظار الرد" active={status === 'pending'} onPress={() => setStatus('pending')} />
         <FilterChip label="تمت الإجابة" active={status === 'answered'} onPress={() => setStatus('answered')} />
         <FilterChip label="المخفية" active={status === 'hidden'} onPress={() => setStatus('hidden')} />
+      </View>
+      <View style={[styles.filterRow, { marginBottom: 18 }]}>
+        <FilterChip label="كل التصنيفات" active={category === 'all'} onPress={() => setCategory('all')} />
+        <FilterChip label="سؤال عام" active={category === 'general'} onPress={() => setCategory('general')} />
+        <FilterChip label="فتوى شرعية" active={category === 'fatwa'} onPress={() => setCategory('fatwa')} />
       </View>
 
       {!isLoading && list.length > 0 ? (

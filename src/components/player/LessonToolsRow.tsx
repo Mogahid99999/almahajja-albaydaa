@@ -5,7 +5,7 @@
  * A subtle brass dot on ملاحظاتي marks an existing note.
  */
 import Feather from '@expo/vector-icons/Feather';
-import { Pressable, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,7 +13,8 @@ import { Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useLectureNote } from '@/hooks/useNotes';
-import { DownloadButton } from '@/components/DownloadButton';
+import { useDownload } from '@/hooks/useDownloads';
+import { toArabicDigits } from '@/lib/format';
 
 type Router = ReturnType<typeof useRouter>;
 
@@ -69,6 +70,54 @@ function ToolChip({
   );
 }
 
+/** Download chip — mirrors ToolChip's pill styling but reflects idle/progress/done state. */
+function DownloadChip({ lectureId }: { lectureId: string }) {
+  const { status, progress, totalBytes, download, remove } = useDownload(lectureId);
+  if (Platform.OS === 'web') return null;
+
+  const label =
+    status === 'downloaded'
+      ? 'محمّل'
+      : status === 'downloading'
+        ? totalBytes
+          ? `${toArabicDigits(String(Math.round(progress * 100)))}٪`
+          : 'جارٍ التحميل'
+        : 'تحميل';
+
+  return (
+    <Pressable
+      onPress={status === 'downloaded' ? remove : status === 'idle' || status === 'error' ? download : undefined}
+      accessibilityRole="button"
+      accessibilityLabel={status === 'downloaded' ? 'حذف التحميل' : 'تحميل الدرس'}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        paddingVertical: 9,
+        paddingHorizontal: 13,
+        borderRadius: radius.pill,
+        borderWidth: 1,
+        borderColor: 'rgba(201,164,99,0.4)',
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      {status === 'downloading' && !totalBytes ? (
+        <ActivityIndicator size="small" color={colors.accentBrass} />
+      ) : (
+        <Feather
+          name={status === 'downloaded' ? 'check-circle' : status === 'error' ? 'alert-circle' : 'download'}
+          size={14}
+          color={status === 'error' ? colors.stateDanger : colors.accentBrass}
+        />
+      )}
+      <Txt size={12.5} weight="medium" color={colors.onTealPrimary}>
+        {label}
+      </Txt>
+    </Pressable>
+  );
+}
+
 export function LessonToolsRow({ lectureId }: { lectureId: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -107,27 +156,7 @@ export function LessonToolsRow({ lectureId }: { lectureId: string }) {
         label="الأسئلة"
         onPress={() => push(router, `/(student)/lecture-questions/${lectureId}`)}
       />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="تحميل الدرس"
-        style={({ pressed }) => ({
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 7,
-          paddingVertical: 9,
-          paddingHorizontal: 13,
-          borderRadius: radius.pill,
-          borderWidth: 1,
-          borderColor: 'rgba(201,164,99,0.4)',
-          backgroundColor: 'rgba(255,255,255,0.06)',
-          opacity: pressed ? 0.7 : 1,
-        })}
-      >
-        <Feather name="download" size={14} color={colors.accentBrass} />
-        <Txt size={12.5} weight="medium" color={colors.onTealPrimary}>
-          تحميل
-        </Txt>
-      </Pressable>
+      <DownloadChip lectureId={lectureId} />
     </View>
   );
 }

@@ -11,6 +11,7 @@ import {
   setQuestionHidden,
   type InboxQuestion,
   type QuestionAudience,
+  type QuestionCategory,
   type QuestionScope,
   type QuestionStatus,
 } from '@/api/questions';
@@ -18,18 +19,27 @@ import { queryKeys } from '@/constants/queryKeys';
 
 const QUESTION_INBOX_ROOT = ['questions', 'inbox'] as const;
 
-export function usePublicQuestions(scope: QuestionScope, lectureId?: string) {
+export function usePublicQuestions(
+  scope: QuestionScope,
+  lectureId?: string,
+  category?: QuestionCategory,
+) {
   return useQuery({
-    queryKey: queryKeys.publicQuestions(scope, lectureId),
-    queryFn: () => getPublicQuestions(scope, lectureId),
+    queryKey: queryKeys.publicQuestions(scope, lectureId, category),
+    queryFn: () => getPublicQuestions(scope, lectureId, category),
     enabled: scope === 'general' || !!lectureId,
   });
 }
 
-export function useMyQuestions(scope: QuestionScope, lectureId?: string, enabled = true) {
+export function useMyQuestions(
+  scope: QuestionScope,
+  lectureId?: string,
+  enabled = true,
+  category?: QuestionCategory,
+) {
   return useQuery({
-    queryKey: queryKeys.myQuestions(scope, lectureId),
-    queryFn: () => getMyQuestions(scope, lectureId),
+    queryKey: queryKeys.myQuestions(scope, lectureId, category),
+    queryFn: () => getMyQuestions(scope, lectureId, category),
     enabled: enabled && (scope === 'general' || !!lectureId),
   });
 }
@@ -43,9 +53,10 @@ export function useAskQuestion() {
       isAnonymous: boolean;
       audience: QuestionAudience;
       body: string;
+      category: QuestionCategory;
     }) => askQuestion(input),
     onSuccess: (_id, vars) => {
-      void qc.invalidateQueries({ queryKey: queryKeys.myQuestions(vars.scope, vars.lectureId) });
+      void qc.invalidateQueries({ queryKey: ['questions', 'mine', vars.scope] });
     },
   });
 }
@@ -66,9 +77,10 @@ export function useDeleteOwnQuestion() {
 export function useQuestionInbox(filter: {
   scope?: QuestionScope;
   status?: QuestionStatus;
+  category?: QuestionCategory;
 }) {
   return useQuery({
-    queryKey: queryKeys.questionInbox(filter.scope, filter.status),
+    queryKey: queryKeys.questionInbox(filter.scope, filter.status, filter.category),
     queryFn: () => getQuestionInbox(filter),
   });
 }

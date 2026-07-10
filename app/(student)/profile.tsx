@@ -8,6 +8,7 @@
  * Route: /(student)/profile
  * Design tokens: manuscript-warm palette, RTL, calm tone.
  */
+import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, Share, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter, Link } from 'expo-router';
@@ -19,7 +20,9 @@ import { useHome } from '@/hooks/useSections';
 import { useShareContent } from '@/hooks/useAppContent';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { useTourStore } from '@/stores/tourStore';
+import { hasRated } from '@/lib/ratingPrompt';
 import { colors, radius, shadows } from '@/constants/theme';
+import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
 
 import { Card } from '@/components/ui/Card';
 import { Divider } from '@/components/ui/Divider';
@@ -125,6 +128,11 @@ export default function ProfileScreen() {
 
   const miniPad = useMiniPlayerPad();
   const { refreshing, onRefresh } = usePullToRefresh([refetchUser, refetchHome]);
+  const [rated, setRated] = useState(true);
+  const [ratingOpen, setRatingOpen] = useState(false);
+  useEffect(() => {
+    void hasRated().then(setRated);
+  }, []);
   const isGuest = user?.isGuest ?? true;
   const email = user?.email ?? '';
   const name = user?.displayName?.trim() || '';
@@ -279,6 +287,12 @@ export default function ProfileScreen() {
           label="عن المنصة"
           onPress={() => router.push('/(student)/about')}
         />
+        {!rated ? (
+          <>
+            <Divider />
+            <LinkRow icon="star" label="قيّم التطبيق" onPress={() => setRatingOpen(true)} />
+          </>
+        ) : null}
         <Divider />
         <LinkRow icon="share-2" label="شارك التطبيق" onPress={onShare} />
         <Divider />
@@ -360,6 +374,14 @@ export default function ProfileScreen() {
           />
         </Card>
       ) : null}
+
+      <RatingPromptModal
+        visible={ratingOpen}
+        onClose={() => {
+          setRatingOpen(false);
+          void hasRated().then(setRated);
+        }}
+      />
     </Screen>
   );
 }

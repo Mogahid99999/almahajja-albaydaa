@@ -67,3 +67,12 @@ export async function markRatingSubmitted(): Promise<void> {
     // Non-fatal.
   }
 }
+
+/** Whether the user has already rated (used to hide the profile "rate" row). */
+export async function hasRated(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(HAS_RATED_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}

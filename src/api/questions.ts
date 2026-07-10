@@ -15,6 +15,8 @@ import { BlockedWordError, isBlockedWordError } from '@/api/reports';
 export type QuestionScope = 'general' | 'lecture';
 export type QuestionAudience = 'public' | 'sheikh';
 export type QuestionStatus = 'pending' | 'answered' | 'hidden';
+/** general = plain question, fatwa = formal شرعية ruling request. */
+export type QuestionCategory = 'general' | 'fatwa';
 
 /** A row in the public answered list. `askerDisplay` is null when anonymous. */
 export type PublicQuestion = {
@@ -23,6 +25,7 @@ export type PublicQuestion = {
   answerBody: string | null;
   askerDisplay: string | null;
   isMine: boolean;
+  category: QuestionCategory;
   createdAt: string;
   answeredAt: string | null;
 };
@@ -35,6 +38,7 @@ export type MyQuestion = {
   isAnonymous: boolean;
   audience: QuestionAudience;
   status: QuestionStatus;
+  category: QuestionCategory;
   createdAt: string;
   answeredAt: string | null;
 };
@@ -50,6 +54,7 @@ export type InboxQuestion = {
   isAnonymous: boolean;
   audience: QuestionAudience;
   status: QuestionStatus;
+  category: QuestionCategory;
   askerDisplay: string;
   askerId: string | null;
   createdAt: string;
@@ -59,11 +64,13 @@ export type InboxQuestion = {
 export async function getPublicQuestions(
   scope: QuestionScope,
   lectureId?: string,
+  category?: QuestionCategory,
 ): Promise<PublicQuestion[]> {
   if (USE_MOCK) return [];
   const { data, error } = await supabase.rpc('get_public_questions', {
     p_scope: scope,
     ...(lectureId ? { p_lecture_id: lectureId } : {}),
+    ...(category ? { p_category: category } : {}),
   });
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
@@ -72,6 +79,7 @@ export async function getPublicQuestions(
     answerBody: r.answer_body ?? null,
     askerDisplay: r.asker_display ?? null,
     isMine: !!r.is_mine,
+    category: (r.category ?? 'general') as QuestionCategory,
     createdAt: r.created_at,
     answeredAt: r.answered_at ?? null,
   }));
@@ -80,11 +88,13 @@ export async function getPublicQuestions(
 export async function getMyQuestions(
   scope: QuestionScope,
   lectureId?: string,
+  category?: QuestionCategory,
 ): Promise<MyQuestion[]> {
   if (USE_MOCK) return [];
   const { data, error } = await supabase.rpc('get_my_questions', {
     p_scope: scope,
     ...(lectureId ? { p_lecture_id: lectureId } : {}),
+    ...(category ? { p_category: category } : {}),
   });
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
@@ -94,6 +104,7 @@ export async function getMyQuestions(
     isAnonymous: !!r.is_anonymous,
     audience: r.audience as QuestionAudience,
     status: r.status as QuestionStatus,
+    category: (r.category ?? 'general') as QuestionCategory,
     createdAt: r.created_at,
     answeredAt: r.answered_at ?? null,
   }));
@@ -105,6 +116,7 @@ export async function askQuestion(input: {
   isAnonymous: boolean;
   audience: QuestionAudience;
   body: string;
+  category: QuestionCategory;
 }): Promise<string> {
   if (USE_MOCK) return '';
   // p_lecture_id has no SQL default — general questions must pass an explicit null.
@@ -114,6 +126,7 @@ export async function askQuestion(input: {
     p_is_anonymous: input.isAnonymous,
     p_audience: input.audience,
     p_body: input.body,
+    p_category: input.category,
   });
   if (error) {
     if (isBlockedWordError(error)) throw new BlockedWordError();
@@ -136,11 +149,13 @@ export async function deleteOwnQuestion(questionId: string): Promise<void> {
 export async function getQuestionInbox(filter: {
   scope?: QuestionScope;
   status?: QuestionStatus;
+  category?: QuestionCategory;
 }): Promise<InboxQuestion[]> {
   if (USE_MOCK) return [];
   const { data, error } = await supabase.rpc('get_question_inbox', {
     ...(filter.scope ? { p_scope: filter.scope } : {}),
     ...(filter.status ? { p_status: filter.status } : {}),
+    ...(filter.category ? { p_category: filter.category } : {}),
   });
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
@@ -153,6 +168,7 @@ export async function getQuestionInbox(filter: {
     isAnonymous: !!r.is_anonymous,
     audience: r.audience as QuestionAudience,
     status: r.status as QuestionStatus,
+    category: (r.category ?? 'general') as QuestionCategory,
     askerDisplay: r.asker_display ?? 'طالب علم',
     askerId: r.asker_id ?? null,
     createdAt: r.created_at,

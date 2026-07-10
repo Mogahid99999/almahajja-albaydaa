@@ -20,7 +20,13 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import type { MyQuestion, PublicQuestion, QuestionAudience, QuestionScope } from '@/api/questions';
+import type {
+  MyQuestion,
+  PublicQuestion,
+  QuestionAudience,
+  QuestionCategory,
+  QuestionScope,
+} from '@/api/questions';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ReportSheet } from '@/components/reports/ReportSheet';
 import { Card, Txt } from '@/components/ui';
@@ -131,6 +137,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
   const [body, setBody] = useState('');
   const [anonymous, setAnonymous] = useState(false);
   const [audience, setAudience] = useState<QuestionAudience>('public');
+  const [category, setCategory] = useState<QuestionCategory>('general');
   const [error, setError] = useState('');
   // Captured at submit time so the confirmation states clearly whether the
   // asker's name will show (the toggles may change before the line is read).
@@ -143,7 +150,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
     if (!text) return;
     setError('');
     ask.mutate(
-      { scope, lectureId, isAnonymous: anonymous, audience, body: text },
+      { scope, lectureId, isAnonymous: anonymous, audience, body: text, category },
       {
         onSuccess: () => {
           setBody('');
@@ -180,6 +187,20 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
         textAlignVertical="top"
         style={styles.composerInput}
       />
+
+      {/* Category: سؤال عام أو فتوى شرعية */}
+      <View style={styles.tabsRow}>
+        <SegChip
+          label="سؤال عام"
+          active={category === 'general'}
+          onPress={() => setCategory('general')}
+        />
+        <SegChip
+          label="فتوى شرعية"
+          active={category === 'fatwa'}
+          onPress={() => setCategory('fatwa')}
+        />
+      </View>
 
       {/* Options: anonymity + audience */}
       <View style={styles.optionsRow}>
@@ -238,6 +259,17 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
   );
 }
 
+function CategoryBadge({ category }: { category: QuestionCategory }) {
+  const isFatwa = category === 'fatwa';
+  return (
+    <View style={[styles.categoryBadge, isFatwa && styles.categoryBadgeFatwa]}>
+      <Txt size={10.5} weight="semibold" color={isFatwa ? colors.accentBrassMuted : colors.primaryTeal600}>
+        {isFatwa ? 'فتوى شرعية' : 'سؤال عام'}
+      </Txt>
+    </View>
+  );
+}
+
 function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () => void }) {
   return (
     <Card style={styles.qCard}>
@@ -246,6 +278,7 @@ function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () =
         <Txt size={12.5} weight="medium" color={colors.textSlate} numberOfLines={1} style={{ flex: 1 }}>
           {q.askerDisplay ?? 'سائل'}
         </Txt>
+        <CategoryBadge category={q.category} />
         <Txt size={11.5} color={colors.textGhost}>
           {arSince(q.createdAt)}
         </Txt>
@@ -305,6 +338,7 @@ function MyQuestionCard({
             {pending ? 'قيد المراجعة' : 'تمت الإجابة'}
           </Txt>
         </View>
+        <CategoryBadge category={q.category} />
         {q.audience === 'sheikh' ? (
           <Txt size={11} color={colors.textGhost}>
             للشيخ فقط
@@ -379,13 +413,15 @@ export function QuestionsBoard({
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
   const [tab, setTab] = useState<'public' | 'mine'>('public');
+  const [categoryFilter, setCategoryFilter] = useState<QuestionCategory | 'all'>('all');
   const [pendingDelete, setPendingDelete] = useState<MyQuestion | null>(null);
   const deleteOwn = useDeleteOwnQuestion();
   const [reportTarget, setReportTarget] = useState<PublicQuestion | MyQuestion | null>(null);
   const reportContent = useReportContent();
 
-  const publicQ = usePublicQuestions(scope, lectureId);
-  const myQ = useMyQuestions(scope, lectureId, !isGuest);
+  const activeCategory = categoryFilter === 'all' ? undefined : categoryFilter;
+  const publicQ = usePublicQuestions(scope, lectureId, activeCategory);
+  const myQ = useMyQuestions(scope, lectureId, !isGuest, activeCategory);
 
   const isLoading = tab === 'public' ? publicQ.isLoading : myQ.isLoading;
   const data: (PublicQuestion | MyQuestion)[] =
@@ -419,6 +455,21 @@ export function QuestionsBoard({
         {!isGuest ? (
           <SegChip label="أسئلتي" active={tab === 'mine'} onPress={() => setTab('mine')} />
         ) : null}
+      </View>
+
+      {/* Category filter: الكل / سؤال عام / فتوى شرعية */}
+      <View style={[styles.tabsRow, { marginBottom: 14 }]}>
+        <SegChip label="الكل" active={categoryFilter === 'all'} onPress={() => setCategoryFilter('all')} />
+        <SegChip
+          label="سؤال عام"
+          active={categoryFilter === 'general'}
+          onPress={() => setCategoryFilter('general')}
+        />
+        <SegChip
+          label="فتوى شرعية"
+          active={categoryFilter === 'fatwa'}
+          onPress={() => setCategoryFilter('fatwa')}
+        />
       </View>
     </>
   );
@@ -633,6 +684,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.sm,
+  } as ViewStyle,
+
+  categoryBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 9,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(44,97,87,0.08)',
+  } as ViewStyle,
+
+  categoryBadgeFatwa: {
+    backgroundColor: 'rgba(176,137,79,0.12)',
   } as ViewStyle,
 
   nameBadge: {
