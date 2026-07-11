@@ -103,13 +103,18 @@ export function useRegister() {
 
       // First-time "How it works" tour (TourCard): starts once, right here,
       // right after registration — see tourStore for why this is in-session
-      // only rather than a persisted account flag.
+      // only rather than a persisted account flag. suggestStartHere makes the
+      // «ابدأ من هنا» recommendation (StartHereCard) follow this tour's end —
+      // registration tours only, not the الحساب replay.
       const home = qc.getQueryData<HomeData>(queryKeys.home);
-      useTourStore.getState().start({
-        sectionId: home?.sections[0]?.id ?? null,
-        lectureId:
-          home?.continueListening?.id ?? home?.newlyAdded[0]?.id ?? home?.featured[0]?.id ?? null,
-      });
+      useTourStore.getState().start(
+        {
+          sectionId: home?.sections[0]?.id ?? null,
+          lectureId:
+            home?.continueListening?.id ?? home?.newlyAdded[0]?.id ?? home?.featured[0]?.id ?? null,
+        },
+        { suggestStartHere: true },
+      );
     },
   });
 }

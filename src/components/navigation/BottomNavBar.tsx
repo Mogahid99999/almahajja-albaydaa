@@ -1,6 +1,6 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter, usePathname } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -41,7 +41,10 @@ export const BOTTOM_NAV_BAR_HEIGHT = 64;
 /** Total vertical clearance a tab-root screen should reserve for the floating bar. */
 export const BOTTOM_NAV_CLEARANCE = BOTTOM_NAV_BAR_HEIGHT + 24;
 
-const SPRING = { damping: 16, stiffness: 160, mass: 0.6 };
+// Near-instant but still visibly sliding — settles in ~120ms. The icon color
+// rides this same spring (see TabButton), so a sluggish spring here reads as
+// "the active color lags the tap".
+const SPRING = { damping: 26, stiffness: 500, mass: 0.4 };
 
 function activeIndexFor(pathname: string): number {
   const i = TABS.findIndex((t) => t.path === pathname);
@@ -58,9 +61,23 @@ export function BottomNavBar() {
   const tabWidth = rowWidth / TABS.length;
   const activeIndex = useSharedValue(activeIndexFor(pathname));
 
+  // Where the pill is currently headed. Lets a tab press start the spring
+  // immediately without the pathname-effect below restarting the same
+  // animation once navigation lands.
+  const targetIndex = useRef(activeIndexFor(pathname));
+
+  function animateTo(index: number) {
+    if (targetIndex.current === index) return;
+    targetIndex.current = index;
+    activeIndex.value = withSpring(index, SPRING);
+  }
+
   useEffect(() => {
-    activeIndex.value = withSpring(activeIndexFor(pathname), SPRING);
-  }, [pathname, activeIndex]);
+    // Sync for non-tap navigations (back gesture, deep links); a tap has
+    // already animated here and this is a no-op.
+    animateTo(activeIndexFor(pathname));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const pillStyle = useAnimatedStyle(() => ({
     opacity: tabWidth > 0 ? 1 : 0,
@@ -128,7 +145,16 @@ export function BottomNavBar() {
               index={i}
               activeIndex={activeIndex}
               showDot={tab.key === 'notifications' && unread > 0}
-              onPress={() => router.navigate(tab.path)}
+              onActivate={() => {
+                animateTo(i);
+                // Defer one frame: Reanimated only flushes the spring to the
+                // UI thread after the current JS task, and navigate() mounts
+                // the destination screen inside that same task — navigating
+                // immediately would stall JS before the spring ever starts.
+                // One frame later the spring is already running on the UI
+                // thread, immune to the mount.
+                requestAnimationFrame(() => router.navigate(tab.path));
+              }}
             />
           ))}
         </View>
@@ -142,13 +168,13 @@ function TabButton({
   index,
   activeIndex,
   showDot,
-  onPress,
+  onActivate,
 }: {
   tab: Tab;
   index: number;
   activeIndex: SharedValue<number>;
   showDot: boolean;
-  onPress: () => void;
+  onActivate: () => void;
 }) {
   const iconStyle = useAnimatedStyle(() => {
     const progress = 1 - Math.min(Math.abs(activeIndex.value - index), 1);
@@ -176,7 +202,13 @@ function TabButton({
 
   return (
     <Pressable
-      onPress={onPress}
+      // Switch on touch-DOWN like native tab bars — waiting for the release
+      // (onPress) adds the entire finger-dwell time to the perceived latency.
+      // onPress stays as the fallback for screen-reader activation, which
+      // never emits pressIn; double-firing is harmless (the pill animation is
+      // target-guarded and router.navigate dedupes the current route).
+      onPressIn={onActivate}
+      onPress={onActivate}
       accessibilityRole="button"
       accessibilityLabel={tab.label}
       accessibilityState={{ selected: isActive }}

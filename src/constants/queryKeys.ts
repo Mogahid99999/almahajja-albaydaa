@@ -87,11 +87,14 @@ export const queryKeys = {
   adminAnalytics: ['admin', 'analytics'] as const,
   adminRatingsSummary: ['admin', 'ratingsSummary'] as const,
   adminRatingsList: ['admin', 'ratingsList'] as const,
-  adminUsers: (search: string) => ['admin', 'users', search] as const,
+  adminUsers: (search: string, registeredOnly = false, status?: string) =>
+    ['admin', 'users', search, registeredOnly, status ?? null] as const,
   adminUserDetail: (userId: string) => ['admin', 'user', userId] as const,
+  adminBuddies: ['admin', 'buddies'] as const,
   aboutContent: ['appContent', 'about'] as const,
   supportContact: ['appContent', 'support'] as const,
   qnaNotice: ['appContent', 'qnaNotice'] as const,
   shareContent: ['appContent', 'share'] as const,
+  startHereLecture: ['appContent', 'startHere'] as const,
   adminConfig: ['admin', 'config'] as const,
 } as const;

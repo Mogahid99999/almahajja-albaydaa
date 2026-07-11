@@ -6,9 +6,11 @@
  * the thumb only while actively dragging, and fades out on release.
  *
  * All positions (thumb/fill/bubble) are computed manually in JS as absolute
- * left-offsets in px, not via flex direction — so this subtree is immune to
- * the app's global RTL flex-mirroring by construction and needs no direction
- * override.
+ * left-offsets in px (translateX / left:0), never via flex direction, so they
+ * live in a plain physical L→R coordinate space (min rate on the left, max on
+ * the right) — the natural reading order for these ×-numbers. The gesture's
+ * local `e.x` shares that same physical space (see logicalX), so under global
+ * forceRTL the drag and the visuals stay in agreement without any mirroring.
  */
 import { useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
@@ -35,6 +37,16 @@ const NORMAL_RATE = 1.0;
  * is inside this radius the THUMB itself also snaps onto the ×1 tick (not just
  * the reported rate), so ×1.0 visibly "catches" the drag. */
 const NORMAL_SNAP_PX = 14;
+
+// react-native-gesture-handler's Pan `e.x` is a LOCAL coordinate that is NOT
+// RTL-mirrored (unlike the old touch-responder pageX Waveform uses). So x=0 is
+// the physical left edge in either direction — we just clamp it. All the rate
+// math and the absolute-positioned fill/thumb/bubble live in this same physical
+// L→R space (min rate on the left, max on the right), so drag and visuals agree.
+function logicalX(rawX: number, width: number): number {
+  'worklet';
+  return Math.min(width, Math.max(0, rawX));
+}
 
 function snapRate(raw: number): number {
   'worklet';
@@ -92,7 +104,7 @@ export function PlaybackRateSlider({ rate, onCommit }: Props) {
   const dragGesture = Gesture.Pan()
     .minDistance(0)
     .onBegin((e) => {
-      const x = Math.min(trackWidth, Math.max(0, e.x));
+      const x = logicalX(e.x, trackWidth);
       const startRate = xToRate(x, trackWidth);
       // Magnetic ×1: while the touch is in the snap zone the thumb rides the
       // ×1 tick itself, so normal speed "catches" instead of needing precision.
@@ -102,7 +114,7 @@ export function PlaybackRateSlider({ rate, onCommit }: Props) {
       runOnJS(updateBubble)(startRate);
     })
     .onUpdate((e) => {
-      const x = Math.min(trackWidth, Math.max(0, e.x));
+      const x = logicalX(e.x, trackWidth);
       const nextRate = xToRate(x, trackWidth);
       thumbX.value = nextRate === NORMAL_RATE ? rateToX(NORMAL_RATE, trackWidth) : x;
       if (nextRate !== lastEmitted.value) {
@@ -186,6 +198,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   trackFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
     height: TRACK_HEIGHT,
     borderRadius: TRACK_HEIGHT / 2,
     backgroundColor: colors.accentBrass,

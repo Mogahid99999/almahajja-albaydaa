@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getAboutContent, getAppConfigForAdmin, getQnaNotice, getShareContent, getSupportContact, setAppConfig } from '@/api/appContent';
+import { getAboutContent, getAppConfigForAdmin, getQnaNotice, getShareContent, getStartHereLecture, getSupportContact, setAppConfig } from '@/api/appContent';
 import { queryKeys } from '@/constants/queryKeys';
 
 /** Student-facing About content (falls back to the original copy). Rarely edited. */
@@ -35,6 +35,16 @@ export function useShareContent() {
   return useQuery({
     queryKey: queryKeys.shareContent,
     queryFn: getShareContent,
+    staleTime: 30 * 60_000,
+  });
+}
+
+/** The «ابدأ من هنا» post-tour recommended lecture (null = popup hidden). */
+export function useStartHereLecture(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.startHereLecture,
+    queryFn: getStartHereLecture,
+    enabled,
     staleTime: 30 * 60_000,
   });
 }

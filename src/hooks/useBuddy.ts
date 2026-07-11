@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   cancelBuddy,
+  getAdminBuddyOverview,
   getMyBuddyStatus,
   getPendingIncomingRequests,
   hasOutgoingPendingRequest,
@@ -11,6 +12,14 @@ import {
   sendBuddyRequest,
 } from '@/api/buddy';
 import { queryKeys } from '@/constants/queryKeys';
+
+/** Admin-only رفيق الدراسة overview (counts + active pairs). */
+export function useAdminBuddyOverview() {
+  return useQuery({
+    queryKey: queryKeys.adminBuddies,
+    queryFn: getAdminBuddyOverview,
+  });
+}
 
 /** Active buddy + status (null when none). Disabled for guests. */
 export function useBuddy(options?: { enabled?: boolean }) {

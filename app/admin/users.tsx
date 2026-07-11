@@ -6,7 +6,7 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -302,26 +302,28 @@ export default function AdminUsers() {
 
   const [showCreate, setShowCreate] = useState(false);
 
+  // "المسجلين" = accounts that completed registration, by phone OR email
+  // (auth.users.is_anonymous = false — migration 0075; NOT "has an email",
+  // since most registrations here are phone-only). The rest (active/inactive/
+  // banned) are the derived `status` column. Both are pushed server-side
+  // (migration 0074) so pagination + the count reflect ALL matching accounts,
+  // not just whatever pages happened to be loaded — filtering the in-memory
+  // `data` client-side only ever saw loaded pages.
+  const registeredOnly = filter === 'registered';
+  const statusFilter = filter !== 'all' && filter !== 'registered' ? filter : undefined;
+
   const {
-    data: users = [],
+    data: shown = [],
+    totalCount,
     isLoading,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useAdminUsers(search);
+    refetch,
+    isRefetching,
+  } = useAdminUsers(search, registeredOnly, statusFilter);
 
-  const shown = useMemo(() => {
-    if (filter === 'all') return users;
-    // "المسجلين" = accounts that completed registration (have an email);
-    // anonymous guests have none.
-    if (filter === 'registered') return users.filter((u) => !!u.email);
-    return users.filter((u) => u.status === filter);
-  }, [users, filter]);
-
-  const countLabel =
-    filter === 'all'
-      ? `${arNum(users.length)} حساباً`
-      : `${arNum(shown.length)} من ${arNum(users.length)} حساباً`;
+  const countLabel = filter === 'all' ? `${arNum(totalCount)} حساباً` : `${arNum(totalCount)} من هذا التصنيف`;
 
   const renderItem = useCallback(
     ({ item: u }: { item: AdminUserRow }) => (
@@ -398,7 +400,13 @@ export default function AdminUsers() {
   );
 
   return (
-    <AdminShell active="users" breadcrumb="إدارة المستخدمين" scroll={false}>
+    <AdminShell
+      active="users"
+      breadcrumb="إدارة المستخدمين"
+      scroll={false}
+      refreshing={isRefetching}
+      onRefresh={() => void refetch()}
+    >
       <CreateUserModal visible={showCreate} onClose={() => setShowCreate(false)} />
 
       <FlatList

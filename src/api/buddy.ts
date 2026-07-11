@@ -81,6 +81,47 @@ export async function getPendingIncomingRequests(): Promise<BuddyRequest[]> {
   }));
 }
 
+// ─── Admin overview (V14 · migration 0079) ────────────────────────────────────
+
+export type AdminBuddyPair = {
+  aName: string;
+  bName: string;
+  since: string | null;
+};
+
+export type AdminBuddyOverview = {
+  /** Students who enabled the feature = set profiles.gender. */
+  enabledCount: number;
+  activePairsCount: number;
+  pendingCount: number;
+  pairs: AdminBuddyPair[];
+};
+
+const EMPTY_OVERVIEW: AdminBuddyOverview = {
+  enabledCount: 0,
+  activePairsCount: 0,
+  pendingCount: 0,
+  pairs: [],
+};
+
+/** Admin-only counts + active pair list (names resolved server-side). */
+export async function getAdminBuddyOverview(): Promise<AdminBuddyOverview> {
+  if (USE_MOCK) return EMPTY_OVERVIEW;
+  const { data, error } = await supabase.rpc('admin_buddy_overview');
+  if (error) throw error;
+  const d = (data ?? {}) as Record<string, any>;
+  return {
+    enabledCount: d.enabled_count ?? 0,
+    activePairsCount: d.active_pairs_count ?? 0,
+    pendingCount: d.pending_count ?? 0,
+    pairs: (d.pairs ?? []).map((p: any) => ({
+      aName: p.a_name ?? 'طالب علم',
+      bName: p.b_name ?? 'طالب علم',
+      since: p.since ?? null,
+    })),
+  };
+}
+
 /** Whether I have an outgoing invitation still pending (own rows via RLS). */
 export async function hasOutgoingPendingRequest(): Promise<boolean> {
   if (USE_MOCK) return false;

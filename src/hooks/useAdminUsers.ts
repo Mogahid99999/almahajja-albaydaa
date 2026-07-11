@@ -15,13 +15,13 @@ import {
   updateUserPhone,
 } from '@/api/adminUsers';
 import type { AppRole } from '@/api/auth';
-import type { Gender } from '@/api/types';
+import type { AdminUserStatus, Gender } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 
-export function useAdminUsers(search: string) {
+export function useAdminUsers(search: string, registeredOnly = false, status?: AdminUserStatus) {
   const query = useInfiniteQuery({
-    queryKey: queryKeys.adminUsers(search),
-    queryFn: ({ pageParam }) => getAdminUserList(search, pageParam),
+    queryKey: queryKeys.adminUsers(search, registeredOnly, status),
+    queryFn: ({ pageParam }) => getAdminUserList(search, pageParam, registeredOnly, status),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
     staleTime: 30_000,
@@ -29,6 +29,7 @@ export function useAdminUsers(search: string) {
   return {
     ...query,
     data: query.data?.pages.flatMap((p) => p.items) ?? [],
+    totalCount: query.data?.pages[0]?.totalCount ?? 0,
   };
 }
 

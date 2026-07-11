@@ -37,6 +37,7 @@ import {
   useDeleteOwnQuestion,
   useMyQuestions,
   usePublicQuestions,
+  useUpdateOwnQuestion,
 } from '@/hooks/useQuestions';
 import { useReportContent } from '@/hooks/useReports';
 import { arSince } from '@/lib/format';
@@ -113,7 +114,7 @@ function TogglePill({
 function RegisterNudge() {
   const router = useRouter();
   return (
-    <Card style={{ marginBottom: 18 }}>
+    <Card style={{ marginBottom: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Feather name="user-plus" size={16} color={colors.accentBrassMuted} />
         <Txt size={12.5} color={colors.textMuted} style={{ flex: 1, lineHeight: 20 }}>
@@ -170,7 +171,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
     : '';
 
   return (
-    <Card style={{ marginBottom: 18 }}>
+    <Card style={{ marginBottom: 12 }}>
       <Txt weight="semibold" size={14} color={colors.textInk}>
         اسأل سؤالاً
       </Txt>
@@ -188,8 +189,10 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
         style={styles.composerInput}
       />
 
-      {/* Category: سؤال عام أو فتوى شرعية */}
-      <View style={styles.tabsRow}>
+      {/* Category: سؤال عام أو فتوى شرعية. The shared tabsRow bottom margin is
+          zeroed here — the options row below brings its own 12px top margin,
+          and letting both stack read as a hole in the composer's 12px rhythm. */}
+      <View style={[styles.tabsRow, { marginTop: 12, marginBottom: 0 }]}>
         <SegChip
           label="سؤال عام"
           active={category === 'general'}
@@ -217,7 +220,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
           onPress={() => setAudience((a) => (a === 'sheikh' ? 'public' : 'sheikh'))}
         />
       </View>
-      <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 8, lineHeight: 18 }}>
+      <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 12, lineHeight: 18 }}>
         {audience === 'sheikh'
           ? 'لن يطّلع على سؤالك إلا الشيخ.'
           : anonymous
@@ -321,6 +324,34 @@ function MyQuestionCard({
   onReport: () => void;
 }) {
   const pending = q.status === 'pending';
+  const update = useUpdateOwnQuestion();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(q.body);
+  const [audience, setAudience] = useState<QuestionAudience>(q.audience);
+  const [category, setCategory] = useState<QuestionCategory>(q.category);
+  const [editError, setEditError] = useState('');
+
+  function startEdit() {
+    setDraft(q.body);
+    setAudience(q.audience);
+    setCategory(q.category);
+    setEditError('');
+    setEditing(true);
+  }
+
+  function saveEdit() {
+    const text = draft.trim();
+    if (!text) return;
+    setEditError('');
+    update.mutate(
+      { id: q.id, body: text, audience, category },
+      {
+        onSuccess: () => setEditing(false),
+        onError: (e) => setEditError(e instanceof Error ? e.message : 'تعذّر حفظ التعديل'),
+      },
+    );
+  }
+
   return (
     <Card style={styles.qCard}>
       <View style={styles.qMetaRow}>
@@ -372,6 +403,14 @@ function MyQuestionCard({
           <Feather name="flag" size={14} color={colors.textGhost} />
         </Pressable>
         <Pressable
+          onPress={editing ? () => setEditing(false) : startEdit}
+          accessibilityLabel="تعديل سؤالي"
+          hitSlop={6}
+          style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Feather name="edit-2" size={14} color={editing ? colors.primaryTeal600 : colors.textGhost} />
+        </Pressable>
+        <Pressable
           onPress={onDelete}
           accessibilityLabel="حذف سؤالي"
           hitSlop={6}
@@ -380,10 +419,82 @@ function MyQuestionCard({
           <Feather name="trash-2" size={14} color={colors.stateDanger} />
         </Pressable>
       </View>
-      <Txt size={14.5} weight="medium" color={colors.textInk} style={styles.qBody}>
-        {q.body}
-      </Txt>
-      {q.answerBody ? (
+      {editing ? (
+        <View style={{ marginTop: 10 }}>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="اكتب سؤالك هنا..."
+            placeholderTextColor={colors.textGhost}
+            multiline
+            textAlign="right"
+            textAlignVertical="top"
+            style={styles.composerInput}
+            autoFocus
+          />
+          <View style={[styles.tabsRow, { marginTop: 12, marginBottom: 0 }]}>
+            <SegChip
+              label="سؤال عام"
+              active={category === 'general'}
+              onPress={() => setCategory('general')}
+            />
+            <SegChip
+              label="فتوى شرعية"
+              active={category === 'fatwa'}
+              onPress={() => setCategory('fatwa')}
+            />
+          </View>
+          <View style={styles.optionsRow}>
+            <TogglePill
+              label={audience === 'sheikh' ? 'للشيخ فقط' : 'للعامة'}
+              icon={audience === 'sheikh' ? 'lock' : 'globe'}
+              active={audience === 'sheikh'}
+              onPress={() => setAudience((a) => (a === 'sheikh' ? 'public' : 'sheikh'))}
+            />
+          </View>
+          {q.status === 'answered' ? (
+            <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 12, lineHeight: 18 }}>
+              تغيير نصّ السؤال يُعيده إلى قيد المراجعة ويُزيل الجواب الحالي.
+            </Txt>
+          ) : null}
+          {editError ? (
+            <Txt size={12} color={colors.stateDanger} style={{ marginTop: 8 }}>
+              {editError}
+            </Txt>
+          ) : null}
+          <View style={styles.editActionsRow}>
+            <Pressable
+              onPress={saveEdit}
+              disabled={update.isPending || !draft.trim()}
+              style={({ pressed }) => [
+                styles.editSaveBtn,
+                { opacity: pressed || update.isPending || !draft.trim() ? 0.7 : 1 },
+              ]}
+            >
+              {update.isPending ? (
+                <ActivityIndicator size="small" color={colors.onTealPrimary} />
+              ) : (
+                <Txt size={13} weight="semibold" color={colors.onTealPrimary}>
+                  حفظ التعديل
+                </Txt>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => setEditing(false)}
+              style={({ pressed }) => [styles.editCancelBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Txt size={13} weight="medium" color={colors.textMuted}>
+                إلغاء
+              </Txt>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <Txt size={14.5} weight="medium" color={colors.textInk} style={styles.qBody}>
+          {q.body}
+        </Txt>
+      )}
+      {!editing && q.answerBody ? (
         <View style={styles.answerBox}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="message-circle" size={13} color={colors.primaryTeal600} />
@@ -458,7 +569,7 @@ export function QuestionsBoard({
       </View>
 
       {/* Category filter: الكل / سؤال عام / فتوى شرعية */}
-      <View style={[styles.tabsRow, { marginBottom: 14 }]}>
+      <View style={styles.tabsRow}>
         <SegChip label="الكل" active={categoryFilter === 'all'} onPress={() => setCategoryFilter('all')} />
         <SegChip
           label="سؤال عام"
@@ -577,7 +688,7 @@ const styles = StyleSheet.create({
   tabsRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 12,
   } as ViewStyle,
 
   composerInput: {
@@ -626,7 +737,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   submitBtn: {
-    marginTop: 14,
+    marginTop: 12,
     height: 46,
     borderRadius: radius.sm,
     backgroundColor: colors.primaryTeal,
@@ -636,7 +747,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   registerBtn: {
-    marginTop: 14,
+    marginTop: 12,
     height: 46,
     borderRadius: radius.sm,
     backgroundColor: colors.primaryTeal,
@@ -707,6 +818,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSandRaised,
     borderWidth: 1,
     borderColor: colors.borderSand,
+  } as ViewStyle,
+
+  editActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+  } as ViewStyle,
+
+  editSaveBtn: {
+    height: 42,
+    paddingHorizontal: 20,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primaryTeal,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.button,
+  } as ViewStyle,
+
+  editCancelBtn: {
+    height: 42,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   } as ViewStyle,
 
   loadingBox: { paddingVertical: 50, alignItems: 'center' } as ViewStyle,

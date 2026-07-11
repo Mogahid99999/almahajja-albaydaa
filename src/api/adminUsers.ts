@@ -12,7 +12,7 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import type { AppRole } from './auth';
-import type { AdminUserDetail, AdminUserRow, Gender } from './types';
+import type { AdminUserDetail, AdminUserRow, AdminUserStatus, Gender } from './types';
 
 function mapRow(r: any): AdminUserRow {
   return {
@@ -27,6 +27,7 @@ function mapRow(r: any): AdminUserRow {
     lastSignInAt: r.last_sign_in_at ?? null,
     bannedUntil: r.banned_until ?? null,
     status: r.status,
+    isAnonymous: !!r.is_anonymous,
     completedLectures: Number(r.completed_lectures ?? 0),
     passedQuizzes: Number(r.passed_quizzes ?? 0),
     currentStreak: r.current_streak ?? 0,
@@ -39,22 +40,40 @@ export type AdminUserPage = {
   items: AdminUserRow[];
   /** Offset for the next page, or null when this was the last page. */
   nextOffset: number | null;
+  /** Total rows matching the current search/filter, server-computed (not just this page). */
+  totalCount: number;
 };
 
 const ADMIN_USERS_PAGE_SIZE = 50;
 
-/** One page of the users list (P3 perf plan — was a flat 300-row fetch). */
-export async function getAdminUserList(search: string | undefined, offset = 0): Promise<AdminUserPage> {
-  if (USE_MOCK) return { items: [], nextOffset: null };
+/**
+ * One page of the users list (P3 perf plan — was a flat 300-row fetch).
+ * `registeredOnly`/`status` are pushed into the RPC's WHERE clause (migration
+ * 0074) so pagination and the count walk the full matching set, not just
+ * whatever pages happen to be loaded client-side.
+ */
+export async function getAdminUserList(
+  search: string | undefined,
+  offset = 0,
+  registeredOnly = false,
+  status?: AdminUserStatus,
+): Promise<AdminUserPage> {
+  if (USE_MOCK) return { items: [], nextOffset: null, totalCount: 0 };
   const { data, error } = await supabase.rpc('admin_user_list', {
     p_search: search && search.trim() ? search.trim() : undefined,
     p_limit: ADMIN_USERS_PAGE_SIZE,
     p_offset: offset,
+    p_registered_only: registeredOnly,
+    p_status: status ?? undefined,
   });
   if (error) throw error;
-  const items = (data ?? []).map(mapRow);
+  // `total_count` is added by migration 0074; cast until database.generated.ts
+  // is regenerated against the live schema.
+  const rows = (data ?? []) as unknown as (Record<string, any> & { total_count?: number })[];
+  const items = rows.map(mapRow);
   const nextOffset = items.length === ADMIN_USERS_PAGE_SIZE ? offset + ADMIN_USERS_PAGE_SIZE : null;
-  return { items, nextOffset };
+  const totalCount = rows[0]?.total_count ? Number(rows[0].total_count) : items.length;
+  return { items, nextOffset, totalCount };
 }
 
 export async function getAdminUserDetail(userId: string): Promise<AdminUserDetail> {

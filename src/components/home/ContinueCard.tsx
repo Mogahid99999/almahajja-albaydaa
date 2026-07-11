@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
 import type { ResumeLecture } from '@/api/types';
@@ -12,20 +15,52 @@ type Props = {
   continueListening: ResumeLecture | null;
 };
 
+/** Dismissal is keyed on `lectureId@position`, so × hides THIS resume state
+ * only — any new listening activity (position moved, or a different lecture)
+ * brings the card back with the fresh resume point. */
+const DISMISSED_KEY = 'riwaq-dismissed-continue';
+
 /**
  * "أكمِل الاستماع" — teal feature card on the Home screen.
- * Renders nothing when there is no resume position (no in-progress lecture).
+ * Renders nothing when there is no resume position (no in-progress lecture)
+ * or when the current resume snapshot was dismissed via the × button.
  */
 export function ContinueCard({ continueListening }: Props) {
   const currentLectureId = usePlayerStore((s) => s.currentLectureId);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const router = useRouter();
 
-  if (!continueListening) return null;
+  // undefined = AsyncStorage still loading (render nothing rather than flash
+  // the card and yank it away); null = nothing dismissed.
+  const [dismissedSnapshot, setDismissedSnapshot] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void AsyncStorage.getItem(DISMISSED_KEY)
+      .then((raw) => {
+        if (!cancelled) setDismissedSnapshot(raw);
+      })
+      .catch(() => {
+        if (!cancelled) setDismissedSnapshot(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!continueListening || dismissedSnapshot === undefined) return null;
 
   const { id, title, sheikhName, eyebrow, positionSec, durationSec } = continueListening;
+  const snapshot = `${id}@${Math.floor(positionSec)}`;
+  if (dismissedSnapshot === snapshot) return null;
+
   const isActive = currentLectureId === id && isPlaying;
   const progress = durationSec > 0 ? positionSec / durationSec : 0;
+
+  function dismiss() {
+    setDismissedSnapshot(snapshot);
+    void AsyncStorage.setItem(DISMISSED_KEY, snapshot).catch(() => {});
+  }
 
   function handlePress() {
     // Start playback the instant the tap lands, in parallel with the
@@ -92,6 +127,29 @@ export function ContinueCard({ continueListening }: Props) {
             </Txt>
           ) : null}
         </View>
+
+        {/* × dismiss — last row child = leftmost under forced RTL, top corner */}
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation?.();
+            dismiss();
+          }}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="إخفاء البطاقة"
+          style={({ pressed }) => ({
+            width: 30,
+            height: 30,
+            alignItems: 'center',
+            justifyContent: 'center',
+            alignSelf: 'flex-start',
+            marginTop: -10,
+            marginLeft: -10,
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <Feather name="x" size={16} color={colors.onTealSecondary} />
+        </Pressable>
       </View>
 
       {/* Progress row */}

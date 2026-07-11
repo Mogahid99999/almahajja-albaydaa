@@ -4,8 +4,9 @@
  * Two tabs:
  *   «فوائد الدارسين» — every فائدة with the RESOLVED author (name + email —
  *     admin is the only role that ever sees it); إخفاء/إظهار · حذف · حظر الكاتب.
- *   «الأسئلة» — every question incl. sheikh-only + anonymous (real asker shown
- *     to admin); حذف · حظر السائل. Answering stays the sheikh's job.
+ *   «الأسئلة» — every question incl. sheikh-only; anonymous askers show as
+ *     «سائل» even here (V14 — only asker_id ships, for the ban action);
+ *     حذف · حظر السائل. Answering stays the sheikh's job.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
@@ -163,7 +164,7 @@ function BenefitsTab() {
           <View style={styles.lectureChip}>
             <Feather name="headphones" size={12} color={colors.primaryTeal600} />
             <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1}>
-              {b.lectureTitle}
+              {b.sectionTitle ? `${b.sectionTitle} ← ${b.lectureTitle}` : b.lectureTitle}
             </Txt>
           </View>
           <Txt size={14} color={colors.textInk} style={{ marginTop: 8, lineHeight: 23 }}>
@@ -260,7 +261,7 @@ function QuestionsTab() {
   return (
     <>
       <Txt size={12} color={colors.textGhost} style={{ marginBottom: 10 }}>
-        {arNum((questions ?? []).length)} سؤال · يظهر السائل الحقيقي هنا للمشرف فقط
+        {arNum((questions ?? []).length)} سؤال · من أخفى اسمه يظهر «سائل» حتى هنا
       </Txt>
       {(questions ?? []).map((q) => (
         <Card key={q.id} style={styles.itemCard}>
@@ -271,7 +272,7 @@ function QuestionsTab() {
             </Txt>
             {q.isAnonymous ? (
               <Txt size={11} color={colors.textGhost}>
-                (مخفي الاسم للعامة)
+                (سُئل بلا اسم)
               </Txt>
             ) : null}
             <View style={{ flex: 1 }} />
@@ -290,7 +291,7 @@ function QuestionsTab() {
             <View style={styles.lectureChip}>
               <Feather name="headphones" size={12} color={colors.primaryTeal600} />
               <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1}>
-                {q.lectureTitle}
+                {q.sectionTitle ? `${q.sectionTitle} ← ${q.lectureTitle}` : q.lectureTitle}
               </Txt>
             </View>
           ) : null}

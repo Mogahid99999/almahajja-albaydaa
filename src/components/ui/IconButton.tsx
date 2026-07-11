@@ -19,6 +19,7 @@ export function IconButton({
   color,
   style,
   accessibilityLabel,
+  disabled = false,
 }: {
   icon: FeatherName;
   onPress?: () => void;
@@ -28,6 +29,7 @@ export function IconButton({
   color?: string;
   style?: ViewStyle;
   accessibilityLabel?: string;
+  disabled?: boolean;
 }) {
   const bg =
     variant === 'inset'
@@ -51,6 +53,7 @@ export function IconButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
+      disabled={disabled}
       hitSlop={8}
       style={({ pressed }) => [
         {
@@ -60,7 +63,7 @@ export function IconButton({
           backgroundColor: bg,
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: pressed ? 0.7 : 1,
+          opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
         },
         style,
       ]}

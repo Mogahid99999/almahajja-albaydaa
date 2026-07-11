@@ -49,6 +49,8 @@ export type InboxQuestion = {
   scope: QuestionScope;
   lectureId: string | null;
   lectureTitle: string | null;
+  /** The lesson's direct parent section — for «القسم ← الدرس» (V14). */
+  sectionTitle: string | null;
   body: string;
   answerBody: string | null;
   isAnonymous: boolean;
@@ -135,6 +137,30 @@ export async function askQuestion(input: {
   return data as string;
 }
 
+/**
+ * The asker edits their OWN question (0078): body + audience (public ↔ sheikh)
+ * + category. A changed body resets the question to pending and clears the old
+ * answer server-side; a same-body audience/category flip keeps the answer.
+ */
+export async function updateOwnQuestion(input: {
+  id: string;
+  body: string;
+  audience: QuestionAudience;
+  category: QuestionCategory;
+}): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.rpc('update_own_question', {
+    p_id: input.id,
+    p_body: input.body,
+    p_audience: input.audience,
+    p_category: input.category,
+  });
+  if (error) {
+    if (isBlockedWordError(error)) throw new BlockedWordError();
+    throw error;
+  }
+}
+
 /** The asker removes their OWN question (any status) — 0031, own-rows in SQL. */
 export async function deleteOwnQuestion(questionId: string): Promise<void> {
   if (USE_MOCK) return;
@@ -163,6 +189,7 @@ export async function getQuestionInbox(filter: {
     scope: r.scope as QuestionScope,
     lectureId: r.lecture_id ?? null,
     lectureTitle: r.lecture_title ?? null,
+    sectionTitle: r.section_title ?? null,
     body: r.body,
     answerBody: r.answer_body ?? null,
     isAnonymous: !!r.is_anonymous,

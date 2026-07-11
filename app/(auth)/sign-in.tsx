@@ -1,13 +1,12 @@
 import Feather from '@expo/vector-icons/Feather';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Linking, Platform, Pressable, TextInput, View } from 'react-native';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { BackHandler, Platform, Pressable, TextInput, View } from 'react-native';
 
+import { SupportContactLink } from '@/components/SupportContactLink';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignIn } from '@/hooks/useAuth';
-import { useSupportContact } from '@/hooks/useAppContent';
 
 // Supabase auth errors come back in English; map the ones users actually hit
 // during sign-in to Arabic. Anything unrecognized falls back to a generic
@@ -27,8 +26,22 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const signIn = useSignIn();
-  const { data: support } = useSupportContact();
-  const supportUrl = support?.whatsappUrl ?? '';
+
+  // Android system back mirrors «المتابعة كضيف» below: pop back to wherever
+  // the student came from when there is history, otherwise (this screen was
+  // reached via `replace` — e.g. right after signing out — so a plain back
+  // would close the app) land on Home as a guest. Focus-scoped so a pushed
+  // /register or /reset-password on top keeps its own default back behavior.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (router.canGoBack()) return false;
+        router.replace('/');
+        return true;
+      });
+      return () => sub.remove();
+    }, [router]),
+  );
 
   // Guest-first removed AuthGate's "bounce out of (auth)" for signed-in users (so
   // guests can stay here to register), so a returning sign-in must navigate itself.
@@ -157,31 +170,8 @@ export default function SignInScreen() {
         </Pressable>
       ) : null}
 
-      {/* Support contact — only when an admin has set a WhatsApp link (empty = hidden) */}
-      {supportUrl ? (
-        <Pressable
-          onPress={() => Linking.openURL(supportUrl)}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="تواصل مع الدعم الفني عبر تيليجرام"
-          style={({ pressed }) => [
-            {
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 7,
-              marginTop: 22,
-              paddingVertical: 6,
-            },
-            pressed && { opacity: 0.6 },
-          ]}
-        >
-          <FontAwesome name="telegram" size={15} color={colors.accentBrassMuted} />
-          <Txt size={12} color={colors.textMuted}>
-            هل لديك مشكلة؟ تواصل مع الدعم الفني للمنصة
-          </Txt>
-        </Pressable>
-      ) : null}
+      {/* Support contact — only when an admin has set the link (empty = hidden) */}
+      <SupportContactLink style={{ marginTop: 22 }} />
     </Screen>
   );
 }

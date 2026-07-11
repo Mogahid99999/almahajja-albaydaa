@@ -131,7 +131,7 @@ function QuestionCard({
         <View style={styles.lectureChip}>
           <Feather name="headphones" size={12} color={colors.primaryTeal600} />
           <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1}>
-            {q.lectureTitle}
+            {q.sectionTitle ? `${q.sectionTitle} ← ${q.lectureTitle}` : q.lectureTitle}
           </Txt>
         </View>
       ) : null}

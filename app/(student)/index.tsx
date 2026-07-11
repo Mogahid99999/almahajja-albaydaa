@@ -18,6 +18,7 @@ import { QuestionsHomeCard } from '@/components/home/QuestionsHomeCard';
 import { SectionsGrid } from '@/components/home/SectionsGrid';
 import { StreakCard } from '@/components/home/StreakCard';
 import { JourneyHomeCard } from '@/components/journey/JourneyHomeCard';
+import { SupportContactLink } from '@/components/SupportContactLink';
 
 /**
  * Home — student landing screen.
@@ -81,8 +82,9 @@ export default function HomeScreen() {
         {/* مختارات — staff-curated horizontal rail (second) */}
         <FeaturedRail lectures={data?.featured ?? []} />
 
-        {/* Sections grid — 22px padding */}
-        <View style={{ paddingHorizontal: spacing.screenH }}>
+        {/* Sections grid — 22px padding. Top margin keeps the rail above's
+            pagination dots from sitting flush against the first card. */}
+        <View style={{ paddingHorizontal: spacing.screenH, marginTop: 12 }}>
           {/* المداومة اليومية — quiet streak state (registered users only) */}
           <StreakCard />
 
@@ -101,6 +103,9 @@ export default function HomeScreen() {
           <View style={{ marginTop: 12 }}>
             <DuaCard />
           </View>
+
+          {/* Support contact — same admin-driven Telegram row as sign-in (empty = hidden) */}
+          <SupportContactLink style={{ marginTop: 12 }} />
         </View>
       </Screen>
     </View>

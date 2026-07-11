@@ -9,6 +9,7 @@ import {
   getPublicQuestions,
   getQuestionInbox,
   setQuestionHidden,
+  updateOwnQuestion,
   type InboxQuestion,
   type QuestionAudience,
   type QuestionCategory,
@@ -57,6 +58,27 @@ export function useAskQuestion() {
     }) => askQuestion(input),
     onSuccess: (_id, vars) => {
       void qc.invalidateQueries({ queryKey: ['questions', 'mine', vars.scope] });
+    },
+  });
+}
+
+/**
+ * The asker edits their own question (body / privacy / category). Invalidates
+ * both the my-questions and public-questions caches — a changed body pulls an
+ * answered question back to pending, which also removes it from the public list.
+ */
+export function useUpdateOwnQuestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      id: string;
+      body: string;
+      audience: QuestionAudience;
+      category: QuestionCategory;
+    }) => updateOwnQuestion(input),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['questions', 'mine'] });
+      void qc.invalidateQueries({ queryKey: ['questions', 'public'] });
     },
   });
 }

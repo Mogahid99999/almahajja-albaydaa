@@ -46,6 +46,7 @@ type NavKey =
   | 'feedback'
   | 'ratings'
   | 'analytics'
+  | 'buddies'
   | 'users'
   | 'settings';
 
@@ -73,6 +74,7 @@ const NAV_ITEMS: {
   { key: 'feedback', label: 'ملاحظات الطلاب', href: '/admin/feedback', icon: 'message-circle', adminOnly: true },
   { key: 'ratings', label: 'تقييمات التطبيق', href: '/admin/ratings', icon: 'thumbs-up', adminOnly: true },
   { key: 'analytics', label: 'تحليلات التقدم', href: '/admin/analytics', icon: 'trending-up', adminOnly: true },
+  { key: 'buddies', label: 'رفقاء الدراسة', href: '/admin/buddies', icon: 'heart', adminOnly: true },
   { key: 'users', label: 'إدارة المستخدمين', href: '/admin/users', icon: 'user-check', adminOnly: true },
   { key: 'settings', label: 'الإعدادات وعن المنصة', href: '/admin/settings', icon: 'settings', adminOnly: true },
 ];
@@ -88,7 +90,13 @@ interface AdminShellProps {
   children: ReactNode;
   /** false when the page hosts its own FlatList — avoids nesting it inside this ScrollView. */
   scroll?: boolean;
-  /** Only apply to the `scroll` branch — pages hosting their own FlatList wire refresh onto it directly. */
+  /**
+   * When `scroll` is true, also drives the pull-to-refresh RefreshControl
+   * (touch only). Either way, passing `onRefresh` shows a topbar refresh
+   * button — the only refetch affordance on web, where there is no pull
+   * gesture and admin data (guest sign-ups especially) can go stale within a
+   * single session.
+   */
   refreshing?: boolean;
   onRefresh?: () => void;
 }
@@ -264,6 +272,18 @@ export function AdminShell({
             </Txt>
           </View>
           <View style={styles.topbarLeft}>
+            {onRefresh ? (
+              <IconButton
+                icon="refresh-cw"
+                variant="ghost"
+                size={40}
+                iconSize={18}
+                color={colors.textMuted}
+                onPress={onRefresh}
+                disabled={refreshing}
+                accessibilityLabel="تحديث"
+              />
+            ) : null}
             <IconButton icon="bell" variant="ghost" size={40} iconSize={18} color={colors.textMuted} />
             <View style={styles.avatar} />
           </View>

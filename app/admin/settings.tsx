@@ -56,6 +56,14 @@ const SHARE_FIELDS: FieldDef[] = [
   },
 ];
 
+const START_HERE_FIELDS: FieldDef[] = [
+  {
+    key: 'start_here_lecture_id',
+    label: 'معرّف محاضرة «ابدأ من هنا» (تُخفى النافذة إن تُرك فارغًا)',
+    placeholder: 'معرّف المحاضرة (UUID)',
+  },
+];
+
 const QNA_FIELDS: FieldDef[] = [
   {
     key: 'qna_notice_text',
@@ -138,6 +146,7 @@ export default function AdminSettings() {
       ...TELEGRAM_FIELDS,
       ...SUPPORT_FIELDS,
       ...SHARE_FIELDS,
+      ...START_HERE_FIELDS,
       ...QNA_FIELDS,
       ...REPORTS_FIELDS,
       ...APP_FIELDS,
@@ -218,6 +227,14 @@ export default function AdminSettings() {
         الرابط والنص المستخدمان في زر «شارك التطبيق» بصفحة الحساب.
       </Txt>
       <Card style={{ gap: 18 }}>{renderFields(SHARE_FIELDS)}</Card>
+
+      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
+        محاضرة «ابدأ من هنا»
+      </Txt>
+      <Txt size={12} color={colors.textMuted} style={{ marginBottom: 12 }}>
+        المحاضرة المقترحة على الطالب الجديد بعد انتهاء الجولة التعريفية (أو تخطّيها).
+      </Txt>
+      <Card style={{ gap: 18 }}>{renderFields(START_HERE_FIELDS)}</Card>
 
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
         صفحتا الأسئلة

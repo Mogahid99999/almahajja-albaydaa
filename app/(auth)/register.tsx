@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Modal, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, TextInput, View } from 'react-native';
 
 import type { Gender } from '@/api/types';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
@@ -77,6 +77,11 @@ export default function RegisterScreen() {
 
   return (
     <>
+    {/* The app is edge-to-edge, so the keyboard OVERLAYS the screen instead of
+        resizing it — the lower fields (تأكيد كلمة المرور) were getting covered
+        while typing. `padding` shrinks the scroll area so the focused field
+        scrolls above the keyboard; same fix as FeedbackSheet / lecture-note. */}
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
     <Screen scroll contentStyle={{ justifyContent: 'center', flexGrow: 1 }}>
       {/* Brand */}
       <View style={{ alignItems: 'center', marginBottom: 12 }}>
@@ -234,6 +239,7 @@ export default function RegisterScreen() {
         </Txt>
       </Pressable>
     </Screen>
+    </KeyboardAvoidingView>
 
     <Modal visible={oathVisible} transparent animationType="slide" onRequestClose={() => {}}>
       <View style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}>

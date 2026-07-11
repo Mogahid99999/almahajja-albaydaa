@@ -1052,6 +1052,7 @@ export type Database = {
         Returns: undefined
       }
       admin_delete_rating: { Args: { p_rating_id: string }; Returns: undefined }
+      admin_buddy_overview: { Args: never; Returns: Json }
       admin_list_benefits: {
         Args: { p_lecture_id?: string }
         Returns: {
@@ -1063,6 +1064,7 @@ export type Database = {
           id: string
           lecture_id: string
           lecture_title: string
+          section_title: string
           status: string
         }[]
       }
@@ -1363,7 +1365,7 @@ export type Database = {
         }[]
       }
       get_question_inbox: {
-        Args: { p_scope?: string; p_status?: string }
+        Args: { p_scope?: string; p_status?: string; p_category?: string }
         Returns: {
           answer_body: string
           answered_at: string
@@ -1371,12 +1373,14 @@ export type Database = {
           asker_id: string
           audience: string
           body: string
+          category: string
           created_at: string
           id: string
           is_anonymous: boolean
           lecture_id: string
           lecture_title: string
           scope: string
+          section_title: string
           status: string
         }[]
       }
@@ -1583,6 +1587,15 @@ export type Database = {
       }
       touch_last_opened: { Args: never; Returns: undefined }
       try_claim_goal_congrats: { Args: never; Returns: boolean }
+      update_own_question: {
+        Args: {
+          p_id: string
+          p_body: string
+          p_audience: string
+          p_category: string
+        }
+        Returns: undefined
+      }
       update_broadcast: {
         Args: {
           p_body: string

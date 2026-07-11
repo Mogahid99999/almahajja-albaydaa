@@ -25,6 +25,8 @@ export type AdminBenefitRow = {
   id: string;
   lectureId: string;
   lectureTitle: string;
+  /** The lesson's direct parent section — for «القسم ← الدرس» (V14). */
+  sectionTitle: string | null;
   body: string;
   status: BenefitStatus;
   authorId: string;
@@ -78,6 +80,7 @@ export async function adminListBenefits(lectureId?: string): Promise<AdminBenefi
     id: r.id,
     lectureId: r.lecture_id,
     lectureTitle: r.lecture_title,
+    sectionTitle: r.section_title ?? null,
     body: r.body,
     status: r.status as BenefitStatus,
     authorId: r.author_id,

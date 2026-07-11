@@ -26,7 +26,7 @@ export default function QuestionsScreen() {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 6,
+          marginBottom: 12,
         }}
       >
         <Txt size={22} weight="display" color={colors.primaryTeal}>
@@ -34,11 +34,11 @@ export default function QuestionsScreen() {
         </Txt>
         <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
-      <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 10, lineHeight: 20 }}>
+      <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 12, lineHeight: 20 }}>
         اسأل عمّا أشكل عليك، ويجيبك الشيخ — وتنتفع بأسئلة إخوانك
       </Txt>
       {qnaNotice?.text ? (
-        <Txt size={11.5} color={colors.textGhost} style={{ marginBottom: 18, lineHeight: 18 }}>
+        <Txt size={11.5} color={colors.textGhost} style={{ marginBottom: 12, lineHeight: 18 }}>
           {qnaNotice.text}
         </Txt>
       ) : null}

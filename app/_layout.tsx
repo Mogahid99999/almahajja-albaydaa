@@ -29,6 +29,7 @@ import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/
 import { getResumeTarget, hasResumableLesson } from '@/api/progress';
 import { useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
 import { Logo } from '@/components/ui/Logo';
+import { StartHereCard } from '@/components/onboarding/StartHereCard';
 import { TourCard } from '@/components/onboarding/TourCard';
 import { UpdateGate } from '@/components/UpdateGate';
 import { colors } from '@/constants/theme';
@@ -559,6 +560,7 @@ export default function RootLayout() {
               <AuthGate />
               <NotificationsBootstrap />
               <TourCard />
+              <StartHereCard />
               <Stack
                 screenOptions={{
                   headerShown: false,

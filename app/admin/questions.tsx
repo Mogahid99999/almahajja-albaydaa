@@ -6,8 +6,9 @@
  * with scope × status filters and offers, per question: answer (inline
  * composer), hide/unhide (0032 set_question_hidden), delete (hard), and
  * «حظر الكاتب» — the full account ban (admin-users `ban` on asker_id, reversible
- * from إدارة المستخدمين). Anonymity: admins see the real name, but a quiet
- * «سُئل بلا اسم» hint marks anonymous questions.
+ * from إدارة المستخدمين). Anonymity (V14): an anonymous asker shows as
+ * «سائل» to the admin too — only asker_id crosses the wire (for the ban
+ * action); a quiet «سُئل بلا اسم» hint marks these questions.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useCallback, useState } from 'react';
@@ -151,7 +152,7 @@ function QuestionCard({
           <View style={styles.lectureChip}>
             <Feather name="headphones" size={11} color={colors.primaryTeal600} />
             <Txt size={11} weight="medium" color={colors.primaryTeal600} numberOfLines={1}>
-              {q.lectureTitle}
+              {q.sectionTitle ? `${q.sectionTitle} ← ${q.lectureTitle}` : q.lectureTitle}
             </Txt>
           </View>
         ) : null}

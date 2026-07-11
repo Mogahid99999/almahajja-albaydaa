@@ -731,6 +731,8 @@ export type AdminUserRow = {
   lastSignInAt: string | null;
   bannedUntil: string | null;
   status: AdminUserStatus;
+  /** True for an anonymous/guest session; false = registered (by phone or email). */
+  isAnonymous: boolean;
   completedLectures: number;
   passedQuizzes: number;
   currentStreak: number;

@@ -131,6 +131,40 @@ export async function getShareContent(): Promise<{ url: string; message: string 
   }
 }
 
+/** «ابدأ من هنا» key — the lecture recommended right after the first-time tour. */
+const START_HERE_KEYS = ['start_here_lecture_id'];
+
+/**
+ * The lecture the post-tour «ابدأ من هنا» popup (StartHereCard) recommends to a
+ * newly registered student. Resolves the `start_here_lecture_id` config key to
+ * the actual published lecture; null (key empty, lecture deleted/unpublished,
+ * or any error) = the popup simply never shows — same "empty = hidden"
+ * convention as telegram_url.
+ */
+export async function getStartHereLecture(): Promise<{ id: string; title: string } | null> {
+  if (USE_MOCK) return null;
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('value')
+      .in('key', START_HERE_KEYS)
+      .maybeSingle();
+    if (error) return null;
+    const id = data?.value?.trim();
+    if (!id) return null;
+    const { data: lecture, error: lectureError } = await supabase
+      .from('lectures')
+      .select('id, title')
+      .eq('id', id)
+      .eq('status', 'published')
+      .maybeSingle();
+    if (lectureError) return null;
+    return lecture ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** All config keys the admin Settings screen edits (About + Telegram + V4 gate). */
 export type AppConfigMap = Record<string, string>;
 
@@ -139,6 +173,7 @@ const SETTINGS_KEYS = [
   ...SUPPORT_KEYS,
   ...QNA_KEYS,
   ...SHARE_KEYS,
+  ...START_HERE_KEYS,
   'min_app_version',
   'app_download_url',
   'latest_app_version',
