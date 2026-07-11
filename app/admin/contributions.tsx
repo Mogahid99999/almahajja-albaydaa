@@ -27,6 +27,7 @@ import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
+import { useCurrentUser } from '@/hooks/useAuth';
 import {
   useAdminBenefits,
   useAdminDeleteBenefit,
@@ -107,7 +108,7 @@ function useBanAuthor() {
 
 // ─── Benefits tab ─────────────────────────────────────────────────────────────
 
-function BenefitsTab() {
+function BenefitsTab({ isAdmin }: { isAdmin: boolean }) {
   const { data: benefits, isLoading } = useAdminBenefits();
   const setStatus = useAdminSetBenefitStatus();
   const deleteBenefit = useAdminDeleteBenefit();
@@ -144,7 +145,7 @@ function BenefitsTab() {
             <Txt size={12.5} weight="medium" color={colors.textSlate} numberOfLines={1}>
               {b.authorName}
             </Txt>
-            {b.authorEmail ? (
+            {isAdmin && b.authorEmail ? (
               <Txt size={11.5} color={colors.textGhost} numberOfLines={1} style={{ flexShrink: 1 }}>
                 {b.authorEmail}
               </Txt>
@@ -191,12 +192,14 @@ function BenefitsTab() {
               color={colors.stateDanger}
               onPress={() => setPendingDelete(b)}
             />
-            <ActionBtn
-              icon="slash"
-              label="حظر الكاتب"
-              color={colors.stateDanger}
-              onPress={() => setPendingBan(b)}
-            />
+            {isAdmin ? (
+              <ActionBtn
+                icon="slash"
+                label="حظر الكاتب"
+                color={colors.stateDanger}
+                onPress={() => setPendingBan(b)}
+              />
+            ) : null}
           </View>
         </Card>
       ))}
@@ -234,7 +237,7 @@ function BenefitsTab() {
 
 // ─── Questions tab ────────────────────────────────────────────────────────────
 
-function QuestionsTab() {
+function QuestionsTab({ isAdmin }: { isAdmin: boolean }) {
   const { data: questions, isLoading } = useQuestionInbox({});
   const deleteQuestion = useDeleteQuestion();
   const ban = useBanAuthor();
@@ -319,7 +322,7 @@ function QuestionsTab() {
               color={colors.stateDanger}
               onPress={() => setPendingDelete(q)}
             />
-            {q.askerId ? (
+            {isAdmin && q.askerId ? (
               <ActionBtn
                 icon="slash"
                 label="حظر السائل"
@@ -364,6 +367,10 @@ function QuestionsTab() {
 
 export default function ContributionsScreen() {
   const [tab, setTab] = useState<Tab>('benefits');
+  const { data: user } = useCurrentUser();
+  // Full parity on hide/delete for the sheikh, but «حظر» (account ban) and the
+  // author email stay admin-only — banning is identity moderation, not teaching.
+  const isAdmin = user?.role === 'admin';
 
   return (
     <AdminShell active="contributions" breadcrumb="مشاركات الدارسين">
@@ -384,7 +391,7 @@ export default function ContributionsScreen() {
       </View>
 
       <View style={{ maxWidth: 860 }}>
-        {tab === 'benefits' ? <BenefitsTab /> : <QuestionsTab />}
+        {tab === 'benefits' ? <BenefitsTab isAdmin={isAdmin} /> : <QuestionsTab isAdmin={isAdmin} />}
       </View>
     </AdminShell>
   );

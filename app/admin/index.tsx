@@ -16,7 +16,7 @@ import { Card, Divider, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useAdminLectures, useUnclassifiedLectures } from '@/hooks/useAdmin';
 import { useAdminStats } from '@/hooks/useAdminStats';
-import { useAdminOnly } from '@/hooks/useAdminGuard';
+import { useStaffOnly } from '@/hooks/useAdminGuard';
 import { useAdminReports } from '@/hooks/useReports';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { arDuration, arNum, toArabicDigits } from '@/lib/format';
@@ -177,15 +177,22 @@ function QuickLink({
 const DASH = '—';
 
 export default function AdminHome() {
-  const role = useAdminOnly();
-  const { data: stats, refetch: refetchStats } = useAdminStats(role === 'admin');
+  const role = useStaffOnly();
+  // The sheikh gets the same dashboard NUMBERS (0081 widened the stats RPC), but
+  // NOT the admin-only navigation woven through this screen (users, reports,
+  // lecture/upload management). isStaffViewer = who may read the stats;
+  // isAdmin = who also gets the admin links/lists.
+  const isStaffViewer = role === 'admin' || role === 'sheikh';
+  const isAdmin = role === 'admin';
+  const { data: stats, refetch: refetchStats } = useAdminStats(isStaffViewer);
   const { data: lectures = [], refetch: refetchLectures } = useAdminLectures();
   const { data: unclassified = [], refetch: refetchUnclassified } = useUnclassifiedLectures();
-  const { data: openReports = [], refetch: refetchReports } = useAdminReports('open', role === 'admin');
+  const { data: openReports = [], refetch: refetchReports } = useAdminReports('open', isAdmin);
   const { refreshing, onRefresh } = usePullToRefresh([
     refetchLectures,
     refetchUnclassified,
-    ...(role === 'admin' ? [refetchStats, refetchReports] : []),
+    ...(isStaffViewer ? [refetchStats] : []),
+    ...(isAdmin ? [refetchReports] : []),
   ]);
 
   const draftCount = lectures.filter((l) => l.status === 'draft').length;
@@ -209,18 +216,19 @@ export default function AdminHome() {
         نظرة عامة على المنصة والطلاب
       </Txt>
 
-      <UrgentReportsBanner count={openReports.length} />
+      {isAdmin ? <UrgentReportsBanner count={openReports.length} /> : null}
 
-      {/* People */}
+      {/* People — a sheikh sees the counts, but the tiles don't deep-link into
+          إدارة المستخدمين (admin-only); href is dropped for the sheikh. */}
       <Txt weight="semibold" size={14} color={colors.textInk} style={styles.groupHeading}>
         الطلاب
       </Txt>
       <View style={styles.statsRow}>
-        <StatCard label="إجمالي الطلاب" value={n(stats?.totalUsers)} icon="users" accent href="/admin/users" />
-        <StatCard label="المسجّلون" value={n(stats?.registeredUsers)} icon="user-check" href="/admin/users" />
-        <StatCard label="النشطون اليوم" value={n(stats?.activeToday)} icon="activity" href="/admin/users" />
-        <StatCard label="الجدد هذا الأسبوع" value={n(stats?.newUsersWeek)} icon="user-plus" href="/admin/users" />
-        <StatCard label="الجدد هذا الشهر" value={n(stats?.newUsersMonth)} icon="calendar" href="/admin/users" />
+        <StatCard label="إجمالي الطلاب" value={n(stats?.totalUsers)} icon="users" accent href={isAdmin ? '/admin/users' : undefined} />
+        <StatCard label="المسجّلون" value={n(stats?.registeredUsers)} icon="user-check" href={isAdmin ? '/admin/users' : undefined} />
+        <StatCard label="النشطون اليوم" value={n(stats?.activeToday)} icon="activity" href={isAdmin ? '/admin/users' : undefined} />
+        <StatCard label="الجدد هذا الأسبوع" value={n(stats?.newUsersWeek)} icon="user-plus" href={isAdmin ? '/admin/users' : undefined} />
+        <StatCard label="الجدد هذا الشهر" value={n(stats?.newUsersMonth)} icon="calendar" href={isAdmin ? '/admin/users' : undefined} />
       </View>
 
       {/* Content + listening */}
@@ -228,11 +236,11 @@ export default function AdminHome() {
         المحتوى والاستماع
       </Txt>
       <View style={styles.statsRow}>
-        <StatCard label="محاضرات منشورة" value={n(stats?.lecturesPublished)} icon="headphones" href="/admin/lectures" />
-        <StatCard label="الأقسام" value={n(stats?.sectionsCount)} icon="folder" href="/admin/sections" />
+        <StatCard label="محاضرات منشورة" value={n(stats?.lecturesPublished)} icon="headphones" href={isAdmin ? '/admin/lectures' : undefined} />
+        <StatCard label="الأقسام" value={n(stats?.sectionsCount)} icon="folder" href={isAdmin ? '/admin/sections' : undefined} />
         <StatCard label="اختبارات منشورة" value={n(stats?.publishedQuizzes)} icon="check-square" href="/admin/quizzes" />
-        <StatCard label="مسودة" value={arNum(draftCount)} icon="edit-3" href="/admin/lectures" />
-        <StatCard label="واردة للمراجعة" value={arNum(incomingCount)} icon="inbox" href="/admin/unclassified" />
+        {isAdmin ? <StatCard label="مسودة" value={arNum(draftCount)} icon="edit-3" href="/admin/lectures" /> : null}
+        {isAdmin ? <StatCard label="واردة للمراجعة" value={arNum(incomingCount)} icon="inbox" href="/admin/unclassified" /> : null}
         <StatCard label="ساعات الاستماع" value={h(stats?.listenHoursTotal)} icon="clock" />
         <StatCard label="الاستماع هذا الشهر" value={h(stats?.listenHoursMonth)} icon="trending-up" />
       </View>
@@ -261,20 +269,37 @@ export default function AdminHome() {
         إجراءات سريعة
       </Txt>
       <Card padded={false} style={styles.quickLinksCard}>
-        <QuickLink title="إدارة المحاضرات" desc="المنشورة والمسودات والواردة" href="/admin/lectures" icon="headphones" />
-        <Divider />
-        <QuickLink title="رفع محاضرة جديدة" desc="أضف محاضرة صوتية وصنّفها في الشجرة" href="/admin/upload" icon="upload" />
-        <Divider />
+        {isAdmin ? (
+          <>
+            <QuickLink title="إدارة المحاضرات" desc="المنشورة والمسودات والواردة" href="/admin/lectures" icon="headphones" />
+            <Divider />
+            <QuickLink title="رفع محاضرة جديدة" desc="أضف محاضرة صوتية وصنّفها في الشجرة" href="/admin/upload" icon="upload" />
+            <Divider />
+          </>
+        ) : null}
         <QuickLink title="تحليلات التقدم العلمي" desc="إكمال الطلاب ومتوسط التقدم في الأقسام" href="/admin/analytics" icon="trending-up" />
         <Divider />
-        <QuickLink title="مساحة الأسئلة" desc="أسئلة الطلاب: أجب أو أخفِ أو احذف أو احظر" href="/admin/questions" icon="help-circle" />
-        <Divider />
-        <QuickLink title="ملاحظات الطلاب" desc="بلاغات مشكلات واقتراحات تحسين مع معلومات الجهاز" href="/admin/feedback" icon="message-circle" />
-        <Divider />
-        <QuickLink title="إدارة المستخدمين" desc="الحسابات والحالة وكلمات السر" href="/admin/users" icon="user-check" />
+        <QuickLink title="الاختبارات" desc="الاختبارات ونتائج الطلاب" href="/admin/quizzes" icon="check-square" />
+        {isAdmin ? (
+          <>
+            <Divider />
+            <QuickLink title="مساحة الأسئلة" desc="أسئلة الطلاب: أجب أو أخفِ أو احذف أو احظر" href="/admin/questions" icon="help-circle" />
+            <Divider />
+            <QuickLink title="ملاحظات الطلاب" desc="بلاغات مشكلات واقتراحات تحسين مع معلومات الجهاز" href="/admin/feedback" icon="message-circle" />
+            <Divider />
+            <QuickLink title="إدارة المستخدمين" desc="الحسابات والحالة وكلمات السر" href="/admin/users" icon="user-check" />
+          </>
+        ) : (
+          <>
+            <Divider />
+            <QuickLink title="مشاركات الدارسين" desc="فوائد الدارسين والأسئلة" href="/admin/contributions" icon="message-square" />
+          </>
+        )}
       </Card>
 
-      {/* Latest lectures */}
+      {/* Latest lectures — content-management context, admin only. */}
+      {isAdmin ? (
+      <>
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.sectionHeading}>
         أحدث المحاضرات
       </Txt>
@@ -313,6 +338,8 @@ export default function AdminHome() {
           ))}
         </Card>
       )}
+      </>
+      ) : null}
     </AdminShell>
   );
 }

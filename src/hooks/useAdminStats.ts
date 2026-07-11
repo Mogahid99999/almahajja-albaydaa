@@ -30,11 +30,16 @@ export function useAdminAnalytics() {
   });
 }
 
-/** Average app-rating tile (star rating, not lecture ratings). */
-export function useAdminRatingsSummary() {
+/**
+ * Average app-rating tile (star rating, not lecture ratings). `enabled`
+ * defaults true; the analytics screen passes `role === 'admin'` — the summary
+ * RPC is admin-only, so a sheikh viewer skips the call (the tile shows «—»).
+ */
+export function useAdminRatingsSummary(enabled = true) {
   return useQuery({
     queryKey: queryKeys.adminRatingsSummary,
     queryFn: getAdminRatingsSummary,
     staleTime: 60_000,
+    enabled,
   });
 }

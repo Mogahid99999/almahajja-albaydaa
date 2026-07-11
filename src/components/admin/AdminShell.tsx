@@ -41,6 +41,7 @@ type NavKey =
   | 'quizzes'
   | 'reminders'
   | 'questions'
+  | 'questions-inbox'
   | 'contributions'
   | 'reports'
   | 'feedback'
@@ -52,28 +53,35 @@ type NavKey =
 
 // `adminOnly` items are hidden from a ناشر (publisher): analytics, users, and
 // settings touch student data / platform config, which publishers never see.
+// `sheikh` marks the subset a شيخ sees when routed into this shell — a
+// read/teach slice (dashboard · questions · quizzes · contributions ·
+// analytics). Everything else stays admin/publisher-only.
 const NAV_ITEMS: {
   key: NavKey;
   label: string;
   href: string;
   icon: keyof typeof Feather.glyphMap;
   adminOnly?: boolean;
+  sheikh?: boolean;
 }[] = [
-  { key: 'dashboard', label: 'لوحة المعلومات', href: '/admin', icon: 'grid', adminOnly: true },
+  { key: 'dashboard', label: 'لوحة المعلومات', href: '/admin', icon: 'grid', adminOnly: true, sheikh: true },
+  // Sheikh's questions inbox (their existing /sheikh screen), shown first in
+  // the sheikh nav so their primary task stays one tap away.
+  { key: 'questions-inbox', label: 'أسئلة الطلبة', href: '/sheikh', icon: 'help-circle', sheikh: true },
   { key: 'lectures', label: 'المحاضرات', href: '/admin/lectures', icon: 'headphones' },
   { key: 'upload', label: 'رفع محاضرة', href: '/admin/upload', icon: 'upload' },
   { key: 'sections', label: 'الأقسام والشجرة', href: '/admin/sections', icon: 'folder' },
   { key: 'sheikhs', label: 'المشايخ', href: '/admin/sheikhs', icon: 'users' },
   { key: 'featured', label: 'المختارات', href: '/admin/featured', icon: 'bookmark' },
-  { key: 'quizzes', label: 'الاختبارات', href: '/admin/quizzes', icon: 'check-square' },
+  { key: 'quizzes', label: 'الاختبارات', href: '/admin/quizzes', icon: 'check-square', sheikh: true },
   { key: 'unclassified', label: 'المحاضرات الواردة', href: '/admin/unclassified', icon: 'inbox' },
   { key: 'reminders', label: 'التذكيرات النافعة', href: '/admin/reminders', icon: 'star' },
   { key: 'questions', label: 'مساحة الأسئلة', href: '/admin/questions', icon: 'help-circle', adminOnly: true },
-  { key: 'contributions', label: 'مشاركات الدارسين', href: '/admin/contributions', icon: 'message-square', adminOnly: true },
+  { key: 'contributions', label: 'مشاركات الدارسين', href: '/admin/contributions', icon: 'message-square', adminOnly: true, sheikh: true },
   { key: 'reports', label: 'البلاغات', href: '/admin/reports', icon: 'flag', adminOnly: true },
   { key: 'feedback', label: 'ملاحظات الطلاب', href: '/admin/feedback', icon: 'message-circle', adminOnly: true },
   { key: 'ratings', label: 'تقييمات التطبيق', href: '/admin/ratings', icon: 'thumbs-up', adminOnly: true },
-  { key: 'analytics', label: 'تحليلات التقدم', href: '/admin/analytics', icon: 'trending-up', adminOnly: true },
+  { key: 'analytics', label: 'تحليلات التقدم', href: '/admin/analytics', icon: 'trending-up', adminOnly: true, sheikh: true },
   { key: 'buddies', label: 'رفقاء الدراسة', href: '/admin/buddies', icon: 'heart', adminOnly: true },
   { key: 'users', label: 'إدارة المستخدمين', href: '/admin/users', icon: 'user-check', adminOnly: true },
   { key: 'settings', label: 'الإعدادات وعن المنصة', href: '/admin/settings', icon: 'settings', adminOnly: true },
@@ -103,7 +111,7 @@ interface AdminShellProps {
 
 // ─── Sidebar (shared by the fixed pane and the compact drawer) ────────────────
 
-function SidebarBody({
+export function SidebarBody({
   active,
   onNavigate,
 }: {
@@ -116,7 +124,12 @@ function SidebarBody({
   const insets = useSafeAreaInsets();
 
   const isPublisher = user?.role === 'publisher';
-  const navItems = NAV_ITEMS.filter((item) => !item.adminOnly || !isPublisher);
+  const isSheikh = user?.role === 'sheikh';
+  // A sheikh sees ONLY the items flagged `sheikh`; a publisher sees everything
+  // except `adminOnly`; an admin sees all.
+  const navItems = isSheikh
+    ? NAV_ITEMS.filter((item) => item.sheikh)
+    : NAV_ITEMS.filter((item) => !item.adminOnly || !isPublisher);
 
   return (
     <>
@@ -128,7 +141,7 @@ function SidebarBody({
             المَحجّة البَيْضَاء
           </Txt>
           <Txt weight="regular" size={11} color={colors.onTealSecondary}>
-            لوحة الإدارة
+            {isSheikh ? 'لوحة الشيخ' : 'لوحة الإدارة'}
           </Txt>
         </View>
       </View>
@@ -213,7 +226,7 @@ function SidebarBody({
               {user?.email ?? '—'}
             </Txt>
             <Txt weight="regular" size={11} color={colors.onTealSecondary}>
-              {isPublisher ? 'ناشر' : 'مدير'}
+              {isPublisher ? 'ناشر' : isSheikh ? 'شيخ' : 'مدير'}
             </Txt>
           </View>
           <View style={styles.userAvatar}>
@@ -222,6 +235,38 @@ function SidebarBody({
         </View>
       </View>
     </>
+  );
+}
+
+// ─── Drawer (compact AdminShell + any screen outside the shell, e.g. /sheikh) ──
+
+/**
+ * The slide-over nav drawer, extracted so screens that aren't wrapped in
+ * AdminShell (the sheikh's /sheikh inbox) can open the SAME sidebar in place
+ * instead of navigating away. Renders nothing when closed.
+ */
+export function SidebarDrawer({
+  visible,
+  active,
+  onClose,
+}: {
+  visible: boolean;
+  active: NavKey;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.drawerOverlay}>
+        <Pressable
+          style={styles.drawerBackdrop}
+          onPress={onClose}
+          accessibilityLabel="إغلاق القائمة"
+        />
+        <View style={styles.drawerPanel}>
+          <SidebarBody active={active} onNavigate={onClose} />
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -328,23 +373,11 @@ export function AdminShell({
 
       {/* ── Compact: drawer overlay ── */}
       {compact ? (
-        <Modal
+        <SidebarDrawer
           visible={drawerOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setDrawerOpen(false)}
-        >
-          <View style={styles.drawerOverlay}>
-            <Pressable
-              style={styles.drawerBackdrop}
-              onPress={() => setDrawerOpen(false)}
-              accessibilityLabel="إغلاق القائمة"
-            />
-            <View style={styles.drawerPanel}>
-              <SidebarBody active={active} onNavigate={() => setDrawerOpen(false)} />
-            </View>
-          </View>
-        </Modal>
+          active={active}
+          onClose={() => setDrawerOpen(false)}
+        />
       ) : null}
     </View>
   );

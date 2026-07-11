@@ -14,8 +14,13 @@ export default function AdminLayout() {
   // /admin/... URL is redirected by the root AuthGate one render later — render
   // nothing in the meantime so the admin UI never flashes. (Data was always
   // protected by RLS; this is the cosmetic layer.)
+  // Admins + publishers live here fully; a sheikh may enter for the shared
+  // staff screens (dashboard · quizzes · contributions · analytics). The
+  // per-screen guards (useAdminOnly / useStaffOnly) + RLS/RPC gates (0081) keep
+  // a sheikh out of the admin-only screens' data.
   const isStaff =
-    !user?.isGuest && (user?.role === 'admin' || user?.role === 'publisher');
+    !user?.isGuest &&
+    (user?.role === 'admin' || user?.role === 'publisher' || user?.role === 'sheikh');
   if (!isStaff) return null;
 
   return <Stack screenOptions={{ headerShown: false }} />;

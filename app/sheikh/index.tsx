@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 
 import type { InboxQuestion, QuestionCategory, QuestionScope } from '@/api/questions';
+import { SidebarDrawer } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Divider, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
@@ -241,6 +242,7 @@ export default function SheikhInboxScreen() {
   const [category, setCategory] = useState<QuestionCategory | 'all'>('all');
   const [pendingDelete, setPendingDelete] = useState<InboxQuestion | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const deleteQuestion = useDeleteQuestion();
 
   // The sheikh never sees the student prefs page, so their «سؤال جديد» toggle
@@ -267,6 +269,16 @@ export default function SheikhInboxScreen() {
       <Screen bottomPad={40}>
         {/* ── Header ── */}
         <View style={styles.header}>
+          {/* Same `menu` hamburger, same start (right) placement, and same
+              BEHAVIOUR as every AdminShell tab: it opens the nav sidebar in
+              place (drawer) — it does NOT navigate away. */}
+          <Pressable
+            onPress={() => setDrawerOpen(true)}
+            accessibilityLabel="القائمة"
+            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Feather name="menu" size={20} color={colors.textSlate} />
+          </Pressable>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
             <Logo size={40} />
             <View>
@@ -399,6 +411,13 @@ export default function SheikhInboxScreen() {
           }}
           onCancel={() => setPendingDelete(null)}
         />
+
+        {/* Same nav sidebar as the AdminShell tabs, opened in place. */}
+        <SidebarDrawer
+          visible={drawerOpen}
+          active="questions-inbox"
+          onClose={() => setDrawerOpen(false)}
+        />
       </Screen>
     </KeyboardAvoidingView>
   );
@@ -409,6 +428,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
     marginBottom: 16,
   } as ViewStyle,
 

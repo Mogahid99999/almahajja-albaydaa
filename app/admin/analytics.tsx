@@ -13,7 +13,7 @@ import { AdminShell } from '@/components/admin/AdminShell';
 import { Card, Divider, ProgressBar, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { useAdminAnalytics, useAdminRatingsSummary } from '@/hooks/useAdminStats';
-import { useAdminOnly } from '@/hooks/useAdminGuard';
+import { useStaffOnly } from '@/hooks/useAdminGuard';
 import { arNum, arPercent, arSince, toArabicDigits } from '@/lib/format';
 import type { AdminStudentBrief } from '@/api/types';
 
@@ -101,9 +101,9 @@ function StudentList({
 }
 
 export default function AdminAnalytics() {
-  useAdminOnly();
+  const role = useStaffOnly();
   const { data, isLoading } = useAdminAnalytics();
-  const { data: ratings } = useAdminRatingsSummary();
+  const { data: ratings } = useAdminRatingsSummary(role === 'admin');
 
   const n = (v: number | undefined) => (v === undefined ? DASH : arNum(v));
   const sections = data?.sections ?? [];

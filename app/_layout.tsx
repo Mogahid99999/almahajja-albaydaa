@@ -260,7 +260,10 @@ function AuthGate() {
     // A real sheikh login may reach /sheikh on web too.
     if (Platform.OS === 'web') {
       if (isSheikh && !user!.isGuest) {
-        if (!inSheikh) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
+        // A sheikh lives in /sheikh (their inbox) AND the shared staff screens
+        // under /admin (dashboard · quizzes · contributions · analytics) — allow
+        // both; only steer them there from elsewhere. Their landing is /sheikh.
+        if (!inSheikh && !inAdmin) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
       } else if (isStaff && !user!.isGuest) {
         if (!inAdmin) router.replace(staffHome);
       } else if (!inAuth) {
@@ -271,10 +274,10 @@ function AuthGate() {
 
     // Native: guest-first student app. Steer staff into /admin, sheikhs into
     // /sheikh, others out of both; the (auth) screens stay reachable so a guest
-    // can register / sign in.
+    // can register / sign in. A sheikh may also open the /admin staff screens.
     if (!user) return;
     if (isSheikh) {
-      if (!inSheikh) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
+      if (!inSheikh && !inAdmin) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
     } else if (isStaff) {
       if (!inAdmin) router.replace(staffHome);
     } else if (inAdmin || inSheikh) {
