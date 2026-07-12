@@ -141,6 +141,25 @@ let errorRetryCount = 0;
 // can't revive, so we rebuild it — same reasoning as the `justFinished` path.
 let forceFreshPlayer = false;
 
+// We INTEND the current track to be playing (startPlayer called play()). For a
+// freshly-CREATED streaming player (the auto-advance-to-a-new-lecture case), the
+// early play() can be a no-op because the native source isn't decoded/ready yet
+// — the track then loads but sits PAUSED until the user taps play (reported:
+// "auto-advance switches the lecture but doesn't start it, only online, only for
+// never-played lectures"). This flag lets onStatus re-issue play() once the
+// source becomes loaded. Cleared by a deliberate pause/toggle so it never fights
+// the user. `autoPlayRetries` bounds the re-issue so a genuinely unplayable
+// source can't loop.
+let intendPlay = false;
+let autoPlayRetries = 0;
+const MAX_AUTOPLAY_RETRIES = 5;
+// Set true the first time the CURRENT track actually reports playing. The
+// auto-start guard only fires BEFORE this (i.e. the track never got going) — so
+// once a track has really started, a later pause from the lock-screen /
+// notification (which doesn't route through toggle()/pause()) is fully honored
+// and never overridden. Reset per load in resetTrackProgress.
+let hasStartedPlaying = false;
+
 // Hard ceiling on the signed-URL resolution before we stop waiting (weak/flaky
 // signal). Without it, `ensureQueryData` (networkMode 'offlineFirst', no wired
 // timeout) can hang far past what reads as "the player is stuck" to the user.
@@ -267,6 +286,35 @@ function onStatus(status: AudioStatus) {
   s.setPlaying(status.playing);
   if (status.isLoaded) s.setLoading(false);
 
+  // Auto-start guard (auto-advance to a NEW streaming lecture): startPlayer
+  // called play() but a just-created native source can ignore it until it's
+  // decoded, so the switched-to track loads but sits PAUSED until a manual tap.
+  // If we still INTEND to play, the source is now loaded, it hasn't started yet
+  // (`!hasStartedPlaying`), and it isn't playing/errored/ended — re-issue play()
+  // so it starts on its own. The `!hasStartedPlaying` gate means this ONLY ever
+  // nudges a track that never got going; once a track has really started, a
+  // later pause from the lock-screen/notification is honored and never
+  // overridden. Bounded so a genuinely unplayable source can't loop.
+  if (status.playing) {
+    hasStartedPlaying = true;
+    autoPlayRetries = 0;
+  } else if (
+    intendPlay &&
+    !hasStartedPlaying &&
+    status.isLoaded &&
+    !status.didJustFinish &&
+    !status.error &&
+    currentId &&
+    autoPlayRetries < MAX_AUTOPLAY_RETRIES
+  ) {
+    autoPlayRetries++;
+    try {
+      player?.play();
+    } catch {
+      /* next status tick retries */
+    }
+  }
+
   // Mid-playback re-buffering (weak/lost signal): the track is already loaded and
   // has played into the timeline (position > 0) but has run dry waiting for more
   // data. Surface it as a calm "reconnecting" hint (distinct from the initial-open
@@ -356,6 +404,10 @@ function onStatus(status: AudioStatus) {
     void persist(status.currentTime || currentDuration || 0, true);
     invalidateProgressViews();
     s.setPlaying(false);
+    // This track is done — drop the auto-start intent; if auto-advance fires
+    // below, startPlayer re-arms it for the NEXT track.
+    intendPlay = false;
+    autoPlayRetries = 0;
     // Auto-advance to the next lecture in the section, if enabled and one exists.
     if (useSettingsStore.getState().autoAdvance && s.nextLectureId) {
       void playLecture(s.nextLectureId);
@@ -480,6 +532,9 @@ function resetTrackProgress(positionSec: number) {
   lastSavedPos = Math.max(0, Math.round(positionSec));
   hasSavedTrack = false;
   trackCompleted = false;
+  // New track hasn't started playing yet — re-arm the auto-start guard for it.
+  hasStartedPlaying = false;
+  autoPlayRetries = 0;
   // New current track → allow the near-end warm-ahead to fire once for whatever
   // its next lecture turns out to be (resolved async right after this).
   warmedNextFor = null;
@@ -595,6 +650,12 @@ async function startPlayer(source: string, positionSec: number, gen: number) {
     }
   }
   if (gen !== loadGen || !player) return;
+  // We intend this track to play. A freshly-created streaming player may ignore
+  // this early play() (source not decoded yet) — onStatus re-issues it once the
+  // source is loaded, so an auto-advanced new lecture actually starts instead of
+  // sitting paused until a manual tap.
+  intendPlay = true;
+  autoPlayRetries = 0;
   player.play();
   store().setPlaying(true);
   // Bind/refresh the lock-screen + shade controls for whatever track just loaded.
@@ -823,6 +884,9 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
 export function toggle() {
   if (!player) return;
   if (player.playing) {
+    // Deliberate pause — stop the auto-start guard so it never re-plays behind
+    // the user's back.
+    intendPlay = false;
     player.pause();
     store().setPlaying(false);
     void persist(player.currentTime ?? store().positionSec);
@@ -844,6 +908,8 @@ export function toggle() {
       void loadLecture(currentId, { startAtSec: player.currentTime ?? store().positionSec });
       return;
     }
+    intendPlay = true;
+    autoPlayRetries = 0;
     player.play();
     store().setPlaying(true);
   }
@@ -851,6 +917,8 @@ export function toggle() {
 
 export function pause() {
   if (player?.playing) {
+    // Deliberate pause — stop the auto-start guard (see toggle).
+    intendPlay = false;
     player.pause();
     store().setPlaying(false);
     void persist(player.currentTime ?? store().positionSec);
@@ -899,6 +967,8 @@ export function stop() {
   pendingId = null;
   justFinished = false;
   forceFreshPlayer = false;
+  intendPlay = false;
+  autoPlayRetries = 0;
   lastAutoAdvancedFrom = null;
   // Invalidate any load still in flight — without this, closing the player
   // while a (slow) lecture load was resolving let that load commit afterwards
