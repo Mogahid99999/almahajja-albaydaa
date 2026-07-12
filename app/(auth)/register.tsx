@@ -82,11 +82,26 @@ export default function RegisterScreen() {
         while typing. `padding` shrinks the scroll area so the focused field
         scrolls above the keyboard; same fix as FeedbackSheet / lecture-note. */}
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-    <Screen scroll contentStyle={{ justifyContent: 'center', flexGrow: 1 }}>
-      {/* Brand */}
-      <View style={{ alignItems: 'center', marginBottom: 12 }}>
+    {/* Top-anchored (NOT justifyContent:'center'): centering a form that is
+        taller than a short viewport clips its ends — the submit button peeked
+        half-cut at the bottom on a real 720px phone. bottomPad 40 keeps the
+        last control comfortably above the system nav bar even when the
+        safe-area bottom inset reads 0 on 3-button-nav devices. */}
+    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40}>
+      {/* Brand — marginTop (not container paddingTop, which would displace the
+          status-bar scrim) gives the logo breathing room from the top edge. */}
+      <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 12 }}>
         <Logo size={65} />
-        <Txt weight="display" size={20} color={colors.primaryTeal} style={{ marginTop: 8 }}>
+        {/* alignSelf:'stretch' + center: a content-sized RTL Text clips its
+            trailing word on Android («إنشاء حساب» → «إنشاء») — same fix as the
+            player title block. */}
+        <Txt
+          weight="display"
+          size={20}
+          color={colors.primaryTeal}
+          align="center"
+          style={{ marginTop: 8, alignSelf: 'stretch' }}
+        >
           إنشاء حساب
         </Txt>
         <Txt size={12} color={colors.textGhost} align="center" style={{ marginTop: 4, lineHeight: 17 }}>
@@ -219,7 +234,13 @@ export default function RegisterScreen() {
             shadows.button,
           ]}
         >
-          <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
+          <Txt
+            weight="semibold"
+            size={15}
+            color={colors.onTealPrimary}
+            align="center"
+            style={{ alignSelf: 'stretch' }}
+          >
             {register.isPending ? 'جارٍ التسجيل…' : 'إنشاء الحساب'}
           </Txt>
         </Pressable>

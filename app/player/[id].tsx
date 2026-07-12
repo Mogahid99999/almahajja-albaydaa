@@ -186,9 +186,23 @@ export default function PlayerScreen() {
   // the attachments strip when present), so a long, multi-line title can wrap
   // freely in the top region without ever pushing the controls into overlap.
   const hasAttachments = (data?.attachments?.length ?? 0) > 0;
-  const controlsBottom = (hasAttachments ? 208 : 150) + insets.bottom;
-  // Keep the title clear of the pinned controls (≈176px waveform+transport block).
-  const titleAreaReserve = (hasAttachments ? 208 : 150) + 176;
+  // Compact vertical scale for short viewports (≈720×1280 / 640dp phones,
+  // minus the Android sheet's top peek gap): the default stack (148px emblem +
+  // 6-line title reserve + 326px pinned controls) simply doesn't fit in
+  // ~576dp, so the title used to render over the waveform and the emblem
+  // collided with the top bar. Everything shrinks together so it stays one
+  // coherent layout; normal phones (≥700dp usable) are untouched.
+  const usableHeight = isAndroid ? sheetTravel : windowHeight;
+  const compact = usableHeight < 700;
+  const utilityBottom = compact ? 14 : 26;
+  const toolsBottom = compact ? 62 : 86;
+  const attachmentsBottom = compact ? 118 : 144;
+  const controlsBottomBase = hasAttachments ? (compact ? 172 : 208) : (compact ? 118 : 150);
+  const controlsBottom = controlsBottomBase + insets.bottom;
+  // Keep the title clear of the pinned controls (waveform+transport block —
+  // ≈176px normal, ≈152px compact with the tighter transport gap).
+  const titleAreaReserve = controlsBottomBase + (compact ? 152 : 176);
+  const emblemSize = compact ? 96 : 148;
 
   const playerScreen = (
     // topInset off on Android: the sheet rests well below the status bar, so the
@@ -251,24 +265,26 @@ export default function PlayerScreen() {
         <View style={styles.emblemWrapper}>
           {/* Brass border + soft shadow wrap the shared RhombusEmblem. */}
           <View style={styles.emblemBorder}>
-            <RhombusEmblem size={148} radius={radius.artwork} tile={colors.primaryTealDeep} />
+            <RhombusEmblem size={emblemSize} radius={radius.artwork} tile={colors.primaryTealDeep} />
           </View>
         </View>
 
         {/* ── Title block ── */}
-        <View style={styles.titleBlock}>
-          {eyebrow ? (
+        {/* compact: the eyebrow duplicates the top bar's section label — drop it
+            to buy title room on short screens. */}
+        <View style={[styles.titleBlock, compact && { marginTop: 12 }]}>
+          {eyebrow && !compact ? (
             <Txt size={11} color={colors.accentBrass} weight="medium" align="center">
               {eyebrow}
             </Txt>
           ) : null}
           <Txt
-            size={25}
+            size={compact ? 20 : 25}
             weight="display"
             color={colors.onTealPrimary}
             align="center"
-            style={styles.titleText}
-            numberOfLines={6}
+            style={compact ? styles.titleTextCompact : styles.titleText}
+            numberOfLines={compact ? 3 : 6}
           >
             {title}
           </Txt>
@@ -353,7 +369,7 @@ export default function PlayerScreen() {
             ) : null}
 
             {/* ── Transport controls ── */}
-            <View style={styles.transportWrapper}>
+            <View style={[styles.transportWrapper, compact && { marginTop: 8 }]}>
               <TransportControls isPlaying={isPlaying} />
             </View>
           </>
@@ -361,13 +377,13 @@ export default function PlayerScreen() {
       </View>
 
       {/* ── Lecture attachments strip (absolute, above the tools row) ── */}
-      <PlayerAttachmentsStrip attachments={data?.attachments ?? []} />
+      <PlayerAttachmentsStrip attachments={data?.attachments ?? []} bottom={attachmentsBottom} />
 
       {/* ── «أدوات الدرس» — note · benefits · questions (absolute) ── */}
-      {id ? <LessonToolsRow lectureId={id} /> : null}
+      {id ? <LessonToolsRow lectureId={id} bottom={toolsBottom} /> : null}
 
       {/* ── Pinned utility bar (absolute) ── */}
-      <PlayerUtilityBar lectureId={id} rate={rate} />
+      <PlayerUtilityBar lectureId={id} rate={rate} bottom={utilityBottom} />
     </Screen>
   );
 
@@ -500,6 +516,10 @@ const styles = StyleSheet.create({
   },
   titleText: {
     lineHeight: 34, // 25 * 1.35
+    marginTop: 0,
+  },
+  titleTextCompact: {
+    lineHeight: 27, // 20 * 1.35
     marginTop: 0,
   },
   sheikhText: {

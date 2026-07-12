@@ -7,6 +7,7 @@
  *
  * Route: /(student)/reminder/[id]
  */
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -40,6 +41,28 @@ export default function ReminderDetailScreen() {
   const { data, isLoading } = useBroadcast(id ?? '');
   const { data: imageUrl } = useBroadcastImageUrl(data?.imagePath ?? null);
   const miniPad = useMiniPlayerPad();
+
+  // Show the reminder image at its TRUE aspect ratio so a tall poster (like the
+  // course flyer) is never cropped by a fixed 16:9 frame. Measure the real
+  // dimensions once the URL is known; fall back to 16:9 until then.
+  const [imgRatio, setImgRatio] = useState<number | null>(null);
+  useEffect(() => {
+    setImgRatio(null);
+    if (!imageUrl) return;
+    let cancelled = false;
+    Image.getSize(
+      imageUrl,
+      (w, h) => {
+        if (!cancelled && w > 0 && h > 0) setImgRatio(w / h);
+      },
+      () => {
+        /* keep the fallback ratio on failure */
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
 
   function openLink() {
     const url = data?.linkUrl;
@@ -105,12 +128,16 @@ export default function ReminderDetailScreen() {
               source={{ uri: imageUrl }}
               style={{
                 width: '100%',
-                aspectRatio: 16 / 9,
+                // Real aspect ratio once measured (fallback 16:9) so a tall
+                // poster shows in full instead of being cropped.
+                aspectRatio: imgRatio ?? 16 / 9,
                 borderRadius: radius.card,
                 marginBottom: 16,
                 backgroundColor: colors.surfaceInset,
               }}
-              resizeMode="cover"
+              // `contain` guarantees the whole image is visible whatever its
+              // shape; with the true aspectRatio there's no letterboxing.
+              resizeMode="contain"
             />
           ) : null}
 

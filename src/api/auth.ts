@@ -90,6 +90,43 @@ async function syncOwnProfile(fields: {
 const MOCK_SESSION_KEY = 'mock-auth-session';
 
 /**
+ * Hard ceiling on a single auth network/lock operation. supabase-js serializes
+ * every auth call behind an internal lock; if an in-flight auto-refresh (or a
+ * racing getSession/onAuthStateChange) stalls on a flaky network while holding
+ * that lock, the NEXT call (e.g. signInWithPassword) waits on it FOREVER — the
+ * reported "«جارٍ الدخول…» hangs until I Force Stop, as if a previous account
+ * never finished". Racing each such call against this timeout guarantees the
+ * promise always settles, so the UI re-enables and the user can just retry
+ * instead of force-stopping. Generous enough for a slow-but-working connection.
+ */
+const AUTH_OP_TIMEOUT_MS = 20_000;
+
+/**
+ * Reject with a clear Arabic error if `p` hasn't settled within `ms` — used to
+ * bound auth calls that can otherwise hang on the GoTrue lock (see above). The
+ * underlying operation isn't cancellable, but rejecting frees the UI; a retry
+ * finds the lock released (the stalled holder eventually errors out) and works.
+ */
+function withAuthTimeout<T>(p: Promise<T>, ms = AUTH_OP_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('تعذّر إكمال العملية، تحقّق من اتصالك وحاول مرة أخرى')),
+      ms,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
  * Device-bound guest (V6 fix): ONE anonymous account per device, ever. Signing
  * out of a registered account used to mint a brand-new anonymous user each
  * time, silently inflating إجمالي الطلاب with phantom "new users". Instead the
@@ -320,12 +357,22 @@ export async function signIn(identifier: string, password: string): Promise<Curr
   }
   // Capture the guest session's live tokens before it is replaced, so signing
   // out later returns to the SAME device guest instead of minting a new one.
-  const { data: pre } = await supabase.auth.getSession();
-  if (pre.session && (pre.session.user.is_anonymous ?? false)) {
-    await storeGuestSession(pre.session);
+  // Best-effort + bounded: a stalled getSession must not wedge sign-in.
+  try {
+    const { data: pre } = await withAuthTimeout(supabase.auth.getSession());
+    if (pre.session && (pre.session.user.is_anonymous ?? false)) {
+      await storeGuestSession(pre.session);
+    }
+  } catch {
+    // Non-fatal — worst case a fresh guest is minted on the next sign-out.
   }
-  const { data, error } = await supabase.auth.signInWithPassword(
-    isEmail ? { email: e, password } : { phone: normalizePhone(raw), password },
+  // Bounded so a stuck GoTrue lock (a stalled auto-refresh holding it) can't
+  // hang «جارٍ الدخول…» forever — on timeout this rejects and the button
+  // re-enables for a retry instead of forcing the user to Force Stop the app.
+  const { data, error } = await withAuthTimeout(
+    supabase.auth.signInWithPassword(
+      isEmail ? { email: e, password } : { phone: normalizePhone(raw), password },
+    ),
   );
   if (error) throw error;
   const u = data.user!;
@@ -515,8 +562,11 @@ export async function signOut(): Promise<CurrentUser | null> {
   // The global sign-out revokes server-side but fails on a network hiccup or a
   // stale refresh token — which used to leave the button visibly dead. Fall
   // back to clearing the LOCAL session so signing out always takes effect.
+  // Bounded so a stalled server revoke (or a stuck GoTrue lock) can't hang the
+  // sign-out spinner forever — on timeout we still guarantee a LOCAL sign-out,
+  // which is what actually returns the app to the guest session.
   try {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await withAuthTimeout(supabase.auth.signOut());
     if (error) throw error;
   } catch {
     await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
@@ -545,7 +595,16 @@ export async function checkBannedAndSignOut(): Promise<{
   if (USE_MOCK) return { banned: false, user: null };
   const { data } = await supabase.auth.getSession();
   if (!data.session) return { banned: false, user: null };
-  const { error } = await supabase.auth.getUser();
+  // Bounded: this runs on every app-foreground and holds the GoTrue auth lock
+  // while it validates. If it stalls on a flaky network, an unbounded wait here
+  // keeps the lock and can hang a concurrent sign-in tap («جارٍ الدخول…»). On
+  // timeout we treat the session as fine (fail-open, same as a network error).
+  let error: unknown = null;
+  try {
+    ({ error } = await withAuthTimeout(supabase.auth.getUser()));
+  } catch {
+    return { banned: false, user: null };
+  }
   if (!error) return { banned: false, user: null };
   const status = (error as { status?: number }).status ?? 0;
   const code = (error as { code?: string }).code ?? '';

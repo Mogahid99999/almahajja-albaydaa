@@ -317,9 +317,16 @@ export default function SheikhInboxScreen() {
               }}
               disabled={signOut.isPending}
               accessibilityLabel="تسجيل الخروج"
-              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [
+                styles.iconBtn,
+                (pressed || signOut.isPending) && { opacity: 0.7 },
+              ]}
             >
-              <Feather name="log-out" size={17} color={colors.textMuted} />
+              {signOut.isPending ? (
+                <ActivityIndicator size="small" color={colors.textMuted} />
+              ) : (
+                <Feather name="log-out" size={17} color={colors.textMuted} />
+              )}
             </Pressable>
           </View>
         </View>

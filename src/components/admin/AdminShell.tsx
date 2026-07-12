@@ -11,6 +11,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React, { type ReactNode, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
@@ -217,9 +218,16 @@ export function SidebarBody({
             disabled={signOut.isPending}
             accessibilityRole="button"
             accessibilityLabel="تسجيل الخروج"
-            style={({ pressed }) => [styles.signOutBtn, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.signOutBtn,
+              (pressed || signOut.isPending) && { opacity: 0.7 },
+            ]}
           >
-            <Feather name="log-out" size={16} color={colors.onTealSecondary} />
+            {signOut.isPending ? (
+              <ActivityIndicator size="small" color={colors.onTealSecondary} />
+            ) : (
+              <Feather name="log-out" size={16} color={colors.onTealSecondary} />
+            )}
           </Pressable>
           <View style={{ flex: 1, marginRight: 8 }}>
             <Txt weight="semibold" size={12} color={colors.onTealPrimary} numberOfLines={1}>

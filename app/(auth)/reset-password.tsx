@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 
 import { updatePassword, verifyPasswordResetCode } from '@/api/auth';
 import { Card, IconButton, Screen, Txt } from '@/components/ui';
@@ -69,14 +69,22 @@ export default function ResetPasswordScreen() {
   };
 
   return (
-    <Screen scroll={false} contentStyle={{ justifyContent: 'center' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+    // Scroll + keyboard-avoid (same fix as sign-in/register): the verify step
+    // (code + new password + two buttons) must stay reachable on a short
+    // viewport with the keyboard open.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, marginBottom: 18 }}>
         <IconButton
           icon="chevron-right"
           onPress={() => (mode === 'verify' && !done ? setMode('request') : router.back())}
           accessibilityLabel="رجوع"
         />
-        <Txt weight="display" size={22} color={colors.primaryTeal}>
+        {/* flex:1 so the title owns the rest of the row: a content-sized RTL
+            Text clips its trailing word on Android («استعادة كلمة المرور» →
+            «استعادة كلمة»), and the full-width box also lets it wrap on
+            narrow screens. */}
+        <Txt weight="display" size={22} color={colors.primaryTeal} align="right" style={{ flex: 1 }}>
           استعادة كلمة المرور
         </Txt>
       </View>
@@ -173,6 +181,7 @@ export default function ResetPasswordScreen() {
         )}
       </Card>
     </Screen>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -212,7 +221,15 @@ function PrimaryButton({
         shadows.button,
       ]}
     >
-      <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
+      {/* stretch + center: a content-sized RTL Text can render off-center /
+          clip its trailing word inside a centered button on Android. */}
+      <Txt
+        weight="semibold"
+        size={15}
+        color={colors.onTealPrimary}
+        align="center"
+        style={{ alignSelf: 'stretch' }}
+      >
         {label}
       </Txt>
     </Pressable>

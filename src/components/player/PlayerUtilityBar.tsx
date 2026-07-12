@@ -13,9 +13,11 @@ import { PlaybackRateSlider } from './PlaybackRateSlider';
 type Props = {
   lectureId: string;
   rate: PlaybackRate;
+  /** Base bottom offset — the player shrinks it on short viewports. */
+  bottom?: number;
 };
 
-export function PlayerUtilityBar({ lectureId, rate }: Props) {
+export function PlayerUtilityBar({ lectureId, rate, bottom = 26 }: Props) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -25,7 +27,7 @@ export function PlayerUtilityBar({ lectureId, rate }: Props) {
         left: 18,
         right: 18,
         // Sit above the system nav bar / gesture area (Issue 2).
-        bottom: 26 + insets.bottom,
+        bottom: bottom + insets.bottom,
         alignItems: 'center',
       }}
     >

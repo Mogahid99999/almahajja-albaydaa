@@ -190,10 +190,10 @@ export function localUriFor(lectureId: string): string | null {
   try {
     const entry = readManifest()[lectureId];
     if (!entry) return null;
-    // Android SAF entries are content:// URIs — trust the manifest here (it's
-    // kept accurate by verifyDownloads() at hydration) rather than doing a
-    // live existence check, since that's async and this is a hot sync path
-    // (playback load, list rendering).
+    // Android SAF entries are content:// URIs — trust the manifest here (kept
+    // accurate by verifyDownload/verifyDownloads, which prune an entry the moment
+    // its file is confirmed gone) rather than doing a live existence check, since
+    // that's async and this is a hot sync path (playback load, list rendering).
     if (entry.safUri) return entry.safUri;
     const f = fileFor(entry.relativePath);
     return f.exists ? f.uri : null;
@@ -344,33 +344,85 @@ export async function downloadLecture(
 }
 
 /**
- * Re-syncs the manifest with what's actually on disk/in public storage.
- * Public (Android) files are user-visible and can be renamed, moved, or
- * deleted outside the app — call this once at app startup (before trusting
- * localUriFor's manifest-only fast path) so stale entries don't linger as
- * "downloaded" when the file is gone. No-op on iOS/web.
+ * Does the audio file for a manifest entry ACTUALLY exist in its chosen storage
+ * location right now? (V17.1) The download state must reflect the real presence
+ * of the file: if the user deleted/moved it in a file manager, the lecture must
+ * stop showing as "downloaded" and become downloadable again.
+ *
+ * SAF (Android public storage) can only be checked with the async `getInfoAsync`
+ * on the content:// URI; a bare local file (iOS) is a sync `.exists`. To avoid a
+ * FALSE "missing" at a cold start — when the SAF content provider is briefly
+ * unavailable and `getInfoAsync` throws — a thrown check is retried a couple of
+ * times with a short backoff. Only after those retries still can't confirm the
+ * file is it treated as gone.
  */
-export async function verifyDownloads(): Promise<void> {
-  if (!isAndroid) return;
-  try {
-    const manifest = readManifest();
-    let changed = false;
-    for (const [id, entry] of Object.entries(manifest)) {
-      if (!entry.safUri) continue;
+async function entryFileExists(entry: ManifestEntry): Promise<boolean> {
+  if (entry.safUri) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const info = await getInfoAsync(entry.safUri);
-        if (!info.exists) {
-          delete manifest[id];
-          changed = true;
-        }
+        return info.exists === true; // reachable provider gave a definitive answer
       } catch {
-        delete manifest[id];
-        changed = true;
+        // Provider not ready yet — wait briefly and retry before concluding.
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
       }
     }
-    if (changed) writeManifest(manifest);
+    return false; // couldn't confirm after retries → treat as missing
+  }
+  try {
+    return fileFor(entry.relativePath).exists;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Re-syncs the manifest with what's actually on disk/in public storage, and
+ * returns the ids whose file is gone (so the store can drop them). Public
+ * (Android) files are user-visible and can be renamed, moved, or deleted outside
+ * the app — call this at app startup and whenever a download control mounts, so
+ * an entry whose file no longer exists stops showing as "downloaded" and becomes
+ * downloadable again (V17.1). No-op on iOS/web returns [] (there the sidecar file
+ * check happens inline in localUriFor).
+ */
+export async function verifyDownloads(): Promise<string[]> {
+  if (isWeb) return [];
+  const removed: string[] = [];
+  try {
+    const manifest = readManifest();
+    for (const [id, entry] of Object.entries(manifest)) {
+      const exists = await entryFileExists(entry);
+      if (!exists) {
+        delete manifest[id];
+        removed.push(id);
+      }
+    }
+    if (removed.length) writeManifest(manifest);
   } catch {
     /* best-effort */
+  }
+  return removed;
+}
+
+/**
+ * Verify a SINGLE lecture's audio file actually exists in its chosen storage
+ * location (V17.1). Returns true if present; if it's gone, prunes the manifest
+ * entry and returns false — so its download control reopens. Used by each
+ * download control on mount so a file the user deleted externally is caught even
+ * without a full app restart. Returns false for a lecture not in the manifest.
+ */
+export async function verifyDownload(lectureId: string): Promise<boolean> {
+  if (isWeb) return false;
+  try {
+    const manifest = readManifest();
+    const entry = manifest[lectureId];
+    if (!entry) return false;
+    if (await entryFileExists(entry)) return true;
+    delete manifest[lectureId];
+    writeManifest(manifest);
+    return false;
+  } catch {
+    return false;
   }
 }
 

@@ -9,6 +9,7 @@ import {
   getDownloadedCards,
   listDownloadedIds,
   localUriFor,
+  verifyDownload,
   verifyDownloads,
 } from '@/lib/downloads';
 import { useDownloadsStore, type DownloadEntry } from '@/stores/downloadsStore';
@@ -25,13 +26,29 @@ export function useDownload(lectureId: string) {
   const set = useDownloadsStore((s) => s.set);
   const removeEntry = useDownloadsStore((s) => s.remove);
 
-  // Reconcile store with what's actually on disk (e.g. after restart).
+  // Reconcile with the ACTUAL file on mount (V17.1). Download state must reflect
+  // whether the audio file really exists in its chosen storage location: if the
+  // user deleted/moved it in a file manager, this drops the entry so the control
+  // reopens the download; if it's present, it shows as downloaded. Skipped while
+  // a download is in flight (don't fight the live transfer). `verifyDownload`
+  // prunes the manifest itself when the file is gone.
   useEffect(() => {
-    if (!entry) {
-      const uri = localUriFor(lectureId);
-      if (uri) set(lectureId, { status: 'downloaded', progress: 1, localUri: uri });
-    }
-  }, [lectureId, entry, set]);
+    if (entry?.status === 'downloading') return;
+    let cancelled = false;
+    void verifyDownload(lectureId).then((exists) => {
+      if (cancelled) return;
+      if (exists) {
+        const uri = localUriFor(lectureId);
+        if (uri) set(lectureId, { status: 'downloaded', progress: 1, localUri: uri });
+      } else if (entry?.status === 'downloaded') {
+        // Was shown as downloaded but the file is gone — reopen the download.
+        removeEntry(lectureId);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lectureId, entry?.status, set, removeEntry]);
 
   const download = useCallback(async () => {
     set(lectureId, {
@@ -139,17 +156,29 @@ export function useDownloadedIds(): string[] {
  */
 export function useHydrateDownloads(): void {
   const set = useDownloadsStore((s) => s.set);
+  const removeEntry = useDownloadsStore((s) => s.remove);
   useEffect(() => {
-    void (async () => {
-      // Public (Android) downloads are user-visible and can be moved/deleted
-      // outside the app — prune stale manifest entries before trusting them.
-      await verifyDownloads();
+    // Seed the store from the on-device manifest FIRST, synchronously — this is
+    // the source of truth for "is this downloaded?" and must never wait on (or be
+    // gated behind) a network call. Seeding here means the UI reflects local truth
+    // from the first frame, offline, across Force Stop.
+    for (const id of listDownloadedIds()) {
+      const uri = localUriFor(id);
+      if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });
+    }
+    // THEN reconcile against the ACTUAL files (V17.1). An entry whose audio file
+    // is gone from the chosen storage location (deleted/moved in a file manager)
+    // is pruned from the manifest AND dropped from the store, so it stops showing
+    // as "downloaded" and its download control reopens. Files still present are
+    // (re)confirmed. No-op on web.
+    void verifyDownloads().then((removed) => {
+      for (const id of removed) removeEntry(id);
       for (const id of listDownloadedIds()) {
         const uri = localUriFor(id);
         if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });
       }
-    })();
-  }, [set]);
+    });
+  }, [set, removeEntry]);
 }
 
 /**

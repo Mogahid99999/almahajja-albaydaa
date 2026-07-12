@@ -9,7 +9,7 @@
  * Design tokens: manuscript-warm palette, RTL, calm tone.
  */
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, Share, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Pressable, Share, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter, Link } from 'expo-router';
 
@@ -50,21 +50,25 @@ type LinkRowProps = {
   label: string;
   onPress: () => void;
   destructive?: boolean;
+  /** Show an inline spinner and ignore taps while an action is in flight. */
+  busy?: boolean;
 };
 
-function LinkRow({ icon, label, onPress, destructive = false }: LinkRowProps) {
+function LinkRow({ icon, label, onPress, destructive = false, busy = false }: LinkRowProps) {
   const tint = destructive ? colors.stateDanger : colors.textMuted;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: busy }}
+      disabled={busy}
       onPress={onPress}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 14,
         paddingHorizontal: 16,
-        opacity: pressed ? 0.7 : 1,
+        opacity: busy ? 0.6 : pressed ? 0.7 : 1,
         gap: 12,
       })}
     >
@@ -76,8 +80,10 @@ function LinkRow({ icon, label, onPress, destructive = false }: LinkRowProps) {
         {label}
       </Txt>
 
-      {/* Chevron-left on the left (RTL navigation indicator) */}
-      {!destructive ? (
+      {/* Spinner while busy; otherwise the RTL nav chevron for non-destructive rows */}
+      {busy ? (
+        <ActivityIndicator size="small" color={tint} />
+      ) : !destructive ? (
         <Feather name="chevron-left" size={16} color={colors.textGhost} />
       ) : null}
     </Pressable>
@@ -354,7 +360,10 @@ export default function ProfileScreen() {
           <LinkRow
             icon="log-out"
             label="تسجيل الخروج"
+            busy={signOut.isPending}
             onPress={async () => {
+              // Guard against a double-tap kicking off a second sign-out.
+              if (signOut.isPending || deleteAccount.isPending) return;
               // Drop the registered session, then land on the login page (a fresh
               // guest session boots behind it). mutateAsync so navigation waits for
               // the session flip; errors still clear the session locally.
@@ -371,11 +380,44 @@ export default function ProfileScreen() {
           <LinkRow
             icon="trash-2"
             label="حذف الحساب نهائيًا"
+            busy={deleteAccount.isPending}
             onPress={confirmDeleteAccount}
             destructive
           />
         </Card>
       ) : null}
+
+      {/* Blocking overlay while signing out / deleting: a spinner covers the whole
+          screen so the user can't tap anything (or trigger it twice) until the
+          session flip completes — the auth calls are now time-bounded, so this
+          can never wedge (see withAuthTimeout in src/api/auth.ts). */}
+      <Modal visible={signOut.isPending || deleteAccount.isPending} transparent animationType="fade">
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.35)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.surfaceWhite,
+              borderRadius: radius.card,
+              paddingVertical: 24,
+              paddingHorizontal: 32,
+              alignItems: 'center',
+              gap: 14,
+              ...shadows.feature,
+            }}
+          >
+            <ActivityIndicator size="large" color={colors.primaryTeal} />
+            <Txt size={13.5} weight="medium" color={colors.textInk}>
+              {deleteAccount.isPending ? 'جارٍ حذف الحساب…' : 'جارٍ تسجيل الخروج…'}
+            </Txt>
+          </View>
+        </View>
+      </Modal>
 
       <RatingPromptModal
         visible={ratingOpen}

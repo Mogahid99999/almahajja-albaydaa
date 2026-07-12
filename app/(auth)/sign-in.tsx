@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { BackHandler, Platform, Pressable, TextInput, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 
 import { SupportContactLink } from '@/components/SupportContactLink';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
@@ -50,9 +50,14 @@ export default function SignInScreen() {
     signIn.mutate({ identifier, password }, { onSuccess: () => router.replace('/') });
 
   return (
-    <Screen scroll={false} contentStyle={{ justifyContent: 'center' }}>
-      {/* Brand */}
-      <View style={{ alignItems: 'center', marginBottom: 28 }}>
+    // Scroll + keyboard-avoid (same fix as register): the old scroll={false} +
+    // centered layout cut off the bottom links on a 720×1280 screen, and the
+    // keyboard buried the password field + «دخول» with no scroll escape.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40}>
+      {/* Brand — marginTop (not container paddingTop, which would displace the
+          status-bar scrim) gives the logo breathing room from the top edge. */}
+      <View style={{ alignItems: 'center', marginTop: 28, marginBottom: 28 }}>
         <Logo size={56} />
         <Txt weight="display" size={26} color={colors.primaryTeal} style={{ marginTop: 14 }}>
           المَحجّة البَيْضَاء
@@ -173,6 +178,7 @@ export default function SignInScreen() {
       {/* Support contact — only when an admin has set the link (empty = hidden) */}
       <SupportContactLink style={{ marginTop: 22 }} />
     </Screen>
+    </KeyboardAvoidingView>
   );
 }
 

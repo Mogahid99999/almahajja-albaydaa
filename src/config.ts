@@ -29,7 +29,7 @@ export const NOTIF_TEST_MODE = false;
 export const BUBBLE_ENABLED = false;
 
 /** A lecture is marked complete once this fraction has been listened. (PRD §9) */
-export const COMPLETE_THRESHOLD = 0.9;
+export const COMPLETE_THRESHOLD = 0.95;
 
 /**
  * Max seconds a single save-progress tick may credit to today's listening total.

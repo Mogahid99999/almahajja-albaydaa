@@ -10,7 +10,7 @@
  * Arrays are mutable so admin "create/publish" and "save progress" feel real
  * for the duration of a session.
  */
-import type { AppLectureStatus } from '@/config';
+import { COMPLETE_THRESHOLD, type AppLectureStatus } from '@/config';
 import type {
   AttachmentType,
   GoalMetric,
@@ -353,7 +353,7 @@ export function getAttachmentById(id: string): DAttachment | undefined {
 export function setProgress(lectureId: string, positionSec: number, durationSec: number) {
   const prev = progress[lectureId];
   const completed =
-    prev?.completed || (durationSec > 0 && positionSec / durationSec >= 0.9);
+    prev?.completed || (durationSec > 0 && positionSec / durationSec >= COMPLETE_THRESHOLD);
   progress[lectureId] = {
     position_sec: positionSec,
     completed,

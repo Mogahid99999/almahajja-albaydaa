@@ -63,7 +63,15 @@ export default function QuizResultScreen() {
           />
         </View>
 
-        <Txt weight="display" size={22} color={colors.primaryTeal} align="center">
+        {/* alignSelf:'stretch': content-sized RTL Text with align center clips
+            its trailing word on Android (see player titleBlock). */}
+        <Txt
+          weight="display"
+          size={22}
+          color={colors.primaryTeal}
+          align="center"
+          style={{ alignSelf: 'stretch' }}
+        >
           {result.quizTitle}
         </Txt>
 

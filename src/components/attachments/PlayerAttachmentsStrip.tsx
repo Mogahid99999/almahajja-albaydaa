@@ -15,15 +15,22 @@ import { Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { ATTACHMENT_META, openAttachment } from './attachmentMeta';
 
-export function PlayerAttachmentsStrip({ attachments }: { attachments: Attachment[] }) {
+export function PlayerAttachmentsStrip({
+  attachments,
+  bottom = 144,
+}: {
+  attachments: Attachment[];
+  /** Base bottom offset — the player shrinks it on short viewports. */
+  bottom?: number;
+}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   if (attachments.length === 0) return null;
 
   return (
     // Track the utility bar's safe-area lift so the gap above it stays constant.
-    // 144 clears the V6 «أدوات الدرس» row that now sits at 86.
-    <View style={{ position: 'absolute', left: 0, right: 0, bottom: 144 + insets.bottom }}>
+    // Default 144 clears the V6 «أدوات الدرس» row at its default 86.
+    <View style={{ position: 'absolute', left: 0, right: 0, bottom: bottom + insets.bottom }}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}

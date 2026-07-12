@@ -48,6 +48,29 @@ export function prefetchPlayback(lectureId: string) {
   });
 }
 
+/**
+ * FORCE-warm a lecture's playback (fresh signed URL) into the cache, bypassing
+ * staleTime — used just before a near-end auto-advance handoff so the next
+ * lecture is fully ready with a brand-new URL while the current one is still
+ * playing (see `WARM_NEXT_LEAD_SEC`). Unlike `prefetchPlayback`, this refetches
+ * even a cached entry, so a URL that was minted at the START of a long lecture
+ * (and might be near its 60-min TTL by the time the lecture ends) is renewed. The
+ * returned promise is awaited by the caller's fire-and-forget path only to log
+ * nothing — it never blocks playback.
+ */
+function warmNextPlayback(lectureId: string): Promise<unknown> {
+  return queryClient
+    .fetchQuery({
+      queryKey: queryKeys.lecture(lectureId),
+      queryFn: () => getLecturePlayback(lectureId),
+      staleTime: 0,
+    })
+    .catch(() => {
+      /* best-effort — a failed warm just means the handoff falls back to a
+         live fetch (which still works when unlocked / not dozing). */
+    });
+}
+
 let player: AudioPlayer | null = null;
 let currentId: string | null = null;
 let currentDuration = 0;
@@ -77,6 +100,18 @@ let justFinished = false;
 // `didJustFinish` for the same ended track can never fire auto-advance twice.
 // Naturally resets when the next track becomes current (its id differs).
 let lastAutoAdvancedFrom: string | null = null;
+// The next-lecture id we've already warmed for a near-end handoff, so the
+// warm-ahead refresh (below) fires at most once per track. Reset on load.
+let warmedNextFor: string | null = null;
+// How many seconds before the current track ends we (re)warm the NEXT lecture's
+// full playback data + fresh signed URL. This is the fix for "auto-advance to a
+// NEW lecture fails intermittently when the screen is locked": the handoff at
+// `didJustFinish` must need ZERO network (Android Doze throttles the app's
+// network the moment the screen locks), so the next lecture is prepared while
+// the current one is still audibly playing (CPU kept alive by the media
+// foreground service). Chosen comfortably under the 60-min signed-URL TTL and
+// long enough to absorb a slow round-trip on a weak signal.
+const WARM_NEXT_LEAD_SEC = 120;
 // Monotonic load token. Each `loadLecture` bumps it and captures its own value;
 // after any await, a load whose token is no longer current bails before mutating
 // shared player state. This makes rapid track switching deterministic — tap A
@@ -242,6 +277,30 @@ function onStatus(status: AudioStatus) {
     !!status.isBuffering && status.isLoaded && clampedPosition > 0 && !status.didJustFinish;
   if (stalled !== s.isStalled) s.setStalled(stalled);
 
+  // ── Warm-ahead for a gapless, LOCK-SCREEN-SAFE auto-advance ──────────────────
+  // As the current track nears its end (and auto-advance is on with a known next
+  // lecture), force-warm the NEXT lecture's full playback + a FRESH signed URL
+  // into the cache NOW — while we're still playing and the CPU/network are alive.
+  // This is what makes auto-advance to a brand-new (never-played, not-downloaded)
+  // lecture work reliably once the screen is locked: at `didJustFinish` the
+  // handoff then reads a ready cache entry and needs NO network, so Android Doze
+  // throttling the app's connectivity the instant the screen locked can't stall
+  // it. Fires at most once per track (`warmedNextFor`). Skipped offline (nothing
+  // to warm — a downloaded next lecture already plays from its local file).
+  if (
+    status.playing &&
+    currentDuration > 0 &&
+    clampedPosition >= currentDuration - WARM_NEXT_LEAD_SEC &&
+    useSettingsStore.getState().autoAdvance &&
+    isOnlineSync()
+  ) {
+    const nextId = s.nextLectureId;
+    if (nextId && warmedNextFor !== nextId && localUriFor(nextId) == null) {
+      warmedNextFor = nextId;
+      void warmNextPlayback(nextId);
+    }
+  }
+
   // Phase 3.5 — expo-audio surfaces a load/playback failure (e.g. logcat's
   // `PlaybackState state=ERROR(7) error="Source error"`) via `status.error`, which
   // was previously read nowhere: `isLoading` only clears `if (status.isLoaded)`,
@@ -289,8 +348,12 @@ function onStatus(status: AudioStatus) {
     // the next load recreates the player instead of trying to `replace()` on a
     // dead instance (which would start the next lecture silent).
     justFinished = true;
-    // Force completion (position = duration → ≥90% threshold).
-    void persist(currentDuration || status.currentTime || 0, true);
+    // Mark complete (the `true` forces `completed`), but persist the REAL last
+    // position — NOT the full duration — so a reopened completed lecture resumes
+    // where the user actually was, near the end, instead of being pinned exactly
+    // at the end where it can't play (V17 · Problem 1). The resume-adoption guard
+    // in loadLectureBody additionally treats a near-end resume as "start fresh".
+    void persist(status.currentTime || currentDuration || 0, true);
     invalidateProgressViews();
     s.setPlaying(false);
     // Auto-advance to the next lecture in the section, if enabled and one exists.
@@ -388,6 +451,26 @@ function invalidateProgressViews() {
   }
 }
 
+// A resume position this close to the end (or past it) is treated as "the user
+// finished — start fresh" rather than resuming (V17 · Problem 1). Resuming that
+// near the end would land the fresh player at/after the completion point, which
+// re-satisfies the threshold / didJustFinish immediately and leaves playback
+// unable to run (the reported "stuck on a completed lecture" bug).
+const NEAR_END_RESUME_GUARD_SEC = 15;
+
+/**
+ * Sanitize a saved resume position against the known duration (V17 · Problem 1):
+ * a position within {@link NEAR_END_RESUME_GUARD_SEC} of the end (or beyond it)
+ * means the lecture was effectively finished — reopening should replay from the
+ * start, not drop the user at the dead end where playback can't start. Any
+ * earlier position is returned unchanged so a genuine mid-lecture resume still
+ * works. With `durationSec` unknown (0) we can't judge nearness, so pass through.
+ */
+function sanitizeResumePosition(positionSec: number, durationSec: number): number {
+  if (durationSec > 0 && positionSec >= durationSec - NEAR_END_RESUME_GUARD_SEC) return 0;
+  return positionSec;
+}
+
 /**
  * Reset the per-track progress bookkeeping when a new lecture loads (V11 · C).
  * `lastSavedPos` seeds from the resume position so the first tick's delta is the
@@ -397,13 +480,21 @@ function resetTrackProgress(positionSec: number) {
   lastSavedPos = Math.max(0, Math.round(positionSec));
   hasSavedTrack = false;
   trackCompleted = false;
+  // New current track → allow the near-end warm-ahead to fire once for whatever
+  // its next lecture turns out to be (resolved async right after this).
+  warmedNextFor = null;
 }
 
 function persist(positionSec: number, finished = false) {
   if (!currentId) return Promise.resolve();
-  // On finish, save the full duration — but if the real duration never resolved
-  // (still 0), fall back to the last known position instead of resetting to 0.
-  const pos = finished ? currentDuration || positionSec : positionSec;
+  // ALWAYS save the real last position as the resume point — NEVER pin it to the
+  // end of the track on completion (V17 · Problem 1). Completion is reported via
+  // the `completed` flag below; overwriting the resume position with the full
+  // duration used to make a completed lecture reopen AT THE END, where the
+  // adopted server position instantly re-satisfied completion / didJustFinish so
+  // playback couldn't run — the reported "stuck after ~90%, only online" bug
+  // (offline never reads the server row, so it didn't reproduce there).
+  const pos = positionSec;
   // Mirror the resume position into the download sidecar (no-op unless the
   // lecture is downloaded) so it resumes at the same second when played OFFLINE,
   // where the server progress row is unreachable.
@@ -585,6 +676,9 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
     if (localResume && localResume.positionSec > positionSec) {
       positionSec = localResume.positionSec;
     }
+    // A near-the-end saved position means the lecture was finished — replay from
+    // the start rather than resuming into the dead end (V17 · Problem 1).
+    positionSec = sanitizeResumePosition(positionSec, meta.durationSec);
     // A resume deep-link may ask to open ahead; honor it, never rewind (§8).
     if (opts?.startAtSec != null && opts.startAtSec > positionSec) {
       positionSec = opts.startAtSec;
@@ -623,10 +717,12 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
         if (data.durationSec > 0) currentDuration = data.durationSec;
         resolveNext();
         resolvePrev();
-        // Never let the server's (end-of-track) resume position yank a
-        // deliberate replay-from-start back to the end.
+        // Never let the server's resume position yank a deliberate
+        // replay-from-start back, nor let a near-the-end (finished) position drop
+        // playback at the dead end where it can't run (V17 · Problem 1).
         const here = player?.currentTime ?? positionSec;
-        if (!opts?.restart && data.positionSec > here) void seekTo(data.positionSec);
+        const serverResume = sanitizeResumePosition(data.positionSec, currentDuration);
+        if (!opts?.restart && serverResume > here) void seekTo(serverResume);
       })
       .catch(() => {});
     return;
@@ -697,6 +793,9 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
   if (localResume && localResume.positionSec > positionSec) {
     positionSec = localResume.positionSec;
   }
+  // A near-the-end saved position means the lecture was finished — replay from
+  // the start rather than resuming into the dead end (V17 · Problem 1).
+  positionSec = sanitizeResumePosition(positionSec, durationSec);
 
   if (opts?.startAtSec != null && opts.startAtSec > positionSec) {
     positionSec = opts.startAtSec;
@@ -810,6 +909,18 @@ export function stop() {
 
 export async function seekTo(positionSec: number) {
   if (!player) return;
+  // If the track has run to its natural end, the native player is in an ENDED
+  // state where `seekTo()` + the existing `play()` are silent no-ops — dragging
+  // the seek bar (or ±10) then left the player "stuck" (V17 · Problem 1). Revive
+  // it the same way `toggle()` does: rebuild fresh from the requested position.
+  if (justFinished && currentId) {
+    const max = player.duration && player.duration > 0 ? player.duration : currentDuration;
+    const target =
+      max > 0 ? Math.min(Math.max(0, positionSec), Math.max(0, max - 0.25)) : Math.max(0, positionSec);
+    store().setPosition(target);
+    void loadLecture(currentId, { startAtSec: target, restart: target <= 0 });
+    return;
+  }
   // Clamp to the player's REAL timeline (Issue 7). `player.duration` is the
   // authoritative length once known; `currentDuration` is the best-known value
   // (real once a status carried it, else the DB seed). Staying a hair short of

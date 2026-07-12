@@ -42,9 +42,9 @@ function ToolChip({
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 7,
+        gap: 6,
         paddingVertical: 9,
-        paddingHorizontal: 13,
+        paddingHorizontal: 11,
         borderRadius: radius.pill,
         borderWidth: 1,
         borderColor: 'rgba(201,164,99,0.4)',
@@ -53,7 +53,7 @@ function ToolChip({
       })}
     >
       <Feather name={icon} size={14} color={colors.accentBrass} />
-      <Txt size={12.5} weight="medium" color={colors.onTealPrimary}>
+      <Txt size={12} weight="medium" color={colors.onTealPrimary}>
         {label}
       </Txt>
       {dot ? (
@@ -92,9 +92,9 @@ function DownloadChip({ lectureId }: { lectureId: string }) {
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 7,
+        gap: 6,
         paddingVertical: 9,
-        paddingHorizontal: 13,
+        paddingHorizontal: 11,
         borderRadius: radius.pill,
         borderWidth: 1,
         borderColor: 'rgba(201,164,99,0.4)',
@@ -111,14 +111,21 @@ function DownloadChip({ lectureId }: { lectureId: string }) {
           color={status === 'error' ? colors.stateDanger : colors.accentBrass}
         />
       )}
-      <Txt size={12.5} weight="medium" color={colors.onTealPrimary}>
+      <Txt size={12} weight="medium" color={colors.onTealPrimary}>
         {label}
       </Txt>
     </Pressable>
   );
 }
 
-export function LessonToolsRow({ lectureId }: { lectureId: string }) {
+export function LessonToolsRow({
+  lectureId,
+  bottom = 86,
+}: {
+  lectureId: string;
+  /** Base bottom offset — the player shrinks it on short viewports. */
+  bottom?: number;
+}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { data: user } = useCurrentUser();
@@ -128,16 +135,19 @@ export function LessonToolsRow({ lectureId }: { lectureId: string }) {
 
   return (
     // Tracks the utility bar's safe-area lift (V4) so the gap stays constant.
+    // flexWrap is a last-resort guard: the compact chips fit a 360dp row, but
+    // an extra-narrow window (split screen) wraps instead of clipping.
     <View
       style={{
         position: 'absolute',
         left: 0,
         right: 0,
-        bottom: 86 + insets.bottom,
+        bottom: bottom + insets.bottom,
         flexDirection: 'row',
+        flexWrap: 'wrap',
         justifyContent: 'center',
-        gap: 10,
-        paddingHorizontal: 18,
+        gap: 8,
+        paddingHorizontal: 10,
       }}
     >
       <ToolChip
