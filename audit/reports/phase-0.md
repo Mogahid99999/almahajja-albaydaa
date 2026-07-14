@@ -9,7 +9,7 @@
 |---|---|
 | App boots on all three targets | ✅ **Android** Pixel_10_Pro emulator (API 37): dev build compiled (1m40s, patched expo-audio Kotlin included), installed, Home renders RTL with live data. **iOS** iPhone 17 Pro simulator (iOS 26): build 0 errors, Home renders RTL with live data + guest nudge. **Web**: Metro serves `/`; headless-Chrome screenshot shows the sign-in screen rendering (correct unauthenticated-web routing) — GLITCH_LOG #14's total web crash is confirmed fixed by the react-native-web patch. Screenshots in the session log. |
 | Typecheck clean | ✅ `npm run typecheck` — no errors (re-run after all Phase-0 edits). |
-| All historical docs read | ✅ GLITCH_LOG.md, PLAN.md, all 18 PLAN_*.md, IOS_SUBMISSION.md, LANDING_PAGE_PLAN.md, plus the three PROMPT-only batches (V14, V16, V17). The 8 remaining PROMPT_*.md files were verified to be thin kickoff wrappers around their PLAN files. |
+| All historical docs read | ✅ GLITCH_LOG.md, PLAN.md, all 17 PLAN_*.md, IOS_SUBMISSION.md, LANDING_PAGE_PLAN.md, plus the three PROMPT-only batches (V14, V16, V17). The 8 remaining PROMPT_*.md files were verified to be thin kickoff wrappers around their PLAN files. |
 | Findings log operational | ✅ `audit/FINDINGS.md` seeded with **24 findings** (F-001…F-024): 5 fixed in-phase, 19 open leads routed to their phases. |
 
 ## Task-by-task
