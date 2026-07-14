@@ -143,8 +143,8 @@ export function useSetQuestionHidden() {
 export function useAnswerQuestion() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { questionId: string; answerBody: string }) =>
-      answerQuestion(vars.questionId, vars.answerBody),
+    mutationFn: (vars: { questionId: string; body?: string; audioPath?: string }) =>
+      answerQuestion(vars.questionId, { body: vars.body, audioPath: vars.audioPath }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['questions'] });
     },

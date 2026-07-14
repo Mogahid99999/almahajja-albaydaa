@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   cancelBuddy,
   getAdminBuddyOverview,
+  getMyBuddies,
   getMyBuddyStatus,
   getPendingIncomingRequests,
   hasOutgoingPendingRequest,
@@ -21,11 +22,20 @@ export function useAdminBuddyOverview() {
   });
 }
 
-/** Active buddy + status (null when none). Disabled for guests. */
+/** Active buddy + status (first buddy, null when none). Disabled for guests. */
 export function useBuddy(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.buddy,
     queryFn: getMyBuddyStatus,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/** All accepted buddies (up to 3). Disabled for guests. */
+export function useMyBuddies(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.buddies,
+    queryFn: getMyBuddies,
     enabled: options?.enabled ?? true,
   });
 }
@@ -89,7 +99,7 @@ export function useRespondToRequest() {
 export function useCancelBuddy() {
   const invalidate = useInvalidateBuddy();
   return useMutation({
-    mutationFn: cancelBuddy,
+    mutationFn: (buddyId?: string) => cancelBuddy(buddyId),
     onSuccess: invalidate,
   });
 }

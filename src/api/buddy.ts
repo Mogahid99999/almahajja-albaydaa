@@ -1,11 +1,15 @@
 /**
  * Study buddy data access — رفيق الدراسة (26.2).
  *
- * Gender-segregated, optional, ONE buddy per user, no chat in v1. Every
- * cross-user read/write goes through the SECURITY DEFINER RPCs in migration
- * 0015 — the gender filter and the one-buddy invariant live server-side, never
- * in this file. Components never call supabase directly (CLAUDE.md).
+ * Gender-segregated, optional, up to THREE buddies per user, no chat in v1.
+ * Every cross-user read/write goes through the SECURITY DEFINER RPCs in
+ * migrations 0015/0082 — the gender filter and the ≤ 3-buddy cap live
+ * server-side, never in this file. Components never call supabase directly
+ * (CLAUDE.md).
  */
+
+/** Maximum accepted buddies a student may hold (server-enforced too). */
+export const MAX_BUDDIES = 3;
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import type { BuddyCandidate, BuddyRequest, BuddyStatus } from './types';
@@ -45,28 +49,55 @@ export async function respondToRequest(requestId: string, accept: boolean): Prom
   if (error) throw error;
 }
 
-/** End the buddy relationship (and withdraw my outgoing pendings). */
-export async function cancelBuddy(): Promise<void> {
+/**
+ * End a buddy relationship. Pass a specific buddyId to end only that pairing;
+ * omit it to end ALL accepted pairings and withdraw my outgoing pendings.
+ */
+export async function cancelBuddy(buddyId?: string): Promise<void> {
   if (USE_MOCK) return;
-  const { error } = await supabase.rpc('cancel_buddy');
+  // `cancel_buddy` gained a p_buddy_id arg in migration 0082 — cast until the
+  // generated DB types are regenerated (they're rebuilt out-of-band).
+  const { error } = await (supabase.rpc as any)('cancel_buddy', {
+    p_buddy_id: buddyId ?? null,
+  });
   if (error) throw error;
 }
 
-/** The accepted buddy's card data, or null when there is no buddy. */
-export async function getMyBuddyStatus(): Promise<BuddyStatus | null> {
-  if (USE_MOCK) return null;
-  const { data, error } = await supabase.rpc('get_buddy_status');
+type BuddyStatusRow = {
+  buddy_id: string | null;
+  display_name: string | null;
+  current_streak: number | null;
+  today_counted: boolean | null;
+  week_progress_pct: number | null;
+  weekly_goal_met: boolean | null;
+};
+
+/** All accepted buddies' card data (up to 3), newest pairing first. */
+export async function getMyBuddies(): Promise<BuddyStatus[]> {
+  if (USE_MOCK) return [];
+  // `get_buddies_status` is added in migration 0082 — cast until the generated
+  // DB types are regenerated (they're rebuilt out-of-band).
+  const { data, error } = await (supabase.rpc as any)('get_buddies_status');
   if (error) throw error;
-  const row = data?.[0];
-  if (!row?.buddy_id) return null;
-  return {
-    buddyId: row.buddy_id,
-    displayName: row.display_name ?? 'رفيقك',
-    currentStreak: row.current_streak ?? 0,
-    todayCounted: row.today_counted ?? false,
-    weekProgressPct: row.week_progress_pct ?? 0,
-    weeklyGoalMet: row.weekly_goal_met ?? false,
-  };
+  return ((data ?? []) as BuddyStatusRow[])
+    .filter((row) => !!row?.buddy_id)
+    .map((row) => ({
+      buddyId: row.buddy_id as string,
+      displayName: row.display_name ?? 'رفيقك',
+      currentStreak: row.current_streak ?? 0,
+      todayCounted: row.today_counted ?? false,
+      weekProgressPct: row.week_progress_pct ?? 0,
+      weeklyGoalMet: row.weekly_goal_met ?? false,
+    }));
+}
+
+/**
+ * The first accepted buddy's card, or null. Backward-compat convenience — new
+ * UI should use {@link getMyBuddies}.
+ */
+export async function getMyBuddyStatus(): Promise<BuddyStatus | null> {
+  const list = await getMyBuddies();
+  return list[0] ?? null;
 }
 
 /** Incoming pending invitations (sender names resolved server-side). */

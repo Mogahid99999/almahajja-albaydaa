@@ -16,7 +16,6 @@ import {
   Pressable,
   StyleSheet,
   Switch,
-  TextInput,
   View,
   type TextStyle,
   type ViewStyle,
@@ -25,11 +24,13 @@ import {
 import type { InboxQuestion, QuestionCategory, QuestionScope } from '@/api/questions';
 import { SidebarDrawer } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { ModeratorAnswerComposer } from '@/components/questions/ModeratorAnswerComposer';
+import { VoiceNotePlayer } from '@/components/questions/VoiceNotePlayer';
 import { Card, Divider, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignOut } from '@/hooks/useAuth';
 import { useNotificationPrefs, useSetNotificationPref } from '@/hooks/useNotifications';
-import { useAnswerQuestion, useDeleteQuestion, useQuestionInbox } from '@/hooks/useQuestions';
+import { useDeleteQuestion, useQuestionInbox } from '@/hooks/useQuestions';
 import { arNum, arSince } from '@/lib/format';
 
 type ScopeFilter = 'all' | QuestionScope;
@@ -72,23 +73,8 @@ function QuestionCard({
   q: InboxQuestion;
   onDelete: () => void;
 }) {
-  const answer = useAnswerQuestion();
   const [composing, setComposing] = useState(false);
-  const [draft, setDraft] = useState(q.answerBody ?? '');
-  const [error, setError] = useState('');
-
-  function submit() {
-    const body = draft.trim();
-    if (!body) return;
-    setError('');
-    answer.mutate(
-      { questionId: q.id, answerBody: body },
-      {
-        onSuccess: () => setComposing(false),
-        onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر حفظ الجواب'),
-      },
-    );
-  }
+  const hasAnswer = !!(q.answerBody || q.answerAudioPath);
 
   return (
     <Card style={styles.questionCard}>
@@ -143,7 +129,7 @@ function QuestionCard({
       </Txt>
 
       {/* Existing answer */}
-      {q.status === 'answered' && q.answerBody && !composing ? (
+      {q.status === 'answered' && hasAnswer && !composing ? (
         <View style={styles.answerBox}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="check-circle" size={13} color={colors.stateSuccess} />
@@ -151,61 +137,27 @@ function QuestionCard({
               الجواب
             </Txt>
           </View>
-          <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
-            {q.answerBody}
-          </Txt>
+          {q.answerBody ? (
+            <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
+              {q.answerBody}
+            </Txt>
+          ) : null}
+          {q.answerAudioPath ? (
+            <View style={{ marginTop: q.answerBody ? 10 : 6 }}>
+              <VoiceNotePlayer audioPath={q.answerAudioPath} />
+            </View>
+          ) : null}
         </View>
       ) : null}
 
-      {/* Inline composer */}
+      {/* Inline composer (text + optional voice) */}
       {composing ? (
-        <View style={{ marginTop: 12 }}>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="اكتب الجواب هنا..."
-            placeholderTextColor={colors.textGhost}
-            multiline
-            textAlign="right"
-            textAlignVertical="top"
-            style={styles.composer}
-            autoFocus
-          />
-          {error ? (
-            <Txt size={12} color={colors.stateDanger} style={{ marginTop: 6 }}>
-              {error}
-            </Txt>
-          ) : null}
-          <View style={styles.composerActions}>
-            <Pressable
-              onPress={submit}
-              disabled={answer.isPending || !draft.trim()}
-              style={({ pressed }) => [
-                styles.primaryBtn,
-                { opacity: pressed || answer.isPending || !draft.trim() ? 0.7 : 1 },
-              ]}
-            >
-              {answer.isPending ? (
-                <ActivityIndicator size="small" color={colors.onTealPrimary} />
-              ) : (
-                <Txt size={13} weight="semibold" color={colors.onTealPrimary}>
-                  إرسال الجواب
-                </Txt>
-              )}
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setComposing(false);
-                setDraft(q.answerBody ?? '');
-              }}
-              style={({ pressed }) => [styles.ghostBtn, pressed && { opacity: 0.7 }]}
-            >
-              <Txt size={13} weight="medium" color={colors.textMuted}>
-                إلغاء
-              </Txt>
-            </Pressable>
-          </View>
-        </View>
+        <ModeratorAnswerComposer
+          questionId={q.id}
+          initialBody={q.answerBody}
+          onDone={() => setComposing(false)}
+          onCancel={() => setComposing(false)}
+        />
       ) : (
         <View style={styles.actionsRow}>
           <Pressable
@@ -213,12 +165,12 @@ function QuestionCard({
             style={({ pressed }) => [styles.answerBtn, pressed && { opacity: 0.8 }]}
           >
             <Feather
-              name={q.status === 'answered' ? 'edit-2' : 'message-circle'}
+              name={hasAnswer ? 'edit-2' : 'message-circle'}
               size={14}
               color={colors.onTealPrimary}
             />
             <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
-              {q.status === 'answered' ? 'تعديل الجواب' : 'الإجابة'}
+              {hasAnswer ? 'تعديل الجواب' : 'الإجابة'}
             </Txt>
           </Pressable>
           <Pressable

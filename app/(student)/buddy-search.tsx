@@ -18,7 +18,8 @@ import type { BuddyCandidate } from '@/api/types';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { arDayCount } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useBuddySearch, useSendBuddyRequest } from '@/hooks/useBuddy';
+import { MAX_BUDDIES } from '@/api/buddy';
+import { useBuddySearch, useMyBuddies, useSendBuddyRequest } from '@/hooks/useBuddy';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
@@ -38,6 +39,8 @@ export default function BuddySearchScreen() {
 
   const isGuest = user?.isGuest ?? true;
   const hasGender = !!user?.gender;
+  const { data: buddies } = useMyBuddies({ enabled: !isGuest });
+  const atCap = (buddies?.length ?? 0) >= MAX_BUDDIES;
 
   const onConfirmSend = () => {
     if (!candidate) return;
@@ -117,6 +120,14 @@ export default function BuddySearchScreen() {
               تعديل الملف الشخصي
             </Txt>
           </Pressable>
+        </Card>
+      ) : atCap ? (
+        /* Already at the maximum of three buddies — a calm notice, no search. */
+        <Card style={{ alignItems: 'center', paddingVertical: 26, gap: 12 }}>
+          <Feather name="users" size={26} color={colors.accentBrassMuted} />
+          <Txt size={14} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
+            لديك ٣ رفقاء — وهو الحد الأقصى
+          </Txt>
         </Card>
       ) : (
         <>

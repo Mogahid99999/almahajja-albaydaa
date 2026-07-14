@@ -82,6 +82,12 @@ function BroadcastRow({
               </Txt>
             </View>
           ) : null}
+          <View style={styles.viewsChip}>
+            <Feather name="eye" size={11} color={colors.textMuted} />
+            <Txt size={10.5} weight="medium" color={colors.textMuted}>
+              {arNum(broadcast.viewCount ?? 0)} مشاهدة
+            </Txt>
+          </View>
         </View>
       </View>
 
@@ -589,6 +595,12 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radius.pill,
     backgroundColor: 'rgba(201,164,99,0.14)',
+  } as ViewStyle,
+
+  viewsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   } as ViewStyle,
 
   actions: {

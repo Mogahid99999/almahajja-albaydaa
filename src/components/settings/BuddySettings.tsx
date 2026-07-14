@@ -2,62 +2,69 @@ import { useState } from 'react';
 import { Modal, Pressable, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 
+import type { BuddyStatus } from '@/api/types';
 import { colors, radius } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useBuddy, useCancelBuddy } from '@/hooks/useBuddy';
+import { useCancelBuddy, useMyBuddies } from '@/hooks/useBuddy';
 import { Card } from '@/components/ui/Card';
 import { Txt } from '@/components/ui/Txt';
 
 /**
- * Profile settings — رفيق الدراسة (26.2 Phase F). Renders only while a buddy
- * is active: the "إلغاء رفيق الدراسة" action behind a confirmation sheet.
- * (The buddy notification toggle lives with the other per-type toggles in
- * PrefsToggles — type 'buddy_activity'.)
+ * Profile settings — رفيق الدراسة (26.2 Phase F). Renders one "إنهاء الرفقة"
+ * action per accepted buddy (up to 3), each behind a confirmation sheet that
+ * ends only that pairing. (The buddy notification toggle lives with the other
+ * per-type toggles in PrefsToggles — type 'buddy_activity'.)
  */
 export function BuddySettings() {
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
-  const { data: buddy } = useBuddy({ enabled: !isGuest });
+  const { data: buddies } = useMyBuddies({ enabled: !isGuest });
   const cancel = useCancelBuddy();
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<BuddyStatus | null>(null);
 
-  if (isGuest || !buddy) return null;
+  if (isGuest || !buddies || buddies.length === 0) return null;
 
   const onConfirm = () => {
-    cancel.mutate(undefined, { onSuccess: () => setConfirming(false) });
+    if (!confirming) return;
+    cancel.mutate(confirming.buddyId, { onSuccess: () => setConfirming(null) });
   };
 
   return (
     <>
       <Card padded={false} style={{ overflow: 'hidden' }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="إلغاء رفيق الدراسة"
-          onPress={() => setConfirming(true)}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingVertical: 14,
-            paddingHorizontal: 16,
-            opacity: pressed ? 0.7 : 1,
-            gap: 12,
-          })}
-        >
-          <Feather name="user-x" size={18} color={colors.stateDanger} />
-          <Txt size={14} weight="medium" color={colors.stateDanger} style={{ flex: 1 }}>
-            إلغاء رفيق الدراسة
-          </Txt>
-        </Pressable>
+        {buddies.map((buddy, i) => (
+          <Pressable
+            key={buddy.buddyId}
+            accessibilityRole="button"
+            accessibilityLabel={`إنهاء رفقة ${buddy.displayName}`}
+            onPress={() => setConfirming(buddy)}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 14,
+              paddingHorizontal: 16,
+              opacity: pressed ? 0.7 : 1,
+              gap: 12,
+              borderTopWidth: i === 0 ? 0 : 1,
+              borderTopColor: colors.borderSand2,
+            })}
+          >
+            <Feather name="user-x" size={18} color={colors.stateDanger} />
+            <Txt size={14} weight="medium" color={colors.stateDanger} style={{ flex: 1 }}>
+              {`إنهاء رفقة ${buddy.displayName}`}
+            </Txt>
+          </Pressable>
+        ))}
       </Card>
 
       <Modal
-        visible={confirming}
+        visible={!!confirming}
         transparent
         animationType="slide"
-        onRequestClose={() => setConfirming(false)}
+        onRequestClose={() => setConfirming(null)}
       >
         <Pressable
-          onPress={() => setConfirming(false)}
+          onPress={() => setConfirming(null)}
           style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
         >
           <Pressable
@@ -87,7 +94,7 @@ export function BuddySettings() {
             </Txt>
 
             <Txt size={13.5} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
-              {`هل تريد إنهاء رفقة ${buddy.displayName}؟ يمكنك اختيار رفيق آخر لاحقًا`}
+              {`هل تريد إنهاء رفقة ${confirming?.displayName ?? ''}؟ يمكنك اختيار رفيق آخر لاحقًا`}
             </Txt>
 
             {cancel.isError ? (
@@ -114,7 +121,7 @@ export function BuddySettings() {
             </Pressable>
 
             <Pressable
-              onPress={() => setConfirming(false)}
+              onPress={() => setConfirming(null)}
               accessibilityRole="button"
               style={({ pressed }) => ({ alignItems: 'center', paddingVertical: 6, opacity: pressed ? 0.7 : 1 })}
             >

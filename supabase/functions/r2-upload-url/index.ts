@@ -38,6 +38,8 @@ const KEY_PREFIX = {
   lecture: "lectures",
   attachment: "attachments",
   broadcast: "broadcasts",
+  // جواب صوتي — the sheikh's WhatsApp-style voice answer (mono low-bitrate m4a).
+  answer: "answers",
 } as const;
 
 // Mirrors the allow-lists 0040_storage_draft_scope.sql put on the old buckets.
@@ -52,6 +54,12 @@ const ALLOWED_CONTENT_TYPES: Record<keyof typeof KEY_PREFIX, string[]> = {
   ],
   // بروادكاست images only — the التذكيرات النافعة admin image picker.
   broadcast: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+  // Recorded voice answers — same audio types as a lecture, so a mono
+  // m4a (audio/mp4) is accepted.
+  answer: [
+    "audio/mpeg", "audio/mp4", "audio/aac", "audio/ogg", "audio/wav",
+    "audio/webm", "audio/flac",
+  ],
 };
 
 const s3 = new S3Client({
@@ -119,9 +127,6 @@ Deno.serve(async (req) => {
   const { data: caller, error: callerErr } = await callerClient.auth.getUser();
   if (callerErr || !caller?.user) return json({ error: "invalid session" }, 401);
 
-  const { data: isManager } = await callerClient.rpc("is_content_manager");
-  if (!isManager) return json({ error: "forbidden" }, 403);
-
   let body: {
     kind?: string;
     fileName?: string;
@@ -137,8 +142,20 @@ Deno.serve(async (req) => {
     return json({ error: "invalid json" }, 400);
   }
   const { kind, fileName, contentType, folder, displayName } = body;
-  if (kind !== "lecture" && kind !== "attachment" && kind !== "broadcast") {
+  if (kind !== "lecture" && kind !== "attachment" && kind !== "broadcast" && kind !== "answer") {
     return json({ error: "invalid kind" }, 400);
+  }
+
+  // Content uploads (lecture/attachment/broadcast) require a content manager
+  // (admin/publisher). A voice answer, by contrast, is authored by a MODERATOR
+  // — the sheikh (a moderator but not a content manager) must be able to record
+  // and send it — so `answer` uploads gate on is_moderator() instead.
+  if (kind === "answer") {
+    const { data: isMod } = await callerClient.rpc("is_moderator");
+    if (!isMod) return json({ error: "forbidden" }, 403);
+  } else {
+    const { data: isManager } = await callerClient.rpc("is_content_manager");
+    if (!isManager) return json({ error: "forbidden" }, 403);
   }
   if (!fileName || !contentType) {
     return json({ error: "fileName and contentType required" }, 400);

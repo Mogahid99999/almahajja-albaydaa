@@ -40,6 +40,7 @@ export const queryKeys = {
 
   // Study buddy · رفيق الدراسة (26.2)
   buddy: ['buddy', 'status'] as const,
+  buddies: ['buddy', 'statuses'] as const,
   buddyRequests: ['buddy', 'requests'] as const,
   buddyOutgoing: ['buddy', 'outgoing'] as const,
   buddySearch: (query: string) => ['buddy', 'search', query] as const,

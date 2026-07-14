@@ -9,7 +9,7 @@ import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
 
-export type StorageKind = 'lecture' | 'attachment' | 'broadcast';
+export type StorageKind = 'lecture' | 'attachment' | 'broadcast' | 'answer';
 
 /** A picked file (lecture audio or attachment) ready to upload. */
 export type PickedFile = {
@@ -52,6 +52,8 @@ const AUDIO_CONTENT_TYPE: Record<string, string> = {
 
 function resolveContentType(kind: StorageKind, file: PickedFile): string {
   if (kind === 'attachment' || kind === 'broadcast') return file.mimeType ?? 'application/octet-stream';
+  // 'lecture' and 'answer' are both audio — an answer is a recorded m4a, so map
+  // its extension the same way (m4a → audio/mp4).
   // Prefer a known type for the extension; the picker's mimeType is sometimes
   // generic (application/octet-stream) which would break in-browser playback.
   const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();

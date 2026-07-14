@@ -11,7 +11,9 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
+import { recordBroadcastView } from '@/api/broadcasts';
 import { colors, radius, shadows } from '@/constants/theme';
+import { useCurrentUser } from '@/hooks/useAuth';
 import { useBroadcast, useBroadcastImageUrl } from '@/hooks/useBroadcasts';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { arNum } from '@/lib/format';
@@ -40,7 +42,15 @@ export default function ReminderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useBroadcast(id ?? '');
   const { data: imageUrl } = useBroadcastImageUrl(data?.imagePath ?? null);
+  const { data: user } = useCurrentUser();
   const miniPad = useMiniPlayerPad();
+
+  // Record a view once the reminder loads (fire-and-forget; never blocks render).
+  // Guests are skipped here too, though the SQL guard also refuses anon sessions.
+  useEffect(() => {
+    if (!data?.id || user?.isGuest) return;
+    void recordBroadcastView(data.id);
+  }, [data?.id, user?.isGuest]);
 
   // Show the reminder image at its TRUE aspect ratio so a tall poster (like the
   // course flyer) is never cropped by a fixed 16:9 frame. Measure the real

@@ -29,6 +29,7 @@ import type {
 } from '@/api/questions';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ReportSheet } from '@/components/reports/ReportSheet';
+import { VoiceNotePlayer } from '@/components/questions/VoiceNotePlayer';
 import { Card, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -297,7 +298,7 @@ function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () =
       <Txt size={14.5} weight="medium" color={colors.textInk} style={styles.qBody}>
         {q.body}
       </Txt>
-      {q.answerBody ? (
+      {q.answerBody || q.answerAudioPath ? (
         <View style={styles.answerBox}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="message-circle" size={13} color={colors.primaryTeal600} />
@@ -305,9 +306,16 @@ function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () =
               جواب الشيخ
             </Txt>
           </View>
-          <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
-            {q.answerBody}
-          </Txt>
+          {q.answerBody ? (
+            <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
+              {q.answerBody}
+            </Txt>
+          ) : null}
+          {q.answerAudioPath ? (
+            <View style={{ marginTop: q.answerBody ? 10 : 6 }}>
+              <VoiceNotePlayer audioPath={q.answerAudioPath} />
+            </View>
+          ) : null}
         </View>
       ) : null}
     </Card>
@@ -494,7 +502,7 @@ function MyQuestionCard({
           {q.body}
         </Txt>
       )}
-      {!editing && q.answerBody ? (
+      {!editing && (q.answerBody || q.answerAudioPath) ? (
         <View style={styles.answerBox}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="message-circle" size={13} color={colors.primaryTeal600} />
@@ -502,9 +510,16 @@ function MyQuestionCard({
               جواب الشيخ
             </Txt>
           </View>
-          <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
-            {q.answerBody}
-          </Txt>
+          {q.answerBody ? (
+            <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
+              {q.answerBody}
+            </Txt>
+          ) : null}
+          {q.answerAudioPath ? (
+            <View style={{ marginTop: q.answerBody ? 10 : 6 }}>
+              <VoiceNotePlayer audioPath={q.answerAudioPath} />
+            </View>
+          ) : null}
         </View>
       ) : null}
     </Card>

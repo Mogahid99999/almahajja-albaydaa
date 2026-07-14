@@ -24,6 +24,8 @@ export type Broadcast = {
   imagePath: string | null;
   linkUrl: string | null;
   linkLabel: string | null;
+  /** Distinct users who opened this reminder (admin list only). */
+  viewCount?: number;
 };
 
 /** A Home-card row (the 1-day show_on_home window, server-filtered). */
@@ -52,6 +54,7 @@ export async function listBroadcasts(): Promise<Broadcast[]> {
     .select('id, title, body, show_on_home, published_at, updated_at, image_path, link_url, link_label')
     .order('published_at', { ascending: false });
   if (error) throw error;
+  const counts = await getBroadcastViewCounts();
   return (data ?? []).map((b) => ({
     id: b.id,
     title: b.title,
@@ -62,7 +65,43 @@ export async function listBroadcasts(): Promise<Broadcast[]> {
     imagePath: b.image_path ?? null,
     linkUrl: b.link_url ?? null,
     linkLabel: b.link_label ?? null,
+    viewCount: counts[b.id] ?? 0,
   }));
+}
+
+/**
+ * Record that the current user opened a reminder (best-effort; a view-track must
+ * never break the detail screen). Guests/anon are skipped server-side, so a
+ * failure here is silently swallowed.
+ */
+export async function recordBroadcastView(id: string): Promise<void> {
+  if (USE_MOCK) return;
+  try {
+    // ignore the returned { error } too — this is a fire-and-forget track.
+    // Cast: the RPC lives in migration 0083, not (yet) in database.generated.ts.
+    await (supabase.rpc as unknown as (fn: string, args: object) => Promise<unknown>)(
+      'record_broadcast_view',
+      { p_id: id },
+    );
+  } catch {
+    // best-effort — never surface a view-tracking failure to the reader
+  }
+}
+
+/** Admin-only reach counts, reduced to a `{ broadcastId: viewCount }` map. */
+export async function getBroadcastViewCounts(): Promise<Record<string, number>> {
+  if (USE_MOCK) return {};
+  // Cast: the RPC lives in migration 0083, not (yet) in database.generated.ts.
+  const { data, error } = await (
+    supabase.rpc as unknown as (fn: string) => Promise<{ data: unknown; error: unknown }>
+  )('get_broadcast_view_counts');
+  if (error) throw error;
+  return ((data ?? []) as { broadcast_id: string; view_count: number }[]).reduce<
+    Record<string, number>
+  >((acc, row) => {
+    acc[row.broadcast_id] = row.view_count;
+    return acc;
+  }, {});
 }
 
 /** Upload a picked image to R2 for a reminder; returns its object key. */

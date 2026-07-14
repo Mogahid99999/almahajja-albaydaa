@@ -11,6 +11,7 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import { BlockedWordError, isBlockedWordError } from '@/api/reports';
+import { getReadUrl, uploadToR2, type PickedFile } from '@/api/storage';
 
 export type QuestionScope = 'general' | 'lecture';
 export type QuestionAudience = 'public' | 'sheikh';
@@ -23,6 +24,8 @@ export type PublicQuestion = {
   id: string;
   body: string;
   answerBody: string | null;
+  /** R2 key of the sheikh's voice answer (WhatsApp-style), null when text-only. */
+  answerAudioPath: string | null;
   askerDisplay: string | null;
   isMine: boolean;
   category: QuestionCategory;
@@ -35,6 +38,7 @@ export type MyQuestion = {
   id: string;
   body: string;
   answerBody: string | null;
+  answerAudioPath: string | null;
   isAnonymous: boolean;
   audience: QuestionAudience;
   status: QuestionStatus;
@@ -53,6 +57,7 @@ export type InboxQuestion = {
   sectionTitle: string | null;
   body: string;
   answerBody: string | null;
+  answerAudioPath: string | null;
   isAnonymous: boolean;
   audience: QuestionAudience;
   status: QuestionStatus;
@@ -79,6 +84,7 @@ export async function getPublicQuestions(
     id: r.id,
     body: r.body,
     answerBody: r.answer_body ?? null,
+    answerAudioPath: r.answer_audio_path ?? null,
     askerDisplay: r.asker_display ?? null,
     isMine: !!r.is_mine,
     category: (r.category ?? 'general') as QuestionCategory,
@@ -103,6 +109,7 @@ export async function getMyQuestions(
     id: r.id,
     body: r.body,
     answerBody: r.answer_body ?? null,
+    answerAudioPath: r.answer_audio_path ?? null,
     isAnonymous: !!r.is_anonymous,
     audience: r.audience as QuestionAudience,
     status: r.status as QuestionStatus,
@@ -192,6 +199,7 @@ export async function getQuestionInbox(filter: {
     sectionTitle: r.section_title ?? null,
     body: r.body,
     answerBody: r.answer_body ?? null,
+    answerAudioPath: r.answer_audio_path ?? null,
     isAnonymous: !!r.is_anonymous,
     audience: r.audience as QuestionAudience,
     status: r.status as QuestionStatus,
@@ -203,13 +211,43 @@ export async function getQuestionInbox(filter: {
   }));
 }
 
-export async function answerQuestion(questionId: string, answerBody: string): Promise<void> {
+/**
+ * Moderator answers a question — with text, a voice recording, or both. At
+ * least one of `body`/`audioPath` must be present (SQL enforces this too). The
+ * `audioPath` is an R2 object key already uploaded via `uploadAnswerAudio`.
+ */
+export async function answerQuestion(
+  questionId: string,
+  answer: { body?: string; audioPath?: string },
+): Promise<void> {
   if (USE_MOCK) return;
   const { error } = await supabase.rpc('answer_question', {
     p_question_id: questionId,
-    p_answer_body: answerBody,
+    p_answer_body: answer.body ?? '',
+    p_answer_audio_path: answer.audioPath ?? null,
   });
   if (error) throw error;
+}
+
+/**
+ * Upload a recorded voice answer (mono low-bitrate m4a) to R2 and return its
+ * object key (prefix `answers/`) — what `questions.answer_audio_path` stores.
+ */
+export async function uploadAnswerAudio(file: PickedFile): Promise<string> {
+  if (USE_MOCK) return '';
+  return uploadToR2('answer', file);
+}
+
+/**
+ * Resolve a voice-answer R2 key → a short-lived signed GET URL for playback.
+ * Gated by `can_read_storage_object` (0084 `answers/` branch: moderator, the
+ * asker, or any authenticated caller for a public answered question). Returns
+ * null when the backend explicitly denies (e.g. a private answer for another
+ * user), same contract as `getReadUrl`.
+ */
+export async function getAnswerAudioUrl(key: string): Promise<string | null> {
+  if (USE_MOCK) return null;
+  return getReadUrl(key);
 }
 
 export async function deleteQuestion(questionId: string): Promise<void> {
