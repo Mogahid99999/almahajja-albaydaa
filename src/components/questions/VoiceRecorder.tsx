@@ -27,7 +27,7 @@ import {
   type RecordingOptions,
 } from 'expo-audio';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, I18nManager, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import type { PickedFile } from '@/api/storage';
 import { Txt } from '@/components/ui';
@@ -193,35 +193,51 @@ export function VoiceRecorder({
         </View>
         <View style={styles.actionsRow}>
           {isPaused ? (
-            <Pressable
-              onPress={resumeRecording}
-              style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
-            >
-              <Feather name="mic" size={14} color={colors.onTealPrimary} />
-              <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
-                متابعة
-              </Txt>
-            </Pressable>
+            <>
+              <Pressable
+                onPress={resumeRecording}
+                style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
+              >
+                <Feather name="mic" size={14} color={colors.onTealPrimary} />
+                <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
+                  متابعة
+                </Txt>
+              </Pressable>
+              {/* Listening requires a finalized file (MediaRecorder can't play a
+                  paused, still-open recording), so «استماع» ends the take and
+                  shows the preview player. */}
+              <Pressable
+                onPress={stopRecording}
+                style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.8 }]}
+              >
+                <Feather name="play" size={14} color={colors.textSlate} />
+                <Txt size={12.5} weight="semibold" color={colors.textSlate}>
+                  استماع
+                </Txt>
+              </Pressable>
+            </>
           ) : (
-            <Pressable
-              onPress={pauseRecording}
-              style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.8 }]}
-            >
-              <Feather name="pause" size={14} color={colors.textSlate} />
-              <Txt size={12.5} weight="semibold" color={colors.textSlate}>
-                إيقاف مؤقت
-              </Txt>
-            </Pressable>
+            <>
+              <Pressable
+                onPress={pauseRecording}
+                style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.8 }]}
+              >
+                <Feather name="pause" size={14} color={colors.textSlate} />
+                <Txt size={12.5} weight="semibold" color={colors.textSlate}>
+                  إيقاف مؤقت
+                </Txt>
+              </Pressable>
+              <Pressable
+                onPress={stopRecording}
+                style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
+              >
+                <Feather name="check" size={14} color={colors.onTealPrimary} />
+                <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
+                  إنهاء
+                </Txt>
+              </Pressable>
+            </>
           )}
-          <Pressable
-            onPress={stopRecording}
-            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
-          >
-            <Feather name="check" size={14} color={colors.onTealPrimary} />
-            <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
-              إنهاء
-            </Txt>
-          </Pressable>
         </View>
         {error ? (
           <Txt size={11.5} color={colors.stateDanger} style={{ marginTop: 6 }}>
@@ -332,6 +348,9 @@ function LocalPreviewControls({ player }: { player: AudioPlayer }) {
         <View
           style={[
             styles.previewFill,
+            // Fill from the time-origin edge — right under global RTL, left in LTR
+            // — so playback progress reads in the correct direction.
+            I18nManager.isRTL ? { right: 0 } : { left: 0 },
             { width: `${duration > 0 ? Math.min(100, (current / duration) * 100) : 0}%` },
           ]}
         />
@@ -435,9 +454,13 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
     backgroundColor: colors.surfaceTrack,
     overflow: 'hidden',
+    position: 'relative',
   } as ViewStyle,
 
   previewFill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
     height: 5,
     borderRadius: 2.5,
     backgroundColor: colors.primaryTeal600,

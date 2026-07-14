@@ -1,4 +1,5 @@
 import { ActivityIndicator, View } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { colors, spacing } from '@/constants/theme';
 import { useHome } from '@/hooks/useSections';
@@ -37,7 +38,18 @@ import { SupportContactLink } from '@/components/SupportContactLink';
 export default function HomeScreen() {
   const { data, isLoading, refetch } = useHome();
   const miniPad = useMiniPlayerPad();
-  const { refreshing, onRefresh } = usePullToRefresh([refetch]);
+  const qc = useQueryClient();
+  // Pull-to-refresh on Home should refresh EVERYTHING the page shows, not just
+  // the sections — most importantly the buddy card (incoming invitations, sent
+  // invites, active buddies) and the broadcast/notification state. refetchType
+  // 'all' so even queries whose card isn't mounted yet still refetch.
+  const { refreshing, onRefresh } = usePullToRefresh([
+    refetch,
+    () => qc.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' }),
+    () => qc.invalidateQueries({ queryKey: ['notifications'], refetchType: 'all' }),
+    () => qc.invalidateQueries({ queryKey: ['journey'], refetchType: 'all' }),
+    () => qc.invalidateQueries({ queryKey: ['broadcasts'], refetchType: 'all' }),
+  ]);
 
   if (isLoading && !data) {
     return (

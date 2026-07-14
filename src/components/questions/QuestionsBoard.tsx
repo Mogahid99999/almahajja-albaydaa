@@ -29,7 +29,7 @@ import type {
 } from '@/api/questions';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ReportSheet } from '@/components/reports/ReportSheet';
-import { VoiceNotePlayer } from '@/components/questions/VoiceNotePlayer';
+import { AnswerThread } from '@/components/questions/AnswerThread';
 import { Card, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -300,22 +300,17 @@ function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () =
       </Txt>
       {q.answerBody || q.answerAudioPath ? (
         <View style={styles.answerBox}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <Feather name="message-circle" size={13} color={colors.primaryTeal600} />
             <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
               جواب الشيخ
             </Txt>
           </View>
-          {q.answerBody ? (
-            <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
-              {q.answerBody}
-            </Txt>
-          ) : null}
-          {q.answerAudioPath ? (
-            <View style={{ marginTop: q.answerBody ? 10 : 6 }}>
-              <VoiceNotePlayer audioPath={q.answerAudioPath} />
-            </View>
-          ) : null}
+          <AnswerThread
+            questionId={q.id}
+            fallbackBody={q.answerBody}
+            fallbackAudioPath={q.answerAudioPath}
+          />
         </View>
       ) : null}
     </Card>
@@ -325,11 +320,9 @@ function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () =
 function MyQuestionCard({
   q,
   onDelete,
-  onReport,
 }: {
   q: MyQuestion;
   onDelete: () => void;
-  onReport: () => void;
 }) {
   const pending = q.status === 'pending';
   const update = useUpdateOwnQuestion();
@@ -363,69 +356,67 @@ function MyQuestionCard({
   return (
     <Card style={styles.qCard}>
       <View style={styles.qMetaRow}>
-        <View
-          style={[
-            styles.statusBadge,
-            pending ? styles.statusPending : styles.statusAnswered,
-          ]}
-        >
-          <Txt
-            size={10.5}
-            weight="semibold"
-            color={pending ? colors.accentBrassMuted : colors.stateSuccess}
+        {/* Badges wrap on their own line if crowded; the actions never clip. */}
+        <View style={styles.qMetaBadges}>
+          <View
+            style={[
+              styles.statusBadge,
+              pending ? styles.statusPending : styles.statusAnswered,
+            ]}
           >
-            {pending ? 'قيد المراجعة' : 'تمت الإجابة'}
+            <Txt
+              size={10.5}
+              weight="semibold"
+              color={pending ? colors.accentBrassMuted : colors.stateSuccess}
+            >
+              {pending ? 'قيد المراجعة' : 'تمت الإجابة'}
+            </Txt>
+          </View>
+          <CategoryBadge category={q.category} />
+          {q.audience === 'sheikh' ? (
+            <Txt size={11} color={colors.textGhost}>
+              للشيخ فقط
+            </Txt>
+          ) : null}
+          {/* Always state whether the asker's name shows — never leave it implicit. */}
+          <View style={styles.nameBadge}>
+            <Feather
+              name={q.isAnonymous ? 'eye-off' : 'user'}
+              size={11}
+              color={q.isAnonymous ? colors.accentBrassMuted : colors.primaryTeal600}
+            />
+            <Txt
+              size={10.5}
+              weight="medium"
+              color={q.isAnonymous ? colors.accentBrassMuted : colors.primaryTeal600}
+            >
+              {q.isAnonymous ? 'دون اسمك' : 'باسمك'}
+            </Txt>
+          </View>
+          <Txt size={11.5} color={colors.textGhost}>
+            {arSince(q.createdAt)}
           </Txt>
         </View>
-        <CategoryBadge category={q.category} />
-        {q.audience === 'sheikh' ? (
-          <Txt size={11} color={colors.textGhost}>
-            للشيخ فقط
-          </Txt>
-        ) : null}
-        {/* Always state whether the asker's name shows — never leave it implicit. */}
-        <View style={styles.nameBadge}>
-          <Feather
-            name={q.isAnonymous ? 'eye-off' : 'user'}
-            size={11}
-            color={q.isAnonymous ? colors.accentBrassMuted : colors.primaryTeal600}
-          />
-          <Txt
-            size={10.5}
-            weight="medium"
-            color={q.isAnonymous ? colors.accentBrassMuted : colors.primaryTeal600}
+        {/* Own question → edit + delete only. Reporting is for OTHERS' questions,
+            never one's own (see the public-list card's report action). */}
+        <View style={styles.qMetaActions}>
+          <Pressable
+            onPress={editing ? () => setEditing(false) : startEdit}
+            accessibilityLabel="تعديل سؤالي"
+            hitSlop={10}
+            style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
           >
-            {q.isAnonymous ? 'دون اسمك' : 'باسمك'}
-          </Txt>
+            <Feather name="edit-2" size={16} color={colors.primaryTeal600} />
+          </Pressable>
+          <Pressable
+            onPress={onDelete}
+            accessibilityLabel="حذف سؤالي"
+            hitSlop={10}
+            style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Feather name="trash-2" size={16} color={colors.stateDanger} />
+          </Pressable>
         </View>
-        <View style={{ flex: 1 }} />
-        <Txt size={11.5} color={colors.textGhost}>
-          {arSince(q.createdAt)}
-        </Txt>
-        <Pressable
-          onPress={onReport}
-          accessibilityLabel="الإبلاغ عن هذا السؤال"
-          hitSlop={6}
-          style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Feather name="flag" size={14} color={colors.textGhost} />
-        </Pressable>
-        <Pressable
-          onPress={editing ? () => setEditing(false) : startEdit}
-          accessibilityLabel="تعديل سؤالي"
-          hitSlop={6}
-          style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Feather name="edit-2" size={14} color={editing ? colors.primaryTeal600 : colors.textGhost} />
-        </Pressable>
-        <Pressable
-          onPress={onDelete}
-          accessibilityLabel="حذف سؤالي"
-          hitSlop={6}
-          style={({ pressed }) => [styles.deleteMineBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Feather name="trash-2" size={14} color={colors.stateDanger} />
-        </Pressable>
       </View>
       {editing ? (
         <View style={{ marginTop: 10 }}>
@@ -504,22 +495,17 @@ function MyQuestionCard({
       )}
       {!editing && (q.answerBody || q.answerAudioPath) ? (
         <View style={styles.answerBox}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <Feather name="message-circle" size={13} color={colors.primaryTeal600} />
             <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
               جواب الشيخ
             </Txt>
           </View>
-          {q.answerBody ? (
-            <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
-              {q.answerBody}
-            </Txt>
-          ) : null}
-          {q.answerAudioPath ? (
-            <View style={{ marginTop: q.answerBody ? 10 : 6 }}>
-              <VoiceNotePlayer audioPath={q.answerAudioPath} />
-            </View>
-          ) : null}
+          <AnswerThread
+            questionId={q.id}
+            fallbackBody={q.answerBody}
+            fallbackAudioPath={q.answerAudioPath}
+          />
         </View>
       ) : null}
     </Card>
@@ -561,7 +547,6 @@ export function QuestionsBoard({
         <MyQuestionCard
           q={item as MyQuestion}
           onDelete={() => setPendingDelete(item as MyQuestion)}
-          onReport={() => setReportTarget(item)}
         />
       ),
     [tab],
@@ -775,8 +760,24 @@ const styles = StyleSheet.create({
 
   qMetaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
+  } as ViewStyle,
+
+  qMetaBadges: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    rowGap: 6,
+    gap: 8,
+  } as ViewStyle,
+
+  qMetaActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
   } as ViewStyle,
 
   qBody: { marginTop: 10, lineHeight: 24 } as TextStyle,

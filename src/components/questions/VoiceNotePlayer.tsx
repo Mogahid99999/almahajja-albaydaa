@@ -18,6 +18,7 @@ import { createAudioPlayer, useAudioPlayerStatus, type AudioPlayer } from 'expo-
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  I18nManager,
   Pressable,
   StyleSheet,
   View,
@@ -129,15 +130,19 @@ function LoadedPlayer({ player }: { player: AudioPlayer }) {
 
   // Playback-driven fill fraction (0–1).
   const playFraction = duration > 0 ? Math.min(1, Math.max(0, current / duration)) : 0;
+  // Physical x (px from the LEFT edge) of the progress point. Under global RTL,
+  // 0s sits on the RIGHT, so the played position moves leftward as it advances.
+  const physicalX = (fraction: number, w: number) => (I18nManager.isRTL ? w - fraction * w : fraction * w);
   const playX = useSharedValue(0);
   useEffect(() => {
-    if (!scrubbingSV.value) playX.value = playFraction * trackWidth;
+    if (!scrubbingSV.value) playX.value = physicalX(playFraction, trackWidth);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playFraction, trackWidth, playX, scrubbingSV]);
 
   function handleLayout(e: LayoutChangeEvent) {
     const w = e.nativeEvent.layout.width;
     setTrackWidth(w);
-    playX.value = playFraction * w;
+    playX.value = physicalX(playFraction, w);
   }
 
   function beginScrub() {
@@ -171,7 +176,10 @@ function LoadedPlayer({ player }: { player: AudioPlayer }) {
           scrubX.value = clampX(e.x, trackWidth);
         })
         .onEnd(() => {
-          const fraction = trackWidth > 0 ? scrubX.value / trackWidth : 0;
+          // Physical finger x → playback fraction, mirrored under global RTL so
+          // 0s sits on the RIGHT and progress flows leftward (Waveform pattern).
+          const raw = trackWidth > 0 ? scrubX.value / trackWidth : 0;
+          const fraction = I18nManager.isRTL ? 1 - raw : raw;
           scrubbingSV.value = false;
           runOnJS(commitSeek)(fraction);
         })
@@ -187,9 +195,15 @@ function LoadedPlayer({ player }: { player: AudioPlayer }) {
     [trackWidth, duration],
   );
 
-  const fillStyle = useAnimatedStyle(() => ({
-    width: scrubbingSV.value ? scrubX.value : playX.value,
-  }));
+  // `pos` is the progress point in px from the LEFT edge (physical). The played
+  // fill spans from the time-origin edge to `pos`: left→pos under LTR, pos→right
+  // under RTL. The thumb sits at `pos` either way.
+  const fillStyle = useAnimatedStyle(() => {
+    const pos = scrubbingSV.value ? scrubX.value : playX.value;
+    return I18nManager.isRTL
+      ? { left: pos, right: 0 }
+      : { left: 0, width: pos };
+  });
   const thumbStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: (scrubbingSV.value ? scrubX.value : playX.value) - THUMB_SIZE / 2 },
@@ -212,7 +226,14 @@ function LoadedPlayer({ player }: { player: AudioPlayer }) {
   }
 
   const showReplay = finished && !status.playing;
-  const elapsedForLabel = scrubbing && trackWidth > 0 ? (scrubX.value / trackWidth) * duration : current;
+  // While scrubbing, show the time under the finger — mirrored under RTL so the
+  // label matches the physical drag position (same mapping as commitSeek).
+  const scrubFraction = (() => {
+    if (!scrubbing || trackWidth <= 0) return null;
+    const raw = scrubX.value / trackWidth;
+    return I18nManager.isRTL ? 1 - raw : raw;
+  })();
+  const elapsedForLabel = scrubFraction != null ? scrubFraction * duration : current;
 
   return (
     <View style={styles.row}>
@@ -291,6 +312,9 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   trackFill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
     height: TRACK_HEIGHT,
     borderRadius: TRACK_HEIGHT / 2,
     backgroundColor: colors.primaryTeal600,

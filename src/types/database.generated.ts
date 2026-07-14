@@ -134,6 +134,32 @@ export type Database = {
         }
         Relationships: []
       }
+      broadcast_views: {
+        Row: {
+          broadcast_id: string
+          user_id: string
+          viewed_at: string
+        }
+        Insert: {
+          broadcast_id: string
+          user_id: string
+          viewed_at?: string
+        }
+        Update: {
+          broadcast_id?: string
+          user_id?: string
+          viewed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcast_views_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "broadcasts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       broadcasts: {
         Row: {
           body: string
@@ -557,14 +583,51 @@ export type Database = {
         }
         Relationships: []
       }
+      question_answers: {
+        Row: {
+          answered_by: string | null
+          audio_path: string | null
+          body: string | null
+          created_at: string
+          id: string
+          question_id: string
+        }
+        Insert: {
+          answered_by?: string | null
+          audio_path?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          question_id: string
+        }
+        Update: {
+          answered_by?: string | null
+          audio_path?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          question_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       questions: {
         Row: {
+          answer_audio_path: string | null
           answer_body: string | null
           answered_at: string | null
           answered_by: string | null
           asker_id: string
           audience: string
           body: string
+          category: string
           created_at: string
           id: string
           is_anonymous: boolean
@@ -573,12 +636,14 @@ export type Database = {
           status: string
         }
         Insert: {
+          answer_audio_path?: string | null
           answer_body?: string | null
           answered_at?: string | null
           answered_by?: string | null
           asker_id: string
           audience?: string
           body: string
+          category?: string
           created_at?: string
           id?: string
           is_anonymous?: boolean
@@ -587,12 +652,14 @@ export type Database = {
           status?: string
         }
         Update: {
+          answer_audio_path?: string | null
           answer_body?: string | null
           answered_at?: string | null
           answered_by?: string | null
           asker_id?: string
           audience?: string
           body?: string
+          category?: string
           created_at?: string
           id?: string
           is_anonymous?: boolean
@@ -1046,13 +1113,13 @@ export type Database = {
         Args: { p_body: string; p_lecture_id: string }
         Returns: string
       }
+      admin_buddy_overview: { Args: never; Returns: Json }
       admin_dashboard_stats: { Args: never; Returns: Json }
       admin_delete_feedback: {
         Args: { p_feedback_id: string }
         Returns: undefined
       }
       admin_delete_rating: { Args: { p_rating_id: string }; Returns: undefined }
-      admin_buddy_overview: { Args: never; Returns: Json }
       admin_list_benefits: {
         Args: { p_lecture_id?: string }
         Returns: {
@@ -1135,7 +1202,13 @@ export type Database = {
       }
       admin_user_detail: { Args: { p_user_id: string }; Returns: Json }
       admin_user_list: {
-        Args: { p_limit?: number; p_offset?: number; p_search?: string }
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_registered_only?: boolean
+          p_search?: string
+          p_status?: string
+        }
         Returns: {
           banned_until: string
           completed_lectures: number
@@ -1145,18 +1218,24 @@ export type Database = {
           email: string
           gender: string
           id: string
+          is_anonymous: boolean
           last_opened_at: string
           last_sign_in_at: string
           passed_quizzes: number
           phone: string
           role: string
           status: string
+          total_count: number
           weekly_goal_metric: string
           weekly_goal_target: number
         }[]
       }
       answer_question: {
-        Args: { p_answer_body: string; p_question_id: string }
+        Args: {
+          p_answer_audio_path?: string
+          p_answer_body: string
+          p_question_id: string
+        }
         Returns: undefined
       }
       apply_meaningful_activity: {
@@ -1172,15 +1251,24 @@ export type Database = {
         Args: {
           p_audience: string
           p_body: string
+          p_category?: string
           p_is_anonymous: boolean
           p_lecture_id: string
           p_scope: string
         }
         Returns: string
       }
+      buddies_of: { Args: { p_user_id: string }; Returns: string[] }
+      buddy_count: { Args: { p_user_id: string }; Returns: number }
       buddy_of: { Args: { p_user_id: string }; Returns: string }
       can_read_storage_object: { Args: { p_key: string }; Returns: boolean }
-      cancel_buddy: { Args: never; Returns: undefined }
+      cancel_buddy:
+        | { Args: never; Returns: undefined }
+        | { Args: { p_buddy_id?: string }; Returns: undefined }
+      cancel_buddy_request: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
       contains_blocked_word: { Args: { p_text: string }; Returns: boolean }
       create_broadcast: {
         Args: {
@@ -1207,6 +1295,16 @@ export type Database = {
         Args: {
           p_body: string
           p_data: Json
+          p_title: string
+          p_type: Database["public"]["Enums"]["notification_type"]
+        }
+        Returns: undefined
+      }
+      fanout_to_all_for_section: {
+        Args: {
+          p_body: string
+          p_data: Json
+          p_section_id: string
           p_title: string
           p_type: Database["public"]["Enums"]["notification_type"]
         }
@@ -1245,6 +1343,24 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_broadcast_view_counts: {
+        Args: never
+        Returns: {
+          broadcast_id: string
+          view_count: number
+        }[]
+      }
+      get_buddies_status: {
+        Args: never
+        Returns: {
+          buddy_id: string
+          current_streak: number
+          display_name: string
+          today_counted: boolean
+          week_progress_pct: number
+          weekly_goal_met: boolean
+        }[]
+      }
       get_buddy_status: {
         Args: never
         Returns: {
@@ -1268,7 +1384,7 @@ export type Database = {
       get_featured_lectures: {
         Args: never
         Returns: {
-          audio_size_bytes: number | null
+          audio_size_bytes: number
           completed: boolean
           duration_sec: number
           lecture_id: string
@@ -1333,12 +1449,14 @@ export type Database = {
       }
       get_my_buddy_id: { Args: never; Returns: string }
       get_my_questions: {
-        Args: { p_lecture_id?: string; p_scope: string }
+        Args: { p_category?: string; p_lecture_id?: string; p_scope: string }
         Returns: {
+          answer_audio_path: string
           answer_body: string
           answered_at: string
           audience: string
           body: string
+          category: string
           created_at: string
           id: string
           is_anonymous: boolean
@@ -1352,21 +1470,43 @@ export type Database = {
           passed: number
         }[]
       }
-      get_public_questions: {
-        Args: { p_lecture_id?: string; p_scope: string }
+      get_outgoing_buddy_requests: {
+        Args: never
         Returns: {
+          created_at: string
+          id: string
+          to_display_name: string
+        }[]
+      }
+      get_public_questions: {
+        Args: { p_category?: string; p_lecture_id?: string; p_scope: string }
+        Returns: {
+          answer_audio_path: string
           answer_body: string
           answered_at: string
           asker_display: string
           body: string
+          category: string
           created_at: string
           id: string
           is_mine: boolean
         }[]
       }
-      get_question_inbox: {
-        Args: { p_scope?: string; p_status?: string; p_category?: string }
+      get_question_answers: {
+        Args: { p_question_id: string }
         Returns: {
+          answered_by: string
+          answerer_name: string
+          audio_path: string
+          body: string
+          created_at: string
+          id: string
+        }[]
+      }
+      get_question_inbox: {
+        Args: { p_category?: string; p_scope?: string; p_status?: string }
+        Returns: {
+          answer_audio_path: string
           answer_body: string
           answered_at: string
           asker_display: string
@@ -1479,6 +1619,7 @@ export type Database = {
       is_content_manager: { Args: never; Returns: boolean }
       is_moderator: { Args: never; Returns: boolean }
       is_sheikh: { Args: never; Returns: boolean }
+      is_staff_viewer: { Args: never; Returns: boolean }
       lecture_visible_to_viewer: {
         Args: { p_lecture_id: string }
         Returns: boolean
@@ -1496,6 +1637,7 @@ export type Database = {
         }[]
       }
       quiz_result_payload: { Args: { p_attempt_id: string }; Returns: Json }
+      record_broadcast_view: { Args: { p_id: string }; Returns: undefined }
       record_daily_listening: {
         Args: { p_lecture_id: string; p_seconds: number }
         Returns: undefined
@@ -1587,15 +1729,6 @@ export type Database = {
       }
       touch_last_opened: { Args: never; Returns: undefined }
       try_claim_goal_congrats: { Args: never; Returns: boolean }
-      update_own_question: {
-        Args: {
-          p_id: string
-          p_body: string
-          p_audience: string
-          p_category: string
-        }
-        Returns: undefined
-      }
       update_broadcast: {
         Args: {
           p_body: string
@@ -1605,6 +1738,15 @@ export type Database = {
           p_link_url?: string
           p_show_on_home: boolean
           p_title: string
+        }
+        Returns: undefined
+      }
+      update_own_question: {
+        Args: {
+          p_audience: string
+          p_body: string
+          p_category: string
+          p_id: string
         }
         Returns: undefined
       }

@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 
 import type { BuddyCandidate } from '@/api/types';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
-import { arDayCount } from '@/lib/format';
+import { arDayCount, arNum } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { MAX_BUDDIES } from '@/api/buddy';
 import { useBuddySearch, useMyBuddies, useSendBuddyRequest } from '@/hooks/useBuddy';
@@ -131,6 +131,16 @@ export default function BuddySearchScreen() {
         </Card>
       ) : (
         <>
+          {/* Allowance note — the student may keep up to MAX_BUDDIES buddies. */}
+          <Txt
+            size={13}
+            color={colors.textSlate}
+            align="center"
+            style={{ lineHeight: 21, marginBottom: 16 }}
+          >
+            {`يمكنك اختيار حتى ${arNum(MAX_BUDDIES)} رفقاء · لديك الآن ${arNum(buddies?.length ?? 0)}`}
+          </Txt>
+
           {/* Search input */}
           <TextInput
             value={query}

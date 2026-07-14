@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 
 import type { GoalMetric } from '@/api/types';
 import { colors } from '@/constants/theme';
@@ -65,8 +66,13 @@ export default function JourneyScreen() {
   const { data: quizStats, refetch: refetchQuizStats } = useMyQuizStats({ enabled: !isGuest });
   const setGoal = useSetWeeklyGoal();
   const miniPad = useMiniPlayerPad();
+  const qc = useQueryClient();
+  // Pull-to-refresh must also refresh the buddy card (invitations sent/accepted,
+  // buddies added/removed) — those live in their own ['buddy', …] queries inside
+  // BuddyCard, so refetch them here rather than let the card go stale.
+  const refetchBuddy = () => qc.invalidateQueries({ queryKey: ['buddy'] });
   const { refreshing, onRefresh } = usePullToRefresh(
-    isGuest ? [] : [refetchSummary, refetchGoal, refetchBadges, refetchQuizStats],
+    isGuest ? [] : [refetchSummary, refetchGoal, refetchBadges, refetchQuizStats, refetchBuddy],
   );
 
   // Catch up any badge earned offline / via the streak crons, once on mount.

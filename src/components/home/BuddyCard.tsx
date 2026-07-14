@@ -5,10 +5,12 @@ import { useRouter } from 'expo-router';
 import { MAX_BUDDIES } from '@/api/buddy';
 import type { BuddyStatus } from '@/api/types';
 import { colors, radius } from '@/constants/theme';
+import { arNum } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
+  useCancelBuddyRequest,
   useMyBuddies,
-  useOutgoingPending,
+  useOutgoingRequests,
   usePendingBuddyRequests,
   useRespondToRequest,
 } from '@/hooks/useBuddy';
@@ -31,16 +33,21 @@ export function BuddyCard() {
 
   const { data: buddies, isLoading: buddiesLoading } = useMyBuddies({ enabled: !isGuest });
   const { data: incoming } = usePendingBuddyRequests({ enabled: !isGuest });
-  const { data: outgoing } = useOutgoingPending({ enabled: !isGuest });
+  const { data: outgoing } = useOutgoingRequests({ enabled: !isGuest });
   const { data: streak } = useStreakStatus({ enabled: !isGuest });
   const respond = useRespondToRequest();
+  const cancelReq = useCancelBuddyRequest();
 
   if (isGuest || buddiesLoading) return null;
 
   const list = buddies ?? [];
+  const outgoingList = outgoing ?? [];
   const invitation = (incoming ?? [])[0];
   const atCap = list.length >= MAX_BUDDIES;
   const meToday = streak?.todayCounted ?? false;
+  // How many more invitations the student may still send (accepted + pending
+  // both consume a slot toward the cap of MAX_BUDDIES).
+  const remaining = Math.max(0, MAX_BUDDIES - list.length - outgoingList.length);
 
   return (
     <View>
@@ -102,24 +109,43 @@ export function BuddyCard() {
         <ActiveBuddyRow key={buddy.buddyId} buddy={buddy} fem={fem} meToday={meToday} />
       ))}
 
-      {/* My invitation is still out. */}
-      {outgoing ? (
-        <Card style={{ marginBottom: 14 }}>
+      {/* My pending outgoing invitations — each withdrawable. */}
+      {outgoingList.map((req) => (
+        <Card key={req.id} style={{ marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
             <Chip icon="clock" />
             <View style={{ flex: 1 }}>
               <Txt weight="display" size={15.5} color={colors.primaryTeal}>
-                طلبك قيد الانتظار
+                {`دعوتك إلى ${req.toDisplayName} قيد الانتظار`}
               </Txt>
               <Txt size={12.5} color={colors.textMuted} style={{ marginTop: 2 }}>
-                دعوتك لرفيق الدراسة لم يُرَدّ عليها بعد
+                لم يُرَدّ عليها بعد
               </Txt>
             </View>
+            <Pressable
+              onPress={() => cancelReq.mutate(req.id)}
+              disabled={cancelReq.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={`سحب الدعوة إلى ${req.toDisplayName}`}
+              style={({ pressed }) => ({
+                paddingVertical: 9,
+                paddingHorizontal: 14,
+                borderRadius: radius.pill,
+                borderWidth: 1,
+                borderColor: colors.borderSand2,
+                opacity: pressed || cancelReq.isPending ? 0.6 : 1,
+              })}
+            >
+              <Txt size={12.5} weight="semibold" color={colors.textMuted}>
+                سحب الدعوة
+              </Txt>
+            </Pressable>
           </View>
         </Card>
-      ) : null}
+      ) )}
 
-      {/* Invite CTA — only while under the 3-buddy cap. */}
+      {/* Invite CTA — only while under the 3-buddy cap. Shows how many more
+          buddies the student may still invite (cap = MAX_BUDDIES). */}
       {!atCap ? (
         <Card style={{ marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
@@ -129,25 +155,29 @@ export function BuddyCard() {
                 {list.length > 0 ? 'يمكنك اختيار رفيق آخر' : 'يمكنك اختيار رفيق دراسة'}
               </Txt>
               <Txt size={12.5} color={colors.textMuted} style={{ marginTop: 2 }}>
-                تواصيان معاً على طلب العلم
+                {remaining > 0
+                  ? `يمكنك دعوة حتى ${arNum(MAX_BUDDIES)} رفقاء — بقي لك ${arNum(remaining)}`
+                  : `يمكنك دعوة حتى ${arNum(MAX_BUDDIES)} رفقاء`}
               </Txt>
             </View>
-            <Pressable
-              onPress={() => router.push('/(student)/buddy-search')}
-              accessibilityRole="button"
-              accessibilityLabel="اختر رفيقاً"
-              style={({ pressed }) => ({
-                paddingVertical: 9,
-                paddingHorizontal: 14,
-                borderRadius: radius.pill,
-                backgroundColor: colors.primaryTeal,
-                opacity: pressed ? 0.8 : 1,
-              })}
-            >
-              <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
-                اختر رفيقاً
-              </Txt>
-            </Pressable>
+            {remaining > 0 ? (
+              <Pressable
+                onPress={() => router.push('/(student)/buddy-search')}
+                accessibilityRole="button"
+                accessibilityLabel="اختر رفيقاً"
+                style={({ pressed }) => ({
+                  paddingVertical: 9,
+                  paddingHorizontal: 14,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.primaryTeal,
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
+                  اختر رفيقاً
+                </Txt>
+              </Pressable>
+            ) : null}
           </View>
         </Card>
       ) : null}

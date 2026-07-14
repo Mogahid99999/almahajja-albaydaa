@@ -55,10 +55,8 @@ export async function respondToRequest(requestId: string, accept: boolean): Prom
  */
 export async function cancelBuddy(buddyId?: string): Promise<void> {
   if (USE_MOCK) return;
-  // `cancel_buddy` gained a p_buddy_id arg in migration 0082 — cast until the
-  // generated DB types are regenerated (they're rebuilt out-of-band).
-  const { error } = await (supabase.rpc as any)('cancel_buddy', {
-    p_buddy_id: buddyId ?? null,
+  const { error } = await supabase.rpc('cancel_buddy', {
+    p_buddy_id: buddyId ?? undefined,
   });
   if (error) throw error;
 }
@@ -75,9 +73,7 @@ type BuddyStatusRow = {
 /** All accepted buddies' card data (up to 3), newest pairing first. */
 export async function getMyBuddies(): Promise<BuddyStatus[]> {
   if (USE_MOCK) return [];
-  // `get_buddies_status` is added in migration 0082 — cast until the generated
-  // DB types are regenerated (they're rebuilt out-of-band).
-  const { data, error } = await (supabase.rpc as any)('get_buddies_status');
+  const { data, error } = await supabase.rpc('get_buddies_status');
   if (error) throw error;
   return ((data ?? []) as BuddyStatusRow[])
     .filter((row) => !!row?.buddy_id)
@@ -166,4 +162,32 @@ export async function hasOutgoingPendingRequest(): Promise<boolean> {
     .limit(1);
   if (error) throw error;
   return (data?.length ?? 0) > 0;
+}
+
+/** One of my still-pending outgoing invitations (invitee name resolved server-side). */
+export type OutgoingBuddyRequest = {
+  id: string;
+  toDisplayName: string;
+  createdAt: string;
+};
+
+/** My pending outgoing invitations, newest first (0087). */
+export async function getOutgoingRequests(): Promise<OutgoingBuddyRequest[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase.rpc('get_outgoing_buddy_requests');
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    toDisplayName: r.to_display_name,
+    createdAt: r.created_at,
+  }));
+}
+
+/** Withdraw one of my pending outgoing invitations (0087). */
+export async function cancelBuddyRequest(requestId: string): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.rpc('cancel_buddy_request', {
+    p_request_id: requestId,
+  });
+  if (error) throw error;
 }

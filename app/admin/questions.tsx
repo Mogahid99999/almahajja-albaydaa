@@ -26,7 +26,7 @@ import type { InboxQuestion, QuestionCategory, QuestionScope, QuestionStatus } f
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ModeratorAnswerComposer } from '@/components/questions/ModeratorAnswerComposer';
-import { VoiceNotePlayer } from '@/components/questions/VoiceNotePlayer';
+import { AnswerThread } from '@/components/questions/AnswerThread';
 import { Card, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
@@ -149,25 +149,20 @@ function QuestionCard({
         {q.body}
       </Txt>
 
-      {/* Existing answer */}
+      {/* Existing answers (chronological thread — a question may hold several) */}
       {hasAnswer && !composing ? (
         <View style={styles.answerBox}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <Feather name="check-circle" size={13} color={colors.stateSuccess} />
             <Txt size={11.5} weight="semibold" color={colors.stateSuccess}>
               الجواب
             </Txt>
           </View>
-          {q.answerBody ? (
-            <Txt size={13.5} color={colors.textSlate} style={{ marginTop: 6, lineHeight: 22 }}>
-              {q.answerBody}
-            </Txt>
-          ) : null}
-          {q.answerAudioPath ? (
-            <View style={{ marginTop: q.answerBody ? 10 : 6 }}>
-              <VoiceNotePlayer audioPath={q.answerAudioPath} />
-            </View>
-          ) : null}
+          <AnswerThread
+            questionId={q.id}
+            fallbackBody={q.answerBody}
+            fallbackAudioPath={q.answerAudioPath}
+          />
         </View>
       ) : null}
 
@@ -175,7 +170,8 @@ function QuestionCard({
       {composing ? (
         <ModeratorAnswerComposer
           questionId={q.id}
-          initialBody={q.answerBody}
+          /* Answers APPEND (0086) — start empty so a follow-up never duplicates
+             the previous answer's text. */
           onDone={() => setComposing(false)}
           onCancel={() => setComposing(false)}
         />
@@ -186,12 +182,12 @@ function QuestionCard({
             style={({ pressed }) => [styles.answerBtn, pressed && { opacity: 0.8 }]}
           >
             <Feather
-              name={hasAnswer ? 'edit-2' : 'message-circle'}
+              name={hasAnswer ? 'plus' : 'message-circle'}
               size={14}
               color={colors.onTealPrimary}
             />
             <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
-              {hasAnswer ? 'تعديل الجواب' : 'الإجابة'}
+              {hasAnswer ? 'إضافة رد' : 'الإجابة'}
             </Txt>
           </Pressable>
 

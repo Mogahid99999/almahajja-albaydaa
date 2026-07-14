@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   cancelBuddy,
+  cancelBuddyRequest,
   getAdminBuddyOverview,
   getMyBuddies,
   getMyBuddyStatus,
+  getOutgoingRequests,
   getPendingIncomingRequests,
   hasOutgoingPendingRequest,
   respondToRequest,
@@ -58,6 +60,15 @@ export function useOutgoingPending(options?: { enabled?: boolean }) {
   });
 }
 
+/** My pending outgoing invitations (with invitee names) — for withdraw UI. */
+export function useOutgoingRequests(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.buddyOutgoingList,
+    queryFn: getOutgoingRequests,
+    enabled: options?.enabled ?? true,
+  });
+}
+
 /** Debounced same-gender candidate search. */
 export function useBuddySearch(query: string) {
   const [debounced, setDebounced] = useState(query);
@@ -74,8 +85,11 @@ export function useBuddySearch(query: string) {
 
 function useInvalidateBuddy() {
   const qc = useQueryClient();
+  // refetchType 'all' so a buddy query that isn't currently mounted (e.g. the
+  // Home card while we're on another screen) still refetches, instead of serving
+  // stale cache until the next restart.
   return () => {
-    qc.invalidateQueries({ queryKey: ['buddy'] });
+    void qc.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' });
   };
 }
 
@@ -100,6 +114,15 @@ export function useCancelBuddy() {
   const invalidate = useInvalidateBuddy();
   return useMutation({
     mutationFn: (buddyId?: string) => cancelBuddy(buddyId),
+    onSuccess: invalidate,
+  });
+}
+
+/** Withdraw one of my pending outgoing invitations. */
+export function useCancelBuddyRequest() {
+  const invalidate = useInvalidateBuddy();
+  return useMutation({
+    mutationFn: (requestId: string) => cancelBuddyRequest(requestId),
     onSuccess: invalidate,
   });
 }

@@ -13,6 +13,20 @@ import { supabase } from '@/lib/supabase';
 import { BlockedWordError, isBlockedWordError } from '@/api/reports';
 import { getReadUrl, uploadToR2, type PickedFile } from '@/api/storage';
 
+/**
+ * Sentinel stored in `answer_body` for an AUDIO-ONLY answer (migration 0085) so
+ * clients built before the voice feature show a readable hint instead of a blank.
+ * New clients recognise it and hide it, rendering the VoiceNotePlayer instead.
+ * MUST match c_sentinel in supabase/migrations/0085_answer_audio_fallback_text.sql.
+ */
+export const VOICE_ANSWER_SENTINEL = '🎧 إجابة صوتية — يرجى تحديث التطبيق للاستماع';
+
+/** Strip the audio-only sentinel — new clients render the player, not this text. */
+function normalizeAnswerBody(body: string | null | undefined): string | null {
+  const b = body ?? null;
+  return b === VOICE_ANSWER_SENTINEL ? null : b;
+}
+
 export type QuestionScope = 'general' | 'lecture';
 export type QuestionAudience = 'public' | 'sheikh';
 export type QuestionStatus = 'pending' | 'answered' | 'hidden';
@@ -83,7 +97,7 @@ export async function getPublicQuestions(
   return (data ?? []).map((r: any) => ({
     id: r.id,
     body: r.body,
-    answerBody: r.answer_body ?? null,
+    answerBody: normalizeAnswerBody(r.answer_body),
     answerAudioPath: r.answer_audio_path ?? null,
     askerDisplay: r.asker_display ?? null,
     isMine: !!r.is_mine,
@@ -108,7 +122,7 @@ export async function getMyQuestions(
   return (data ?? []).map((r: any) => ({
     id: r.id,
     body: r.body,
-    answerBody: r.answer_body ?? null,
+    answerBody: normalizeAnswerBody(r.answer_body),
     answerAudioPath: r.answer_audio_path ?? null,
     isAnonymous: !!r.is_anonymous,
     audience: r.audience as QuestionAudience,
@@ -198,7 +212,7 @@ export async function getQuestionInbox(filter: {
     lectureTitle: r.lecture_title ?? null,
     sectionTitle: r.section_title ?? null,
     body: r.body,
-    answerBody: r.answer_body ?? null,
+    answerBody: normalizeAnswerBody(r.answer_body),
     answerAudioPath: r.answer_audio_path ?? null,
     isAnonymous: !!r.is_anonymous,
     audience: r.audience as QuestionAudience,
@@ -224,14 +238,45 @@ export async function answerQuestion(
   const { error } = await supabase.rpc('answer_question', {
     p_question_id: questionId,
     p_answer_body: answer.body ?? '',
-    p_answer_audio_path: answer.audioPath ?? null,
+    p_answer_audio_path: answer.audioPath ?? undefined,
   });
   if (error) throw error;
 }
 
+/** One answer in a question's chronological answer thread (0086). */
+export type QuestionAnswer = {
+  id: string;
+  body: string | null;
+  audioPath: string | null;
+  answeredBy: string | null;
+  answererName: string;
+  createdAt: string;
+};
+
+/**
+ * The ordered answer list (oldest→newest) for one question (0086 — a question
+ * may carry many answers, added by any moderator). Visible to the asker, any
+ * user for a public answered question, or a moderator (gated server-side).
+ */
+export async function getQuestionAnswers(questionId: string): Promise<QuestionAnswer[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase.rpc('get_question_answers', {
+    p_question_id: questionId,
+  });
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    body: r.body ?? null,
+    audioPath: r.audio_path ?? null,
+    answeredBy: r.answered_by ?? null,
+    answererName: r.answerer_name ?? 'الشيخ',
+    createdAt: r.created_at,
+  }));
+}
+
 /**
  * Upload a recorded voice answer (mono low-bitrate m4a) to R2 and return its
- * object key (prefix `answers/`) — what `questions.answer_audio_path` stores.
+ * object key (prefix `answers/`) — what `question_answers.audio_path` stores.
  */
 export async function uploadAnswerAudio(file: PickedFile): Promise<string> {
   if (USE_MOCK) return '';

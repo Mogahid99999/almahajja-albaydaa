@@ -342,6 +342,13 @@ function NotificationsBootstrap() {
       positionSec?: number;
       route?: string;
     }) => {
+      // Any notification tap is a fresh chance to reconcile state the push was
+      // about — most importantly buddy invites/accepts (route '/'), whose card
+      // otherwise stays stale (refetchOnWindowFocus is off) until a full restart.
+      // refetchType 'all' so even a not-yet-mounted buddy query refetches now,
+      // rather than serving cache when the Home card mounts after navigation.
+      void queryClient.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
       if (data.lectureId) {
         // Carry the paused second so the player opens at the exact position (§8).
         const t =
@@ -398,6 +405,11 @@ function NotificationsBootstrap() {
       void checkBannedAndSignOut().then((res) => {
         if (res.banned) queryClient.setQueryData(queryKeys.currentUser, res.user);
       });
+      // Refresh buddy + inbox state on every foreground — tapping a buddy
+      // invitation/accept push brings the app forward, and refetchOnWindowFocus
+      // is off, so without this the buddy card stays stale until a full restart.
+      void queryClient.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
       void (async () => {
         try {
           // §7 priority dispatcher (resume > weekly-goal > daily): the daily

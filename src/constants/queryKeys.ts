@@ -43,6 +43,7 @@ export const queryKeys = {
   buddies: ['buddy', 'statuses'] as const,
   buddyRequests: ['buddy', 'requests'] as const,
   buddyOutgoing: ['buddy', 'outgoing'] as const,
+  buddyOutgoingList: ['buddy', 'outgoing', 'list'] as const,
   buddySearch: (query: string) => ['buddy', 'search', query] as const,
 
   // Content search · بحث (bottom nav)
@@ -72,6 +73,7 @@ export const queryKeys = {
     ['questions', 'mine', scope, lectureId ?? 'all', category ?? 'all'] as const,
   questionInbox: (scope?: string, status?: string, category?: string) =>
     ['questions', 'inbox', scope ?? 'all', status ?? 'all', category ?? 'all'] as const,
+  questionAnswers: (questionId: string) => ['questions', 'answers', questionId] as const,
   lectureNote: (lectureId: string) => ['notes', lectureId] as const,
   lectureBenefits: (lectureId: string) => ['benefits', lectureId] as const,
   adminBenefits: (lectureId?: string) => ['admin', 'benefits', lectureId ?? 'all'] as const,

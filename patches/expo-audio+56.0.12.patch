@@ -1,3 +1,25 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+index 992239b..417409d 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+@@ -476,6 +476,17 @@ class AudioModule : Module() {
+           if (!focusAcquired) {
+             requestAudioFocus()
+           }
++          // riwaq patch: focus can come back DELAYED (setAcceptsDelayedFocusGain)
++          // — common right when a Bluetooth/car route is still renegotiating, e.g.
++          // right after auto-advancing to the next lecture. play() below still
++          // starts the player either way (ExoPlayer doesn't gate on OS focus), but
++          // if focus wasn't actually granted yet, mark it paused-for-focus so the
++          // AUDIOFOCUS_GAIN listener (which only resumes players with isPaused)
++          // knows to resume/replay it once focus really lands, instead of the
++          // player being silently stuck with nothing left to correct it.
++          if (!focusAcquired) {
++            player.isPaused = true
++          }
+           player.ref.play()
+         }
+       }
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
 index c76a9fd..b7b6a7c 100644
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
@@ -35,6 +57,40 @@ index 86880d9..15f9580 100644
  ) : Record
  
  enum class AndroidOutputFormat(val value: String) : Enumerable {
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt
+index 149e907..975c392 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt
+@@ -78,7 +78,6 @@ abstract class BaseAudioPlayer(
+     val listener = object : Player.Listener {
+       override fun onIsPlayingChanged(isPlaying: Boolean) {
+         playing = isPlaying
+-        onPlaybackStateChange?.invoke(isPlaying)
+ 
+         val isTransient = !isPlaying &&
+           (ref.playbackState == Player.STATE_ENDED || ref.playbackState == Player.STATE_BUFFERING)
+@@ -86,9 +85,21 @@ abstract class BaseAudioPlayer(
+           intendedPlayingState = isPlaying
+         }
+ 
++        // riwaq patch: a track reaching STATE_ENDED reports isPlaying=false here,
++        // which used to unconditionally invoke onPlaybackStateChange → the module's
++        // listener releases audio focus (shouldReleaseFocus/releaseAudioFocus) the
++        // instant the track ends. That raced the very next thing that happens (JS's
++        // didJustFinish handler calling play() on the next lecture to auto-advance):
++        // if the focus release landed first, the re-request could be denied/delayed
++        // (setAcceptsDelayedFocusGain), especially over a Bluetooth/car audio route
++        // still renegotiating — leaving the next lecture fully loaded but silently
++        // paused with no further correction. Treat the transient end/buffering dip
++        // the same way the status update below already does: don't report it as a
++        // real stop, so focus is only released on a genuine pause/stop.
+         if (isTransient) {
+           return
+         }
++        onPlaybackStateChange?.invoke(isPlaying)
+         sendStatusUpdate(mapOf("playing" to isPlaying))
+       }
+ 
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
 index 196a5d5..78aff03 100644
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
