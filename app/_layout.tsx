@@ -15,10 +15,26 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useFonts } from 'expo-font';
-import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import {
+  Stack,
+  useRootNavigationState,
+  useRouter,
+  useSegments,
+  type ErrorBoundaryProps,
+} from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, I18nManager, LogBox, Platform, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  I18nManager,
+  LogBox,
+  Platform,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
 import RNRestart from 'react-native-restart';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -32,7 +48,7 @@ import { Logo } from '@/components/ui/Logo';
 import { StartHereCard } from '@/components/onboarding/StartHereCard';
 import { TourCard } from '@/components/onboarding/TourCard';
 import { UpdateGate } from '@/components/UpdateGate';
-import { colors } from '@/constants/theme';
+import { colors, radius } from '@/constants/theme';
 import {
   addResponseListener,
   cancelDailyReminder,
@@ -53,7 +69,7 @@ import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient, reconcileContentListsAfterHydration } from '@/lib/queryClient';
-import { initConnectivity } from '@/lib/connectivity';
+import { initConnectivity, onReconnect } from '@/lib/connectivity';
 import { flushOutbox, startOutbox } from '@/lib/outbox';
 import { getMostRecentlyActiveLectureId } from '@/lib/resumeCache';
 import { APP_VERSION } from '@/lib/version';
@@ -79,7 +95,7 @@ const PERSISTED_QUERY_ROOTS = new Set<string>([
   'sections', // section flat/edit metadata
   'lecture', // single-lecture playback metadata (title/eyebrow for offline open;
   //            a cached signed URL may be served to the player, but only within a
-  //            30-min staleTime that is well under its 3600s TTL — see audioController)
+  //            45-min staleTime (useLecture.ts) that stays under its 3600s TTL)
   'lectures', // recent / featured / by-ids lecture-card lists
   'notes', // private per-lesson notes («حتى الملاحظات»)
   'journey', // journey summary / weekly goal / badges / streak snapshots
@@ -215,6 +231,24 @@ function SessionGate({
     bootedRef.current = true;
     ensure.mutate();
   }, [isLoading, user, ensure]);
+
+  // Recovery for the fall-through below: the boot anon sign-in failed (a fresh
+  // install opened offline / server unreachable) and the app rendered
+  // session-less — every RLS-gated read (`to authenticated`) is returning
+  // empty rows, so Home looks blank and STAYS blank even after the network
+  // returns (the failed mutation is never retried, and the empty results are
+  // cached as successes). Retry the silent sign-in on each offline→online
+  // transition; once it lands, refetch everything that was fetched without a
+  // session so the app converges without needing a force-restart.
+  const ensureFailed = ensure.isError;
+  useEffect(() => {
+    if (Platform.OS === 'web' || user || !ensureFailed) return;
+    return onReconnect(() => {
+      ensure.mutate(undefined, {
+        onSuccess: () => void queryClient.invalidateQueries(),
+      });
+    });
+  }, [user, ensureFailed, ensure]);
 
   // Ready once we have a session; if the anon sign-in fails (e.g. offline on a
   // brand-new install) fall through anyway so the app is never stuck on a loader.
@@ -533,12 +567,84 @@ function NotificationsBootstrap() {
   );
 }
 
+/**
+ * Root crash screen (expo-router's route-level ErrorBoundary export). Catches
+ * any unhandled render/lifecycle throw anywhere in the route tree — without
+ * this, a release build hard-crashes to the launcher on native and blanks the
+ * page on web, with no way back in. The Try wrapper replaces the ENTIRE root
+ * layout when it trips, so this must stay self-contained: plain views + theme
+ * constants only — no query client, no safe-area provider, no router, no
+ * custom fonts (the crash may pre-date the font load).
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.bgSand,
+        padding: 32,
+        gap: 20,
+      }}
+    >
+      <Logo size={84} />
+      <Text
+        style={{
+          color: colors.primaryTeal,
+          fontSize: 20,
+          fontWeight: '700',
+          textAlign: 'center',
+          writingDirection: 'rtl',
+        }}
+      >
+        حدث خللٌ غير متوقع
+      </Text>
+      <Text
+        style={{
+          color: colors.textMuted,
+          fontSize: 14,
+          lineHeight: 24,
+          textAlign: 'center',
+          writingDirection: 'rtl',
+        }}
+      >
+        نعتذر عن هذا العارض، جرّب المحاولة مرة أخرى.
+      </Text>
+      {__DEV__ ? (
+        <Text style={{ color: colors.textGhost, fontSize: 11, textAlign: 'center' }}>
+          {error.message}
+        </Text>
+      ) : null}
+      <Pressable
+        onPress={() => void retry()}
+        accessibilityRole="button"
+        style={({ pressed }) => ({
+          backgroundColor: colors.primaryTeal,
+          paddingHorizontal: 28,
+          paddingVertical: 14,
+          borderRadius: radius.input,
+          opacity: pressed ? 0.85 : 1,
+        })}
+      >
+        <Text style={{ color: colors.onTealPrimary, fontSize: 15, fontWeight: '600' }}>
+          إعادة المحاولة
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function RootLayout() {
   // Not an early return before the provider tree (P5 perf plan): mounting
   // QueryClientProvider unconditionally lets SessionGate's anon sign-in kick
   // off immediately, in parallel with the font load, instead of waiting for
   // fonts to resolve first.
-  const [fontsLoaded] = useFonts({
+  // `fontError` counts as "loaded": a failed font fetch (a flaky network
+  // loading the web dashboard is the realistic case — native assets are
+  // bundled) must fall back to system fonts, not hold the whole app on the
+  // boot loader forever.
+  const [fontsLoaded, fontError] = useFonts({
     Amiri_400Regular,
     Amiri_700Bold,
     IBMPlexSansArabic_400Regular,
@@ -570,7 +676,7 @@ export default function RootLayout() {
           {/* SDK 56's expo-status-bar has no backgroundColor prop (Android 15
               edge-to-edge is always on) — the status-bar fog is Screen.tsx's job. */}
           <StatusBar style="dark" />
-          <SessionGate fontsLoaded={fontsLoaded}>
+          <SessionGate fontsLoaded={fontsLoaded || !!fontError}>
             <UpdateGate>
               <AuthGate />
               <NotificationsBootstrap />
