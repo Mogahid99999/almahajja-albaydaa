@@ -6,19 +6,33 @@ An Arabic-first (RTL) Islamic learning app. Lectures are organized into nested s
 ## Scope decision
 Telegram bot integration is DEFERRED. For now, lectures are added only through a manual admin upload form. Build the "unclassified" admin review concept anyway (draft/published status), so the bot can plug into the same queue later without any redesign.
 
-## MVP feature list (build in this order)
-1. Admin upload form (title, audio file, parent section, order number, sheikh name, attachments, publish status)
-2. Nested sections/items data model and navigation
-3. Web admin panel for managing sections/items/lectures
-4. Direct playback on tap + mini player + full player
-5. Resume from last position, mark complete at 90%+ listened
-6. Offline download per lecture (download/delete)
-7. Personal progress tracking (started/in progress/completed, % per section) — never compared between students
-8. Simple roles: student / admin
-9. "About the platform" page — static, asks users to pray for the teachers and contributors
+## Shipped feature baseline (v1 — all of this is LIVE, do not treat as unbuilt)
+The original MVP list (upload form, nested sections, admin panel, player + mini player,
+resume, offline downloads, personal progress, About page) shipped long ago, and the
+product has since grown far past it (work batches V2→V17, see `PLAN_*.md` history):
+- **Playback**: full + mini player, background/lock-screen controls (patched expo-audio),
+  auto-advance, playback speed, `?t=` deep-link seek, completion at **95%** listened
+  (`COMPLETE_THRESHOLD = 0.95` in `src/config.ts`), offline downloads + offline playback.
+- **Roles**: guest (anonymous session) / student / **publisher** / **sheikh** / admin.
+- **Quizzes**: server-graded MCQ per section (answer key never reaches the client),
+  attempts/time limits, admin editor + results dashboards.
+- **Notifications**: push (FCM/APNs via Expo) + server cron reminders (resume, streak,
+  weekly goal), broadcasts ("التذكيرات النافعة"), in-app inbox, per-type prefs, badge count.
+- **Journey**: weekly goals, daily streak (المداومة) with 2-day tolerance + recovery,
+  quiet badges, journey page.
+- **Community**: Q&A (public/sheikh-only, anonymity end-to-end), voice notes, private
+  lesson notes (autosave), shared "فوائد", study buddy (رفيق الدرب, gender-segregated),
+  content reports + blocked-word moderation.
+- **Engagement**: onboarding tour, rating prompt, share, WhatsApp/Telegram support links,
+  UpdateGate (min-version + 30-day grace).
+- **Offline-first**: persisted query cache, outbox sync queue for progress/notes/goals.
+- **Admin web**: 22 screens (dashboard, analytics, users+ban, uploads with transcode,
+  section tree, sheikhs+bio, quizzes, moderation queues, featured, broadcasts, settings).
 
-## Explicitly out of scope for now
-Telegram bot, quizzes, attachments-as-a-system, admin mobile panel, notifications, weekly goals/streaks/badges/journey page, study companion, roadmap, onboarding screen.
+## Still out of scope
+Telegram ingestion bot (the `unclassified` queue it would feed is built), a dedicated
+admin mobile app (the responsive admin web is used from phones), certificates,
+community comments/competitions, auto-transcription/summaries, complex permissions.
 
 ## Tech Stack
 
@@ -29,7 +43,7 @@ Telegram bot, quizzes, attachments-as-a-system, admin mobile panel, notification
 | App framework | **Expo (React Native)** — SDK 56 |
 | Navigation | **Expo Router** (file-based routing, `app/` directory) |
 | Language | **TypeScript** with `strict` mode enabled |
-| Backend | **Supabase** — PostgreSQL database, Auth, and File Storage (audio + downloads) |
+| Backend | **Supabase** — PostgreSQL (87+ migrations, RLS), Auth, Edge Functions. Audio/files live on **Cloudflare R2** via signed-URL edge functions (`r2-upload-url`/`r2-read-url`/`r2-delete`) |
 | Audio playback | **expo-audio** |
 | Offline downloads | **expo-file-system** |
 | Client state | **Zustand** (player state, download state) |
@@ -42,21 +56,27 @@ Telegram bot, quizzes, attachments-as-a-system, admin mobile panel, notification
 
 ### Project layout
 ```text
-app/                  Expo Router routes (file-based). Route bodies are placeholders until the screen-building phase.
-  _layout.tsx         Root: RTL enforcement + QueryClientProvider
-  (student)/          Student app group (Home, generic Section page)
-  (admin)/            Admin web dashboard group
-  player/[id].tsx     Full-screen player
+app/                  Expo Router routes (file-based)
+  _layout.tsx         Root shell: session/auth gates, RTL bootstrap, query-cache persistence,
+                      notifications bootstrap, UpdateGate, deep links (~620 lines — read before touching)
+  (auth)/             Sign-in, register (+oath), reset-password
+  (student)/          Student app (Home, section/[id], journey, questions, downloads, profile, …)
+  player/[id].tsx     Full-screen player · attachment/[id] transcript reader
+  sheikh/             Sheikh Q&A inbox
+  admin/              Admin web dashboard (22 screens, role-gated)
 src/
-  lib/                supabase client, query client, env
-  api/                Data-access functions (sections, lectures, progress) — mirror the nested-sections skill
+  lib/                supabase client, query client, env, audioController, downloads, outbox, notifications
+  api/                Data-access functions — the ONLY place that calls supabase
   hooks/              TanStack Query hooks wrapping src/api
-  stores/             Zustand stores (player, downloads)
-  types/              Shared types incl. generated DB types
-  constants/          Design tokens (colors/typography from README design system)
-  components/         Shared UI (added during screen phase)
+  stores/             Zustand stores ×6 (player, downloads, notifications, settings, tour, publicStorage)
+  types/              Shared types incl. database.generated.ts
+  constants/          Design tokens, queryKeys, badges
+  components/         Shared UI (home/, section/, player/, questions/, admin/, …)
 supabase/
-  migrations/         SQL schema, RLS policies, recursive-rollup RPC functions
+  migrations/         87+ append-only migrations (schema, RLS, RPCs) — never edit an applied one
+  functions/          Edge Functions: admin-users, delete-account, notify-on-publish, r2-*
+patches/              patch-package diffs (expo-audio media controls fork, react-native-web I18nManager shim)
+audit/                Production-readiness audit: FINDINGS.md log, DEVICE_MATRIX.md, reports/ (see PLAN_AUDIT.md)
 ```
 
 ### Stack conventions

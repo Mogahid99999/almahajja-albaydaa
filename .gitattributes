@@ -1,0 +1,5 @@
+# patch-package diffs must keep their committed (LF) line endings byte-for-byte:
+# node_modules sources are LF, and a CRLF-converted checkout (core.autocrlf=true,
+# set when this repo lived on Windows) makes every hunk context mismatch, so
+# `npm install` silently builds an UNPATCHED expo-audio. Found in audit Phase 0.
+*.patch -text
