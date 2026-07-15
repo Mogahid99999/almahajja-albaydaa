@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { colors } from '@/constants/theme';
-import { arNum } from '@/lib/format';
+import { arDayCount, arNum } from '@/lib/format';
 import { ConcentricMotif } from '@/components/ui/Rhombus';
 import { Txt } from '@/components/ui/Txt';
 
@@ -52,7 +52,7 @@ export function StreakRing({
       </View>
 
       <Txt size={12.5} color={colors.textMuted} align="center">
-        {`أطول مداومة: ${arNum(longest)} ${longest === 1 ? 'يوم' : 'يوماً'}`}
+        {`أطول مداومة: ${arDayCount(longest)}`}
       </Txt>
     </View>
   );

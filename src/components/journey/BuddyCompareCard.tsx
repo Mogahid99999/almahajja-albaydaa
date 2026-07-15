@@ -32,7 +32,7 @@ export function BuddyCompareCard({ week }: { week: WeekProgress }) {
 
   return (
     <View>
-      <SectionTitle title={fem ? 'أنت ورفقاؤك' : 'أنت ورفقاؤك'} />
+      <SectionTitle title={fem ? 'أنتِ ورفيقاتك' : 'أنت ورفقاؤك'} />
       {buddies.map((buddy) => (
         <View key={buddy.buddyId} style={{ marginBottom: 12 }}>
           <BuddyBars buddy={buddy} myPct={myPct} myMet={myMet} myStreak={myStreak} fem={fem} />
@@ -55,22 +55,27 @@ function BuddyBars({
   myStreak: number;
   fem: boolean;
 }) {
+  // Buddy pairing is same-gender (0015), so `g` genders BOTH sides of every
+  // phrase — the buddy's mention and the imperative addressed to the user.
+  const g = (masc: string, femPhrase: string) => (fem ? femPhrase : masc);
   const phrase =
     myMet && buddy.weeklyGoalMet
-      ? 'كلاكما أكمل هدفه الأسبوعي، بارك الله فيكما'
+      ? g('كلاكما أكمل هدفه الأسبوعي، بارك الله فيكما',
+          'كلتاكما أكملت هدفها الأسبوعي، بارك الله فيكما')
       : buddy.weeklyGoalMet
-        ? fem
-          ? 'رفيقتك أكملت هدفها الأسبوعي، فاستعن بالله وواصل'
-          : 'رفيقك أكمل هدفه الأسبوعي، فاستعن بالله وواصل'
+        ? g('رفيقك أكمل هدفه الأسبوعي، فاستعن بالله وواصل',
+            'رفيقتك أكملت هدفها الأسبوعي، فاستعيني بالله وواصلي')
         : myMet
-          ? 'أتممت هدفك الأسبوعي، فاثبت وواصل'
+          ? g('أتممت هدفك الأسبوعي، فاثبت وواصل',
+              'أتممتِ هدفك الأسبوعي، فاثبتي وواصلي')
           : buddy.currentStreak > myStreak
-            ? fem
-              ? 'رفيقتك متقدمة بخطوة، فامضي أنت أيضًا'
-              : 'رفيقك متقدم بخطوة، فامضِ أنت أيضًا'
+            ? g('رفيقك متقدم بخطوة، فامضِ أنت أيضًا',
+                'رفيقتك متقدمة بخطوة، فامضي أنتِ أيضًا')
             : myStreak > buddy.currentStreak
-              ? 'أنت متقدم بخطوة هذا الأسبوع، فاثبت وواصل'
-              : 'كلاكما مستمر، نسأل الله لكما الثبات';
+              ? g('أنت متقدم بخطوة هذا الأسبوع، فاثبت وواصل',
+                  'أنتِ متقدمة بخطوة هذا الأسبوع، فاثبتي وواصلي')
+              : g('كلاكما مستمر، نسأل الله لكما الثبات',
+                  'كلتاكما مستمرة، نسأل الله لكما الثبات');
 
   return (
     <Card>

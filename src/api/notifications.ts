@@ -12,6 +12,7 @@
  */
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
+import { rpcWithLocalToday } from './journey';
 import * as mock from '@/mock/api';
 import {
   NOTIFICATION_TYPES,
@@ -91,9 +92,14 @@ export async function touchLastOpened(): Promise<void> {
  */
 export async function tryClaimGoalCongrats(): Promise<boolean> {
   if (USE_MOCK) return false;
-  const { data, error } = await supabase.rpc('try_claim_goal_congrats');
-  if (error) return false;
-  return data === true;
+  try {
+    // Local-day anchored since 0090 (F-043): the week key and progress must
+    // match the local-day writes; falls back to the pre-0090 signature.
+    const data = await rpcWithLocalToday<boolean>('try_claim_goal_congrats');
+    return data === true;
+  } catch {
+    return false; // preserves the pre-existing contract: any error → no congrats
+  }
 }
 
 // --- Preferences -------------------------------------------------------------

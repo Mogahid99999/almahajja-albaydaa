@@ -10,6 +10,7 @@
  */
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
+import { localDay } from '@/lib/outboxQueue';
 import * as mock from '@/mock/api';
 import { BADGES } from '@/constants/badges';
 import type { Badge, GoalMetric, JourneySummary, StreakStatus, WeeklyGoal } from './types';
@@ -31,11 +32,51 @@ async function requireUserId(): Promise<string> {
   return user.id;
 }
 
+/**
+ * Call a day-anchored RPC with the DEVICE-LOCAL day (audit F-043 / migration
+ * 0090): «واصلت اليوم», the streak anchor and the Sat→Fri week bounds must flip
+ * at the user's midnight, not the server's UTC midnight (2–4h earlier for the
+ * target audience). Falls back to the zero-arg pre-0090 signature when the
+ * migration isn't applied yet (PGRST202 = function not found) and remembers
+ * that outcome for the rest of the session (one wasted probe, not two round
+ * trips per read), so either order of {migration applied, app updated} keeps
+ * working. The `as never` casts exist because database.generated.ts still
+ * describes the pre-0090 signatures — post-0090 cleanup (F-049): regenerate
+ * the types, then delete this helper in favor of direct typed calls.
+ */
+let pTodaySupported: boolean | null = null;
+
+export async function rpcWithLocalToday<T>(
+  fn: 'get_journey_summary' | 'get_streak_status' | 'try_claim_goal_congrats',
+): Promise<T> {
+  if (pTodaySupported !== false) {
+    const withDay = await supabase.rpc(fn, { p_today: localDay() } as never);
+    if (!withDay.error) {
+      pTodaySupported = true;
+      return withDay.data as T;
+    }
+    if (withDay.error.code !== 'PGRST202') throw withDay.error;
+    pTodaySupported = false;
+  }
+  const { data, error } = await supabase.rpc(fn);
+  if (error) throw error;
+  return data as T;
+}
+
 /** Page-header stats: totals, current+longest streak, this-week progress. */
 export async function getJourneySummary(): Promise<JourneySummary> {
   if (USE_MOCK) return mock.getJourneySummary();
-  const { data, error } = await supabase.rpc('get_journey_summary');
-  if (error) throw error;
+  type SummaryRow = {
+    completed_lectures: number | null;
+    total_seconds: number | null;
+    current_streak: number | null;
+    longest_streak: number | null;
+    active_days: number | null;
+    week_metric: GoalMetric | null;
+    week_target: number | null;
+    week_current: number | null;
+  };
+  const data = await rpcWithLocalToday<SummaryRow[] | null>('get_journey_summary');
   const row = data?.[0];
   if (!row) {
     return {
@@ -67,8 +108,13 @@ export async function getStreakStatus(): Promise<StreakStatus> {
   if (USE_MOCK) {
     return { current: 0, todayCounted: false, recoveryAvailable: false, recoveryDaysLeft: 0 };
   }
-  const { data, error } = await supabase.rpc('get_streak_status');
-  if (error) throw error;
+  type StatusRow = {
+    current_streak: number | null;
+    today_counted: boolean | null;
+    recovery_available: boolean | null;
+    recovery_days_left: number | null;
+  };
+  const data = await rpcWithLocalToday<StatusRow[] | null>('get_streak_status');
   const row = data?.[0];
   return {
     current: row?.current_streak ?? 0,

@@ -13,7 +13,8 @@
  *
  * Accepted tradeoffs (by design, per the plan): a lost-ack retry can double-credit
  * a few seconds (bounded by the server's 6h/day clamp); a replayed completion
- * stamps midnight of its day; quizzes stay online-only.
+ * stamps midnight of its (past) day — now() only when replayed the same server
+ * day (0046 rule, preserved by 0090); quizzes stay online-only.
  */
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/constants/queryKeys';
