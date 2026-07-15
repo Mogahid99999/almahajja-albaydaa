@@ -57,6 +57,14 @@ confirmation (PLAN_AUDIT §0.2 — no speculative fixes).
 
 ## Notes
 
+- **Cross-branch (2026-07-15):** the parallel Phase 2 session (`audit/phase-2-backend`) authored
+  migration **0089** fixing the `get_featured_lectures` gender leak **server-side** — the same
+  root cause as F-036's featured half. 0089 is **not applied to any DB yet**; Phase 4's client
+  filter (`filterVisibleLectures`) is the live protection until it lands, then the client filter
+  can be reduced to the recent list only (whose raw-select path 0089 does not cover — verify at
+  merge). Phase 3/4 findings here use sequential IDs (F-025…F-042) while Phases 1/2 used
+  F-1xx/F-2xx ranges — reconcile numbering when the branches merge.
+
 - GLITCH_LOG items **#1–#7, #9, #12, #14 (web I18nManager crash → react-native-web patch), #16–#18 (informational), #20 (/downloads crash → fixed in V10)** were verified as resolved in the historical record and are not re-opened here; their fixes get re-exercised naturally by the per-phase checklists.
 - Historical PLAN docs' "open questions" that were later superseded by shipped work (V3's dispatcher options, V4's five questions, etc.) are not logged individually — the shipped behavior is what Phases 3–10 audit.
 - The `landing/` static site is a separate, gitignored project — out of app-audit scope except the F-021 distribution interaction.
