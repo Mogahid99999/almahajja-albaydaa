@@ -335,7 +335,40 @@ owner/main-checkout action (untracked native dirs).
 | Animation correctness (RTL transforms) | ✅ BottomNavBar physical-transform convention verified (§3) |
 | Localization (Arabic-only copy) | ✅ new copy Arabic; F-104 removed the English unmatched screen; error messages in auth lib already Arabic |
 
-## 12. Deferred (with reason)
+## 12. End-of-phase reviews
+
+**`/code-review high`** (multi-angle finder + verify over the branch code diff). Confirmed and
+fixed in `2425072`:
+- `ensureSession` had no concurrency guard — the boot mutate racing the reconnect retry (or a
+  sign-out's fresh-guest fallback) could run check-then-create twice and mint **two anonymous
+  users**, orphaning one server-side (phantom إجمالي الطلاب row). Fixed with a single-flight
+  shared promise (`api/auth.ts`).
+- Reconnect-retry effect churned its `onReconnect` subscription every render (`ensure` object
+  identity in deps) and could, in a narrow window, let a late anon mint race an explicit
+  sign-in/register. Fixed: depend on the stable `ensure.mutate` + re-check the **live**
+  `currentUser` cache inside the callback so a real session always wins.
+
+Refuted (verified against sources, not just argued): the claim that the root `ErrorBoundary`
+doesn't cover `RootLayout`'s own render (expo-router `useStore.js:55` passes the root route
+through `getQualifiedRouteComponent` → `fromImport` → `<Try catch={ErrorBoundary}>`, so
+RootLayout renders as a child of the boundary); the unfiltered `invalidateQueries()` "storm"
+(it fires exactly once, only after recovering from a session-less boot where every cached
+read is wrong — full invalidation is the correct scope, and the retry never arms for any
+signed-in role); `Logo` in the crash fallback throwing (static bundled asset, no expo-updates/
+OTA in this project). Accepted-with-note: the ErrorBoundary/+not-found/BootLoader centered
+screens share a duplicated layout+button pattern (the crash screen must stay dependency-free
+by design; fold into Phase 11's cleanup pass alongside F-112); system-font fallback when
+`fontError` trips is the documented tradeoff.
+
+**`/security-review`** (auth/session surface of the branch diff): **no findings ≥7
+confidence.** Checked: reconnect-retry vs real-session clobbering (guarded twice — live cache
+re-check + `ensureSessionInner`'s existing-session early return), single-flight module state
+(single-user device, nulled in `finally`, no cross-identity leak), `networkMode: 'always'`
+(no token/authz boundary change; RLS stays the server-side boundary), ErrorBoundary
+data exposure (`error.message` is `__DEV__`-only), `+not-found` (static, no input flows into
+navigation). Clean.
+
+## 13. Deferred (with reason)
 
 - **Runtime verification on devices/simulators** (boot offline, notification taps, RTL first
   launch): this session had no booted simulator/emulator; every finding above is proven from
