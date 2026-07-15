@@ -10,7 +10,8 @@ const PRODUCTION_REF = 'prpyxnxgkpspjoxvcaro';
 
 let raw = '';
 try {
-  raw = readFileSync(join(__dirname, '../../.env.staging.local'), 'utf8');
+  // cwd is the repo root under jest; avoids __dirname (@types/node not loaded).
+  raw = readFileSync(join(process.cwd(), '.env.staging.local'), 'utf8');
 } catch {
   throw new Error(
     'Contract tests need .env.staging.local (staging Supabase URL/keys). See audit/FINDINGS.md staging-readiness note.',
