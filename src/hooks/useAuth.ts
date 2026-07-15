@@ -119,10 +119,11 @@ export function useRegister() {
     mutationFn: (vars: {
       name: string;
       phone: string;
+      countryCode: string;
       email: string;
       password: string;
       gender: Gender;
-    }) => register(vars.name, vars.phone, vars.email, vars.password, vars.gender),
+    }) => register(vars.name, vars.phone, vars.countryCode, vars.email, vars.password, vars.gender),
     onSuccess: (user) => {
       qc.setQueryData(queryKeys.currentUser, user);
       // Phase 3.6 safety net: `register()` links onto the SAME auth.uid() (no new
@@ -192,7 +193,8 @@ export function useChangePassword() {
 export function useChangePhone() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (phone: string) => changePhone(phone),
+    mutationFn: (vars: { phone: string; countryCode: string }) =>
+      changePhone(vars.phone, vars.countryCode),
     onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
   });
 }

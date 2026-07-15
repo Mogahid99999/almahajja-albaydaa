@@ -21,6 +21,8 @@ import {
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { Card, Txt } from '@/components/ui';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { useAdminUsers, useCreateUser } from '@/hooks/useAdminUsers';
@@ -129,6 +131,7 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<AppRole>('student');
   const [gender, setGender] = useState<Gender | null>(null);
@@ -137,6 +140,7 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
     setName('');
     setEmail('');
     setPhone('');
+    setCountryCode(DEFAULT_COUNTRY_CODE);
     setPassword('');
     setRole('student');
     setGender(null);
@@ -155,6 +159,7 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
       {
         email: email.trim(),
         phone: phoneDigits,
+        countryCode,
         password: password.trim(),
         displayName: name.trim(),
         role,
@@ -200,13 +205,13 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
             />
           </Field>
           <Field label="رقم الهاتف (اختياري إن أُدخل بريد)">
-            <TextInput
+            <PhoneInput
+              countryCode={countryCode}
+              onChangeCountryCode={setCountryCode}
               value={phone}
-              onChangeText={setPhone}
-              placeholder="09xxxxxxxx"
-              placeholderTextColor={colors.textGhost}
-              keyboardType="phone-pad"
-              style={styles.modalInput}
+              onChangeValue={setPhone}
+              placeholder="9xxxxxxxx"
+              height={46}
             />
           </Field>
           <Field label="كلمة المرور (٦ أحرف على الأقل)">

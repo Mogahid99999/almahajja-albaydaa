@@ -33,13 +33,18 @@ const VALID_ROLES = ["student", "publisher", "admin", "sheikh"];
 
 const DEFAULT_COUNTRY_CODE = "249";
 
-/** Mirrors src/api/auth.ts's normalizePhone — reshapes into valid E.164 (phone is never OTP-verified). */
-function normalizePhone(raw: string): string {
+/**
+ * Mirrors src/api/auth.ts's normalizePhone — reshapes into valid E.164 (phone
+ * is never OTP-verified). `countryCode` comes from the admin panel's country
+ * picker (src/components/ui/PhoneInput.tsx); falls back to Sudan only when a
+ * caller doesn't send one.
+ */
+function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTRY_CODE): string {
   const digits = raw.replace(/[^0-9]/g, "");
   if (!digits) return digits;
   const local = digits.startsWith("0") ? digits.slice(1) : digits;
-  if (local.startsWith(DEFAULT_COUNTRY_CODE) || local.length > 9) return local;
-  return DEFAULT_COUNTRY_CODE + local;
+  if (local.startsWith(countryCode) || local.length > 9) return local;
+  return countryCode + local;
 }
 
 const CORS = {
@@ -81,6 +86,7 @@ Deno.serve(async (req) => {
     password?: string;
     email?: string;
     phone?: string;
+    countryCode?: string;
     displayName?: string;
     role?: string;
     gender?: string;
@@ -95,7 +101,7 @@ Deno.serve(async (req) => {
   // createUser is the one action that has no target userId yet.
   if (action === "createUser") {
     const email = (body.email ?? "").trim().toLowerCase();
-    const phone = normalizePhone(body.phone ?? "");
+    const phone = normalizePhone(body.phone ?? "", body.countryCode);
     // At least one identifier is required — mirrors self-registration, which
     // now requires a phone (email optional).
     if (email && !/.+@.+\..+/.test(email)) return json({ error: "invalid email" }, 400);
@@ -182,7 +188,7 @@ Deno.serve(async (req) => {
         return json({ ok: true });
       }
       case "updatePhone": {
-        const phone = normalizePhone(body.phone ?? "");
+        const phone = normalizePhone(body.phone ?? "", body.countryCode);
         if (phone.length < 8) return json({ error: "invalid phone" }, 400);
         // phone_confirm:true — admin edits never trigger an SMS/OTP (matches
         // updateEmail's email_confirm:true instant-apply).

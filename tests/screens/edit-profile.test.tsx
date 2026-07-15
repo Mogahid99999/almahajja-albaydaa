@@ -16,7 +16,7 @@ const mockAuth = {
     displayName: 'محمد',
     gender: 'male' as const,
     email: 'old@test.com',
-    phone: '0911111111',
+    phone: '249911111111',
   },
   requestEmailChange: mkMutation(),
   verifyEmailChange: mkMutation(),
@@ -161,12 +161,15 @@ describe('instant phone change', () => {
     await fireEvent.press(api.getByText('حفظ رقم الهاتف'));
     expect(mockAuth.changePhone.mutate).not.toHaveBeenCalled();
     // too short
-    await fireEvent.changeText(api.getByPlaceholderText('09xxxxxxxx'), '0912');
+    await fireEvent.changeText(api.getByPlaceholderText('9xxxxxxxx'), '0912');
     await fireEvent.press(api.getByText('حفظ رقم الهاتف'));
     expect(mockAuth.changePhone.mutate).not.toHaveBeenCalled();
     // valid: digits are stripped of separators before the save
-    await fireEvent.changeText(api.getByPlaceholderText('09xxxxxxxx'), '091-222-3344');
+    await fireEvent.changeText(api.getByPlaceholderText('9xxxxxxxx'), '091-222-3344');
     await fireEvent.press(api.getByText('حفظ رقم الهاتف'));
-    expect(mockAuth.changePhone.mutate).toHaveBeenCalledWith('0912223344', expect.anything());
+    expect(mockAuth.changePhone.mutate).toHaveBeenCalledWith(
+      { phone: '0912223344', countryCode: '249' },
+      expect.anything(),
+    );
   });
 });

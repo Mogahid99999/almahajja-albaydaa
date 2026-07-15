@@ -30,6 +30,8 @@ import { KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { Gender } from '@/api/types';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { splitPhone } from '@/constants/countries';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useChangePassword,
@@ -76,7 +78,10 @@ export default function EditProfileScreen() {
     null,
   );
 
-  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [phone, setPhone] = useState(() => splitPhone(user?.phone ?? '').local);
+  const [phoneCountryCode, setPhoneCountryCode] = useState(
+    () => splitPhone(user?.phone ?? '').countryCode,
+  );
   const [phoneNotice, setPhoneNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(
     null,
   );
@@ -124,17 +129,23 @@ export default function EditProfileScreen() {
   };
 
   const phoneDigits = phone.replace(/[^0-9]/g, '');
-  const phoneChanged = phoneDigits.length >= 8 && phoneDigits !== (user?.phone ?? '');
+  const storedPhone = splitPhone(user?.phone ?? '');
+  const phoneChanged =
+    phoneDigits.length >= 8 &&
+    (phoneDigits !== storedPhone.local || phoneCountryCode !== storedPhone.countryCode);
   const onSavePhone = () => {
     if (!phoneChanged) return;
     setPhoneNotice(null);
-    changePhone.mutate(phoneDigits, {
-      onSuccess: () => {
-        setPhoneNotice({ msg: 'تم تحديث رقم الهاتف بنجاح', type: 'success' });
-        setOpen(null);
+    changePhone.mutate(
+      { phone: phoneDigits, countryCode: phoneCountryCode },
+      {
+        onSuccess: () => {
+          setPhoneNotice({ msg: 'تم تحديث رقم الهاتف بنجاح', type: 'success' });
+          setOpen(null);
+        },
+        onError: (e) => setPhoneNotice({ msg: arabicAuthError(e), type: 'error' }),
       },
-      onError: (e) => setPhoneNotice({ msg: arabicAuthError(e), type: 'error' }),
-    });
+    );
   };
 
   // Min 8 matches the server (Supabase password_min_length) — a shorter gate
@@ -226,13 +237,13 @@ export default function EditProfileScreen() {
         />
         {open === 'phone' ? (
           <View style={sectionBodyStyle}>
-            <TextInput
+            <PhoneInput
+              countryCode={phoneCountryCode}
+              onChangeCountryCode={setPhoneCountryCode}
               value={phone}
-              onChangeText={setPhone}
-              placeholder="09xxxxxxxx"
-              placeholderTextColor={colors.textGhost}
-              keyboardType="phone-pad"
-              style={inputStyle}
+              onChangeValue={setPhone}
+              placeholder="9xxxxxxxx"
+              height={44}
             />
             <Pressable
               onPress={onSavePhone}

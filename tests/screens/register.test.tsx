@@ -49,7 +49,7 @@ beforeEach(() => {
 
 const fillValidForm = async (api: Awaited<ReturnType<typeof render>>) => {
   await fireEvent.changeText(api.getByPlaceholderText('اسمك'), 'محمد');
-  await fireEvent.changeText(api.getByPlaceholderText('09xxxxxxxx'), '0912345678');
+  await fireEvent.changeText(api.getByPlaceholderText('9xxxxxxxx'), '0912345678');
   await fireEvent.changeText(api.getByPlaceholderText('8 أحرف أو ارقام على الأقل'), 'password123');
   await fireEvent.changeText(api.getByPlaceholderText('أعد إدخال كلمة المرور'), 'password123');
 };
@@ -120,6 +120,7 @@ describe('oath sheet (F-032) and submission', () => {
       {
         name: 'محمد',
         phone: '0912345678',
+        countryCode: '249',
         email: '',
         password: 'password123',
         gender: 'female',

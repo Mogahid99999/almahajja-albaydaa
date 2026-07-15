@@ -21,6 +21,8 @@ import {
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Divider, IconButton, ProgressBar, Txt } from '@/components/ui';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { splitPhone } from '@/constants/countries';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { useAdminUserActions, useAdminUserDetail } from '@/hooks/useAdminUsers';
@@ -106,6 +108,62 @@ function EditableField({
             onSave(val.trim());
             if (clearOnSave) setVal('');
           }}
+          style={[styles.saveBtn, !ok && { opacity: 0.4 }]}
+        >
+          <Txt size={12} weight="semibold" color={colors.onTealPrimary}>
+            {actionLabel}
+          </Txt>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Phone edit row — split out from `EditableField` because a phone number
+ * needs a country picker (see `PhoneInput`), not a bare text field. `initial`
+ * is the full stored digits (e.g. "966512345678"); split back into a country
+ * code + local number to pre-fill the picker.
+ */
+function PhoneEditableField({
+  label,
+  initial,
+  actionLabel,
+  onSave,
+  pending,
+}: {
+  label: string;
+  initial: string;
+  actionLabel: string;
+  onSave: (phone: string, countryCode: string) => void;
+  pending: boolean;
+}) {
+  const start = splitPhone(initial);
+  const [local, setLocal] = useState(start.local);
+  const [countryCode, setCountryCode] = useState(start.countryCode);
+  const ok =
+    local.length >= 8 &&
+    (local !== start.local || countryCode !== start.countryCode) &&
+    !pending;
+  return (
+    <View style={{ gap: 6 }}>
+      <Txt size={12} color={colors.textMuted}>
+        {label}
+      </Txt>
+      <View style={styles.editRow}>
+        <View style={{ flex: 1 }}>
+          <PhoneInput
+            countryCode={countryCode}
+            onChangeCountryCode={setCountryCode}
+            value={local}
+            onChangeValue={setLocal}
+            placeholder="9xxxxxxxx"
+            height={44}
+          />
+        </View>
+        <Pressable
+          disabled={!ok}
+          onPress={() => onSave(local, countryCode)}
           style={[styles.saveBtn, !ok && { opacity: 0.4 }]}
         >
           <Txt size={12} weight="semibold" color={colors.onTealPrimary}>
@@ -273,15 +331,17 @@ export default function AdminUserDetailScreen() {
               onSave={(v) => actions.setEmail.mutate(v, { onSuccess: () => flash('تم تحديث البريد'), onError })}
             />
             <Divider />
-            <EditableField
+            <PhoneEditableField
               label="رقم الهاتف (بدون إرسال تحقق)"
               initial={profile.phone ?? ''}
-              placeholder="09xxxxxxxx"
               actionLabel="حفظ"
-              keyboardType="phone-pad"
               pending={actions.setPhone.isPending}
-              validate={(v, i) => v.replace(/[^0-9]/g, '').length >= 8 && v.trim() !== i}
-              onSave={(v) => actions.setPhone.mutate(v, { onSuccess: () => flash('تم تحديث رقم الهاتف'), onError })}
+              onSave={(phone, countryCode) =>
+                actions.setPhone.mutate(
+                  { phone, countryCode },
+                  { onSuccess: () => flash('تم تحديث رقم الهاتف'), onError },
+                )
+              }
             />
             <Divider />
             <View style={{ gap: 8 }}>

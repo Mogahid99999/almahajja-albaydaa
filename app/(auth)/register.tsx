@@ -6,6 +6,8 @@ import { KeyboardAvoidingView, Modal, Pressable, TextInput, View } from 'react-n
 import type { Gender } from '@/api/types';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { GenderPills } from '@/components/ui/GenderPills';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser, useRegister } from '@/hooks/useAuth';
 import { arabicAuthError } from '@/lib/authErrors';
@@ -27,6 +29,7 @@ export default function RegisterScreen() {
   const { data: user } = useCurrentUser();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -78,7 +81,7 @@ export default function RegisterScreen() {
     if (!oathChecked || !gender) return;
     setOathVisible(false);
     register.mutate(
-      { name: trimmedName, phone: trimmedPhone, email: trimmedEmail, password, gender },
+      { name: trimmedName, phone: trimmedPhone, countryCode, email: trimmedEmail, password, gender },
       // Land on the profile so the new name/identity is confirmed — coherent from
       // every entry point (profile CTA, sign-in link, journey gate, Home banner).
       { onSuccess: () => router.replace('/(student)/profile') },
@@ -138,13 +141,13 @@ export default function RegisterScreen() {
         </Field>
 
         <Field label="رقم الهاتف">
-          <TextInput
+          <PhoneInput
+            countryCode={countryCode}
+            onChangeCountryCode={setCountryCode}
             value={phone}
-            onChangeText={setPhone}
-            placeholder="09xxxxxxxx"
-            placeholderTextColor={colors.textGhost}
-            keyboardType="phone-pad"
-            style={inputStyle}
+            onChangeValue={setPhone}
+            placeholder="9xxxxxxxx"
+            height={42}
           />
         </Field>
 

@@ -84,7 +84,8 @@ export function useAdminUserActions(userId: string) {
       onSuccess: invalidate,
     }),
     setPhone: useMutation({
-      mutationFn: (phone: string) => updateUserPhone(userId, phone),
+      mutationFn: (vars: { phone: string; countryCode: string }) =>
+        updateUserPhone(userId, vars.phone, vars.countryCode),
       onSuccess: invalidate,
     }),
     setName: useMutation({
