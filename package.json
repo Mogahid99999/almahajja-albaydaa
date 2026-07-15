@@ -8,6 +8,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
     "doctor": "npx expo-doctor",
     "postinstall": "patch-package"
   },
@@ -52,8 +54,13 @@
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1081.0",
+    "@testing-library/react-native": "^14.0.1",
+    "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
+    "jest": "^29.7.0",
+    "jest-expo": "~56.0.0",
     "patch-package": "^8.0.1",
+    "react-test-renderer": "^19.2.3",
     "typescript": "~6.0.3"
   },
   "expo": {

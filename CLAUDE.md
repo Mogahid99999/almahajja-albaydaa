@@ -87,6 +87,35 @@ audit/                Production-readiness audit: FINDINGS.md log, DEVICE_MATRIX
 ## Design
 RTL throughout, design system synced from Claude Design. Calm muted teal/off-white palette, no bright competitive colors, no heavy animation.
 
+## Testing (audit phase 12)
+
+Jest + React Native Testing Library via the `jest-expo` preset. `npm test` runs everything;
+`npm run test:watch` for TDD. CI (`.github/workflows/ci.yml`) runs `npm ci` (which exercises
+the patch-package postinstall), `npm run typecheck`, and `npm test` on every push/PR.
+
+**Where tests live**
+- `src/<module>/__tests__/<name>.test.ts` — colocated unit tests for pure logic
+  (formatters, outbox queue, resume cache, badge catalog, phrase picker, quiz status
+  derivation, error mappers, the journey p_today shim).
+- `tests/screens/<screen>.test.tsx` — component tests for route screens and shared
+  components. Screen tests must NOT live inside `app/` — Expo Router would treat the
+  test file as a route.
+- `tests/setup.ts` — global setup: dummy `EXPO_PUBLIC_*` env (so `src/lib/env.ts` doesn't
+  throw), official AsyncStorage + safe-area-context mocks.
+
+**Conventions**
+- RNTL 14 API is **async**: `await render(...)`, `await fireEvent.press(...)`, `await act(...)`.
+- Component tests mock at the **hook seam** (`jest.mock('@/hooks/...')`) and `expo-router`,
+  never `supabase` directly — the api/hook layering (see Stack conventions) is what makes
+  screens testable. Unit tests for `src/api/*` mock `@/lib/supabase`.
+- `jest.mock` factory variables must be prefixed `mock*` (Jest hoisting rule).
+- Every fixed audit finding that lives in testable logic gets a regression test named
+  after it (e.g. «the F-051 regression»); assert on user-visible Arabic copy, not testIDs,
+  so the tests also pin the Arabic-first requirement (no English leakage).
+- Prefer wall-clock-sensitive tests under `jest.useFakeTimers()` with an explicit
+  `setSystemTime`; always restore real timers.
+- Don't chase coverage %: new tests should guard a stated invariant or a fixed finding.
+
 ## Conventions
 [fill in once decided: naming, file structure, etc. — leave blank for now, Claude Code will propose these]
 
