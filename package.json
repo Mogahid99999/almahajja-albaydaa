@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:contract": "jest --config jest.contract.config.js",
     "doctor": "npx expo-doctor",
     "postinstall": "patch-package"
   },

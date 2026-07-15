@@ -102,6 +102,10 @@ the patch-package postinstall), `npm run typecheck`, and `npm test` on every pus
   test file as a route.
 - `tests/setup.ts` — global setup: dummy `EXPO_PUBLIC_*` env (so `src/lib/env.ts` doesn't
   throw), official AsyncStorage + safe-area-context mocks.
+- `tests/contract/*.contract.test.ts` — live contract tests against **staging** Supabase
+  (`npm run test:contract`, own `jest.contract.config.js`, node env, needs
+  `.env.staging.local`). Excluded from `npm test`/CI; the setup refuses to run against the
+  production project ref.
 
 **Conventions**
 - RNTL 14 API is **async**: `await render(...)`, `await fireEvent.press(...)`, `await act(...)`.

@@ -98,12 +98,24 @@ Highlights, by finding:
    a re-required module sees a **fresh** AsyncStorage mock; tests that simulate an app
    restart must seed the *new* instance (pattern captured in `outboxQueue.test.ts`).
 
-## 5. Deliberately deferred (from the phase task list)
+## 5. Contract tests against staging (task 3 — DONE, second pass)
 
-- **Contract tests for `src/api/*` against staging / pgTAP for RPCs** (task 3): still
-  blocked on **F-002** — no staging Supabase project exists, and the audit's hard rule is
-  staging-only for live verification. Revisit once F-002 is resolved (the migration-replay
-  test doubles as the bring-up).
+F-002 was resolved mid-phase by a parallel session (staging project seeded, commit
+`58dca65`), unblocking this. `tests/contract/api.contract.test.ts` (7 tests, run via
+**`npm run test:contract`**, own `jest.contract.config.js` — node environment, real
+network, anon-key clients only) verifies against live staging:
+- anonymous sign-in enabled; a fresh guest reads **zero** rows of private tables (notes RLS);
+- `lectures` select exposes only `status='published'` (the draft-invisibility RLS contract);
+- `get_home_page` callable by guests;
+- the **F-043/0090 contract**: `get_streak_status`/`get_journey_summary` either accept
+  `p_today` or fail with exactly `PGRST202` (the only code `rpcWithLocalToday`'s fallback
+  keys on), and the summary row shape matches `SummaryRow`;
+- `get_section_quizzes` rows match `RawStatusRow` (mapCard's input).
+
+Deliberately excluded from `npm test` and CI (network + secrets); `tests/contract/setup.ts`
+hard-refuses to run against the production project ref (audit staging-only rule).
+
+## 5b. Deliberately deferred (from the phase task list)
 - **Maestro smoke flows** (task 5, "optional — user decides"): not set up; the Phase 11
   smoke script doesn't exist yet either. Recommend deciding at Phase 11/13.
 - **Release-config check** (`NOTIF_TEST_MODE` etc.) remains a Phase 13 deliverable

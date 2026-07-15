@@ -18,8 +18,11 @@ module.exports = {
     // Mirror tsconfig.json's `@/*` → `./src/*` alias.
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts?(x)', '<rootDir>/tests/**/*.test.ts?(x)'],
+  // tests/contract/ is deliberately excluded: those hit the live staging
+  // Supabase project and run only via `npm run test:contract` (own config).
+  testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts?(x)', '<rootDir>/tests/screens/**/*.test.ts?(x)'],
   // jest-expo's transformIgnorePatterns already whitelists expo/react-native
   // packages; keep the default.
+  modulePathIgnorePatterns: ['<rootDir>/.claude/'],
   clearMocks: true,
 };
