@@ -241,14 +241,19 @@ function SessionGate({
   // transition; once it lands, refetch everything that was fetched without a
   // session so the app converges without needing a force-restart.
   const ensureFailed = ensure.isError;
+  const ensureMutate = ensure.mutate; // stable identity — the effect must not churn per render
   useEffect(() => {
     if (Platform.OS === 'web' || user || !ensureFailed) return;
     return onReconnect(() => {
-      ensure.mutate(undefined, {
+      // Re-check against the live cache, not this effect's captured `user`: a
+      // sign-in/register completed on the (auth) screens while this listener
+      // was armed must win — never mint an anon session over a real one.
+      if (queryClient.getQueryData(queryKeys.currentUser)) return;
+      ensureMutate(undefined, {
         onSuccess: () => void queryClient.invalidateQueries(),
       });
     });
-  }, [user, ensureFailed, ensure]);
+  }, [user, ensureFailed, ensureMutate]);
 
   // Ready once we have a session; if the anon sign-in fails (e.g. offline on a
   // brand-new install) fall through anyway so the app is never stuck on a loader.

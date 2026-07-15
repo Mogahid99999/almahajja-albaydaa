@@ -257,13 +257,32 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 }
 
 /**
+ * Single-flight guard for {@link ensureSession}: concurrent callers (the boot
+ * mutate racing the reconnect retry in SessionGate, or a sign-out's fresh-guest
+ * fallback) share ONE promise instead of each running the check-then-create
+ * sequence — two interleaved runs could both see "no session" and each mint an
+ * anonymous user, orphaning one server-side (a phantom إجمالي الطلاب row, the
+ * exact thing DEVICE_GUEST_KEY exists to prevent).
+ */
+let ensureSessionInFlight: Promise<CurrentUser | null> | null = null;
+
+/**
  * Guest-first foundation (Task 1). Sign in silently as an anonymous user so every
  * install has a session — Home opens for anyone, and resume/downloads/notifications
  * work because there's a hidden account behind them. The Supabase trigger
  * `handle_new_user` gives the anon uid a `profiles` row (role student), so the
  * new-content fan-out already reaches guests. No-op if a session already exists.
+ * Concurrent calls coalesce into one run (see {@link ensureSessionInFlight}).
  */
-export async function ensureSession(): Promise<CurrentUser | null> {
+export function ensureSession(): Promise<CurrentUser | null> {
+  if (ensureSessionInFlight) return ensureSessionInFlight;
+  ensureSessionInFlight = ensureSessionInner().finally(() => {
+    ensureSessionInFlight = null;
+  });
+  return ensureSessionInFlight;
+}
+
+async function ensureSessionInner(): Promise<CurrentUser | null> {
   const existing = await getCurrentUser();
   if (existing) return existing;
   // No live session found. Before minting a BRAND-NEW anonymous user — which
