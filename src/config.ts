@@ -20,6 +20,18 @@ export const USE_MOCK = false;
 export const NOTIF_TEST_MODE = false;
 
 /**
+ * Environment-specific display overrides (audit F-020): the production DB's
+ * `sheikhs.name` for this record predates his family name, and updating live
+ * data is an owner action — until then the التعريف بالشيخ hero card shows the
+ * fuller name from his biography. Display-only, never persisted. Keyed by
+ * `sheikhs.id`, so it is inert on any other environment (mock/staging).
+ * DELETE the entry once the DB row is renamed.
+ */
+export const SHEIKH_DISPLAY_NAME_OVERRIDES: Record<string, string> = {
+  '7d14315d-1211-4f72-a8ca-8308ed78e1f8': 'الشيخ النذير محمد فرح عثمان',
+};
+
+/**
  * Floating-bubble overlay (PLAN_V3 Phase 9) — EXPERIMENTAL, Android-only, OFF by
  * default. The native overlay module (modules/floating-bubble) must be activated
  * via `expo prebuild` and the user must grant SYSTEM_ALERT_WINDOW; until then the

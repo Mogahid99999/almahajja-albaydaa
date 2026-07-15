@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import type { HomeData, FlatSectionNode, SectionPageData, SectionCard, LectureRow, LectureCard, Attachment } from './types';
 import { resolveAttachmentRows } from './attachments';
-import { getLecturePlayback } from './lectures';
+import { filterVisibleLectures, getLecturePlayback } from './lectures';
 import { mapCard, type RawStatusRow } from './quizzes';
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/constants/queryKeys';
@@ -88,14 +88,21 @@ export async function getHomeData(): Promise<HomeData> {
     sectionTitle: l.section_title ?? null,
   }));
 
-  const featured: LectureCard[] = (page.featured ?? []).map((l) => ({
-    id: l.lecture_id,
-    title: l.title,
-    sheikhName: l.sheikh_name ?? null,
-    durationSec: l.duration_sec ?? 0,
-    coverLetter: l.section_title?.[0] ?? '◆',
-    sectionTitle: l.section_title ?? null,
-  }));
+  // get_home_page's featured leg delegates to get_featured_lectures(), the one
+  // list 0049 left WITHOUT gender scoping (its own comment flags the gap) — the
+  // other legs (sections/newest/resume) are filtered server-side. Until Phase 2
+  // fixes the SQL, scope it here exactly like the standalone featured screen
+  // (see filterVisibleLectures in api/lectures.ts — parallel, fail-open).
+  const featured: LectureCard[] = await filterVisibleLectures(
+    (page.featured ?? []).map((l) => ({
+      id: l.lecture_id,
+      title: l.title,
+      sheikhName: l.sheikh_name ?? null,
+      durationSec: l.duration_sec ?? 0,
+      coverLetter: l.section_title?.[0] ?? '◆',
+      sectionTitle: l.section_title ?? null,
+    })),
+  );
 
   const cl = page.continue_listening;
   const continueListening: HomeData['continueListening'] = cl

@@ -114,6 +114,12 @@ export async function getPreviousLecture(
  */
 export async function getRecentLectures(limit = 8): Promise<LectureRow[]> {
   if (USE_MOCK) return mock.getRecentLectures(limit);
+  // Over-fetch: visibility is filtered CLIENT-side below (filterVisibleLectures),
+  // so taking exactly `limit` rows first would return fewer than `limit` visible
+  // lectures — or none — whenever restricted ones occupy the newest slots, while
+  // Home's server-scoped rail (filter-before-limit in get_home_page) shows a
+  // full 8. 3× headroom keeps the list full unless over ⅔ of the newest slots
+  // are restricted; the Phase 2 SQL fix removes the need for this entirely.
   const { data, error } = await supabase
     .from('lectures')
     .select(
@@ -122,9 +128,9 @@ export async function getRecentLectures(limit = 8): Promise<LectureRow[]> {
     .eq('status', 'published')
     .not('section_id', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(limit * 3);
   if (error) throw error;
-  return (data ?? []).map((l) => {
+  const rows: LectureRow[] = (data ?? []).map((l) => {
     const sheikh = Array.isArray(l.sheikhs) ? l.sheikhs[0] : (l.sheikhs as any);
     const prog = Array.isArray(l.user_lecture_progress)
       ? l.user_lecture_progress[0]
@@ -142,6 +148,10 @@ export async function getRecentLectures(limit = 8): Promise<LectureRow[]> {
       fileSizeBytes: l.audio_size_bytes ?? null,
     };
   });
+  // This is a raw table select — RLS doesn't gender-scope it (see
+  // filterVisibleLectures). Home's أُضيف حديثاً rail (get_home_page) IS scoped,
+  // so without this the «عرض الكل» screen showed what the rail correctly hid.
+  return (await filterVisibleLectures(rows)).slice(0, limit);
 }
 
 /**
@@ -154,7 +164,7 @@ export async function getFeaturedLectures(): Promise<LectureRow[]> {
   if (USE_MOCK) return mock.getFeaturedLectures();
   const { data, error } = await supabase.rpc('get_featured_lectures');
   if (error) throw error;
-  return (data ?? []).map((l) => {
+  const rows: LectureRow[] = (data ?? []).map((l) => {
     const isDone = l.completed ?? false;
     const pos = l.position_sec ?? 0;
     return {
@@ -168,15 +178,20 @@ export async function getFeaturedLectures(): Promise<LectureRow[]> {
       fileSizeBytes: l.audio_size_bytes ?? null,
     };
   });
+  // get_featured_lectures() is the visibility gap 0049 itself flags — it joins
+  // lectures without any gender scoping (see filterVisibleLectures).
+  return filterVisibleLectures(rows);
 }
 
 /**
- * Notification-open gender guard (owner-simplified: 0072). The push/inbox
- * itself broadcasts to everyone again — this single-purpose check runs ONLY
- * when a lecture is opened FROM a notification (push shade or inbox tap), so
- * normal browsing takes on no extra round trip. True for an unclassified
- * lecture (nothing to scope) or when the caller's gender matches the
- * section's (and its ancestors') visibility; false otherwise.
+ * Per-lecture gender-visibility check (owner-simplified: 0072). Originally the
+ * notification-open guard only (push shade / inbox tap — the push itself
+ * broadcasts to everyone); since audit phase 4 it also backs
+ * {@link filterVisibleLectures}, so it now runs on the recent/featured lists
+ * and Home's featured leg too (small lists, parallel calls) until the Phase 2
+ * SQL fix scopes those sources server-side. True for an unclassified lecture
+ * (nothing to scope) or when the caller's gender matches the section's (and
+ * its ancestors') visibility; false otherwise.
  */
 export async function isLectureVisibleToViewer(lectureId: string): Promise<boolean> {
   if (USE_MOCK) return true;
@@ -185,6 +200,24 @@ export async function isLectureVisibleToViewer(lectureId: string): Promise<boole
   });
   if (error) return true; // fail-open: never block a legitimate open on a network hiccup
   return data ?? true;
+}
+
+/**
+ * Gender-visibility filter for lecture lists whose SOURCE doesn't scope them
+ * (audit phase 4): `lectures_select` RLS only checks `status='published'`, and
+ * `get_featured_lectures()` was flagged in 0049 itself as an unfiltered gap —
+ * so the recent/featured lists would show (and play) lectures from
+ * gender-restricted sections that Home's own rails correctly hide. Until the
+ * server closes this (Phase 2: visibility in the RPC/RLS), every such list is
+ * passed through the same per-lecture server check the notification-open guard
+ * uses. Lists here are small (≤8, staff-curated), the checks run in parallel,
+ * and each is fail-open — a network hiccup degrades to the pre-filter behavior
+ * rather than blanking a legitimate list.
+ */
+export async function filterVisibleLectures<T extends { id: string }>(rows: T[]): Promise<T[]> {
+  if (USE_MOCK || rows.length === 0) return rows;
+  const flags = await Promise.all(rows.map((r) => isLectureVisibleToViewer(r.id)));
+  return rows.filter((_, i) => flags[i]);
 }
 
 /** Lecture cards for a set of ids — used by the downloads page. */
