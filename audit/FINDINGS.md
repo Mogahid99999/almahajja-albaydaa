@@ -70,6 +70,16 @@ confirmation (PLAN_AUDIT §0.2 — no speculative fixes).
 
 ## Notes
 
+- **Staging readiness (2026-07-15, follow-up to F-002):** auth config copied from production
+  (anonymous sign-ins, autoconfirms, secure email change, OTP length 6, **password min 8** —
+  confirming the Phase 3 min-8 fixes); demo accounts seeded (`admin@`/`user@`/`publisher@`/
+  sheikh, password in `.env.staging.local` — NOT the burned F-013 password); minimal content
+  tree seeded (العقيدة → التوحيد with 2 published + 1 draft lectures, plus a female-only
+  section for gender-visibility tests). `scripts/security-check.mjs` ran for the first time
+  ever (was unsafe against production — F-211): **20/20 checks pass on staging**. Still absent
+  on staging: edge functions + R2 secrets (deploy when a phase needs them), real audio files
+  (audio_path values are dummies — playback tests still need production URLs or uploaded fixtures).
+
 - **Cross-branch (2026-07-15):** the parallel Phase 2 session (`audit/phase-2-backend`) authored
   migration **0089** fixing the `get_featured_lectures` gender leak **server-side** — the same
   root cause as F-036's featured half. 0089 is **not applied to any DB yet**; Phase 4's client
