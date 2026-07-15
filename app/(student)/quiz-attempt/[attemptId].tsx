@@ -10,18 +10,21 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, View } from 'react-native';
+import { ActivityIndicator, AppState, Modal, Pressable, View } from 'react-native';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Screen, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useAttemptQuestions, useSaveAnswer, useSubmitAttempt } from '@/hooks/useQuizzes';
+import { arabicOr } from '@/lib/errorText';
 import { arDuration, arNum } from '@/lib/format';
+
+const SAVE_WARNING_GENERIC = 'تعذّر حفظ الإجابة — تحقق من الاتصال، وسيُعاد الحفظ عند التسليم.';
 
 export default function QuizAttemptScreen() {
   const { attemptId } = useLocalSearchParams<{ attemptId: string }>();
   const router = useRouter();
-  const { data, isLoading } = useAttemptQuestions(attemptId ?? '');
+  const { data, isLoading, isError } = useAttemptQuestions(attemptId ?? '');
   const saveAnswer = useSaveAnswer();
   const submitAttempt = useSubmitAttempt();
 
@@ -29,10 +32,15 @@ export default function QuizAttemptScreen() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [remaining, setRemaining] = useState<number | null>(null);
-  const [saveWarning, setSaveWarning] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   // What the server has confirmed saved — resave any drift before submitting.
   const savedRef = useRef<Record<string, string>>({});
   const submittedRef = useRef(false);
+  // Wall-clock deadline (audit F-051): the countdown recomputes from this every
+  // tick instead of decrementing a counter — RN timers freeze in background, so
+  // a decrement silently under-counts time away and never reaches zero.
+  const deadlineRef = useRef<number | null>(null);
 
   const questions = useMemo(() => data?.questions ?? [], [data]);
 
@@ -45,6 +53,8 @@ export default function QuizAttemptScreen() {
     }
     setAnswers((prev) => ({ ...seeded, ...prev }));
     savedRef.current = { ...seeded, ...savedRef.current };
+    deadlineRef.current =
+      data.remainingSec == null ? null : Date.now() + data.remainingSec * 1000;
     setRemaining(data.remainingSec);
   }, [data]);
 
@@ -56,17 +66,32 @@ export default function QuizAttemptScreen() {
     }
   }, [data?.submittedAt, attemptId, router]);
 
-  // Calm countdown on the server's clock; auto-submit at zero.
+  // Calm countdown on the server's clock (seeded via deadlineRef), recomputed
+  // from the wall clock every tick AND on foreground so time spent backgrounded
+  // is accounted for — the old decrementing counter froze in background, showed
+  // phantom time on return, and its zero (the auto-submit trigger) never fired
+  // (audit F-051). Auto-submits at zero; a failed auto-submit retries on the
+  // next tick (handleSubmit no-ops while pending/submitted).
   useEffect(() => {
-    if (remaining == null) return;
-    if (remaining <= 0) {
-      void handleSubmit(true);
-      return;
-    }
-    const t = setTimeout(() => setRemaining((r) => (r == null ? null : r - 1)), 1000);
-    return () => clearTimeout(t);
+    if (data?.remainingSec == null) return;
+    const tick = () => {
+      const dl = deadlineRef.current;
+      if (dl == null) return;
+      const r = Math.max(0, Math.ceil((dl - Date.now()) / 1000));
+      setRemaining(r);
+      if (r <= 0) void handleSubmit(true);
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') tick();
+    });
+    return () => {
+      clearInterval(iv);
+      sub.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remaining]);
+  }, [data?.remainingSec]);
 
   const answeredCount = questions.filter((q) => answers[q.id]).length;
   const current = questions[index];
@@ -78,17 +103,21 @@ export default function QuizAttemptScreen() {
       {
         onSuccess: () => {
           savedRef.current[questionId] = optionId;
-          setSaveWarning(false);
+          setSaveWarning(null);
         },
-        onError: () => setSaveWarning(true),
+        // The server raises calm Arabic reasons («انتهى وقت الاختبار», «تم
+        // تسليم هذه المحاولة») — show those verbatim; anything else (network,
+        // English PostgREST noise) gets the generic connectivity line.
+        onError: (err) => setSaveWarning(arabicOr(err, SAVE_WARNING_GENERIC)),
       },
     );
   }
 
   async function handleSubmit(auto = false) {
-    if (submittedRef.current || !attemptId) return;
+    if (submittedRef.current || submitAttempt.isPending || !attemptId) return;
     submittedRef.current = true;
     setConfirmOpen(false);
+    setSubmitError(null);
     // Resave anything the server hasn't confirmed (drops silently if the
     // deadline passed — the server grades only in-time answers).
     if (!auto) {
@@ -105,10 +134,50 @@ export default function QuizAttemptScreen() {
     submitAttempt.mutate(attemptId, {
       onSuccess: () =>
         router.replace(`/quiz-result/${attemptId}` as Parameters<typeof router.replace>[0]),
-      onError: () => {
+      // Audit F-053: a failed submit was completely silent (the ref just reset)
+      // — offline users thought they had submitted. Surface it and keep retry open.
+      onError: (err) => {
         submittedRef.current = false;
+        setSubmitError(arabicOr(err, 'تعذّر تسليم الاختبار — تحقق من الاتصال ثم أعد المحاولة.'));
       },
     });
+  }
+
+  // Audit F-052: a failed load (bad/foreign attempt id from a deep link, or a
+  // network error on first open) used to spin forever — `!data` kept the
+  // loading branch. Give it a calm exit.
+  if (isError) {
+    return (
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <Txt size={15} weight="semibold" color={colors.textMuted} align="center">
+            تعذّر فتح المحاولة
+          </Txt>
+          <Txt size={12.5} color={colors.textGhost} align="center">
+            تحقق من الاتصال، أو عد إلى صفحة الاختبار وحاول من جديد.
+          </Txt>
+          <Pressable
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            style={({ pressed }) => [
+              {
+                marginTop: 10,
+                paddingVertical: 12,
+                paddingHorizontal: 28,
+                borderRadius: radius.sm,
+                borderWidth: 1.5,
+                borderColor: colors.primaryTeal,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+          >
+            <Txt weight="semibold" size={14} color={colors.primaryTeal}>
+              العودة
+            </Txt>
+          </Pressable>
+        </View>
+      </Screen>
+    );
   }
 
   if (isLoading || !data) {
@@ -211,9 +280,32 @@ export default function QuizAttemptScreen() {
             marginTop: 12,
           }}
         >
-          <Feather name="wifi-off" size={14} color={colors.accentBrassMuted} />
+          <Feather
+            name={saveWarning === SAVE_WARNING_GENERIC ? 'wifi-off' : 'alert-circle'}
+            size={14}
+            color={colors.accentBrassMuted}
+          />
           <Txt size={12} color={colors.textMuted} style={{ flex: 1 }}>
-            تعذّر حفظ الإجابة — تحقق من الاتصال، وسيُعاد الحفظ عند التسليم.
+            {saveWarning}
+          </Txt>
+        </View>
+      ) : null}
+
+      {submitError ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: 'rgba(184,92,74,0.09)',
+            borderRadius: radius.sm,
+            padding: 10,
+            gap: 8,
+            marginTop: 12,
+          }}
+        >
+          <Feather name="alert-circle" size={14} color={colors.stateDanger} />
+          <Txt size={12} color={colors.stateDanger} style={{ flex: 1 }}>
+            {submitError}
           </Txt>
         </View>
       ) : null}
