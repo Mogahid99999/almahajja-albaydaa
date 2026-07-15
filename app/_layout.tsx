@@ -27,7 +27,7 @@ import { checkBannedAndSignOut } from '@/api/auth';
 import { isLectureVisibleToViewer } from '@/api/lectures';
 import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/notifications';
 import { getResumeTarget, hasResumableLesson } from '@/api/progress';
-import { useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
+import { forcedSignOutCleanup, useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
 import { Logo } from '@/components/ui/Logo';
 import { StartHereCard } from '@/components/onboarding/StartHereCard';
 import { TourCard } from '@/components/onboarding/TourCard';
@@ -400,10 +400,14 @@ function NotificationsBootstrap() {
       void touchLastOpened(); // server stamp for the weekly-goal cron
       void flushOutbox(); // replay any queued offline activity/note/goal writes
       // Ban enforcement: if the admin banned this account, drop the session NOW
-      // (server-validated; a network failure never signs anyone out). The
-      // currentUser cache flip makes AuthGate reroute immediately.
+      // (server-validated; a network failure never signs anyone out).
+      // forcedSignOutCleanup mirrors a manual sign-out's device cleanup — stops
+      // audio + local reminders, discards the banned account's un-synced outbox
+      // (its entries would otherwise replay under the restored guest), and
+      // resets the query cache so none of the banned account's data keeps
+      // rendering; its currentUser write makes AuthGate reroute immediately.
       void checkBannedAndSignOut().then((res) => {
-        if (res.banned) queryClient.setQueryData(queryKeys.currentUser, res.user);
+        if (res.banned) void forcedSignOutCleanup(res.user);
       });
       // Refresh buddy + inbox state on every foreground — tapping a buddy
       // invitation/accept push brings the app forward, and refetchOnWindowFocus

@@ -7,18 +7,7 @@ import { SupportContactLink } from '@/components/SupportContactLink';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignIn } from '@/hooks/useAuth';
-
-// Supabase auth errors come back in English; map the ones users actually hit
-// during sign-in to Arabic. Anything unrecognized falls back to a generic
-// Arabic message rather than leaking English into this Arabic-first screen.
-function arabicSignInError(message: string): string {
-  const known: Record<string, string> = {
-    'Invalid login credentials': 'البريد الإلكتروني أو رقم الهاتف أو كلمة المرور غير صحيحة',
-    'Email not confirmed': 'يرجى تأكيد بريدك الإلكتروني أولاً',
-    'Too many requests': 'محاولات كثيرة جداً، حاول مرة أخرى بعد قليل',
-  };
-  return known[message] ?? 'تعذّر تسجيل الدخول، حاول مرة أخرى';
-}
+import { arabicAuthError } from '@/lib/authErrors';
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -109,7 +98,7 @@ export default function SignInScreen() {
 
         {signIn.isError ? (
           <Txt size={12} color={colors.stateDanger} style={{ marginBottom: 10 }}>
-            {arabicSignInError((signIn.error as Error).message)}
+            {arabicAuthError(signIn.error)}
           </Txt>
         ) : null}
 

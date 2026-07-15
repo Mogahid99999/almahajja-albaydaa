@@ -1,11 +1,12 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 
 import { updatePassword, verifyPasswordResetCode } from '@/api/auth';
 import { Card, IconButton, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useRequestPasswordReset } from '@/hooks/useAuth';
+import { arabicAuthError } from '@/lib/authErrors';
 import { arNum } from '@/lib/format';
 
 /**
@@ -29,8 +30,22 @@ export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The recovery session from a SUCCESSFUL verifyOtp survives a failed
+  // updatePassword (e.g. too-short/weak password). The code is single-use, so
+  // re-verifying it on the retry submit would always fail — remember that the
+  // verify step already passed and skip straight to the password write.
+  const [verified, setVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reset = useRequestPasswordReset();
+  // The success message shows briefly before the redirect — but the redirect
+  // must not fire if the user has already navigated away themselves.
+  const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (doneTimer.current) clearTimeout(doneTimer.current);
+    },
+    [],
+  );
 
   const emailValid = /.+@.+\..+/.test(email.trim());
 
@@ -40,8 +55,9 @@ export default function ResetPasswordScreen() {
       onSuccess: () => {
         setMode('verify');
         setCode('');
+        setVerified(false); // a resent code starts a fresh verify cycle
       },
-      onError: (e) => setError(arError(e)),
+      onError: (e) => setError(arabicAuthError(e)),
     });
   };
 
@@ -51,18 +67,24 @@ export default function ResetPasswordScreen() {
       setError('أدخل الرمز كاملاً.');
       return;
     }
-    if (password.length < 6) {
-      setError('كلمة المرور يجب ألا تقل عن ٦ أحرف.');
+    // Min 8 matches the server (Supabase password_min_length): a shorter gate
+    // used to let the verify step consume the single-use code, then fail on
+    // updatePassword — leaving the user unable to retry with that code.
+    if (password.length < 8) {
+      setError('كلمة المرور يجب ألا تقل عن ٨ أحرف.');
       return;
     }
     setBusy(true);
     try {
-      await verifyPasswordResetCode(email, code);
+      if (!verified) {
+        await verifyPasswordResetCode(email, code);
+        setVerified(true);
+      }
       await updatePassword(password);
       setDone(true);
-      setTimeout(() => router.replace('/sign-in'), 1500);
+      doneTimer.current = setTimeout(() => router.replace('/sign-in'), 1500);
     } catch (e) {
-      setError(arError(e));
+      setError(arabicAuthError(e));
     } finally {
       setBusy(false);
     }
@@ -183,17 +205,6 @@ export default function ResetPasswordScreen() {
     </Screen>
     </KeyboardAvoidingView>
   );
-}
-
-/** Map the (English) Supabase auth error to a calm Arabic message. */
-function arError(e: unknown): string {
-  const msg = (e instanceof Error ? e.message : String(e ?? '')).toLowerCase();
-  if (msg.includes('expired') || (msg.includes('invalid') && msg.includes('token')) || msg.includes('otp'))
-    return 'الرمز غير صحيح أو انتهت صلاحيته. اطلب رمزاً جديداً.';
-  if (msg.includes('rate') || msg.includes('too many') || msg.includes('security purposes'))
-    return 'محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة.';
-  if (msg.includes('password')) return 'كلمة المرور ضعيفة أو غير صالحة.';
-  return e instanceof Error && e.message ? e.message : 'تعذّر إتمام العملية.';
 }
 
 function PrimaryButton({
