@@ -107,9 +107,10 @@ describe('activity cap (120 entries, oldest days dropped first)', () => {
     const q = await outbox.loadQueue();
     const activities = q.filter((e) => e.kind === 'activity');
     expect(activities).toHaveLength(120);
-    // Oldest day = 2026-01-01 group loses members first.
+    // 125 entries over days 01..28 puts 5 entries on each of days 01..13;
+    // dropping the 5 oldest must wipe day 01 exactly — nothing newer.
     const days = activities.map((a) => (a as { day: string }).day).sort();
-    expect(days[0] > '2026-01-01' || days.filter((d) => d === '2026-01-01').length < 5).toBe(true);
+    expect(days[0]).toBe('2026-01-02');
     expect(q.some((e) => e.kind === 'note')).toBe(true);
     expect(q.some((e) => e.kind === 'goal')).toBe(true);
   });

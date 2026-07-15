@@ -10,6 +10,12 @@ on:
     branches: ['**']
   pull_request:
 
+# A push to a branch with an open PR triggers both events; superseded pushes to
+# the same ref pile up. Run one job per ref, cancelling the stale one.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
