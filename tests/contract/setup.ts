@@ -1,7 +1,12 @@
+/// <reference types="node" />
 /**
  * Loads `.env.staging.local` for the contract suite and enforces the audit's
  * hard rule (PLAN_AUDIT §Phase 2 risks): live verification runs against
  * STAGING ONLY — never the production project.
+ *
+ * The root tsconfig pins `types: ["jest"]`, which excludes @types/node, so the
+ * node module imports below need this explicit reference to typecheck (the node
+ * runtime is provided by jest.contract.config.js's node testEnvironment).
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';

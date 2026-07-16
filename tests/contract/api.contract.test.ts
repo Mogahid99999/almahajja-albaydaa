@@ -31,6 +31,16 @@ async function studentClient(): Promise<SupabaseClient> {
   return c;
 }
 
+async function sheikhClient(): Promise<SupabaseClient> {
+  const c = newClient();
+  const { error } = await c.auth.signInWithPassword({
+    email: 'sheikh@gmail.com',
+    password: seedPassword,
+  });
+  if (error) throw error;
+  return c;
+}
+
 describe('guest (anonymous) session', () => {
   let guest: SupabaseClient;
   beforeAll(async () => {
@@ -103,6 +113,95 @@ describe('journey day-anchored RPCs (F-043 / migration 0090 contract)', () => {
         expect(row).toHaveProperty(key);
       }
     }
+  });
+});
+
+describe('Q&A anonymity at the network layer (Phase 7)', () => {
+  let asker: SupabaseClient;
+  let sheikh: SupabaseClient;
+  let askerUid = '';
+  const created: string[] = [];
+
+  beforeAll(async () => {
+    asker = await studentClient();
+    sheikh = await sheikhClient();
+    askerUid = (await asker.auth.getUser()).data.user!.id;
+  });
+  afterAll(async () => {
+    for (const id of created) await asker.rpc('delete_own_question', { p_question_id: id });
+    await asker.auth.signOut();
+    await sheikh.auth.signOut();
+  });
+
+  // The F-056 regression: a sheikh must NOT be able to raw-select the questions
+  // table and read the asker_id / is_anonymous of an anonymous question. Before
+  // 0091 the questions_select_own_or_moderator RLS policy let any moderator read
+  // every row directly, defeating the DEFINER RPCs' anonymity (0077) — a sheikh
+  // could correlate an anonymous question with a named one by the shared UUID.
+  test('the F-056 regression: a sheikh cannot raw-select another user\'s asker_id from the questions table', async () => {
+    const { data: qid, error } = await asker.rpc('ask_question', {
+      p_scope: 'general',
+      p_lecture_id: null,
+      p_is_anonymous: true,
+      p_audience: 'public',
+      p_body: 'سؤال مجهول لاختبار خصوصية الشبكة',
+      p_category: 'general',
+    });
+    expect(error).toBeNull();
+    created.push(qid as string);
+
+    // Sheikh raw table read — must never return this user's row.
+    const raw = await sheikh
+      .from('questions')
+      .select('id, asker_id, is_anonymous')
+      .eq('asker_id', askerUid);
+    expect(raw.error).toBeNull();
+    expect(raw.data).toEqual([]);
+
+    // The intended path still anonymises: 'سائل' to the sheikh, asker_id null.
+    const inbox = await sheikh.rpc('get_question_inbox', {});
+    expect(inbox.error).toBeNull();
+    const row = (inbox.data as any[]).find((r) => r.id === qid);
+    expect(row).toBeTruthy();
+    expect(row.asker_display).toBe('سائل');
+    expect(row.asker_id).toBeNull();
+  });
+
+  // The F-057 regression: editing a question's body must clear its 0086 answer
+  // thread, not just the mirrored answer columns — so a stale answer never sits
+  // under new question text once the question is answered again.
+  test('the F-057 regression: editing a question body clears the old answer thread', async () => {
+    const { data: qid } = await asker.rpc('ask_question', {
+      p_scope: 'general',
+      p_lecture_id: null,
+      p_is_anonymous: false,
+      p_audience: 'public',
+      p_body: 'السؤال الأصلي عن الطهارة',
+      p_category: 'general',
+    });
+    created.push(qid as string);
+
+    await sheikh.rpc('answer_question', {
+      p_question_id: qid,
+      p_answer_body: 'جواب عن الطهارة',
+      p_answer_audio_path: null,
+    });
+    await asker.rpc('update_own_question', {
+      p_id: qid,
+      p_body: 'سؤال جديد تماماً عن الصلاة',
+      p_audience: 'public',
+      p_category: 'general',
+    });
+    await sheikh.rpc('answer_question', {
+      p_question_id: qid,
+      p_answer_body: 'جواب عن الصلاة',
+      p_answer_audio_path: null,
+    });
+
+    const thread = await asker.rpc('get_question_answers', { p_question_id: qid });
+    expect(thread.error).toBeNull();
+    const bodies = (thread.data as any[]).map((a) => a.body);
+    expect(bodies).toEqual(['جواب عن الصلاة']);
   });
 });
 
