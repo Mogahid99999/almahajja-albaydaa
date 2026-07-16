@@ -185,8 +185,14 @@ Every DEFINER function reviewed; verdict table in `rls-matrix.md`. Highlights:
   browse RPCs use (content-manager bypass + unclassified passthrough preserved).
 
 Both are static-safe (create-or-replace, no schema change). **`security-check.mjs` after a
-migration is REQUIRED by CLAUDE.md but BLOCKED (F-002/F-211)** — must be run against staging
-once it exists.
+migration is REQUIRED by CLAUDE.md; it was BLOCKED (F-002/F-211) when this report was
+written and has since been satisfied**: staging (`xjtpwcwotuflomqigzfa`) was created
+2026-07-15 with 0088/0089 applied (verified via `schema_migrations` rows + fix signatures
+in the live function definitions), and on 2026-07-16 `security-check.mjs` was run against
+staging (shell-env override; production `.env` untouched) — **20/20 checks passed**,
+including `guest: send_buddy_request rejected`, which live-confirms the F-201/0088 fix.
+Checklist items 2–4 below are thereby fully or partly covered; F-211's wrong-param caveat
+on the `get_public_questions` probe still stands (that one pass may be false confidence).
 
 ---
 
