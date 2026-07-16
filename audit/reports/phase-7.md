@@ -125,9 +125,14 @@ sanctions it.
 
 ## 7. Owner actions
 
-1. **Apply migrations 0091 and 0092 to production** before shipping this build (both applied
-   to staging; same authored-not-applied-to-prod pattern as F-043/0090). No
-   `database.generated.ts` regeneration needed — no RPC signature/shape changed.
+1. ~~Apply migrations 0091 and 0092 to production~~ — **done 2026-07-16.** Both applied to
+   staging and production via the Supabase Management API and verified at the schema level
+   (prod: `questions_select_own` policy; `update_own_question` clears `question_answers` +
+   `answer_audio_path`). No `database.generated.ts` regeneration needed — no RPC
+   signature/shape changed. **Remaining:** (a) 0091/0092 are NOT in prod
+   `supabase_migrations.schema_migrations` — prod tracks only 0001–0058 while 0059+ (incl.
+   these) were applied out-of-band; reconcile the whole range under F-002/F-015 before any
+   `supabase db push`. (b) **Revoke the Management API access token** used for the apply.
 2. Rule on **F-058** (benefit-author visibility: sheikh vs admin-only).
 3. Migration-numbering note: this branch carries 0090 but not 0088/0089 (they live on
    `audit/phase-2-backend`). 0091/0092 have no functional dependency on 0088/0089 and are

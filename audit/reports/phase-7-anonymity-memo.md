@@ -80,5 +80,11 @@ reaches admins only as an opaque `asker_id` for banning, exactly as 0077 intends
 deanonymisation by staff remains **by design** (F-058 flags it for an explicit product
 ruling). Private notes and sheikh-audience routing were verified unchanged and correct.
 
-**Owner action:** apply **0091** and **0092** to production before shipping this build
-(same F-002/F-043 "authored-not-applied-to-prod" pattern; both are applied to staging).
+**Applied to production (2026-07-16).** 0091 and 0092 were applied to both staging and
+production via the Supabase Management API and verified at the schema level (prod policy is
+`questions_select_own`; `update_own_question` clears `question_answers` + the audio mirror).
+No functional probes were run against production — that would write test rows into real
+user data; the schema-level verification is authoritative for a DDL change. Two follow-ups
+for the owner: (1) neither migration is recorded in prod `schema_migrations` (out-of-band,
+the same drift as 0059+ — reconcile under F-002/F-015 before any `supabase db push`);
+(2) **revoke the Management API access token** used for this apply.
