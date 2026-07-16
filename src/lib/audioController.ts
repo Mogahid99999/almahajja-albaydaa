@@ -19,7 +19,12 @@ import { getLecturePlayback, getNextLecture, getPreviousLecture } from '@/api/le
 import { saveLectureProgress } from '@/api/progress';
 import { queryKeys } from '@/constants/queryKeys';
 import { isOnlineSync, onReconnect } from '@/lib/connectivity';
-import { localUriFor, readDownloadMeta, updateDownloadPosition } from '@/lib/downloads';
+import {
+  findDownloadedNeighbor,
+  localUriFor,
+  readDownloadMeta,
+  updateDownloadPosition,
+} from '@/lib/downloads';
 import { queryClient } from '@/lib/queryClient';
 import { readResumePosition, saveResumePosition } from '@/lib/resumeCache';
 import { usePlayerStore, type PlaybackRate } from '@/stores/playerStore';
@@ -30,6 +35,17 @@ import { useSettingsStore } from '@/stores/settingsStore';
 // staler (e.g. persisted) entry is past this and gets refetched fresh.
 const LECTURE_PLAYBACK_STALE = 30 * 60_000;
 
+// Mint budget for the row-mount warm-up below (audit F-503, closing F-039):
+// every prefetch that actually fetches costs a `getLecturePlayback` round-trip
+// (an r2-read-url signed-URL mint + an attachments read), and each lecture id is
+// its own cache key, so query-cache dedupe alone puts NO bound on a fast scroll
+// through a 500-lecture section — that's hundreds of edge-function calls for
+// rows nobody will tap. Cap the number of prefetch fetches in flight; rows over
+// the cap simply skip warming (tap-time `preloadLecture` still loads them
+// normally). Already-fresh entries bypass the budget — they cost nothing.
+const MAX_PREFETCH_IN_FLIGHT = 4;
+let prefetchInFlight = 0;
+
 /**
  * Warm a lecture's playback metadata (+ signed URL) into the same cache entry the
  * player reads (queryKeys.lecture). Makes auto-advance / the "next" button and the
@@ -39,13 +55,26 @@ const LECTURE_PLAYBACK_STALE = 30 * 60_000;
  * LectureRowItem) — tap-time preloading alone (`preloadLecture`) still pays the
  * full signed-URL network round-trip for a lecture nobody has looked at yet; this
  * is what makes a tap on an already-warmed row start with no network wait at all.
+ * Best-effort: bounded by {@link MAX_PREFETCH_IN_FLIGHT}.
  */
 export function prefetchPlayback(lectureId: string) {
-  void queryClient.prefetchQuery({
-    queryKey: queryKeys.lecture(lectureId),
-    queryFn: () => getLecturePlayback(lectureId),
-    staleTime: LECTURE_PLAYBACK_STALE,
-  });
+  const state = queryClient.getQueryState(queryKeys.lecture(lectureId));
+  const fresh =
+    state?.status === 'success' &&
+    !state.isInvalidated &&
+    Date.now() - state.dataUpdatedAt < LECTURE_PLAYBACK_STALE;
+  if (fresh) return; // prefetchQuery would no-op anyway — don't spend budget
+  if (prefetchInFlight >= MAX_PREFETCH_IN_FLIGHT) return;
+  prefetchInFlight++;
+  void queryClient
+    .prefetchQuery({
+      queryKey: queryKeys.lecture(lectureId),
+      queryFn: () => getLecturePlayback(lectureId),
+      staleTime: LECTURE_PLAYBACK_STALE,
+    })
+    .finally(() => {
+      prefetchInFlight--;
+    });
 }
 
 /**
@@ -189,6 +218,14 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 // starts the load, then the player screen mounts a beat later and would
 // otherwise kick off a second, wasted load (Issue: tap→play delay fix below).
 let pendingId: string | null = null;
+// The in-flight load's promise (audit F-500). `preloadLecture` hands THIS back
+// for a redundant same-lecture call instead of a fresh resolved promise — so
+// when the row's tap started the load and the player screen's mount effect is
+// the second caller, the screen's `.catch(→ unavailable)` is attached to the
+// REAL load. Without it, a load that failed after the screen mounted (offline
+// race, or the 15s URL-fetch timeout) was silently dropped: the row's `void`ed
+// promise carried the rejection nowhere and the screen sat dead with no notice.
+let pendingPromise: Promise<void> | null = null;
 
 const store = () => usePlayerStore.getState();
 
@@ -367,7 +404,7 @@ function onStatus(status: AudioStatus) {
       s.setLoading(true);
       setTimeout(() => {
         if (currentId !== id) return; // superseded by a newer load — drop it
-        void loadLecture(id, { startAtSec: at, _isErrorRetry: true });
+        reloadCurrent(id, { startAtSec: at, _isErrorRetry: true });
       }, ERROR_RETRY_DELAY_MS);
     } else {
       s.setLoading(false);
@@ -428,6 +465,13 @@ function resolveNext() {
     store().setNext(null);
     return;
   }
+  // Offline, the only playable lectures are downloaded ones — resolve the
+  // neighbour from the download manifest instead of a doomed network call
+  // (audit F-502), so a downloaded series keeps next + auto-advance working.
+  if (!isOnlineSync()) {
+    store().setNext(findDownloadedNeighbor(sectionId, order, 'next')?.id ?? null);
+    return;
+  }
   void getNextLecture(sectionId, order)
     .then((next) => {
       if (currentId !== forId) return;
@@ -437,7 +481,11 @@ function resolveNext() {
       if (next?.id && isOnlineSync()) prefetchPlayback(next.id);
     })
     .catch(() => {
-      if (currentId === forId) store().setNext(null);
+      // Network resolution failed (flaky signal) — fall back to the manifest
+      // neighbour rather than a dead "no next" (F-502).
+      if (currentId === forId) {
+        store().setNext(findDownloadedNeighbor(sectionId, order, 'next')?.id ?? null);
+      }
     });
 }
 
@@ -460,12 +508,19 @@ function resolvePrev() {
     store().setPrev(null);
     return;
   }
+  // Offline / failed-fetch manifest fallback — mirror of resolveNext (F-502).
+  if (!isOnlineSync()) {
+    store().setPrev(findDownloadedNeighbor(sectionId, order, 'prev')?.id ?? null);
+    return;
+  }
   void getPreviousLecture(sectionId, order)
     .then((prev) => {
       if (currentId === forId) store().setPrev(prev?.id ?? null);
     })
     .catch(() => {
-      if (currentId === forId) store().setPrev(null);
+      if (currentId === forId) {
+        store().setPrev(findDownloadedNeighbor(sectionId, order, 'prev')?.id ?? null);
+      }
     });
 }
 
@@ -509,6 +564,21 @@ function invalidateProgressViews() {
 // re-satisfies the threshold / didJustFinish immediately and leaves playback
 // unable to run (the reported "stuck on a completed lecture" bug).
 const NEAR_END_RESUME_GUARD_SEC = 15;
+
+/**
+ * Clamp a requested deep-link start second against the known duration (audit
+ * F-505): an unclamped `?t=` past the end used to be seeked raw by startPlayer
+ * — the native player clamps it to the very end, which fires `didJustFinish`
+ * with NO seek-guard armed (the guard only covers the exported seekTo), so a
+ * hand-crafted `riwaqalilm://player/<id>?t=99999` link instantly marked the
+ * lecture completed and auto-advanced. Unknown duration (0) passes through —
+ * the completion/auto-advance math is inert without a duration anyway.
+ */
+function clampStartAt(sec: number, durationSec: number): number {
+  const floored = Math.max(0, sec);
+  if (durationSec > 0) return Math.min(floored, Math.max(0, durationSec - 1));
+  return floored;
+}
 
 /**
  * Sanitize a saved resume position against the known duration (V17 · Problem 1):
@@ -691,11 +761,25 @@ export async function playLecture(lectureId: string, opts?: LoadOpts) {
  */
 export function preloadLecture(lectureId: string, opts?: LoadOpts) {
   if (!lectureId) return Promise.resolve();
-  if (currentId === lectureId || pendingId === lectureId) return Promise.resolve();
+  if (currentId === lectureId) {
+    // Already-current lecture: honor a deep-link start-at second anyway (audit
+    // F-507 — a resume-notification tap for the CURRENT lecture used to be
+    // silently ignored here). Forward only, same never-rewind contract as the
+    // load paths, and clamped the same way (F-505) so a past-the-end t can't
+    // near-instantly complete the current lecture either.
+    if (opts?.startAtSec != null) {
+      const startAt = clampStartAt(opts.startAtSec, currentDuration);
+      if (startAt > store().positionSec) void seekTo(startAt);
+    }
+    return Promise.resolve();
+  }
+  // Same lecture already loading → share the REAL in-flight promise (F-500) so
+  // this caller's .catch sees the load's actual outcome.
+  if (pendingId === lectureId && pendingPromise) return pendingPromise;
   return loadLecture(lectureId, opts);
 }
 
-async function loadLecture(lectureId: string, opts?: LoadOpts) {
+function loadLecture(lectureId: string, opts?: LoadOpts): Promise<void> {
   // Switching to a genuinely different lecture — pause whatever's currently
   // playing right away. Without this, a NEW lecture that fails to load (e.g.
   // offline and not downloaded) left the OLD one playing silently behind the
@@ -710,11 +794,46 @@ async function loadLecture(lectureId: string, opts?: LoadOpts) {
   }
   const gen = ++loadGen;
   pendingId = lectureId;
-  try {
-    await loadLectureBody(lectureId, gen, opts);
-  } finally {
-    if (pendingId === lectureId) pendingId = null;
-  }
+  // `p` is assigned synchronously below before the async body can reach its
+  // finally block (that's at least one microtask away).
+  let p!: Promise<void>;
+  p = (async () => {
+    try {
+      await loadLectureBody(lectureId, gen, opts);
+    } finally {
+      if (pendingId === lectureId) pendingId = null;
+      if (pendingPromise === p) pendingPromise = null;
+    }
+  })();
+  pendingPromise = p;
+  // Mark the promise handled so a `void loadLecture(...)`/`void preloadLecture`
+  // caller (rows, rails) never produces an unhandled-rejection warning; callers
+  // that DO attach .catch (player screen, retry) still see the rejection.
+  p.catch(() => {});
+  return p;
+}
+
+/**
+ * Reload the CURRENT track from an internal recovery path (error retry, resume
+ * after a natural end, reconnect recovery) — none of these have a caller
+ * waiting on the promise, so a reload that itself fails (the network dropped
+ * for good mid-retry, say) must surface through the STORE instead (audit
+ * F-501). Without this, those paths `void`ed the rejection and the player sat
+ * on a stuck spinner / dead pause with `loadError` unset — which also kept the
+ * reconnect recovery from ever engaging (its trigger needs loadError/stalled).
+ */
+function reloadCurrent(lectureId: string, opts?: LoadOpts) {
+  loadLecture(lectureId, opts).catch(() => {
+    if (currentId !== lectureId) return; // superseded by another track — irrelevant
+    // A NEWER load of the same lecture is already in flight (e.g. the user
+    // tapped play again while this stale reload's rejection was landing) —
+    // let that one own the UI instead of flashing an error over its spinner.
+    if (pendingId === lectureId) return;
+    const s = store();
+    s.setLoading(false);
+    s.setPlaying(false);
+    if (!s.loadError) s.setLoadError('reload failed');
+  });
 }
 
 async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) {
@@ -740,9 +859,11 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
     // A near-the-end saved position means the lecture was finished — replay from
     // the start rather than resuming into the dead end (V17 · Problem 1).
     positionSec = sanitizeResumePosition(positionSec, meta.durationSec);
-    // A resume deep-link may ask to open ahead; honor it, never rewind (§8).
-    if (opts?.startAtSec != null && opts.startAtSec > positionSec) {
-      positionSec = opts.startAtSec;
+    // A resume deep-link may ask to open ahead; honor it (clamped — F-505),
+    // never rewind (§8).
+    if (opts?.startAtSec != null) {
+      const startAt = clampStartAt(opts.startAtSec, meta.durationSec);
+      if (startAt > positionSec) positionSec = startAt;
     }
     // Replay-from-start (toggling play on a lecture that ran to its end) wins
     // over every resume source above.
@@ -750,8 +871,12 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
 
     currentId = lectureId;
     currentDuration = meta.durationSec;
-    currentSectionId = null; // unknown until the background refresh lands
-    currentOrder = 0;
+    // Seed the section context from the download sidecar (audit F-502) so
+    // next/prev + auto-advance can resolve OFFLINE below; the background
+    // refresh replaces it with the server truth when reachable. Older sidecars
+    // predate these fields — they degrade to the old "unknown" behavior.
+    currentSectionId = meta.sectionId ?? null;
+    currentOrder = meta.order ?? 0;
     lastSavedAt = Date.now();
     // The new track is now current — clear the auto-advance guard so THIS track
     // (including a replay of the same id) can auto-advance when it finishes.
@@ -767,6 +892,16 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
     });
     store().setLoading(true);
     void startPlayer(localUri, positionSec, gen);
+
+    // Offline: the background refresh below will fail silently, which used to
+    // leave next/prev disabled and auto-advance dead even with the WHOLE
+    // section downloaded (audit F-502). Resolve neighbours now from the
+    // download manifest via the sidecar's section context; the online refresh
+    // re-resolves against the server when it lands.
+    if (!isOnlineSync()) {
+      resolveNext();
+      resolvePrev();
+    }
 
     // Refresh section context (enables next/prev) + adopt the server resume
     // position if it's AHEAD. Fails silently offline — local playback is enough.
@@ -858,8 +993,10 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
   // the start rather than resuming into the dead end (V17 · Problem 1).
   positionSec = sanitizeResumePosition(positionSec, durationSec);
 
-  if (opts?.startAtSec != null && opts.startAtSec > positionSec) {
-    positionSec = opts.startAtSec;
+  if (opts?.startAtSec != null) {
+    // Clamped against the known duration (F-505); forward only, never rewind.
+    const startAt = clampStartAt(opts.startAtSec, durationSec);
+    if (startAt > positionSec) positionSec = startAt;
   }
   // Replay-from-start wins over every resume source above.
   if (opts?.restart) positionSec = 0;
@@ -897,7 +1034,7 @@ export function toggle() {
     // from the start so "play" actually replays the finished lecture — reached
     // for the last lecture in a section, or when auto-advance is off.
     if (justFinished && currentId) {
-      void loadLecture(currentId, { restart: true });
+      reloadCurrent(currentId, { restart: true });
       return;
     }
     // The track errored out (e.g. MiniPlayer play tap after a stream failure —
@@ -905,7 +1042,7 @@ export function toggle() {
     // silent no-op, so rebuild from where it stopped instead.
     if (store().loadError && currentId) {
       forceFreshPlayer = true;
-      void loadLecture(currentId, { startAtSec: player.currentTime ?? store().positionSec });
+      reloadCurrent(currentId, { startAtSec: player.currentTime ?? store().positionSec });
       return;
     }
     intendPlay = true;
@@ -965,6 +1102,7 @@ export function stop() {
   currentSectionId = null;
   currentOrder = 0;
   pendingId = null;
+  pendingPromise = null;
   justFinished = false;
   forceFreshPlayer = false;
   intendPlay = false;
@@ -988,7 +1126,7 @@ export async function seekTo(positionSec: number) {
     const target =
       max > 0 ? Math.min(Math.max(0, positionSec), Math.max(0, max - 0.25)) : Math.max(0, positionSec);
     store().setPosition(target);
-    void loadLecture(currentId, { startAtSec: target, restart: target <= 0 });
+    reloadCurrent(currentId, { startAtSec: target, restart: target <= 0 });
     return;
   }
   // Clamp to the player's REAL timeline (Issue 7). `player.duration` is the
@@ -1046,5 +1184,5 @@ onReconnect(() => {
   // a stalled/errored instance may not revive via a bare replace().
   const at = player?.currentTime ?? s.positionSec;
   forceFreshPlayer = true;
-  void loadLecture(currentId, { startAtSec: at });
+  reloadCurrent(currentId, { startAtSec: at });
 });

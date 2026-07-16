@@ -46,6 +46,14 @@ export type DownloadMeta = {
    * the server progress row is unreachable offline. Absent on older sidecars.
    */
   positionSec?: number;
+  /**
+   * Section context captured at download time (audit F-502) so the player can
+   * resolve next/prev — and auto-advance — through a downloaded series with NO
+   * connection (see findDownloadedNeighbor). Absent on older sidecars, which
+   * degrade to the old no-neighbours-offline behavior.
+   */
+  sectionId?: string | null;
+  order?: number;
 };
 
 type ManifestEntry = DownloadMeta & {
@@ -68,24 +76,36 @@ function manifestFile(): File {
   return new File(appDir(), MANIFEST_NAME);
 }
 
+// In-memory manifest mirror (audit F-506). The manifest is written ONLY through
+// writeManifest below, so caching the parsed object is safe — and it matters:
+// readManifest is on hot per-row paths (localUriFor + verifyDownload +
+// readDownloadMeta each parse it on every lecture-row mount, and
+// updateDownloadPosition re-parses on every 5s playback tick), so a long
+// section used to re-read + JSON.parse the same file thousands of times per
+// scroll, all synchronously on the JS thread.
+let manifestCache: Manifest | null = null;
+
 function readManifest(): Manifest {
+  if (manifestCache) return manifestCache;
   try {
     const f = manifestFile();
-    if (!f.exists) return {};
-    return JSON.parse(f.textSync()) as Manifest;
+    if (!f.exists) return (manifestCache = {});
+    return (manifestCache = JSON.parse(f.textSync()) as Manifest);
   } catch {
+    // Transient read/parse failure — don't cache it; the next read retries disk.
     return {};
   }
 }
 
 function writeManifest(m: Manifest): void {
+  manifestCache = m;
   try {
     const f = manifestFile();
     if (f.exists) f.delete();
     f.create();
     f.write(JSON.stringify(m));
   } catch {
-    /* best-effort */
+    /* best-effort — the in-memory mirror still drives this session */
   }
 }
 
@@ -283,29 +303,34 @@ async function downloadLecturePublic(
     relativePath.slice(0, relativePath.lastIndexOf('/')),
     relativePath.slice(relativePath.lastIndexOf('/') + 1),
   ];
-  const base = baseWithExt.replace(/\.mp3$/, '');
 
   const rootUri = await ensurePublicRoot();
   const appFolderUri = await ensurePublicAppFolder(rootUri);
   const sectionDirUri = await ensurePublicSectionDir(appFolderUri, section);
 
   // SAF has no direct URL-download API — pull the audio into a private temp
-  // file first, then copy its bytes into the SAF-created public file.
-  const tempFile = new File(Paths.cache, `${lectureId}-${Date.now()}.tmp`);
-  if (tempFile.exists) tempFile.delete();
-  await File.downloadFileAsync(url, tempFile, { onProgress });
+  // file first (named as the final <lesson>.mp3, in its own scratch folder so
+  // parallel downloads can't collide), then MOVE it into the SAF folder.
+  // `File.move` streams the bytes natively and deletes the source (audit
+  // F-504 — the previous `base64()` + `writeAsStringAsync` round-trip
+  // materialized the ENTIRE audio file as a base64 JS string, an OOM crash
+  // risk for long lectures on low-memory devices). After the move, the File's
+  // own `uri` is the created SAF document's real content:// URI.
+  const tempDir = new Directory(Paths.cache, `dl-${lectureId}-${Date.now()}`);
+  if (!tempDir.exists) tempDir.create({ intermediates: true });
+  const tempFile = new File(tempDir, baseWithExt);
   try {
-    const safUri = await StorageAccessFramework.createFileAsync(sectionDirUri, base, 'audio/mpeg');
-    const base64 = await tempFile.base64();
-    await StorageAccessFramework.writeAsStringAsync(safUri, base64, { encoding: 'base64' });
+    await File.downloadFileAsync(url, tempFile, { onProgress });
+    await tempFile.move(new Directory(sectionDirUri), { overwrite: true });
+    const safUri = tempFile.uri;
     manifest[lectureId] = { ...meta, relativePath, safUri };
     writeManifest(manifest);
     return safUri;
   } finally {
     try {
-      tempFile.delete();
+      tempDir.delete();
     } catch {
-      /* best-effort cleanup */
+      /* best-effort cleanup (already gone after a successful move) */
     }
   }
 }
@@ -442,6 +467,35 @@ export function updateDownloadPosition(lectureId: string, positionSec: number): 
     writeManifest(manifest);
   } catch {
     /* metadata is best-effort */
+  }
+}
+
+/**
+ * The downloaded neighbour of a lecture within its section (audit F-502):
+ * the manifest entry in the SAME section with the closest higher (`next`) or
+ * lower (`prev`) order. Offline, downloaded lectures are the only playable
+ * ones, so this IS the correct next/prev resolution there — the player uses it
+ * when the network resolution is unreachable or fails. Entries from older
+ * sidecars without section context are skipped.
+ */
+export function findDownloadedNeighbor(
+  sectionId: string,
+  order: number,
+  direction: 'next' | 'prev',
+): { id: string } | null {
+  if (isWeb) return null;
+  try {
+    let best: ManifestEntry | null = null;
+    for (const entry of Object.values(readManifest())) {
+      if (entry.sectionId !== sectionId || typeof entry.order !== 'number') continue;
+      const o = entry.order;
+      const isCandidate = direction === 'next' ? o > order : o < order;
+      if (!isCandidate) continue;
+      if (!best || (direction === 'next' ? o < best.order! : o > best.order!)) best = entry;
+    }
+    return best ? { id: best.id } : null;
+  } catch {
+    return null;
   }
 }
 

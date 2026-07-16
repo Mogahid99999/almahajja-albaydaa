@@ -29,6 +29,33 @@ root layout's RTL bootstrap doesn't crash web (GLITCH_LOG #14). Trivial, low upg
   `durationMs` regresses the system scrubber, a missing `deepLinkUri` falls back to launcher.
 - Focus handling assumes the app uses `setAcceptsDelayedFocusGain`.
 
+### Phase 5 verification (2026-07-16, code-level — device matrix still pending)
+
+- **Patch present and applied**: all 7 hunk files confirmed in the checked-out patch
+  AND live in `node_modules` (riwaq markers in `AudioModule.kt:479`,
+  `BaseAudioPlayer.kt:94`, `mediaControlAction` in `AudioPlayer.kt`;
+  `setAcceptsDelayedFocusGain(true)` set at `AudioModule.kt:162` by the patch's
+  assumption's own module — the contract holds).
+- **JS listener**: `createPlayer()` (audioController) registers `mediaControlAction`
+  on every player instance and routes `next|prev` through the same section-aware
+  `playNext()/playPrev()` as the in-app buttons. Registered per-instance; instances
+  are fully released via `player.remove()` on stop/teardown (no listener leak).
+- **`durationMs`**: `syncLockScreen()` sends it only when `durationSec > 0` and is
+  re-invoked the first time a REAL duration lands from a status tick (`wasSeed`
+  check in `onStatus`) — so a streaming source with a 0/wrong DB seed still gets a
+  correct system scrubber shortly after start. A lecture whose duration never
+  reports keeps an empty scrubber (accepted).
+- **`deepLinkUri`**: built with `Linking.createURL('/player/<id>')` per track and
+  refreshed on every `syncLockScreen()` (track switch, duration landing) — the
+  notification tap always targets the CURRENT lecture.
+- **Auto-advance offline**: since Phase 5, neighbours also resolve from the download
+  manifest when offline (F-502), so the patched prev/next controls keep working
+  through a downloaded series with no connection **[device-verify]**.
+- Still requiring physical devices (deferred by owner instruction this phase):
+  lock-screen controls end-to-end, delayed-focus/Bluetooth renegotiation, the
+  ENDED-state auto-advance under Doze, interruption matrix (calls, unplug), and
+  the iOS stock-behavior delta (±10s instead of prev/next).
+
 ## Upgrade / fragility notes
 
 - **Any expo-audio version bump invalidates the patch file name and likely the hunks** —
