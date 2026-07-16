@@ -8,9 +8,9 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.riwaqalilm.app",
-      "buildNumber": "1",
+      "buildNumber": "3",
       "entitlements": {
         "aps-environment": "production"
       },
