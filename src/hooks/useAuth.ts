@@ -85,6 +85,14 @@ export function useEnsureSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ensureSession,
+    // 'always', not the default 'online': on an offline cold start (fresh
+    // install) the default PAUSES the mutation instead of running it, so
+    // neither `isError` nor `data` ever settles and SessionGate's
+    // fall-through (`!!user || ensure.isError`) never fires — the app sits on
+    // the boot loader until the network returns. Running it lets the local
+    // session checks succeed offline and the anon sign-in fail fast, so the
+    // gate falls through as designed (SessionGate retries on reconnect).
+    networkMode: 'always',
     onSuccess: (user) => {
       if (user) qc.setQueryData(queryKeys.currentUser, user);
     },
