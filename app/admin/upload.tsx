@@ -214,6 +214,23 @@ export default function UploadScreen() {
       });
       return;
     }
+    // F-016/F-1002: Ogg/Opus is undecodable by expo-audio on iOS. On web the
+    // file is always transcoded to MP3 before upload regardless of source
+    // format, so this is harmless there; on native there is no transcode step
+    // (Issue 6) and the raw file becomes `audio_path` as-is — reject it here
+    // rather than ship a lecture that plays on Android and is silent on iOS.
+    if (!isWeb && /\.(ogg|oga|opus)$/i.test(asset.name)) {
+      setAudioFile(null);
+      setAudioDuration(null);
+      jobRef.current++;
+      setConvert({
+        state: 'error',
+        progress: 0,
+        result: null,
+        error: 'صيغة Ogg/Opus لا تعمل على آيفون. استخدم MP3 أو M4A/AAC، أو ارفع من المتصفح على الحاسوب لتحويل الملف تلقائياً.',
+      });
+      return;
+    }
     const picked: PickedAudio = {
       uri: asset.uri,
       name: asset.name,

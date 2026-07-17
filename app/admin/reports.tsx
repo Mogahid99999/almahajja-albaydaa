@@ -19,6 +19,7 @@ import { Card, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAdminReports, useAdminSetReportStatus } from '@/hooks/useReports';
+import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { arNum, arSince } from '@/lib/format';
 import { notify } from '@/lib/notify';
 
@@ -106,6 +107,8 @@ function useBanReportedAuthor() {
 }
 
 export default function ReportsScreen() {
+  // F-1004: same adminOnly-nav-but-unguarded-screen gap as feedback/ratings.
+  useAdminOnly();
   const [status, setStatus] = useState<ReportStatus | 'all'>('open');
   const { data: reports, isLoading } = useAdminReports(status === 'all' ? undefined : status);
   const setReportStatus = useAdminSetReportStatus();
