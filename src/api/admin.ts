@@ -131,7 +131,14 @@ export async function createLecture(input: {
     })
     .select('id')
     .single();
-  if (error || !data) throw error ?? new Error('create lecture failed');
+  if (error || !data) {
+    // The R2 object already landed before this insert ran — without cleanup a
+    // failed metadata write (network drop, RLS, constraint) leaves an orphan
+    // audio object with no DB row ever pointing at it (F-1000). Best-effort
+    // delete; deleteFromR2 itself never throws.
+    if (audioPath) await deleteFromR2(audioPath);
+    throw error ?? new Error('create lecture failed');
+  }
   return { id: data.id };
 }
 

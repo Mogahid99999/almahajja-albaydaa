@@ -202,12 +202,15 @@ function VisibilityToggle({
 function SectionEditor({
   node,
   data,
+  allSections,
   pending,
   onSave,
   onCancel,
 }: {
   node: FlatSectionNode;
   data: SectionEditData | undefined;
+  /** Full flat tree — used to forbid reparenting under a descendant (would cycle the tree). */
+  allSections: FlatSectionNode[];
   pending: boolean;
   onSave: (input: {
     title: string;
@@ -226,13 +229,16 @@ function SectionEditor({
   const [showHeader, setShowHeader] = useState(data?.showHeader ?? true);
   const [visibility, setVisibility] = useState<SectionVisibility>(data?.visibility ?? 'all');
 
-  // Forbid reparenting under self or a descendant (would orphan the subtree).
+  // Forbid reparenting under self or a descendant (would orphan/cycle the
+  // subtree — F-1001: previously only the self case was actually guarded,
+  // TreePicker offers every node incl. descendants with no exclusion).
   function save() {
     if (!title.trim()) return;
+    const forbidden = subtreeIds(allSections, node.id); // includes node.id itself
     onSave({
       title: title.trim(),
       description: description.trim() || null,
-      parentId: parentId === node.id ? node.parentId : parentId,
+      parentId: parentId && forbidden.has(parentId) ? node.parentId : parentId,
       order: order ? Number(order) : 0,
       showHeader,
       visibility,
@@ -515,6 +521,7 @@ export default function SectionsScreen() {
               <SectionEditor
                 node={node}
                 data={editById.get(node.id)}
+                allSections={sections}
                 pending={updateSection.isPending}
                 onSave={(input) =>
                   updateSection.mutate(
