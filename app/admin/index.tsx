@@ -59,6 +59,8 @@ function StatCard({ label, value, icon, accent = false, href }: StatCardProps) {
   return (
     <Pressable
       onPress={() => router.push(href as Parameters<typeof router.push>[0])}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value}`}
       style={({ pressed }) => [styles.statPressable, pressed && { opacity: 0.85 }]}
     >
       {inner}
@@ -74,6 +76,8 @@ function UrgentReportsBanner({ count }: { count: number }) {
   return (
     <Pressable
       onPress={() => router.push('/admin/reports' as Parameters<typeof router.push>[0])}
+      accessibilityRole="button"
+      accessibilityLabel={`${arNum(count)} ${count === 1 ? 'بلاغ مفتوح' : 'بلاغات مفتوحة'} بحاجة إلى مراجعة، اضغط لمراجعة البلاغات`}
       style={({ pressed }) => [styles.urgentBanner, pressed && { opacity: 0.85 }]}
     >
       <View style={styles.urgentIcon}>
@@ -154,6 +158,8 @@ function QuickLink({
   return (
     <Pressable
       onPress={() => router.push(href as Parameters<typeof router.push>[0])}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}: ${desc}`}
       style={({ pressed }) => [styles.quickLink, pressed && { opacity: 0.8 }]}
     >
       <View style={styles.quickLinkIcon}>
