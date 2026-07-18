@@ -23,6 +23,7 @@ import { getInfoAsync, StorageAccessFramework } from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
 import type { LectureCard } from '@/api/types';
+import type { RestorableLecture } from '@/api/progress';
 import { usePublicStorageStore } from '@/stores/publicStorageStore';
 
 const isWeb = Platform.OS === 'web';
@@ -553,6 +554,186 @@ export function getDownloadedCards(): LectureCard[] {
     coverLetter: m.sectionTitle?.[0] ?? '◆',
     sectionTitle: m.sectionTitle ?? null,
   }));
+}
+
+// ── Restore downloads after a reinstall (V19) ────────────────────────────────
+//
+// A reinstall wipes the app's PRIVATE storage — the id→file `.manifest.json`
+// AND the SAF grant in AsyncStorage — but the audio files themselves live in the
+// user's PUBLIC folder (Download/المحجة البيضاء/<section>/<lesson>.mp3) and
+// survive. Without the manifest the app can't tell those files belong to any
+// lecture, so everything shows as "not downloaded" again.
+//
+// Restore rebuilds the manifest: re-grant the public folder, walk it for .mp3
+// files, and match each file's `<section>/<lesson>` name against the user's
+// server lecture list (sanitized the SAME way the downloader named it) to
+// recover the real lecture id. The .mp3 filename alone is lossy (sanitized
+// title, no id), so the server list is the only reliable bridge back.
+
+/** The display name a SAF child content:// URI ends with (URL-encoded tail after the last '/' or '%2F'). */
+function safDisplayName(uri: string): string {
+  // SAF document URIs encode the document id as the last path segment, e.g.
+  // …/document/primary%3ADownload%2F...%2Flesson.mp3 — the human name is the
+  // final component after the last (encoded or literal) slash.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(uri);
+  } catch {
+    decoded = uri;
+  }
+  const afterSlash = decoded.slice(decoded.lastIndexOf('/') + 1);
+  return afterSlash;
+}
+
+/** True if a SAF child URI points at a folder we can descend (vs. a file). */
+async function safIsDir(uri: string): Promise<boolean> {
+  try {
+    await StorageAccessFramework.readDirectoryAsync(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A single `.mp3` found under the public app folder during a restore scan:
+ * its SAF content:// URI plus the (case/space-normalized) `<section>/<lesson>`
+ * key we match lectures against. `section` is the immediate parent folder name.
+ */
+type ScannedAudio = { safUri: string; section: string; base: string };
+
+/**
+ * Fold cosmetic Arabic orthographic variants so a match isn't lost to them:
+ * alef forms (أ إ آ ٱ → ا), alef-maqsura → yaa, taa-marbuta → haa, and the
+ * tatweel/diacritics are stripped. The file on disk was named from an OLDER
+ * copy of the title (e.g. «المجلس الاول») while the server may now return a
+ * lightly-corrected form («المجلس الأول») — without this fold the reinstall
+ * restore would silently miss those files. Whitespace is collapsed and case
+ * folded too. Applied ONLY to matching, never to how files are named.
+ */
+function normalizeArabic(s: string): string {
+  return s
+    .replace(/[ً-ْـ]/g, '') // harakat + tatweel
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** Normalise for matching: the collision suffix « (2)» and the .mp3 extension are dropped, then Arabic-folded. */
+function matchKey(section: string, base: string): string {
+  const stripped = base.replace(/\.mp3$/i, '').replace(/ \(\d+\)$/, '');
+  return `${normalizeArabic(section)}///${normalizeArabic(stripped)}`;
+}
+
+/**
+ * Recursively collect every `.mp3` under a granted SAF tree (bounded depth),
+ * tagging each with its IMMEDIATE parent folder name as the `section` — which is
+ * exactly how the downloader laid files out (<appFolder>/<section>/<lesson>.mp3).
+ *
+ * Recursing (rather than assuming a fixed <appFolder>/<section> shape) makes
+ * restore robust to WHICH folder the user picks in the SAF re-grant: the app
+ * root «المحجة البيضاء», its parent «المحجة», or even «Download» all resolve the
+ * same lessons, since the lesson's parent folder is always its section. Depth is
+ * capped so a user who picks a huge tree (e.g. all of Download) doesn't trigger
+ * an unbounded walk. Best-effort — an unreadable subfolder is skipped.
+ */
+async function scanPublicAudio(rootUri: string, depth = 3): Promise<ScannedAudio[]> {
+  const found: ScannedAudio[] = [];
+  let childUris: string[] = [];
+  try {
+    childUris = await StorageAccessFramework.readDirectoryAsync(rootUri);
+  } catch {
+    return found;
+  }
+  const parent = safDisplayName(rootUri);
+  for (const childUri of childUris) {
+    const name = safDisplayName(childUri);
+    if (name.toLowerCase().endsWith('.mp3')) {
+      found.push({ safUri: childUri, section: parent, base: name });
+      continue;
+    }
+    // A subfolder — descend while we still have depth budget.
+    if (depth > 0 && (await safIsDir(childUri))) {
+      found.push(...(await scanPublicAudio(childUri, depth - 1)));
+    }
+  }
+  return found;
+}
+
+/** Outcome of a restore attempt, for a calm user-facing summary. */
+export type RestoreResult = {
+  /** Number of lectures newly relinked from public files. */
+  restored: number;
+  /** Audio files found in the folder that didn't match any of the user's lectures. */
+  unmatched: number;
+};
+
+/**
+ * Re-grant the public folder and relink any downloaded .mp3 files a reinstall
+ * orphaned, using the caller's server lecture list to recover ids. Adds a
+ * manifest entry (with the file's live SAF URI) for every match not already
+ * downloaded; never overwrites an entry that's already good. Android only —
+ * a no-op elsewhere (iOS keeps downloads in private storage, which uninstall
+ * clears along with the manifest, so there's nothing to relink).
+ */
+export async function restoreDownloadsFromPublicFolder(
+  lectures: RestorableLecture[],
+): Promise<RestoreResult> {
+  if (!isAndroid) return { restored: 0, unmatched: 0 };
+
+  // Prompt the folder picker (or reuse an existing grant) and ensure the app
+  // folder exists so future downloads have a home — the same grant the
+  // downloader uses. We scan the granted ROOT (not just the app folder): the
+  // user may pick «المحجة البيضاء», its parent «المحجة», or «Download», and the
+  // recursive scan finds the lessons under any of them (each lesson's parent
+  // folder is its section).
+  const rootUri = await ensurePublicRoot();
+  await ensurePublicAppFolder(rootUri);
+
+  const scanned = await scanPublicAudio(rootUri);
+  if (scanned.length === 0) return { restored: 0, unmatched: 0 };
+
+  // Index the user's lectures by the same <section>/<lesson> key the files use.
+  // Collisions (two lectures sanitizing to the same name) keep the first — rare,
+  // and there's no id in the filename to disambiguate anyway.
+  const byKey = new Map<string, RestorableLecture>();
+  for (const lec of lectures) {
+    const section = sanitizeSegment(lec.sectionTitle ?? FALLBACK_SECTION, FALLBACK_SECTION);
+    const base = sanitizeSegment(lec.title, lec.id);
+    const key = matchKey(section, base);
+    if (!byKey.has(key)) byKey.set(key, lec);
+  }
+
+  const manifest = readManifest();
+  let restored = 0;
+  let unmatched = 0;
+  for (const file of scanned) {
+    const lec = byKey.get(matchKey(file.section, file.base));
+    if (!lec) {
+      unmatched++;
+      continue;
+    }
+    // Already correctly downloaded (its file is present) — leave it be.
+    if (manifest[lec.id]?.safUri) continue;
+    manifest[lec.id] = {
+      id: lec.id,
+      title: lec.title,
+      sheikhName: lec.sheikhName,
+      durationSec: lec.durationSec,
+      sectionTitle: lec.sectionTitle,
+      positionSec: lec.positionSec || undefined,
+      sectionId: lec.sectionId,
+      order: lec.order,
+      relativePath: `${file.section}/${file.base}`,
+      safUri: file.safUri,
+    };
+    restored++;
+  }
+  if (restored > 0) writeManifest(manifest);
+  return { restored, unmatched };
 }
 
 if (!isWeb) migrateLegacyDownloads();

@@ -8,10 +8,13 @@
  * Route: /(student)/downloads
  * Design tokens: manuscript-warm palette, RTL, calm tone.
  */
-import { View } from 'react-native';
+import { useState } from 'react';
+import { Platform, Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
 
 import { useDownloadedLectures } from '@/hooks/useDownloads';
+import { RestoreDownloadsDialog } from '@/components/downloads/RestoreDownloadsDialog';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { colors } from '@/constants/theme';
 
@@ -29,6 +32,10 @@ export default function DownloadsScreen() {
   const router = useRouter();
   const lectures = useDownloadedLectures();
   const miniPad = useMiniPlayerPad();
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  // Restore only relinks the public (Android) folder after a reinstall — iOS/web
+  // downloads live in private storage that uninstall clears entirely.
+  const canRestore = Platform.OS === 'android';
 
   return (
     <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
@@ -44,12 +51,21 @@ export default function DownloadsScreen() {
         <Txt size={22} weight="display" color={colors.primaryTeal}>
           المحاضرات المحمّلة
         </Txt>
-        {/* chevron-right = back in RTL (mirrors left-to-right "back" semantics) */}
-        <IconButton
-          icon="chevron-right"
-          onPress={() => router.back()}
-          accessibilityLabel="رجوع"
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {canRestore ? (
+            <IconButton
+              icon="download-cloud"
+              onPress={() => setRestoreOpen(true)}
+              accessibilityLabel="استعادة التحميلات"
+            />
+          ) : null}
+          {/* chevron-right = back in RTL (mirrors left-to-right "back" semantics) */}
+          <IconButton
+            icon="chevron-right"
+            onPress={() => router.back()}
+            accessibilityLabel="رجوع"
+          />
+        </View>
       </View>
 
       {/* ── Empty state ──────────────────────────────────────────────────────── */}
@@ -70,6 +86,28 @@ export default function DownloadsScreen() {
           <Txt size={12} color={colors.textGhost} align="center">
             حمّل المحاضرات لتستمع إليها بدون اتصال
           </Txt>
+          {canRestore ? (
+            <Pressable
+              onPress={() => setRestoreOpen(true)}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 8,
+                paddingVertical: 10,
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: colors.borderSand2,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Feather name="download-cloud" size={16} color={colors.primaryTeal} />
+              <Txt size={13} weight="semibold" color={colors.primaryTeal}>
+                استعادة تحميلات سابقة
+              </Txt>
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         /* ── Lecture list ───────────────────────────────────────────────────── */
@@ -82,6 +120,8 @@ export default function DownloadsScreen() {
           ))}
         </Card>
       )}
+
+      <RestoreDownloadsDialog visible={restoreOpen} onClose={() => setRestoreOpen(false)} />
     </Screen>
   );
 }

@@ -75,6 +75,85 @@ export async function getResumeTarget(): Promise<ResumeTarget | null> {
   };
 }
 
+/**
+ * Whether this account has ANY prior history — progress rows OR a saved SAF
+ * download grant. Used by the restore-downloads flow (V19) to decide, right
+ * after sign-in, whether it's worth offering to relink downloaded files a
+ * reinstall orphaned (a brand-new account has no history → never prompt). Cheap
+ * existence check (limit 1); fails closed (false) on any error so a network
+ * hiccup never pops the restore window for a genuinely new user.
+ */
+export async function hasAccountHistory(): Promise<boolean> {
+  if (USE_MOCK) return false;
+  try {
+    const { data } = await supabase
+      .from('user_lecture_progress')
+      .select('lecture_id')
+      .limit(1);
+    return (data?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A lecture the caller has interacted with (has a progress row), with the title
+ * + section context needed to reconstruct its download filename. The
+ * restore-downloads flow (V19) fetches these once, sanitizes each the SAME way
+ * the downloader named the file, and matches them against the .mp3 files still
+ * sitting in the public folder after a reinstall — rebuilding the id→file
+ * manifest that uninstall wiped. This is the ONLY reliable bridge from a lossy
+ * `<section>/<lesson>.mp3` filename back to a real lecture id.
+ */
+export type RestorableLecture = {
+  id: string;
+  title: string;
+  sheikhName: string | null;
+  durationSec: number;
+  sectionTitle: string | null;
+  sectionId: string | null;
+  order: number;
+  positionSec: number;
+};
+
+export async function getRestorableLectures(): Promise<RestorableLecture[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase
+    .from('user_lecture_progress')
+    .select(
+      'lecture_id, position_sec, lectures(id, title, duration_sec, section_id, order, sheikhs(name), sections(title))',
+    );
+  if (error) throw error;
+  const out: RestorableLecture[] = [];
+  for (const row of data ?? []) {
+    const lec = (Array.isArray(row.lectures) ? row.lectures[0] : row.lectures) as
+      | {
+          id: string;
+          title: string;
+          duration_sec: number | null;
+          section_id: string | null;
+          order: number | null;
+          sheikhs: { name: string }[] | { name: string } | null;
+          sections: { title: string }[] | { title: string } | null;
+        }
+      | null;
+    if (!lec) continue;
+    const sheikh = Array.isArray(lec.sheikhs) ? lec.sheikhs[0] : lec.sheikhs;
+    const sec = Array.isArray(lec.sections) ? lec.sections[0] : lec.sections;
+    out.push({
+      id: lec.id,
+      title: lec.title,
+      sheikhName: sheikh?.name ?? null,
+      durationSec: lec.duration_sec ?? 0,
+      sectionTitle: sec?.title ?? null,
+      sectionId: lec.section_id ?? null,
+      order: lec.order ?? 0,
+      positionSec: row.position_sec ?? 0,
+    });
+  }
+  return out;
+}
+
 /** The current user's progress for a lecture, if any (for resume). */
 export async function getLectureProgress(lectureId: string): Promise<LectureProgress> {
   if (USE_MOCK) return mock.getLectureProgress(lectureId);

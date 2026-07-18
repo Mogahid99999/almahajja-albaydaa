@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
 import { getLecturePlayback } from '@/api/lectures';
+import { getRestorableLectures, hasAccountHistory } from '@/api/progress';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { useSettingsStore } from '@/stores/settingsStore';
 import type { LectureCard } from '@/api/types';
 import {
   deleteLecture,
@@ -9,8 +13,10 @@ import {
   getDownloadedCards,
   listDownloadedIds,
   localUriFor,
+  restoreDownloadsFromPublicFolder,
   verifyDownload,
   verifyDownloads,
+  type RestoreResult,
 } from '@/lib/downloads';
 import { useDownloadsStore, type DownloadEntry } from '@/stores/downloadsStore';
 
@@ -194,4 +200,94 @@ export function useDownloadedLectures(): LectureCard[] {
   // Recompute only when the set of downloaded ids changes (sidecars read from disk).
   const key = ids.join(',');
   return useMemo(() => getDownloadedCards(), [key]);
+}
+
+export type RestoreState = 'idle' | 'running' | 'done' | 'error';
+
+/**
+ * Drives the "restore downloads after reinstall" flow (V19). Prompts the SAF
+ * folder picker, scans the public folder, and relinks any orphaned .mp3 files to
+ * the caller's lectures — then seeds the store so the relinked lectures show as
+ * downloaded immediately (no restart). Used by both the login prompt and the
+ * manual button on the downloads page.
+ */
+export function useRestoreDownloads() {
+  const set = useDownloadsStore((s) => s.set);
+  const [state, setState] = useState<RestoreState>('idle');
+  const [result, setResult] = useState<RestoreResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const restore = useCallback(async (): Promise<RestoreResult | null> => {
+    setState('running');
+    setError(null);
+    try {
+      // The server lecture list is the bridge from a lossy `<section>/<lesson>.mp3`
+      // filename back to a real lecture id — needs one online call.
+      const lectures = await getRestorableLectures();
+      const res = await restoreDownloadsFromPublicFolder(lectures);
+      // Reflect the relinked files in the store right away.
+      for (const id of listDownloadedIds()) {
+        const uri = localUriFor(id);
+        if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });
+      }
+      setResult(res);
+      setState('done');
+      return res;
+    } catch (e) {
+      setError((e as Error).message);
+      setState('error');
+      return null;
+    }
+  }, [set]);
+
+  return { state, result, error, restore };
+}
+
+/**
+ * Decides whether to AUTO-show the restore prompt after sign-in (V19). Fires at
+ * most once per install (a persisted flag, wiped by uninstall so a reinstall
+ * gets a fresh offer) and only when it's actually worth it:
+ *   - Android (the only platform whose downloads survive uninstall);
+ *   - a real (non-guest) account — a guest has no server history to relink from;
+ *   - the local manifest is EMPTY — a populated one means downloads are already
+ *     tracked (no reinstall gap), so there's nothing to restore;
+ *   - the account HAS history on the server (progress rows) — the signal that
+ *     this user likely downloaded before, so the files may be sitting in the
+ *     public folder.
+ * Returns `{ visible, dismiss }`; the dismiss handler marks the prompt seen so
+ * it won't reappear. The manual button on the downloads page is independent.
+ */
+export function useRestorePromptTrigger(): { visible: boolean; dismiss: () => void } {
+  const { data: user } = useCurrentUser();
+  const seen = useSettingsStore((s) => s.restorePromptSeen);
+  const setSeen = useSettingsStore((s) => s.setRestorePromptSeen);
+  const [visible, setVisible] = useState(false);
+
+  const isRealUser = !!user && !user.isGuest;
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (seen || visible) return;
+    if (!isRealUser) return;
+    // A populated manifest = downloads are already tracked; no reinstall gap.
+    if (listDownloadedIds().length > 0) return;
+
+    let cancelled = false;
+    void hasAccountHistory().then((has) => {
+      if (cancelled || !has) return;
+      // Re-check the manifest wasn't populated meanwhile (a DownloadButton mount).
+      if (listDownloadedIds().length > 0) return;
+      setVisible(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isRealUser, seen, visible]);
+
+  const dismiss = useCallback(() => {
+    setVisible(false);
+    setSeen(true);
+  }, [setSeen]);
+
+  return { visible, dismiss };
 }

@@ -26,6 +26,16 @@ type SettingsState = {
    */
   guestBannerDismissed: boolean;
   setGuestBannerDismissed: (guestBannerDismissed: boolean) => void;
+  /**
+   * Whether the post-reinstall "restore your downloads" prompt has already been
+   * offered on THIS install (V19). Persisted in AsyncStorage — which uninstall
+   * wipes along with the manifest — so a genuine reinstall gets a fresh offer,
+   * while a normal relaunch doesn't nag. Set once the prompt is shown (accepted
+   * OR dismissed); the manual button on the downloads page stays available
+   * regardless.
+   */
+  restorePromptSeen: boolean;
+  setRestorePromptSeen: (restorePromptSeen: boolean) => void;
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -37,6 +47,8 @@ export const useSettingsStore = create<SettingsState>()(
       setBubbleConsent: (bubbleConsent) => set({ bubbleConsent }),
       guestBannerDismissed: false,
       setGuestBannerDismissed: (guestBannerDismissed) => set({ guestBannerDismissed }),
+      restorePromptSeen: false,
+      setRestorePromptSeen: (restorePromptSeen) => set({ restorePromptSeen }),
     }),
     {
       name: 'riwaq-settings',
