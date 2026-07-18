@@ -97,7 +97,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#f3ecdd"
         }
-      ]
+      ],
+      "./plugins/withReleaseSigning.js"
     ],
     "experiments": {
       "typedRoutes": true
