@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   TextInput,
   View,
@@ -41,6 +42,8 @@ import {
   useUpdateOwnQuestion,
 } from '@/hooks/useQuestions';
 import { useReportContent } from '@/hooks/useReports';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useRefreshAll } from '@/hooks/useRefreshAll';
 import { arSince } from '@/lib/format';
 
 function SegChip({
@@ -165,9 +168,11 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
 
   const sentMessage = sent
     ? sent.audience === 'sheikh'
-      ? `وصل سؤالك${sent.anonymous ? ' دون اسمك' : ' باسمك'}، ولن يطّلع عليه إلا الشيخ.`
+      ? sent.anonymous
+        ? 'وصل سؤالك دون اسمك — لن يطّلع عليه إلا الشيخ، ولن يظهر اسمك له ولا لأحد.'
+        : 'وصل سؤالك باسمك — لن يطّلع عليه إلا الشيخ.'
       : sent.anonymous
-        ? 'وصل سؤالك دون اسمك — يظهر للعامة بعد الإجابة بلا اسم.'
+        ? 'وصل سؤالك دون اسمك — يظهر للعامة بعد الإجابة بلا اسم، ولن يظهر اسمك للشيخ ولا لأحد.'
         : 'وصل سؤالك باسمك — يظهر للعامة بعد الإجابة مقروناً باسمك.'
     : '';
 
@@ -221,12 +226,17 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
           onPress={() => setAudience((a) => (a === 'sheikh' ? 'public' : 'sheikh'))}
         />
       </View>
+      {/* Clarify BOTH the audience and — when hidden — that anonymity is
+          complete: the name is concealed from the Sheikh and everyone alike,
+          so the user isn't surprised that even the Sheikh won't see it. */}
       <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 12, lineHeight: 18 }}>
         {audience === 'sheikh'
-          ? 'لن يطّلع على سؤالك إلا الشيخ.'
+          ? anonymous
+            ? 'لن يطّلع على سؤالك إلا الشيخ، ولن يظهر اسمك له ولا لأحد.'
+            : 'لن يطّلع على سؤالك إلا الشيخ، مقروناً باسمك.'
           : anonymous
-            ? 'يُعرض سؤالك للعامة بعد الإجابة، دون اسمك.'
-            : 'يُعرض سؤالك للعامة بعد الإجابة.'}
+            ? 'يُعرض سؤالك للعامة بعد الإجابة دون اسمك، ولن يظهر اسمك للشيخ ولا لأحد.'
+            : 'يُعرض سؤالك للعامة بعد الإجابة مقروناً باسمك.'}
       </Txt>
 
       {error ? (
@@ -310,6 +320,7 @@ function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () =
             questionId={q.id}
             fallbackBody={q.answerBody}
             fallbackAudioPath={q.answerAudioPath}
+            reportable
           />
         </View>
       ) : null}
@@ -505,6 +516,7 @@ function MyQuestionCard({
             questionId={q.id}
             fallbackBody={q.answerBody}
             fallbackAudioPath={q.answerAudioPath}
+            reportable
           />
         </View>
       ) : null}
@@ -538,6 +550,15 @@ export function QuestionsBoard({
   const isLoading = tab === 'public' ? publicQ.isLoading : myQ.isLoading;
   const data: (PublicQuestion | MyQuestion)[] =
     tab === 'public' ? (publicQ.data ?? []) : (myQ.data ?? []);
+
+  // Pull-to-refresh: refresh the questions/answers AND all shared server data
+  // (support link, notices, etc.) so nothing lingers stale after an admin edit.
+  const refreshAll = useRefreshAll();
+  const { refreshing, onRefresh } = usePullToRefresh([
+    () => publicQ.refetch(),
+    () => myQ.refetch(),
+    refreshAll,
+  ]);
 
   const renderItem = useCallback(
     ({ item }: { item: PublicQuestion | MyQuestion }) =>
@@ -641,6 +662,14 @@ export function QuestionsBoard({
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
       initialNumToRender={10}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.primaryTeal}
+          colors={[colors.primaryTeal]}
+        />
+      }
       ListHeaderComponent={header}
       ListFooterComponent={
         <>

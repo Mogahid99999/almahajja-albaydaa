@@ -37,6 +37,7 @@ import { playLecture, preloadLecture, seekTo, stop } from '@/lib/audioController
 import { usePlayerStore } from '@/stores/playerStore';
 import { useTourStore } from '@/stores/tourStore';
 import { useLecturePlayback } from '@/hooks/useLecture';
+import { useActiveLectureId } from '@/lib/activeLecture';
 
 export default function PlayerScreen() {
   // `t` (seconds) is set by a resume-notification deep-link → open at that second.
@@ -110,8 +111,26 @@ export default function PlayerScreen() {
     opacity: 1 - Math.min(1, Math.max(0, translateY.value / sheetTravel)),
   }));
 
-  // Lecture metadata (eyebrow, sectionTitle) — loaded once from the API.
-  const { data } = useLecturePlayback(id);
+  // The lecture whose TOOLS + metadata the screen should reflect. On auto-advance
+  // the audioController swaps the playing track in place (player store's
+  // currentLectureId → next lecture) WITHOUT re-navigating, so the route `id` goes
+  // stale. Drive the tools/metadata off the store's playing id (falling back to
+  // the route id before playback starts) so notes/فوائد/أسئلة + attachments
+  // re-query for the NEW lecture automatically instead of showing the previous
+  // one until a manual refresh. Works offline too: the query just reads each
+  // lecture's own (correct-key) persisted-cache entry — a never-opened next
+  // lecture shows its calm empty state, never the previous lecture's data.
+  const activeId = useActiveLectureId(id);
+
+  // Lecture metadata (eyebrow, sectionTitle, attachments) for the ACTIVE lecture.
+  const { data } = useLecturePlayback(activeId);
+  // The metadata for the lecture the user actually OPENED (route id) — only used
+  // by the UNAVAILABLE (offline + not-downloaded) notice below. In that case
+  // `activeId`/`data` describe whatever is still playing in the background, NOT
+  // the opened lecture, so the notice must read the opened lecture's own cached
+  // metadata to avoid naming a different lecture. Same cache entry when they're
+  // equal — no extra fetch.
+  const { data: routeData } = useLecturePlayback(id);
 
   // The guided tour's "player" step lands here just to show what the screen
   // looks like — it must never start real audio playback on a lecture the
@@ -175,9 +194,9 @@ export default function PlayerScreen() {
   // NOT the lecture the user just opened. Show only the requested lecture's own
   // metadata (from cache) so the screen never contradicts its "needs a
   // connection" notice with a different lecture's name.
-  const title = unavailable ? (data?.title ?? '') : (storeTitle ?? data?.title ?? '');
+  const title = unavailable ? (routeData?.title ?? '') : (storeTitle ?? data?.title ?? '');
   const sheikhName = unavailable
-    ? (data?.sheikhName ?? null)
+    ? (routeData?.sheikhName ?? null)
     : (storeSheikhName ?? data?.sheikhName ?? null);
   const eyebrow = data?.eyebrow ?? '';
   const sectionTitle = data?.sectionTitle ?? eyebrow;
@@ -379,8 +398,10 @@ export default function PlayerScreen() {
       {/* ── Lecture attachments strip (absolute, above the tools row) ── */}
       <PlayerAttachmentsStrip attachments={data?.attachments ?? []} bottom={attachmentsBottom} />
 
-      {/* ── «أدوات الدرس» — note · benefits · questions (absolute) ── */}
-      {id ? <LessonToolsRow lectureId={id} bottom={toolsBottom} /> : null}
+      {/* ── «أدوات الدرس» — note · benefits · questions (absolute) ──
+             Keyed off the ACTIVE (playing) lecture, not the route id, so an
+             in-place auto-advance re-drives them for the new lecture. ── */}
+      {activeId ? <LessonToolsRow lectureId={activeId} bottom={toolsBottom} /> : null}
 
       {/* ── Pinned utility bar (absolute) ── */}
       <PlayerUtilityBar lectureId={id} rate={rate} bottom={utilityBottom} />

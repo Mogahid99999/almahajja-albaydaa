@@ -31,6 +31,7 @@ import {
   useAdminBroadcasts,
   useBroadcastImageUrl,
   useCreateBroadcast,
+  useUploadBroadcastAudio,
   useDeleteBroadcast,
   useUpdateBroadcast,
   useUploadBroadcastImage,
@@ -117,6 +118,7 @@ export default function RemindersScreen() {
   const update = useUpdateBroadcast();
   const remove = useDeleteBroadcast();
   const uploadImage = useUploadBroadcastImage();
+  const uploadAudio = useUploadBroadcastAudio();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -124,6 +126,8 @@ export default function RemindersScreen() {
   const [showOnHome, setShowOnHome] = useState(true);
   const [imagePath, setImagePath] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [audioPath, setAudioPath] = useState<string | null>(null);
+  const [audioName, setAudioName] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkLabel, setLinkLabel] = useState('');
   const [error, setError] = useState('');
@@ -148,6 +152,8 @@ export default function RemindersScreen() {
     setShowOnHome(true);
     setImagePath(null);
     setImagePreview(null);
+    setAudioPath(null);
+    setAudioName(null);
     setLinkUrl('');
     setLinkLabel('');
     setError('');
@@ -160,6 +166,8 @@ export default function RemindersScreen() {
     setShowOnHome(b.showOnHome);
     setImagePath(b.imagePath);
     setImagePreview(null);
+    setAudioPath(b.audioPath);
+    setAudioName(b.audioPath ? 'المقطع الصوتي الحالي' : null);
     setLinkUrl(b.linkUrl ?? '');
     setLinkLabel(b.linkLabel ?? '');
     setError('');
@@ -192,6 +200,32 @@ export default function RemindersScreen() {
     setImagePreview(null);
   }
 
+  async function pickAudio() {
+    setError('');
+    try {
+      const res = await getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true, multiple: false });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      uploadAudio.mutate(
+        { uri: asset.uri, name: asset.name, mimeType: asset.mimeType },
+        {
+          onSuccess: (key) => {
+            setAudioPath(key);
+            setAudioName(asset.name);
+          },
+          onError: () => setError('تعذّر رفع المقطع الصوتي.'),
+        },
+      );
+    } catch {
+      setError('تعذّر اختيار المقطع الصوتي.');
+    }
+  }
+
+  function removeAudio() {
+    setAudioPath(null);
+    setAudioName(null);
+  }
+
   function submit() {
     const t = title.trim();
     const b = body.trim();
@@ -206,6 +240,7 @@ export default function RemindersScreen() {
       body: b,
       showOnHome,
       imagePath,
+      audioPath,
       linkUrl: linkUrl.trim() || null,
       linkLabel: linkLabel.trim() || null,
     };
@@ -233,6 +268,7 @@ export default function RemindersScreen() {
       body: body.trim(),
       showOnHome,
       imagePath,
+      audioPath,
       linkUrl: linkUrl.trim() || null,
       linkLabel: linkLabel.trim() || null,
     };
@@ -321,6 +357,36 @@ export default function RemindersScreen() {
               <Feather name="image" size={16} color={colors.primaryTeal} />
               <Txt size={13} weight="medium" color={colors.primaryTeal}>
                 {uploadImage.isPending ? 'جارٍ رفع الصورة...' : 'إضافة صورة (اختياري)'}
+              </Txt>
+            </Pressable>
+          )}
+        </View>
+
+        {/* Optional audio clip — plays inline in the reminder (speed + seekbar). */}
+        <View style={{ marginTop: 12 }}>
+          {audioName ? (
+            <View style={styles.audioRow}>
+              <Feather name="headphones" size={15} color={colors.primaryTeal} />
+              <Txt size={13} weight="medium" color={colors.textInk} numberOfLines={1} style={{ flex: 1 }}>
+                {audioName}
+              </Txt>
+              <Pressable
+                onPress={removeAudio}
+                accessibilityLabel="إزالة المقطع الصوتي"
+                style={({ pressed }) => [styles.audioRemoveBtn, pressed && { opacity: 0.6 }]}
+              >
+                <Feather name="x" size={13} color={colors.onTealPrimary} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={pickAudio}
+              disabled={uploadAudio.isPending}
+              style={({ pressed }) => [styles.pickImageBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Feather name="headphones" size={16} color={colors.primaryTeal} />
+              <Txt size={13} weight="medium" color={colors.primaryTeal}>
+                {uploadAudio.isPending ? 'جارٍ رفع المقطع...' : 'إضافة مقطع صوتي (اختياري)'}
               </Txt>
             </Pressable>
           )}
@@ -534,6 +600,27 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -8,
     left: -8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.stateDanger,
+  } as ViewStyle,
+
+  audioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    height: 44,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderSand2,
+    backgroundColor: colors.surfaceInset,
+  } as ViewStyle,
+
+  audioRemoveBtn: {
     width: 22,
     height: 22,
     borderRadius: 11,

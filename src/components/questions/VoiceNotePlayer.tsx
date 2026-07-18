@@ -35,7 +35,7 @@ import Animated, {
 import { getAnswerAudioUrl } from '@/api/questions';
 import { Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
-import { arDuration } from '@/lib/format';
+import { arDuration, toArabicDigits } from '@/lib/format';
 
 const TRACK_HEIGHT = 5;
 const THUMB_SIZE = 14;
@@ -46,7 +46,18 @@ function clampX(rawX: number, width: number): number {
   return Math.min(width, Math.max(0, rawX));
 }
 
-export function VoiceNotePlayer({ audioPath }: { audioPath: string }) {
+export function VoiceNotePlayer({
+  audioPath,
+  resolveUrl = getAnswerAudioUrl,
+  showSpeed = false,
+}: {
+  audioPath: string;
+  /** How to turn the R2 key into a signed URL. Defaults to answer audio; a
+   *  reminder passes getBroadcastAudioUrl. */
+  resolveUrl?: (key: string) => Promise<string | null>;
+  /** Show a playback-speed toggle (item 5 — reminder audio). */
+  showSpeed?: boolean;
+}) {
   const [url, setUrl] = useState<string | null>(null);
   const [resolveState, setResolveState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [player, setPlayer] = useState<AudioPlayer | null>(null);
@@ -56,7 +67,7 @@ export function VoiceNotePlayer({ audioPath }: { audioPath: string }) {
     let alive = true;
     setResolveState('loading');
     setUrl(null);
-    getAnswerAudioUrl(audioPath)
+    resolveUrl(audioPath)
       .then((u) => {
         if (!alive) return;
         if (u) {
@@ -72,7 +83,7 @@ export function VoiceNotePlayer({ audioPath }: { audioPath: string }) {
     return () => {
       alive = false;
     };
-  }, [audioPath]);
+  }, [audioPath, resolveUrl]);
 
   // One imperative player per resolved URL; released on change/unmount.
   useEffect(() => {
@@ -113,13 +124,28 @@ export function VoiceNotePlayer({ audioPath }: { audioPath: string }) {
     );
   }
 
-  return <LoadedPlayer player={player} />;
+  return <LoadedPlayer player={player} showSpeed={showSpeed} />;
 }
 
-function LoadedPlayer({ player }: { player: AudioPlayer }) {
+/** Playback speeds cycled by the reminder-audio speed toggle. */
+const SPEED_STEPS = [1, 1.25, 1.5, 2] as const;
+
+function LoadedPlayer({ player, showSpeed }: { player: AudioPlayer; showSpeed: boolean }) {
   const status = useAudioPlayerStatus(player);
   const [trackWidth, setTrackWidth] = useState(0);
   const [scrubbing, setScrubbing] = useState(false);
+  const [rateIdx, setRateIdx] = useState(0);
+
+  function cycleRate() {
+    const next = (rateIdx + 1) % SPEED_STEPS.length;
+    setRateIdx(next);
+    try {
+      // expo-audio: setPlaybackRate(rate, pitchCorrectionQuality?)
+      player.setPlaybackRate(SPEED_STEPS[next]);
+    } catch {
+      // ignore — rate is cosmetic if the platform rejects it
+    }
+  }
   // While scrubbing, the fill follows the finger (px) instead of playback time.
   const scrubX = useSharedValue(0);
   const scrubbingSV = useSharedValue(false);
@@ -250,6 +276,19 @@ function LoadedPlayer({ player }: { player: AudioPlayer }) {
         />
       </Pressable>
 
+      {showSpeed ? (
+        <Pressable
+          onPress={cycleRate}
+          accessibilityRole="button"
+          accessibilityLabel="سرعة التشغيل"
+          style={({ pressed }) => [styles.speedBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Txt size={11.5} weight="semibold" color={colors.primaryTeal600} tabular>
+            {`${toArabicDigits(String(SPEED_STEPS[rateIdx]).replace('.', '٫'))}×`}
+          </Txt>
+        </Pressable>
+      ) : null}
+
       <View style={styles.body}>
         <GestureDetector gesture={seekGesture}>
           <View onLayout={handleLayout} style={styles.hitZone} accessibilityRole="adjustable">
@@ -291,6 +330,17 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: colors.primaryTeal,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as ViewStyle,
+
+  speedBtn: {
+    minWidth: 42,
+    height: 30,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderSand2,
     alignItems: 'center',
     justifyContent: 'center',
   } as ViewStyle,

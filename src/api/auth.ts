@@ -181,7 +181,11 @@ async function restoreGuestSession(): Promise<boolean> {
     const raw = await AsyncStorage.getItem(DEVICE_GUEST_KEY);
     if (!raw) return false;
     const stored = JSON.parse(raw) as StoredGuestSession;
-    const { data, error } = await supabase.auth.setSession(stored);
+    // Bounded (item 9): setSession revalidates the tokens over the network and
+    // can stall on a "connected but no internet" cold start. On timeout this
+    // throws → the outer catch returns false, and ensureSession falls through to
+    // signInAnonymously (also bounded) so the boot mutation always settles.
+    const { data, error } = await withAuthTimeout(supabase.auth.setSession(stored));
     if (error || !data.session || !data.user) {
       await clearStoredGuestSession();
       return false;
@@ -214,7 +218,9 @@ async function restoreLastKnownSession(): Promise<boolean> {
     const raw = await AsyncStorage.getItem(LAST_SESSION_KEY);
     if (!raw) return false;
     const stored = JSON.parse(raw) as StoredGuestSession;
-    const { data, error } = await supabase.auth.setSession(stored);
+    // Bounded (item 9): see restoreGuestSession — a stalled network revalidation
+    // must not wedge the boot mutation. On timeout the outer catch returns false.
+    const { data, error } = await withAuthTimeout(supabase.auth.setSession(stored));
     return !error && !!data.session && !!data.user;
   } catch {
     return false;
@@ -287,6 +293,19 @@ export function ensureSession(): Promise<CurrentUser | null> {
   return ensureSessionInFlight;
 }
 
+/**
+ * Boot-path ceiling for the anon sign-in (item 9 — offline cold-start hang).
+ * Shorter than {@link AUTH_OP_TIMEOUT_MS}: on a "connected but no internet"
+ * cold start the recovery `setSession` / `signInAnonymously` network calls open
+ * a socket and then stall with NO error, so the ensureSession mutation would sit
+ * pending forever — never settling, so SessionGate's `onReconnect` retry (armed
+ * on `ensure.isError`) never gets to arm. Bounding it makes the mutation REJECT
+ * fast on a dead connection, which both frees the boot gate and arms the
+ * reconnect convergence path. A slow-but-working connection still completes well
+ * inside this window.
+ */
+const ENSURE_SESSION_TIMEOUT_MS = 8_000;
+
 async function ensureSessionInner(): Promise<CurrentUser | null> {
   const existing = await getCurrentUser();
   if (existing) return existing;
@@ -336,7 +355,15 @@ export async function signInAnonymously(): Promise<CurrentUser> {
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
     return user;
   }
-  const { data, error } = await supabase.auth.signInAnonymously();
+  // Bounded (item 9): a "connected but no internet" cold start opens the socket
+  // and stalls with no error, which would leave the boot mutation pending
+  // forever. On timeout this rejects so the mutation settles as an error —
+  // SessionGate falls through to the persisted cache and its onReconnect retry
+  // re-mints the anon session once real internet returns.
+  const { data, error } = await withAuthTimeout(
+    supabase.auth.signInAnonymously(),
+    ENSURE_SESSION_TIMEOUT_MS,
+  );
   if (error) throw error;
   await storeGuestSession(data.session);
   const u = data.user!;
@@ -478,12 +505,34 @@ export async function register(
     //   if (emailResult?.data.user) u = emailResult.data.user;
     //
     // Instead, set the email via the service role so it's saved without
-    // sending any mail.
-    const { error: emailErr } = await supabase.functions
-      .invoke('register-set-email', { body: { email: e } })
-      .then((r) => ({ error: r.error }))
-      .catch((err) => ({ error: err as Error }));
-    if (!emailErr) savedEmail = e;
+    // sending any mail (NO OTP — the whole point: the email lands in
+    // auth.users.email + the admin panel with nothing for the user to confirm).
+    //
+    // Retry once: this fires right after the phone+password link, and a single
+    // transient network blip here previously lost the email silently for good
+    // (best-effort catch) — the single biggest cause of "email not saved". A
+    // second attempt costs nothing and rescues the common flaky-network case.
+    let emailErr: Error | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { error } = await supabase.functions
+        .invoke('register-set-email', { body: { email: e } })
+        .then((r) => ({ error: r.error as Error | null }))
+        .catch((err) => ({ error: err as Error }));
+      if (!error) {
+        emailErr = null;
+        break;
+      }
+      emailErr = error;
+    }
+    if (!emailErr) {
+      savedEmail = e;
+    } else {
+      // Observable, not swallowed: registration still succeeds (email is
+      // optional), but the failure is no longer invisible — it surfaces in
+      // logs/telemetry so a systemic problem (function down, env drift) can be
+      // caught instead of silently accumulating email-less accounts.
+      console.warn('[register] email save failed (best-effort):', emailErr?.message);
+    }
   }
   // This uid is no longer a guest — restoring its stored tokens after a
   // sign-out would silently log back into the registered account.

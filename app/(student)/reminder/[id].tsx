@@ -7,11 +7,13 @@
  *
  * Route: /(student)/reminder/[id]
  */
+import Feather from '@expo/vector-icons/Feather';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { recordBroadcastView } from '@/api/broadcasts';
+import { getBroadcastAudioUrl, recordBroadcastView } from '@/api/broadcasts';
+import { VoiceNotePlayer } from '@/components/questions/VoiceNotePlayer';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useBroadcast, useBroadcastImageUrl } from '@/hooks/useBroadcasts';
@@ -169,6 +171,19 @@ export default function ReminderDetailScreen() {
               {data.body}
             </Txt>
           </Card>
+
+          {/* ── Audio clip (optional) — inline player w/ speed + seekbar ──────── */}
+          {data.audioPath ? (
+            <Card style={{ marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <Feather name="headphones" size={13} color={colors.primaryTeal600} />
+                <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
+                  مقطع صوتي
+                </Txt>
+              </View>
+              <VoiceNotePlayer audioPath={data.audioPath} resolveUrl={getBroadcastAudioUrl} showSpeed />
+            </Card>
+          ) : null}
 
           {/* ── Action button (optional) ─────────────────────────────────────── */}
           {data.linkUrl ? (

@@ -51,7 +51,8 @@ export function BuddyCard() {
 
   return (
     <View>
-      {/* Incoming invitation — accept / decline inline (still possible under cap). */}
+      {/* Incoming invitation — accept / decline inline (still possible under cap).
+          More than one? Send to the dedicated طلبات رفيق الدراسة page. */}
       {invitation && !atCap ? (
         <Card style={{ marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
@@ -62,6 +63,17 @@ export function BuddyCard() {
                   ? `دعتك ${invitation.fromDisplayName} لتكون رفيقتك في طلب العلم`
                   : `دعاك ${invitation.fromDisplayName} ليكون رفيقك في طلب العلم`}
               </Txt>
+              {(incoming ?? []).length > 1 ? (
+                <Pressable
+                  onPress={() => router.push('/(student)/buddy-requests')}
+                  hitSlop={6}
+                  style={{ marginTop: 4 }}
+                >
+                  <Txt size={12.5} weight="semibold" color={colors.accentBrassMuted}>
+                    {`لديك ${arNum((incoming ?? []).length)} دعوات — إدارة الطلبات`}
+                  </Txt>
+                </Pressable>
+              ) : null}
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                 <Pressable
                   onPress={() => respond.mutate({ requestId: invitation.id, accept: true })}

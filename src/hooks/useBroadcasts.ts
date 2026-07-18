@@ -8,6 +8,7 @@ import {
   getHomeBroadcasts,
   listBroadcasts,
   updateBroadcast,
+  uploadBroadcastAudio,
   uploadBroadcastImage,
   type BroadcastInput,
 } from '@/api/broadcasts';
@@ -78,6 +79,13 @@ export function useDeleteBroadcast() {
 export function useUploadBroadcastImage() {
   return useMutation({
     mutationFn: (file: PickedFile) => uploadBroadcastImage(file),
+  });
+}
+
+/** Upload a reminder audio clip (admin form) — returns the R2 object key. */
+export function useUploadBroadcastAudio() {
+  return useMutation({
+    mutationFn: (file: PickedFile) => uploadBroadcastAudio(file),
   });
 }
 

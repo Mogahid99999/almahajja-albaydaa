@@ -8,6 +8,8 @@ import {
   getMyQuestions,
   getPublicQuestions,
   getQuestionInbox,
+  revealQuestionAuthor,
+  setQuestionAudience,
   setQuestionHidden,
   updateOwnQuestion,
   type InboxQuestion,
@@ -138,6 +140,40 @@ export function useSetQuestionHidden() {
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['questions'] });
     },
+  });
+}
+
+/** Admin flip of a question's audience (private «للشيخ فقط» ↔ public). */
+export function useSetQuestionAudience() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { questionId: string; audience: QuestionAudience }) =>
+      setQuestionAudience(vars.questionId, vars.audience),
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: QUESTION_INBOX_ROOT });
+      const snapshots = qc.getQueriesData<InboxQuestion[]>({ queryKey: QUESTION_INBOX_ROOT });
+      qc.setQueriesData<InboxQuestion[]>({ queryKey: QUESTION_INBOX_ROOT }, (rows) =>
+        rows?.map((r) => (r.id === vars.questionId ? { ...r, audience: vars.audience } : r)),
+      );
+      return { snapshots };
+    },
+    onError: (_e, _v, ctx) => {
+      for (const [key, data] of ctx?.snapshots ?? []) qc.setQueryData(key, data);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['questions'] });
+    },
+  });
+}
+
+/**
+ * Admin-only reveal of the name behind an anonymous question (item 8). Not a
+ * cache mutation — returns the name for on-demand review; the question stays
+ * anonymous to students. `mutateAsync` returns the string (or null).
+ */
+export function useRevealQuestionAuthor() {
+  return useMutation({
+    mutationFn: (questionId: string) => revealQuestionAuthor(questionId),
   });
 }
 

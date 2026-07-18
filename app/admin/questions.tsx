@@ -34,6 +34,8 @@ import { useBanUser } from '@/hooks/useAdminUsers';
 import {
   useDeleteQuestion,
   useQuestionInbox,
+  useRevealQuestionAuthor,
+  useSetQuestionAudience,
   useSetQuestionHidden,
 } from '@/hooks/useQuestions';
 import { arNum, arSince } from '@/lib/format';
@@ -82,8 +84,19 @@ function QuestionCard({
   onBlock: () => void;
 }) {
   const setHidden = useSetQuestionHidden();
+  const setAudience = useSetQuestionAudience();
+  const revealAuthor = useRevealQuestionAuthor();
   const [composing, setComposing] = useState(false);
+  const [revealedName, setRevealedName] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  const onReveal = () => {
+    setError('');
+    revealAuthor.mutate(q.id, {
+      onSuccess: (name) => setRevealedName(name ?? 'لم يترك اسماً'),
+      onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر كشف الاسم'),
+    });
+  };
 
   const st = STATUS_META[q.status];
   const isHidden = q.status === 'hidden';
@@ -130,9 +143,31 @@ function QuestionCard({
           </View>
         )}
         {q.isAnonymous ? (
-          <Txt size={10.5} color={colors.textGhost}>
-            سُئل بلا اسم
-          </Txt>
+          revealedName ? (
+            <View style={[styles.badge, styles.badgePrivate]}>
+              <Feather name="eye" size={11} color={colors.accentBrassMuted} />
+              <Txt size={10.5} weight="semibold" color={colors.accentBrassMuted}>
+                {revealedName}
+              </Txt>
+            </View>
+          ) : (
+            <Pressable
+              onPress={onReveal}
+              disabled={revealAuthor.isPending}
+              hitSlop={6}
+              accessibilityLabel="كشف اسم السائل للمراجعة"
+              style={({ pressed }) => [
+                styles.badge,
+                { flexDirection: 'row', alignItems: 'center', gap: 4 },
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <Feather name="eye-off" size={11} color={colors.textGhost} />
+              <Txt size={10.5} color={colors.textGhost}>
+                {revealAuthor.isPending ? 'جارٍ الكشف…' : 'سُئل بلا اسم · كشف الاسم'}
+              </Txt>
+            </Pressable>
+          )
         ) : null}
         {q.lectureTitle ? (
           <View style={styles.lectureChip}>
@@ -204,6 +239,29 @@ function QuestionCard({
             <Feather name={isHidden ? 'eye' : 'eye-off'} size={14} color={colors.textMuted} />
             <Txt size={12.5} weight="medium" color={colors.textMuted}>
               {isHidden ? 'إظهار' : 'إخفاء'}
+            </Txt>
+          </Pressable>
+
+          {/* Flip private «للشيخ فقط» ↔ public «للعامة» (item 7). A public
+              question still only reaches students once answered. */}
+          <Pressable
+            onPress={() =>
+              setAudience.mutate(
+                { questionId: q.id, audience: q.audience === 'sheikh' ? 'public' : 'sheikh' },
+                { onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر تغيير الظهور') },
+              )
+            }
+            disabled={setAudience.isPending}
+            accessibilityLabel={q.audience === 'sheikh' ? 'جعل السؤال للعامة' : 'جعل السؤال للشيخ فقط'}
+            style={({ pressed }) => [styles.iconTextBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Feather
+              name={q.audience === 'sheikh' ? 'globe' : 'lock'}
+              size={14}
+              color={colors.textMuted}
+            />
+            <Txt size={12.5} weight="medium" color={colors.textMuted}>
+              {q.audience === 'sheikh' ? 'للعامة' : 'للشيخ فقط'}
             </Txt>
           </Pressable>
 

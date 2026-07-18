@@ -9,6 +9,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View, type TextStyle, type Vi
 
 import type { AdminFeedbackRow, FeedbackCategory, FeedbackStatus } from '@/api/feedback';
 import { AdminShell } from '@/components/admin/AdminShell';
+import { AdminTicketThread } from '@/components/admin/AdminTicketThread';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
@@ -26,11 +27,13 @@ const CATEGORY_ICON: Record<FeedbackCategory, keyof typeof Feather.glyphMap> = {
   improvement: 'trending-up',
   other: 'message-circle',
 };
-const STATUS_LABEL: Record<FeedbackStatus, string> = {
+const STATUS_LABEL: Record<string, string> = {
   new: 'جديدة',
   in_review: 'قيد المراجعة',
+  awaiting_student: 'بانتظار الطالب',
   resolved: 'محلولة',
   dismissed: 'متجاهلة',
+  closed: 'مغلقة',
 };
 
 function StatusChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
@@ -75,11 +78,22 @@ export default function FeedbackScreen() {
   // adminOnly screen gives.
   useAdminOnly();
   const [status, setStatus] = useState<FeedbackStatus | 'all'>('new');
-  const { data: rows, isLoading } = useAdminFeedback(status === 'all' ? undefined : status);
+  // «قيد المراجعة» shows every ticket the admin is actively handling: in_review
+  // PLUS awaiting_student (a ticket the admin has replied to, now waiting on the
+  // student) — both live under review, so they never fall off the tab. Other
+  // tabs filter by exact status.
+  const listStatus =
+    status === 'all' ? undefined : status === 'in_review' ? undefined : status;
+  const { data: fetched, isLoading } = useAdminFeedback(listStatus);
+  const rows =
+    status === 'in_review'
+      ? (fetched ?? []).filter((r) => r.status === 'in_review' || r.status === 'awaiting_student')
+      : (fetched ?? []);
   const setFeedbackStatus = useAdminSetFeedbackStatus();
   const deleteFeedback = useAdminDeleteFeedback();
   const [pendingDismiss, setPendingDismiss] = useState<AdminFeedbackRow | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminFeedbackRow | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   return (
     <AdminShell active="feedback" breadcrumb="ملاحظات الطلاب">
@@ -143,28 +157,27 @@ export default function FeedbackScreen() {
                 </View>
               ) : null}
 
-              {status !== 'new' ? (
-                <View style={styles.statusBadge}>
-                  <Txt size={10.5} weight="semibold" color={colors.textMuted}>
-                    {STATUS_LABEL[r.status]}
-                  </Txt>
-                </View>
-              ) : null}
+              <View style={styles.statusBadge}>
+                <Txt size={10.5} weight="semibold" color={colors.textMuted}>
+                  {STATUS_LABEL[r.status]}
+                </Txt>
+              </View>
 
               <View style={styles.actionsRow}>
-                {r.status === 'new' ? (
-                  <ActionBtn
-                    icon="eye"
-                    label="بدء المراجعة"
-                    color={colors.primaryTeal}
-                    onPress={() => setFeedbackStatus.mutate({ feedbackId: r.id, status: 'in_review' })}
-                  />
-                ) : null}
-                {r.status === 'new' || r.status === 'in_review' ? (
+                <ActionBtn
+                  icon={expanded[r.id] ? 'chevron-up' : 'message-square'}
+                  label={expanded[r.id] ? 'إخفاء المحادثة' : 'الردّ والمحادثة'}
+                  color={colors.primaryTeal}
+                  onPress={() => setExpanded((e) => ({ ...e, [r.id]: !e[r.id] }))}
+                />
+                {/* تم الحل / تجاهل / حذف stay available for every OPEN ticket —
+                    incl. awaiting_student (i.e. after the admin has replied), so
+                    the admin can resolve or dismiss straight after a reply. */}
+                {r.status === 'new' || r.status === 'in_review' || r.status === 'awaiting_student' ? (
                   <>
                     <ActionBtn
                       icon="check-circle"
-                      label="حل"
+                      label="تم الحل"
                       color={colors.stateSuccess}
                       onPress={() => setFeedbackStatus.mutate({ feedbackId: r.id, status: 'resolved' })}
                     />
@@ -173,6 +186,10 @@ export default function FeedbackScreen() {
                 ) : null}
                 <ActionBtn icon="trash-2" label="حذف" color={colors.stateDanger} onPress={() => setPendingDelete(r)} />
               </View>
+
+              {expanded[r.id] ? (
+                <AdminTicketThread feedbackId={r.id} closed={r.status === 'closed'} />
+              ) : null}
             </Card>
           ))
         )}

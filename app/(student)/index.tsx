@@ -1,10 +1,10 @@
 import { ActivityIndicator, View } from 'react-native';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { colors, spacing } from '@/constants/theme';
 import { useHome } from '@/hooks/useSections';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useRefreshAll } from '@/hooks/useRefreshAll';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Screen } from '@/components/ui';
 import { BroadcastCard } from '@/components/home/BroadcastCard';
@@ -36,20 +36,14 @@ import { SupportContactLink } from '@/components/SupportContactLink';
  * The MiniPlayer is NOT added here — it lives in the student group layout.
  */
 export default function HomeScreen() {
-  const { data, isLoading, refetch } = useHome();
+  const { data, isLoading } = useHome();
   const miniPad = useMiniPlayerPad();
-  const qc = useQueryClient();
-  // Pull-to-refresh on Home should refresh EVERYTHING the page shows, not just
-  // the sections — most importantly the buddy card (incoming invitations, sent
-  // invites, active buddies) and the broadcast/notification state. refetchType
-  // 'all' so even queries whose card isn't mounted yet still refetch.
-  const { refreshing, onRefresh } = usePullToRefresh([
-    refetch,
-    () => qc.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' }),
-    () => qc.invalidateQueries({ queryKey: ['notifications'], refetchType: 'all' }),
-    () => qc.invalidateQueries({ queryKey: ['journey'], refetchType: 'all' }),
-    () => qc.invalidateQueries({ queryKey: ['broadcasts'], refetchType: 'all' }),
-  ]);
+  // Pull-to-refresh refreshes EVERYTHING the server can change — sections, the
+  // buddy card, broadcasts, notifications AND the shared app-config values (the
+  // support link, About/Q&A/share copy, etc). Anything editable from the admin
+  // panel now updates on pull without a full app restart. See useRefreshAll.
+  const refreshAll = useRefreshAll();
+  const { refreshing, onRefresh } = usePullToRefresh([refreshAll]);
 
   if (isLoading && !data) {
     return (

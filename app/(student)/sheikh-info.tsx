@@ -29,6 +29,7 @@ import { colors, shadows } from '@/constants/theme';
 import { useSheikhProfiles } from '@/hooks/useAdmin';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useRefreshAll } from '@/hooks/useRefreshAll';
 
 /**
  * Lightweight bio markup, written by admins in the plain-text bio field:
@@ -212,7 +213,8 @@ export default function SheikhInfoScreen() {
   const router = useRouter();
   const miniPad = useMiniPlayerPad();
   const { data: sheikhs = [], isLoading, refetch } = useSheikhProfiles();
-  const { refreshing, onRefresh } = usePullToRefresh([refetch]);
+  const refreshAll = useRefreshAll();
+  const { refreshing, onRefresh } = usePullToRefresh([refetch, refreshAll]);
 
   const primary = sheikhs.find((s) => !!s.bio?.trim()) ?? (sheikhs.length === 1 ? sheikhs[0] : null);
   const others = primary ? sheikhs.filter((s) => s.id !== primary.id) : sheikhs;

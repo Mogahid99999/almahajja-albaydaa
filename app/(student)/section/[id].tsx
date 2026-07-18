@@ -25,6 +25,7 @@ import { colors, spacing } from '@/constants/theme';
 import { useSectionPage } from '@/hooks/useSections';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useRefreshAll } from '@/hooks/useRefreshAll';
 import type { LectureRow } from '@/api/types';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
@@ -46,10 +47,11 @@ import { QuizListCard } from '@/components/quiz/QuizListCard';
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading, refetch } = useSectionPage(id ?? '');
+  const refreshAll = useRefreshAll();
   const lectures = data?.lectures ?? [];
   const insets = useSafeAreaInsets();
   const miniPad = useMiniPlayerPad();
-  const { refreshing, onRefresh } = usePullToRefresh([refetch]);
+  const { refreshing, onRefresh } = usePullToRefresh([refetch, refreshAll]);
 
   const renderLecture = useCallback(
     ({ item, index }: { item: LectureRow; index: number }) => (

@@ -69,6 +69,7 @@ import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient, reconcileContentListsAfterHydration } from '@/lib/queryClient';
+import { BOOT_TIMEOUT_MS, deriveBootReady } from '@/lib/bootReady';
 import { initConnectivity, onReconnect } from '@/lib/connectivity';
 import { flushOutbox, startOutbox } from '@/lib/outbox';
 import { getMostRecentlyActiveLectureId } from '@/lib/resumeCache';
@@ -222,6 +223,22 @@ function SessionGate({
   const ensure = useEnsureSession();
   const bootedRef = useRef(false);
 
+  // Hard boot timeout (item 9 — offline cold-start hang). On a native cold start
+  // that is offline for a long time, or "connected but with no internet data",
+  // NEITHER a session nor an error settles: the local session read can stall on an
+  // internal auto-refresh, and the anon sign-in network call stays pending forever
+  // (the socket opens but no bytes flow — nothing ever errors). Without this the
+  // gate below never falls through and the app hangs on the loader. Once this
+  // elapses we render from whatever persisted session + persisted query cache
+  // exist on disk; the onReconnect retry below still converges once real internet
+  // returns. Web never arms it (readiness there is just `!isLoading`).
+  const [bootTimedOut, setBootTimedOut] = useState(false);
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const timer = setTimeout(() => setBootTimedOut(true), BOOT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     // Web is the admin dashboard, not the guest student app — never create a
     // silent anonymous session there; admins sign in explicitly (AuthGate routes
@@ -258,10 +275,18 @@ function SessionGate({
   // Ready once we have a session; if the anon sign-in fails (e.g. offline on a
   // brand-new install) fall through anyway so the app is never stuck on a loader.
   // On web there's no silent session, so readiness is just "auth check finished".
-  // Combined with fontsLoaded (not gated separately beforehand) so the anon
+  // The bootTimedOut ceiling covers the connected-but-no-internet case where a
+  // session read and the anon sign-in can BOTH stall without ever erroring (item
+  // 9). Combined with fontsLoaded (not gated separately beforehand) so the anon
   // sign-in network round-trip and the font load happen in PARALLEL — total
   // boot time is max(fonts, session), not fonts-then-session (P5 perf plan).
-  const sessionReady = Platform.OS === 'web' ? !isLoading : !!user || ensure.isError;
+  const sessionReady = deriveBootReady({
+    isWeb: Platform.OS === 'web',
+    isLoading,
+    hasUser: !!user,
+    ensureErrored: ensure.isError,
+    timedOut: bootTimedOut,
+  });
   if (!fontsLoaded || !sessionReady) return <BootLoader />;
   return <>{children}</>;
 }

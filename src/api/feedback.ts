@@ -55,7 +55,8 @@ export type AdminFeedbackRow = {
   category: FeedbackCategory;
   message: string;
   deviceInfo: DeviceInfo | null;
-  status: FeedbackStatus;
+  /** Widened to the full ticket lifecycle (item 10) — old rows still fit. */
+  status: FeedbackStatus | 'awaiting_student' | 'closed';
   adminNote: string | null;
   userId: string | null;
   userName: string | null;
@@ -103,4 +104,108 @@ export async function adminDeleteFeedback(feedbackId: string): Promise<void> {
     p_feedback_id: feedbackId,
   });
   if (error) throw error;
+}
+
+// ─── Support tickets (item 10 — the feedback thread) ───────────────────────────
+// The RPC names below aren't in database.generated.ts until types are
+// regenerated post-0097; each supabase.rpc call is cast `as never` (same stopgap
+// as the questions/broadcasts additions). Runtime is unaffected.
+
+/** One of the six ticket lifecycle states. */
+export type TicketStatus = FeedbackStatus | 'awaiting_student' | 'closed';
+
+/** A ticket row in the student's «تذاكري» list. */
+export type MyTicket = {
+  id: string;
+  category: FeedbackCategory;
+  message: string;
+  status: TicketStatus;
+  createdAt: string;
+  lastActivity: string;
+  adminReplied: boolean;
+};
+
+/** One message in a ticket thread. Admin turns may carry an image + CTA. */
+export type TicketMessage = {
+  id: string;
+  isAdmin: boolean;
+  body: string;
+  imagePath: string | null;
+  ctaLabel: string | null;
+  ctaRoute: string | null;
+  createdAt: string;
+};
+
+/** The signed-in student's tickets, newest-activity first. */
+export async function getMyTickets(): Promise<MyTicket[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await (supabase.rpc as never as
+    (fn: string) => Promise<{ data: unknown; error: unknown }>)('get_my_tickets');
+  if (error) throw error as Error;
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    category: r.category as FeedbackCategory,
+    message: r.message as string,
+    status: r.status as TicketStatus,
+    createdAt: r.created_at as string,
+    lastActivity: r.last_activity as string,
+    adminReplied: !!r.admin_replied,
+  }));
+}
+
+/** The ordered message thread for one ticket (owner or admin). */
+export async function getTicketThread(feedbackId: string): Promise<TicketMessage[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await (supabase.rpc as never as
+    (fn: string, args: object) => Promise<{ data: unknown; error: unknown }>)(
+    'get_ticket_thread', { p_feedback_id: feedbackId });
+  if (error) throw error as Error;
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    isAdmin: !!r.is_admin,
+    body: r.body as string,
+    imagePath: (r.image_path as string | null) ?? null,
+    ctaLabel: (r.cta_label as string | null) ?? null,
+    ctaRoute: (r.cta_route as string | null) ?? null,
+    createdAt: r.created_at as string,
+  }));
+}
+
+/** Student appends a reply to their own ticket. */
+export async function studentReplyTicket(feedbackId: string, body: string): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await (supabase.rpc as never as
+    (fn: string, args: object) => Promise<{ error: unknown }>)(
+    'student_reply_ticket', { p_feedback_id: feedbackId, p_body: body });
+  if (error) {
+    if (isBlockedWordError(error)) throw new BlockedWordError();
+    throw error as Error;
+  }
+}
+
+/** Admin reply with optional image (R2 key) + CTA button. */
+export async function adminReplyTicket(
+  feedbackId: string,
+  body: string,
+  opts?: { imagePath?: string | null; ctaLabel?: string | null; ctaRoute?: string | null },
+): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await (supabase.rpc as never as
+    (fn: string, args: object) => Promise<{ error: unknown }>)('admin_reply_ticket', {
+    p_feedback_id: feedbackId,
+    p_body: body,
+    p_image_path: opts?.imagePath ?? undefined,
+    p_cta_label: opts?.ctaLabel ?? undefined,
+    p_cta_route: opts?.ctaRoute ?? undefined,
+  });
+  if (error) throw error as Error;
+}
+
+/** Admin closes a ticket. */
+export async function adminCloseTicket(feedbackId: string): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await (supabase.rpc as never as
+    (fn: string, args: object) => Promise<{ error: unknown }>)(
+    'admin_close_ticket', { p_feedback_id: feedbackId });
+  if (error) throw error as Error;
 }

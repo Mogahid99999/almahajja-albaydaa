@@ -11,7 +11,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 
 import type { GoalMetric } from '@/api/types';
 import { colors } from '@/constants/theme';
@@ -27,6 +26,7 @@ import {
 import { useMyQuizStats } from '@/hooks/useQuizzes';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useRefreshAll } from '@/hooks/useRefreshAll';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 
 import { Card } from '@/components/ui/Card';
@@ -66,13 +66,14 @@ export default function JourneyScreen() {
   const { data: quizStats, refetch: refetchQuizStats } = useMyQuizStats({ enabled: !isGuest });
   const setGoal = useSetWeeklyGoal();
   const miniPad = useMiniPlayerPad();
-  const qc = useQueryClient();
-  // Pull-to-refresh must also refresh the buddy card (invitations sent/accepted,
-  // buddies added/removed) — those live in their own ['buddy', …] queries inside
-  // BuddyCard, so refetch them here rather than let the card go stale.
-  const refetchBuddy = () => qc.invalidateQueries({ queryKey: ['buddy'] });
+  // Pull-to-refresh refreshes everything server-side (incl. shared app-config
+  // and the buddy card) via refreshAll; the registered-only journey queries are
+  // additionally refetched so the spinner waits on the page's own data.
+  const refreshAll = useRefreshAll();
   const { refreshing, onRefresh } = usePullToRefresh(
-    isGuest ? [] : [refetchSummary, refetchGoal, refetchBadges, refetchQuizStats, refetchBuddy],
+    isGuest
+      ? [refreshAll]
+      : [refetchSummary, refetchGoal, refetchBadges, refetchQuizStats, refreshAll],
   );
 
   // Catch up any badge earned offline / via the streak crons, once on mount.

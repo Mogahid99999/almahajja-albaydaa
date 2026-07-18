@@ -4,11 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
-  interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  type AnimatedStyle,
   type SharedValue,
 } from 'react-native-reanimated';
 import type { TextStyle } from 'react-native';
@@ -186,19 +184,20 @@ function TabButton({
   const pathname = usePathname();
   const isActive = TABS[index].path === pathname;
 
-  // Color must be driven off the *same* `activeIndex` progress that moves the
-  // gold pill, not off `isActive` on its own timing — the active icon's color
-  // (primaryTealDeep) is identical to the bar's background, so it's only
-  // legible while the pill is actually underneath it. A separate, faster
-  // color transition let the icon turn dark before the pill (a slower
-  // spring) arrived, making it invisible against the bare background for a
-  // beat on every tab change.
-  const colorStyle = useAnimatedStyle(() => {
-    const progress = 1 - Math.min(Math.abs(activeIndex.value - index), 1);
-    return {
-      color: interpolateColor(progress, [0, 1], [colors.onTealSecondary, colors.primaryTealDeep]),
-    };
-  });
+  // Icon color snaps INSTANTLY off the current route (isActive), NOT off the
+  // pill's spring progress. Two bugs came from tying color to the pill:
+  //   * First open: the active icon is primaryTealDeep (= the bar background),
+  //     so before the pill's translateX had positioned under it, the Home icon
+  //     was dark-on-dark = invisible until you switched tabs and back.
+  //   * Every tap: the color interpolated over the spring, so the icon lingered
+  //     whitish (onTealSecondary) for up to a beat before turning dark.
+  // Now the color flips the instant the route changes; the pill (below) is also
+  // positioned correctly from the first frame (withSpring seeded to the active
+  // index) so the dark active icon always has the gold pill under it — legible
+  // immediately, no flash, no invisible-icon-on-first-open.
+  const colorStyle = {
+    color: isActive ? colors.primaryTealDeep : colors.onTealSecondary,
+  };
 
   return (
     <Pressable
@@ -251,7 +250,7 @@ function AnimatedFeatherIcon({
   colorStyle,
 }: {
   name: FeatherName;
-  colorStyle: AnimatedStyle<TextStyle>;
+  colorStyle: TextStyle;
 }) {
   return <AnimatedFeather name={name} size={19} style={colorStyle} />;
 }

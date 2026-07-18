@@ -19,6 +19,7 @@ import { useRouter, Link } from 'expo-router';
 import { useCurrentUser, useDeleteAccount, useSignOut } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useRefreshAll } from '@/hooks/useRefreshAll';
 import { useHome } from '@/hooks/useSections';
 import { useShareContent } from '@/hooks/useAppContent';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
@@ -136,7 +137,8 @@ export default function ProfileScreen() {
   };
 
   const miniPad = useMiniPlayerPad();
-  const { refreshing, onRefresh } = usePullToRefresh([refetchUser, refetchHome]);
+  const refreshAll = useRefreshAll();
+  const { refreshing, onRefresh } = usePullToRefresh([refetchUser, refetchHome, refreshAll]);
   const [rated, setRated] = useState(true);
   const [ratingOpen, setRatingOpen] = useState(false);
   useEffect(() => {
@@ -291,6 +293,12 @@ export default function ProfileScreen() {
           icon="download"
           label="المحاضرات المحمّلة"
           onPress={() => router.push('/(student)/downloads')}
+        />
+        <Divider />
+        <LinkRow
+          icon="message-circle"
+          label="تذاكري"
+          onPress={() => router.push('/(student)/tickets' as Parameters<typeof router.push>[0])}
         />
         <Divider />
         <LinkRow

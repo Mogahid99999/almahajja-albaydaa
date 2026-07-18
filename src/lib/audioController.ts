@@ -16,6 +16,9 @@ import * as Linking from 'expo-linking';
 
 import { COMPLETE_THRESHOLD, MAX_LISTEN_TICK_SEC } from '@/config';
 import { getLecturePlayback, getNextLecture, getPreviousLecture } from '@/api/lectures';
+import { getLectureBenefits } from '@/api/benefits';
+import { getMyNote } from '@/api/notes';
+import { getPublicQuestions } from '@/api/questions';
 import { saveLectureProgress } from '@/api/progress';
 import { queryKeys } from '@/constants/queryKeys';
 import { isOnlineSync, onReconnect } from '@/lib/connectivity';
@@ -98,6 +101,42 @@ function warmNextPlayback(lectureId: string): Promise<unknown> {
       /* best-effort — a failed warm just means the handoff falls back to a
          live fetch (which still works when unlocked / not dozing). */
     });
+}
+
+/**
+ * Prefetch the NEXT lecture's LESSON TOOLS — private note, shared فوائد, and the
+ * public أسئلة thread — into the SAME cache entries the tools read (queryKeys.
+ * lectureNote / lectureBenefits / publicQuestions), so when auto-advance swaps the
+ * playing track in place the «أدوات الدرس» chips + their screens show the new
+ * lecture's data instantly with no fetch flash. Fired alongside the near-end
+ * warm-ahead (still online, CPU/network alive). Best-effort per query:
+ *  - prefetchQuery no-ops on a still-fresh entry, so a re-fire costs nothing;
+ *  - guest sessions get null note / empty «mine» questions under RLS — harmless;
+ *  - the public-questions key must match usePublicQuestions('lecture', id) EXACTLY
+ *    (scope 'lecture', no category) so the board reads THIS warmed entry.
+ * OFFLINE this is skipped by the caller — a downloaded next lecture's tools come
+ * from whatever the persisted cache already holds (an unopened one shows its calm
+ * empty state), never a network call.
+ */
+function prefetchLessonTools(lectureId: string) {
+  void queryClient
+    .prefetchQuery({
+      queryKey: queryKeys.lectureNote(lectureId),
+      queryFn: () => getMyNote(lectureId),
+    })
+    .catch(() => {});
+  void queryClient
+    .prefetchQuery({
+      queryKey: queryKeys.lectureBenefits(lectureId),
+      queryFn: () => getLectureBenefits(lectureId),
+    })
+    .catch(() => {});
+  void queryClient
+    .prefetchQuery({
+      queryKey: queryKeys.publicQuestions('lecture', lectureId),
+      queryFn: () => getPublicQuestions('lecture', lectureId),
+    })
+    .catch(() => {});
 }
 
 let player: AudioPlayer | null = null;
@@ -383,6 +422,10 @@ function onStatus(status: AudioStatus) {
     if (nextId && warmedNextFor !== nextId && localUriFor(nextId) == null) {
       warmedNextFor = nextId;
       void warmNextPlayback(nextId);
+      // Prepare the next lecture's lesson tools too (note · فوائد · أسئلة) so the
+      // in-place auto-advance swaps them instantly instead of flashing a fetch or
+      // showing the previous lecture until a manual refresh.
+      prefetchLessonTools(nextId);
     }
   }
 

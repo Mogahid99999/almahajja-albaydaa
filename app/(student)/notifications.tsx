@@ -21,6 +21,7 @@ import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useRefreshAll } from '@/hooks/useRefreshAll';
 import {
   useMarkAllRead,
   useMarkRead,
@@ -122,7 +123,8 @@ export default function NotificationsScreen() {
   const markAllRead = useMarkAllRead();
   const insets = useSafeAreaInsets();
   const miniPad = useMiniPlayerPad();
-  const { refreshing, onRefresh } = usePullToRefresh([refetch]);
+  const refreshAll = useRefreshAll();
+  const { refreshing, onRefresh } = usePullToRefresh([refetch, refreshAll]);
 
   const onOpen = useCallback(
     (item: NotificationItem) => {

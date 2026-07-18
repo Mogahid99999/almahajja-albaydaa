@@ -312,3 +312,42 @@ export async function setQuestionHidden(questionId: string, hidden: boolean): Pr
   });
   if (error) throw error;
 }
+
+/**
+ * Change a question's audience — admin only (item 7). Flips a private
+ * «للشيخ فقط» question to «للعامة» (public) or back. A public question only
+ * becomes visible to students once it's answered (existing publish rule), so
+ * this never leaks an unanswered private question. RPC is admin-gated server-side.
+ */
+export async function setQuestionAudience(
+  questionId: string,
+  audience: QuestionAudience,
+): Promise<void> {
+  if (USE_MOCK) return;
+  // `as never`: these RPC names/args aren't in database.generated.ts until the
+  // 0094 migration is applied and types are regenerated (same stopgap as
+  // journey.ts's p_today shim). Remove the casts after `supabase gen types`.
+  const { error } = await supabase.rpc('set_question_audience' as never, {
+    p_question_id: questionId,
+    p_audience: audience,
+  } as never);
+  if (error) throw error;
+}
+
+/**
+ * Reveal the real display name behind an anonymous question — admin only,
+ * for review (item 8). The name stays masked («طالب علم») everywhere else,
+ * including the rest of the admin inbox; this returns it on demand WITHOUT
+ * making the question show the name to students. Returns null when the author
+ * left no name or the question isn't anonymous. Admin-gated server-side.
+ */
+export async function revealQuestionAuthor(questionId: string): Promise<string | null> {
+  if (USE_MOCK) return null;
+  // `as never`: not in generated types until 0094 is applied (see above).
+  const { data, error } = await supabase.rpc('reveal_question_author' as never, {
+    p_question_id: questionId,
+  } as never);
+  if (error) throw error;
+  const name = typeof data === 'string' ? (data as string).trim() : '';
+  return name.length ? name : null;
+}

@@ -9,7 +9,7 @@
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 
-export type ReportContentType = 'question' | 'benefit';
+export type ReportContentType = 'question' | 'benefit' | 'answer';
 export type ReportStatus = 'open' | 'reviewed' | 'dismissed';
 
 export const BLOCKED_WORD_MESSAGE =
