@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useAdminDeleteFeedback, useAdminFeedback, useAdminSetFeedbackStatus } from '@/hooks/useFeedback';
+import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { arSince } from '@/lib/format';
 
 const CATEGORY_LABEL: Record<FeedbackCategory, string> = {
@@ -68,6 +69,11 @@ function ActionBtn({
 }
 
 export default function FeedbackScreen() {
+  // F-1004: adminOnly in the nav (hidden from publisher) but the underlying
+  // admin_list_feedback RPC is is_admin()-only — without this a direct-URL
+  // publisher saw a raw RPC error instead of the calm redirect every other
+  // adminOnly screen gives.
+  useAdminOnly();
   const [status, setStatus] = useState<FeedbackStatus | 'all'>('new');
   const { data: rows, isLoading } = useAdminFeedback(status === 'all' ? undefined : status);
   const setFeedbackStatus = useAdminSetFeedbackStatus();

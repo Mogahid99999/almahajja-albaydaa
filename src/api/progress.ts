@@ -151,6 +151,13 @@ export async function saveLectureProgress(args: {
     p_duration_sec: durInt,
     p_delta_sec: delta,
     p_completed: completed,
+    // Audit F-043: streak days are DEVICE-LOCAL (the outbox replay contract,
+    // outboxQueue.ts). Without this the live path credited the server's UTC day,
+    // so around local midnight (UTC+2…+4 audience) the same session's listening
+    // split across two days depending on connectivity — and could leave BOTH
+    // halves under the 120s meaningful bar, breaking the streak despite real
+    // listening. save_activity has accepted p_day since 0046.
+    p_day: localDay(),
   });
   if (error) {
     // Thought we were online but the write failed — queue for replay, don't drop it.

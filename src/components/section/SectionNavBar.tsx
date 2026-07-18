@@ -5,7 +5,7 @@
  *   [back chevron (right-pointing)] ··· [parent/context label] ··· [search icon]
  *
  * Back chevron points RIGHT (›) because the app is RTL.
- * Search is no-op in MVP; the slot is reserved for future work.
+ * Search opens the app-wide بحث screen.
  */
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
@@ -50,14 +50,13 @@ export function SectionNavBar({ contextLabel }: Props) {
         {contextLabel ?? ''}
       </Txt>
 
-      {/* Search — no-op in MVP */}
+      {/* Search — opens the app-wide بحث screen (was a dead TODO stub until the
+          search screen shipped; audit F-011). */}
       <IconButton
         icon="search"
         iconSize={18}
         accessibilityLabel="بحث"
-        onPress={() => {
-          /* TODO: search */
-        }}
+        onPress={() => router.push('/(student)/search')}
       />
     </View>
   );

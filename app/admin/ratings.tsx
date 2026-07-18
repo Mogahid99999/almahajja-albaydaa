@@ -14,6 +14,7 @@ import { Card, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { useAdminDeleteRating, useAdminRatings } from '@/hooks/useRatings';
 import { useAdminRatingsSummary } from '@/hooks/useAdminStats';
+import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { arNum, arSince, toArabicDigits } from '@/lib/format';
 
 function Stars({ count }: { count: number }) {
@@ -32,6 +33,8 @@ function Stars({ count }: { count: number }) {
 }
 
 export default function AdminRatingsScreen() {
+  // F-1004: same adminOnly-nav-but-unguarded-screen gap as feedback/reports.
+  useAdminOnly();
   const { data: rows, isLoading } = useAdminRatings();
   const { data: summary } = useAdminRatingsSummary();
   const deleteRating = useAdminDeleteRating();

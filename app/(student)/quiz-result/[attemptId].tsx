@@ -18,7 +18,43 @@ import { arNum } from '@/lib/format';
 export default function QuizResultScreen() {
   const { attemptId } = useLocalSearchParams<{ attemptId: string }>();
   const router = useRouter();
-  const { data: result, isLoading } = useAttemptResult(attemptId ?? '');
+  const { data: result, isLoading, isError } = useAttemptResult(attemptId ?? '');
+
+  // Audit F-052: a failed load (bad/foreign attempt id, not-yet-submitted
+  // attempt via deep link, or a network error) used to spin forever.
+  if (isError) {
+    return (
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <Txt size={15} weight="semibold" color={colors.textMuted} align="center">
+            تعذّر عرض النتيجة
+          </Txt>
+          <Txt size={12.5} color={colors.textGhost} align="center">
+            تحقق من الاتصال ثم حاول مرة أخرى.
+          </Txt>
+          <Pressable
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            style={({ pressed }) => [
+              {
+                marginTop: 10,
+                paddingVertical: 12,
+                paddingHorizontal: 28,
+                borderRadius: radius.sm,
+                borderWidth: 1.5,
+                borderColor: colors.primaryTeal,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+          >
+            <Txt weight="semibold" size={14} color={colors.primaryTeal}>
+              العودة
+            </Txt>
+          </Pressable>
+        </View>
+      </Screen>
+    );
+  }
 
   if (isLoading || !result) {
     return (

@@ -93,6 +93,10 @@ export function useDownload(lectureId: string) {
           sheikhName: pb.sheikhName,
           durationSec: pb.durationSec,
           sectionTitle: pb.sectionTitle,
+          // Section context so the player can resolve next/prev + auto-advance
+          // through a downloaded series while OFFLINE (audit F-502).
+          sectionId: pb.sectionId,
+          order: pb.order,
         },
         onProgress,
       );

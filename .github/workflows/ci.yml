@@ -1,0 +1,37 @@
+# CI — typecheck + unit/component tests (audit phase 12).
+# Every push/PR runs the same two gates the audit ground rules require locally
+# (`npm run typecheck`, `npm test`). `npm ci` also exercises the patch-package
+# postinstall, so a broken expo-audio patch (audit F-001) fails loudly here
+# instead of silently shipping an unpatched build.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A push to a branch with an open PR triggers both events; superseded pushes to
+# the same ref pile up. Run one job per ref, cancelling the stale one.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (runs patch-package postinstall)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test -- --ci

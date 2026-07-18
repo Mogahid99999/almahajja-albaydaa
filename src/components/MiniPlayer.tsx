@@ -30,6 +30,8 @@ export function MiniPlayer({ liftAboveNavBar = false }: { liftAboveNavBar?: bool
       onPress={() =>
         router.push({ pathname: '/player/[id]', params: { id: currentLectureId } })
       }
+      accessibilityRole="button"
+      accessibilityLabel={`متابعة الاستماع: ${title}`}
       style={[
         {
           position: 'absolute',
@@ -105,6 +107,8 @@ export function MiniPlayer({ liftAboveNavBar = false }: { liftAboveNavBar?: bool
           toggle();
         }}
         hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
         style={{
           width: 40,
           height: 40,

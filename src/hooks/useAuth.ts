@@ -15,11 +15,14 @@ import {
   updateProfile,
   verifyEmailChange,
 } from '@/api/auth';
+import type { CurrentUser } from '@/api/auth';
 import { unregisterPushToken } from '@/api/notifications';
 import type { Gender, HomeData } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 import { stop as stopPlayback } from '@/lib/audioController';
 import { cancelAllLocalNotifications } from '@/lib/notifications';
+import { clearOutbox } from '@/lib/outbox';
+import { queryClient } from '@/lib/queryClient';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 import { useTourStore } from '@/stores/tourStore';
 
@@ -36,10 +39,32 @@ import { useTourStore } from '@/stores/tourStore';
 async function stopDeviceSideEffects(): Promise<void> {
   stopPlayback();
   await cancelAllLocalNotifications();
+  // Outbox entries carry no user id — anything still queued would replay under
+  // the NEXT identity's session (guest, or another user on a shared device),
+  // writing the outgoing account's private notes / listening ticks into someone
+  // else's rows. Identity boundaries discard un-synced offline writes (audit
+  // phase 3 — see clearQueue's doc comment in outboxQueue.ts).
+  await clearOutbox();
   // Force the NEXT signed-in/guest session to register its own push token
   // rather than silently skipping it (NotificationsBootstrap only registers
   // once per JS run via this `registered` flag).
   useNotificationsStore.getState().setRegistered(false);
+}
+
+/**
+ * Cleanup for a FORCED session drop (ban / server-side account deletion,
+ * detected by `checkBannedAndSignOut` on app-foreground). Mirrors what
+ * useSignOut does for a voluntary sign-out — stop audio + local reminders,
+ * drop the outgoing account's outbox, and reset the query cache so none of the
+ * banned account's data keeps rendering under the restored guest session. The
+ * push-token row can't be unregistered here (the banned session's requests are
+ * already rejected server-side); the server must stop pushing to banned
+ * accounts on its own (Phase 2/9 concern).
+ */
+export async function forcedSignOutCleanup(nextUser: CurrentUser | null): Promise<void> {
+  await stopDeviceSideEffects();
+  queryClient.clear();
+  queryClient.setQueryData(queryKeys.currentUser, nextUser);
 }
 
 /** Current signed-in user (with role + isGuest). `null` only before the anon session boots. */
@@ -60,6 +85,14 @@ export function useEnsureSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ensureSession,
+    // 'always', not the default 'online': on an offline cold start (fresh
+    // install) the default PAUSES the mutation instead of running it, so
+    // neither `isError` nor `data` ever settles and SessionGate's
+    // fall-through (`!!user || ensure.isError`) never fires — the app sits on
+    // the boot loader until the network returns. Running it lets the local
+    // session checks succeed offline and the anon sign-in fail fast, so the
+    // gate falls through as designed (SessionGate retries on reconnect).
+    networkMode: 'always',
     onSuccess: (user) => {
       if (user) qc.setQueryData(queryKeys.currentUser, user);
     },
@@ -70,9 +103,20 @@ export function useEnsureSession() {
 export function useSignIn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { identifier: string; password: string }) =>
-      signIn(vars.identifier, vars.password),
-    onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
+    // The whole account switch lives in mutationFn (mirrors useSignOut): the
+    // device guest's cached queries (Home resume card, section progress, notes)
+    // and its un-synced outbox must NOT carry into the signed-in account —
+    // without the clear they keep serving the guest's data for up to a full
+    // staleTime (30 min), and queued guest writes would replay under the new
+    // account's uid. Order matters: outbox first (its entries are the guest's),
+    // then the cache reset, then the fresh user primed before any refetch.
+    mutationFn: async (vars: { identifier: string; password: string }) => {
+      const user = await signIn(vars.identifier, vars.password);
+      await clearOutbox();
+      qc.clear();
+      qc.setQueryData(queryKeys.currentUser, user);
+      return user;
+    },
   });
 }
 
@@ -83,10 +127,11 @@ export function useRegister() {
     mutationFn: (vars: {
       name: string;
       phone: string;
+      countryCode: string;
       email: string;
       password: string;
       gender: Gender;
-    }) => register(vars.name, vars.phone, vars.email, vars.password, vars.gender),
+    }) => register(vars.name, vars.phone, vars.countryCode, vars.email, vars.password, vars.gender),
     onSuccess: (user) => {
       qc.setQueryData(queryKeys.currentUser, user);
       // Phase 3.6 safety net: `register()` links onto the SAME auth.uid() (no new
@@ -156,7 +201,8 @@ export function useChangePassword() {
 export function useChangePhone() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (phone: string) => changePhone(phone),
+    mutationFn: (vars: { phone: string; countryCode: string }) =>
+      changePhone(vars.phone, vars.countryCode),
     onSuccess: (user) => qc.setQueryData(queryKeys.currentUser, user),
   });
 }

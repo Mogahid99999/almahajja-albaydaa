@@ -18,6 +18,7 @@ import { SectionNavBar } from '@/components/section/SectionNavBar';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useQuizIntro, useStartAttempt } from '@/hooks/useQuizzes';
+import { arabicOr } from '@/lib/errorText';
 import { arAttemptCount, arMinuteCount, arNum, arQuestionCount } from '@/lib/format';
 
 function StatRow({ label, value }: { label: string; value: string }) {
@@ -48,7 +49,7 @@ export default function QuizIntroScreen() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
-  const { data: quiz, isLoading } = useQuizIntro(id ?? '');
+  const { data: quiz, isLoading, isError } = useQuizIntro(id ?? '');
   const startAttempt = useStartAttempt();
   const [startError, setStartError] = useState('');
 
@@ -68,11 +69,13 @@ export default function QuizIntroScreen() {
       <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <SectionNavBar contextLabel={null} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          {/* Distinguish a network failure from a truly missing/unpublished quiz
+              (audit F-054 — the old copy blamed the quiz for a dead connection). */}
           <Txt size={15} weight="semibold" color={colors.textMuted} align="center">
-            الاختبار غير متاح
+            {isError ? 'تعذّر التحميل' : 'الاختبار غير متاح'}
           </Txt>
           <Txt size={12} color={colors.textGhost} align="center">
-            لا يمكن تحميل بيانات هذا الاختبار
+            {isError ? 'تحقق من الاتصال ثم حاول مرة أخرى' : 'لا يمكن تحميل بيانات هذا الاختبار'}
           </Txt>
         </View>
       </Screen>
@@ -98,8 +101,10 @@ export default function QuizIntroScreen() {
     startAttempt.mutate(quiz!.id, {
       onSuccess: (attemptId) =>
         router.push(`/quiz-attempt/${attemptId}` as Parameters<typeof router.push>[0]),
-      onError: (err) =>
-        setStartError(err instanceof Error ? err.message : 'تعذّر بدء الاختبار. حاول مرة أخرى.'),
+      // Server refusals are calm Arabic and surface verbatim; network noise /
+      // constraint English (e.g. a two-device unique_violation race) falls back
+      // to the generic Arabic line (audit F-054).
+      onError: (err) => setStartError(arabicOr(err, 'تعذّر بدء الاختبار. حاول مرة أخرى.')),
     });
   }
 

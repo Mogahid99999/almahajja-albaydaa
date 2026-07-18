@@ -42,10 +42,15 @@ export type CurrentUser = {
 };
 
 /**
- * Default country code used when a typed number doesn't already carry one —
- * Supabase's phone auth requires strict E.164 (no leading 0, always a country
- * code), but the product requirement is "accept whatever the user types," so
- * the app fills in the code rather than asking the user to think about format.
+ * Fallback country code used only where the UI has no country picker (sign-in's
+ * combined email-or-phone field — see app/(auth)/sign-in.tsx) and a typed
+ * number doesn't already carry one. Every OTHER phone entry point (register,
+ * profile phone change, admin create/edit user) has a `PhoneInput` picker
+ * (src/components/ui/PhoneInput.tsx) and passes its selection explicitly —
+ * guessing the country from digit count/length alone was the bug: a 9-digit
+ * Saudi number and a 9-digit Sudanese number are indistinguishable, so a
+ * Saudi (or other non-Sudan) sign-up used to silently get "249" prepended to
+ * the wrong number.
  */
 const DEFAULT_COUNTRY_CODE = '249';
 
@@ -54,16 +59,16 @@ const DEFAULT_COUNTRY_CODE = '249';
  * — the project has `sms_autoconfirm` on and no SMS provider configured, so
  * whatever the user types is accepted, just reshaped into valid E.164:
  * strip everything but digits, drop a local trunk "0" prefix if present, and
- * prepend the default country code unless the number is already long enough
- * to plausibly carry one (or already starts with it). "0912345678",
- * "912345678", and "+249 91 234 5678" all normalize to the same "249912345678".
+ * prepend `countryCode` unless the number is already long enough to plausibly
+ * carry one (or already starts with it). "0912345678", "912345678", and
+ * "+249 91 234 5678" all normalize to the same "249912345678".
  */
-export function normalizePhone(raw: string): string {
+export function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTRY_CODE): string {
   const digits = raw.replace(/[^0-9]/g, '');
   if (!digits) return digits;
   const local = digits.startsWith('0') ? digits.slice(1) : digits;
-  if (local.startsWith(DEFAULT_COUNTRY_CODE) || local.length > 9) return local;
-  return DEFAULT_COUNTRY_CODE + local;
+  if (local.startsWith(countryCode) || local.length > 9) return local;
+  return countryCode + local;
 }
 
 /**
@@ -257,13 +262,32 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 }
 
 /**
+ * Single-flight guard for {@link ensureSession}: concurrent callers (the boot
+ * mutate racing the reconnect retry in SessionGate, or a sign-out's fresh-guest
+ * fallback) share ONE promise instead of each running the check-then-create
+ * sequence — two interleaved runs could both see "no session" and each mint an
+ * anonymous user, orphaning one server-side (a phantom إجمالي الطلاب row, the
+ * exact thing DEVICE_GUEST_KEY exists to prevent).
+ */
+let ensureSessionInFlight: Promise<CurrentUser | null> | null = null;
+
+/**
  * Guest-first foundation (Task 1). Sign in silently as an anonymous user so every
  * install has a session — Home opens for anyone, and resume/downloads/notifications
  * work because there's a hidden account behind them. The Supabase trigger
  * `handle_new_user` gives the anon uid a `profiles` row (role student), so the
  * new-content fan-out already reaches guests. No-op if a session already exists.
+ * Concurrent calls coalesce into one run (see {@link ensureSessionInFlight}).
  */
-export async function ensureSession(): Promise<CurrentUser | null> {
+export function ensureSession(): Promise<CurrentUser | null> {
+  if (ensureSessionInFlight) return ensureSessionInFlight;
+  ensureSessionInFlight = ensureSessionInner().finally(() => {
+    ensureSessionInFlight = null;
+  });
+  return ensureSessionInFlight;
+}
+
+async function ensureSessionInner(): Promise<CurrentUser | null> {
   const existing = await getCurrentUser();
   if (existing) return existing;
   // No live session found. Before minting a BRAND-NEW anonymous user — which
@@ -393,22 +417,31 @@ export async function signIn(identifier: string, password: string): Promise<Curr
  * (required) + password onto the CURRENT anonymous account so no progress is
  * lost — same auth uid, so all `user_lecture_progress` rows carry over and
  * start syncing across devices. Email is now OPTIONAL — set in a second,
- * separate `updateUser` call so a missing/invalid email never blocks the
- * phone+password linking. `is_anonymous` flips to false immediately: phone
- * confirmation is disabled project-wide (`sms_autoconfirm`, mirrors
- * `mailer_autoconfirm`) so no OTP is ever sent for the phone, and email
- * confirmation is likewise disabled for this first-time set (see
- * `mailer_autoconfirm` — distinct from the "secure email CHANGE" flow that
- * gates a later self-service edit, see {@link requestEmailChange}).
+ * separate step so a missing/invalid email never blocks the phone+password
+ * linking. `is_anonymous` flips to false immediately: phone confirmation is
+ * disabled project-wide (`sms_autoconfirm`) so no OTP is ever sent for the
+ * phone.
+ *
+ * Email OTP is DISABLED for now (was burning the free Resend quota — see
+ * the `register-set-email` edge function below): setting the email straight
+ * onto this already-linked account via the client `updateUser({ email })`
+ * call is Supabase's "secure email CHANGE" flow (distinct from initial-signup
+ * confirmation), which sends a confirmation code to the address with no step
+ * in the UI that ever asks the user to enter it. The `register-set-email`
+ * edge function sets the email via the service role instead
+ * (`email_confirm: true`), so it's saved + visible in the admin panel
+ * immediately without any mail being sent. To re-enable OTP verification,
+ * restore the commented call below AND add a verify step to the register UI.
  */
 export async function register(
   name: string,
   phone: string,
+  countryCode: string,
   email: string,
   password: string,
   gender: Gender,
 ): Promise<CurrentUser> {
-  const p = normalizePhone(phone);
+  const p = normalizePhone(phone, countryCode);
   const e = email.trim().toLowerCase();
   const display = name.trim();
   if (USE_MOCK) {
@@ -431,14 +464,26 @@ export async function register(
   });
   if (error) throw error;
   let u = data.user;
+  let savedEmail = '';
   if (e) {
     // Best-effort: registration must not fail because of the OPTIONAL email.
     // Only trust it as saved if this call actually succeeded — otherwise the
     // returned user must NOT claim an email that never made it to the server
     // (e.g. "already registered"), or the profile screen would show an email
     // that silently isn't there.
-    const emailResult = await supabase.auth.updateUser({ email: e }).catch(() => null);
-    if (emailResult?.data.user) u = emailResult.data.user;
+    //
+    // DISABLED (see docstring above) — this direct client call sends a
+    // confirmation-code email with no UI step to consume it:
+    //   const emailResult = await supabase.auth.updateUser({ email: e }).catch(() => null);
+    //   if (emailResult?.data.user) u = emailResult.data.user;
+    //
+    // Instead, set the email via the service role so it's saved without
+    // sending any mail.
+    const { error: emailErr } = await supabase.functions
+      .invoke('register-set-email', { body: { email: e } })
+      .then((r) => ({ error: r.error }))
+      .catch((err) => ({ error: err as Error }));
+    if (!emailErr) savedEmail = e;
   }
   // This uid is no longer a guest — restoring its stored tokens after a
   // sign-out would silently log back into the registered account.
@@ -447,7 +492,7 @@ export async function register(
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
-    email: u.email ?? '',
+    email: savedEmail || u.email || '',
     phone: u.phone ?? p,
     role,
     isGuest: u.is_anonymous ?? false,
@@ -700,16 +745,16 @@ export async function changePassword(currentPassword: string, newPassword: strin
  * their own phone freely. Mirrors the admin's phone edit but from the client
  * with the user's own session instead of the service role.
  */
-export async function changePhone(phone: string): Promise<CurrentUser> {
+export async function changePhone(phone: string, countryCode: string): Promise<CurrentUser> {
   if (USE_MOCK) {
     const raw = await AsyncStorage.getItem(MOCK_SESSION_KEY);
     const cur = raw ? (JSON.parse(raw) as CurrentUser) : null;
     if (!cur) throw new Error('لا يوجد حساب');
-    const next: CurrentUser = { ...cur, phone: normalizePhone(phone) };
+    const next: CurrentUser = { ...cur, phone: normalizePhone(phone, countryCode) };
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(next));
     return next;
   }
-  const { data, error } = await supabase.auth.updateUser({ phone: normalizePhone(phone) });
+  const { data, error } = await supabase.auth.updateUser({ phone: normalizePhone(phone, countryCode) });
   if (error) throw error;
   const u = data.user;
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();

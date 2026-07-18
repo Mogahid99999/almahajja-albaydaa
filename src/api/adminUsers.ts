@@ -145,6 +145,8 @@ async function invokeAdmin(body: Record<string, unknown>): Promise<any> {
 export const createUser = (input: {
   email?: string;
   phone?: string;
+  /** Dial code digits from the country picker (src/components/ui/PhoneInput.tsx); ignored if phone is empty. */
+  countryCode?: string;
   password: string;
   displayName: string;
   role: AppRole;
@@ -155,6 +157,7 @@ export const createUser = (input: {
     action: 'createUser',
     email: input.email ?? '',
     phone: input.phone ?? '',
+    countryCode: input.countryCode,
     password: input.password,
     displayName: input.displayName,
     role: input.role,
@@ -167,8 +170,8 @@ export const setUserPassword = (userId: string, password: string) =>
   invokeAdmin({ action: 'setPassword', userId, password });
 export const updateUserEmail = (userId: string, email: string) =>
   invokeAdmin({ action: 'updateEmail', userId, email });
-export const updateUserPhone = (userId: string, phone: string) =>
-  invokeAdmin({ action: 'updatePhone', userId, phone });
+export const updateUserPhone = (userId: string, phone: string, countryCode?: string) =>
+  invokeAdmin({ action: 'updatePhone', userId, phone, countryCode });
 export const updateUserName = (userId: string, displayName: string) =>
   invokeAdmin({ action: 'updateProfile', userId, displayName });
 export const setUserRole = (userId: string, role: AppRole) =>

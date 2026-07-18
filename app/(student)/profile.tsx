@@ -1,9 +1,12 @@
 /**
  * Profile — الحساب
  *
- * A minimal account page: user avatar (Logo + email initial), email, role label.
- * Link rows to Downloads and About. Sign-out row at the bottom.
- * No streaks/badges/journey — those are explicitly deferred (CLAUDE.md § Out of scope).
+ * The account + settings hub: identity card (avatar, name/email, role, edit link),
+ * link rows (رحلتي العلمية · المحاضرات المحمّلة · عن المنصة · قيّم التطبيق ·
+ * شارك التطبيق · سياسة الخصوصية · إعادة عرض الجولة التعريفية), notification
+ * preference toggles, playback settings, floating-bubble consent, buddy settings,
+ * then sign-out and permanent account deletion (App Store 5.1.1(v) path).
+ * Guests see register nudges in place of account-only rows.
  *
  * Route: /(student)/profile
  * Design tokens: manuscript-warm palette, RTL, calm tone.

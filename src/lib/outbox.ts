@@ -13,7 +13,8 @@
  *
  * Accepted tradeoffs (by design, per the plan): a lost-ack retry can double-credit
  * a few seconds (bounded by the server's 6h/day clamp); a replayed completion
- * stamps midnight of its day; quizzes stay online-only.
+ * stamps midnight of its (past) day — now() only when replayed the same server
+ * day (0046 rule, preserved by 0090); quizzes stay online-only.
  */
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/constants/queryKeys';
@@ -21,10 +22,23 @@ import { isOnline, onReconnect } from '@/lib/connectivity';
 import { replayActivity } from '@/api/progress';
 import { saveMyNote } from '@/api/notes';
 import { setWeeklyGoal } from '@/api/journey';
-import { hasPending, loadQueue, removeQueueEntry, setOnEnqueue } from '@/lib/outboxQueue';
+import {
+  hasPending,
+  loadQueue,
+  queueGeneration,
+  removeQueueEntry,
+  setOnEnqueue,
+} from '@/lib/outboxQueue';
 
 export type { OutboxActivity, OutboxEntry, OutboxGoal, OutboxNote } from '@/lib/outboxQueue';
-export { enqueueActivity, enqueueGoal, enqueueNote, hasPending, localDay } from '@/lib/outboxQueue';
+export {
+  clearQueue as clearOutbox,
+  enqueueActivity,
+  enqueueGoal,
+  enqueueNote,
+  hasPending,
+  localDay,
+} from '@/lib/outboxQueue';
 
 // Prefix key: invalidating this refreshes every journey-* query (summary, streak,
 // weekly goal, badges) — queryKeys.journey is only the summary leaf.
@@ -65,7 +79,12 @@ async function doFlush(): Promise<void> {
   let didActivity = false;
   let didGoal = false;
   const noteIds: string[] = [];
+  // If clearQueue runs mid-loop (sign-out/sign-in/ban clearing an identity
+  // boundary), this snapshot is stale — replaying its remaining entries would
+  // write the OUTGOING identity's data under the incoming session. Abort.
+  const gen = queueGeneration();
   for (const entry of ordered) {
+    if (queueGeneration() !== gen) return;
     try {
       if (entry.kind === 'activity') {
         await replayActivity(entry);

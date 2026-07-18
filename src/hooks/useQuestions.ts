@@ -64,8 +64,10 @@ export function useAskQuestion() {
 
 /**
  * The asker edits their own question (body / privacy / category). Invalidates
- * both the my-questions and public-questions caches — a changed body pulls an
- * answered question back to pending, which also removes it from the public list.
+ * the whole `questions` cache root — a changed body pulls an answered question
+ * back to pending (removing it from the public list) AND clears its answer
+ * thread server-side (0092), so the cached `['questions','answers',id]` thread
+ * must be dropped too, not just the mine/public lists (F-057).
  */
 export function useUpdateOwnQuestion() {
   const qc = useQueryClient();
@@ -77,8 +79,7 @@ export function useUpdateOwnQuestion() {
       category: QuestionCategory;
     }) => updateOwnQuestion(input),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['questions', 'mine'] });
-      void qc.invalidateQueries({ queryKey: ['questions', 'public'] });
+      void qc.invalidateQueries({ queryKey: ['questions'] });
     },
   });
 }

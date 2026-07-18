@@ -26,10 +26,12 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { Gender } from '@/api/types';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { splitPhone } from '@/constants/countries';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useChangePassword,
@@ -46,6 +48,8 @@ import { Divider } from '@/components/ui/Divider';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
+import { arabicAuthError } from '@/lib/authErrors';
+import { arNum } from '@/lib/format';
 
 const GENDER_LABEL: Record<Gender, string> = { male: 'ذكر', female: 'أنثى' };
 const OTP_LENGTH = 6; // must match Supabase `mailer_otp_length` — see reset-password.tsx
@@ -74,7 +78,10 @@ export default function EditProfileScreen() {
     null,
   );
 
-  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [phone, setPhone] = useState(() => splitPhone(user?.phone ?? '').local);
+  const [phoneCountryCode, setPhoneCountryCode] = useState(
+    () => splitPhone(user?.phone ?? '').countryCode,
+  );
   const [phoneNotice, setPhoneNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(
     null,
   );
@@ -101,7 +108,7 @@ export default function EditProfileScreen() {
         setPendingEmail(emailTrimmed);
         setEmailCode('');
       },
-      onError: (e) => setEmailNotice({ msg: arError((e as Error).message), type: 'error' }),
+      onError: (e) => setEmailNotice({ msg: arabicAuthError(e), type: 'error' }),
     });
   };
 
@@ -116,27 +123,36 @@ export default function EditProfileScreen() {
           setEmailNotice({ msg: 'تم تحديث البريد الإلكتروني بنجاح', type: 'success' });
           setOpen(null);
         },
-        onError: (e) => setEmailNotice({ msg: arError((e as Error).message), type: 'error' }),
+        onError: (e) => setEmailNotice({ msg: arabicAuthError(e), type: 'error' }),
       },
     );
   };
 
   const phoneDigits = phone.replace(/[^0-9]/g, '');
-  const phoneChanged = phoneDigits.length >= 8 && phoneDigits !== (user?.phone ?? '');
+  const storedPhone = splitPhone(user?.phone ?? '');
+  const phoneChanged =
+    phoneDigits.length >= 8 &&
+    (phoneDigits !== storedPhone.local || phoneCountryCode !== storedPhone.countryCode);
   const onSavePhone = () => {
     if (!phoneChanged) return;
     setPhoneNotice(null);
-    changePhone.mutate(phoneDigits, {
-      onSuccess: () => {
-        setPhoneNotice({ msg: 'تم تحديث رقم الهاتف بنجاح', type: 'success' });
-        setOpen(null);
+    changePhone.mutate(
+      { phone: phoneDigits, countryCode: phoneCountryCode },
+      {
+        onSuccess: () => {
+          setPhoneNotice({ msg: 'تم تحديث رقم الهاتف بنجاح', type: 'success' });
+          setOpen(null);
+        },
+        onError: (e) => setPhoneNotice({ msg: arabicAuthError(e), type: 'error' }),
       },
-      onError: (e) => setPhoneNotice({ msg: arError((e as Error).message), type: 'error' }),
-    });
+    );
   };
 
+  // Min 8 matches the server (Supabase password_min_length) — a shorter gate
+  // here let 6–7-char passwords through to a server rejection after the
+  // current-password re-auth had already succeeded.
   const passwordValid =
-    currentPassword.length > 0 && newPassword.length >= 6 && newPassword === confirmPassword;
+    currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword;
   const onSavePassword = () => {
     if (!passwordValid) return;
     setPasswordNotice(null);
@@ -150,16 +166,21 @@ export default function EditProfileScreen() {
           setPasswordNotice({ msg: 'تم تغيير كلمة المرور بنجاح', type: 'success' });
           setOpen(null);
         },
-        onError: (e) => setPasswordNotice({ msg: arError((e as Error).message), type: 'error' }),
+        onError: (e) => setPasswordNotice({ msg: arabicAuthError(e), type: 'error' }),
       },
     );
   };
 
   return (
-    // Extra bottom padding (beyond the usual mini-player clearance) — the
-    // password section is the tallest expandable row (3 fields + button) and
-    // without this its Save button could land under the system nav bar with
-    // no more room to scroll past it.
+    // Keyboard-avoid (same fix as sign-in/register/reset-password): the app is
+    // edge-to-edge, so the keyboard OVERLAYS the screen instead of resizing it —
+    // without this the password section's lower fields + save button sit under
+    // the keyboard with no scroll escape.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+    {/* Extra bottom padding (beyond the usual mini-player clearance) — the
+        password section is the tallest expandable row (3 fields + button) and
+        without this its Save button could land under the system nav bar with
+        no more room to scroll past it. */}
     <Screen bottomPad={(miniPad || 24) + 60 + BOTTOM_NAV_CLEARANCE} padded>
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
@@ -216,13 +237,13 @@ export default function EditProfileScreen() {
         />
         {open === 'phone' ? (
           <View style={sectionBodyStyle}>
-            <TextInput
+            <PhoneInput
+              countryCode={phoneCountryCode}
+              onChangeCountryCode={setPhoneCountryCode}
               value={phone}
-              onChangeText={setPhone}
-              placeholder="09xxxxxxxx"
-              placeholderTextColor={colors.textGhost}
-              keyboardType="phone-pad"
-              style={inputStyle}
+              onChangeValue={setPhone}
+              placeholder="9xxxxxxxx"
+              height={44}
             />
             <Pressable
               onPress={onSavePhone}
@@ -253,7 +274,7 @@ export default function EditProfileScreen() {
             {pendingEmail ? (
               <>
                 <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 10, lineHeight: 19 }}>
-                  أرسلنا رمزاً مكوّناً من {OTP_LENGTH} أرقام إلى{' '}
+                  أرسلنا رمزاً مكوّناً من {arNum(OTP_LENGTH)} أرقام إلى{' '}
                   <Txt size={12.5} weight="semibold" color={colors.textSlate}>
                     {pendingEmail}
                   </Txt>
@@ -354,7 +375,7 @@ export default function EditProfileScreen() {
             <TextInput
               value={newPassword}
               onChangeText={setNewPassword}
-              placeholder="كلمة المرور الجديدة (٦ أحرف على الأقل)"
+              placeholder="كلمة المرور الجديدة (٨ أحرف على الأقل)"
               placeholderTextColor={colors.textGhost}
               secureTextEntry
               autoCapitalize="none"
@@ -388,6 +409,7 @@ export default function EditProfileScreen() {
         {passwordNotice ? <NoticeRow notice={passwordNotice} /> : null}
       </Card>
     </Screen>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -446,20 +468,6 @@ function NoticeRow({ notice }: { notice: { msg: string; type: 'success' | 'error
       {notice.msg}
     </Txt>
   );
-}
-
-/** Map the (English) Supabase auth error to a calm Arabic message. */
-function arError(msg: string): string {
-  const m = (msg ?? '').toLowerCase();
-  if (m.includes('already') || m.includes('registered') || m.includes('exists'))
-    return 'هذا البريد أو الرقم مستخدم في حساب آخر.';
-  if (m.includes('invalid') && m.includes('email')) return 'بريد إلكتروني غير صالح.';
-  if (m.includes('expired') || (m.includes('invalid') && (m.includes('token') || m.includes('otp'))))
-    return 'الرمز غير صحيح أو انتهت صلاحيته. اطلب رمزاً جديداً.';
-  if (m.includes('rate') || m.includes('too many') || m.includes('security purposes'))
-    return 'محاولات كثيرة، حاول لاحقًا.';
-  if (m.includes('password')) return 'كلمة المرور ضعيفة أو غير صالحة.';
-  return msg || 'تعذّر الحفظ.';
 }
 
 const sectionBodyStyle = {

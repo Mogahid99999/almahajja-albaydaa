@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import type { ResumeLecture } from '@/api/types';
 import { colors, radius, shadows } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
-import { preloadLecture } from '@/lib/audioController';
+import { pause, playLecture, preloadLecture } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
 import { ConcentricMotif, ProgressBar, RhombusEmblem, Txt } from '@/components/ui';
 
@@ -177,9 +177,22 @@ export function ContinueCard({ continueListening }: Props) {
           {arDuration(durationSec)}
         </Txt>
 
-        {/* 42px brass play/pause button */}
+        {/* 42px brass play/pause button. When THIS lecture is already playing
+            the button shows a pause glyph and must actually pause — it used to
+            navigate to the player regardless, contradicting its own
+            accessibility label (audit phase 4). Resuming the SAME (paused)
+            lecture must go through playLecture — preloadLecture deliberately
+            no-ops when the lecture is already current, so handlePress would
+            navigate without ever restarting the audio. stopPropagation mirrors
+            the dismiss × above: on web the press would bubble to the card's
+            own Pressable and navigate anyway. */}
         <Pressable
-          onPress={handlePress}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            if (isActive) pause();
+            else if (currentLectureId === id) void playLecture(id);
+            else handlePress();
+          }}
           accessibilityRole="button"
           accessibilityLabel={isActive ? 'إيقاف مؤقت' : 'تشغيل'}
           style={({ pressed }) => ({

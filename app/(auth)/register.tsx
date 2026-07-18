@@ -1,13 +1,16 @@
 import Feather from '@expo/vector-icons/Feather';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, TextInput, View } from 'react-native';
 
 import type { Gender } from '@/api/types';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { GenderPills } from '@/components/ui/GenderPills';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
-import { useRegister } from '@/hooks/useAuth';
+import { useCurrentUser, useRegister } from '@/hooks/useAuth';
+import { arabicAuthError } from '@/lib/authErrors';
 
 const OATH_TEXT =
   'بمجرد إنشاء الحساب، سيتم اعتماد البيانات التي أدخلتها (الاسم والجنس) بشكل نهائي ولا يمكن تعديلها لاحقًا. بالمتابعة، أنت تُقسم بالله أن ما أدخلته صحيح وأنك مسؤول عن ذلك أمام الله.';
@@ -23,8 +26,10 @@ const OATH_TEXT =
  */
 export default function RegisterScreen() {
   const router = useRouter();
+  const { data: user } = useCurrentUser();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -42,12 +47,25 @@ export default function RegisterScreen() {
   // Email is optional — phone is the required identifier (Task: phone registration).
   const emailOk = trimmedEmail.length === 0 || trimmedEmail.includes('@');
   const passwordsMatch = password === confirmPassword;
+  // Min 8 matches the server (Supabase password_min_length) — a shorter gate
+  // here let 6–7-char passwords through to a raw English server rejection.
+  const passwordLongEnough = password.length >= 8;
   const canSubmit =
     trimmedName.length > 0 &&
     trimmedPhone.replace(/[^0-9]/g, '').length >= 8 &&
     emailOk &&
-    password.length >= 6 &&
+    passwordLongEnough &&
     passwordsMatch;
+
+  // Registration links onto the ANONYMOUS account — it must be unreachable for
+  // an already-registered session (deep link `riwaqalilm://register`, a typed
+  // /register URL on web, or in-app history): re-running it would overwrite the
+  // oath-locked name/gender (edit-profile deliberately locks both) and reset the
+  // password without knowing the current one. Guard is inert while a register
+  // mutation is pending/succeeded so it can't race onConfirmOath's own redirect.
+  if (user && !user.isGuest && !register.isPending && !register.isSuccess) {
+    return <Redirect href="/" />;
+  }
 
   const onSubmit = () => {
     if (!canSubmit) return;
@@ -63,7 +81,7 @@ export default function RegisterScreen() {
     if (!oathChecked || !gender) return;
     setOathVisible(false);
     register.mutate(
-      { name: trimmedName, phone: trimmedPhone, email: trimmedEmail, password, gender },
+      { name: trimmedName, phone: trimmedPhone, countryCode, email: trimmedEmail, password, gender },
       // Land on the profile so the new name/identity is confirmed — coherent from
       // every entry point (profile CTA, sign-in link, journey gate, Home banner).
       { onSuccess: () => router.replace('/(student)/profile') },
@@ -123,13 +141,13 @@ export default function RegisterScreen() {
         </Field>
 
         <Field label="رقم الهاتف">
-          <TextInput
+          <PhoneInput
+            countryCode={countryCode}
+            onChangeCountryCode={setCountryCode}
             value={phone}
-            onChangeText={setPhone}
-            placeholder="09xxxxxxxx"
-            placeholderTextColor={colors.textGhost}
-            keyboardType="phone-pad"
-            style={inputStyle}
+            onChangeValue={setPhone}
+            placeholder="9xxxxxxxx"
+            height={42}
           />
         </Field>
 
@@ -167,6 +185,11 @@ export default function RegisterScreen() {
               />
             </Pressable>
           </View>
+          {password.length > 0 && !passwordLongEnough ? (
+            <Txt size={12} color={colors.stateDanger} style={{ marginTop: 6 }}>
+              كلمة المرور يجب ألا تقل عن ٨ أحرف أو أرقام
+            </Txt>
+          ) : null}
         </Field>
 
         <Field label="تأكيد كلمة المرور">
@@ -216,7 +239,7 @@ export default function RegisterScreen() {
 
         {register.isError ? (
           <Txt size={12} color={colors.stateDanger} style={{ marginBottom: 10 }}>
-            {(register.error as Error).message}
+            {arabicAuthError(register.error)}
           </Txt>
         ) : null}
 
@@ -262,7 +285,9 @@ export default function RegisterScreen() {
     </Screen>
     </KeyboardAvoidingView>
 
-    <Modal visible={oathVisible} transparent animationType="slide" onRequestClose={() => {}}>
+    {/* onRequestClose = Android hardware back inside the modal — mirrors the
+        «رجوع» button instead of being a dead key. */}
+    <Modal visible={oathVisible} transparent animationType="slide" onRequestClose={onCancelOath}>
       <View style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}>
         <View
           style={{

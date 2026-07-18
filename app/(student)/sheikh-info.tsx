@@ -8,20 +8,20 @@
  * With zero bios anywhere, falls back to the old single-hero/list behavior.
  */
 
-/**
- * The DB's `sheikhs.name` for this record predates his family name — display
- * copy on this page only (not persisted) uses the fuller name from his own
- * biography note.
- */
-const DISPLAY_NAME_OVERRIDES: Record<string, string> = {
-  '7d14315d-1211-4f72-a8ca-8308ed78e1f8': 'الشيخ النذير محمد فرح عثمان',
-};
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
 import type { SheikhProfile } from '@/api/sheikhs';
+import { SHEIKH_DISPLAY_NAME_OVERRIDES } from '@/config';
+
+/** Display name for this page — every render site (hero card, «مشايخ آخرون»
+ * rows, zero-bio fallback list) must apply the F-020 override, or the same
+ * sheikh shows two different names depending on which slot he lands in. */
+function sheikhDisplayName(s: Pick<SheikhProfile, 'id' | 'name'>): string {
+  return SHEIKH_DISPLAY_NAME_OVERRIDES[s.id] ?? s.name;
+}
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Divider, IconButton, Rhombus, Screen, Txt } from '@/components/ui';
 import { ConcentricMotif } from '@/components/ui/Rhombus';
@@ -155,6 +155,12 @@ function BioContent({ bio }: { bio: string }) {
 }
 
 function SheikhAvatar({ uri, size }: { uri: string | null; size: number }) {
+  // The photo URL is a SIGNED R2 URL that can outlive its TTL in the query
+  // cache (30-min staleTime, plus the persisted offline cache) — a failed load
+  // must fall back to the placeholder icon instead of an empty circle.
+  const [failed, setFailed] = useState(false);
+  // A refetch mints a FRESH signed URL — give the new uri a clean attempt.
+  useEffect(() => setFailed(false), [uri]);
   return (
     <View
       style={{
@@ -169,8 +175,12 @@ function SheikhAvatar({ uri, size }: { uri: string | null; size: number }) {
         overflow: 'hidden',
       }}
     >
-      {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size }} />
+      {uri && !failed ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size }}
+          onError={() => setFailed(true)}
+        />
       ) : (
         <Feather name="user" size={size * 0.45} color={colors.textGhost} />
       )}
@@ -185,7 +195,7 @@ function SheikhListRow({ sheikh }: { sheikh: SheikhProfile }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <SheikhAvatar uri={sheikh.photoUrl} size={40} />
         <Txt size={14} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
-          {sheikh.name}
+          {sheikhDisplayName(sheikh)}
         </Txt>
         <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textGhost} />
       </View>
@@ -247,7 +257,7 @@ export default function SheikhInfoScreen() {
             />
             <SheikhAvatar uri={primary.photoUrl} size={104} />
             <Txt size={21} weight="display" color={colors.primaryTeal} align="center">
-              {DISPLAY_NAME_OVERRIDES[primary.id] ?? primary.name}
+              {sheikhDisplayName(primary)}
             </Txt>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               <Rhombus size={5} color={colors.accentBrassSoft} />

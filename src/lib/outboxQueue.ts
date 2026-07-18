@@ -89,6 +89,33 @@ export async function removeQueueEntry(entry: OutboxEntry): Promise<void> {
   await persist();
 }
 
+/**
+ * Drop everything still queued (audit phase 3). Entries carry NO user id — they
+ * replay under whatever session is live at flush time — so any identity change
+ * (sign-out, sign-in, account deletion, ban) MUST clear the queue first, or the
+ * outgoing account's private note bodies / listening ticks get written into the
+ * NEXT identity's rows (the device guest, or another user on a shared device).
+ * Un-synced offline writes are deliberately discarded at that boundary: they
+ * cannot be replayed safely under any other identity. Keeps the same array
+ * reference so an in-flight flush's stale snapshot can't resurrect entries.
+ */
+export async function clearQueue(): Promise<void> {
+  await load();
+  queue.length = 0;
+  generation++;
+  await persist();
+}
+
+// Bumped on every clearQueue. The flush loop in outbox.ts iterates over a
+// SNAPSHOT of the queue with an await per entry — emptying the array alone
+// can't stop a replay that is already mid-loop, so the flush re-checks this
+// counter before each entry and aborts the moment an identity boundary has
+// invalidated its snapshot (security-review finding, audit phase 3).
+let generation = 0;
+export function queueGeneration(): number {
+  return generation;
+}
+
 // Fired after every successful enqueue so the flush side (outbox.ts) can arm its
 // retry heartbeat — set once via `setOnEnqueue` at that module's load time. Kept
 // as a plain callback (not an import) so this module never depends on outbox.ts.
