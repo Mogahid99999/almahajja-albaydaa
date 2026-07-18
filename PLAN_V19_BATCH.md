@@ -8,6 +8,28 @@ Order is by risk & dependency. Each phase is independently shippable & device-ve
 
 ---
 
+## TICKET IMAGE FIXES round 5 (render) (follow-up 2026-07-18)
+Three separate bugs behind "image still not appearing":
+1. AdminTicketThread never rendered images at all (upload-only) → added rendering.
+2. Message bubbles collapsed to a 1-char-per-line thin strip: bubble had no width, so
+   image `width:'100%'` = 100% of a sliver → added minWidth 140 + concrete width when
+   an image is present (student bubble + admin bubble width 260).
+3. (round 4) storage read-gate denied ticket images → 0101.
+New shared src/components/tickets/TicketImage.tsx (resolves signed URL + placeholder
+while loading/on failure) used by BOTH the student thread and the admin thread.
+
+## TICKET IMAGE FIXES round 4 (follow-up 2026-07-18)
+- **Image not showing (admin or student):** ticket-reply images upload under the
+  `broadcasts/` R2 prefix (reuse uploadBroadcastImage), but can_read_storage_object's
+  `broadcasts/` gate only allowed keys owned by a BROADCAST row → signed-URL read
+  DENIED for ticket images. Fixed in 0101: the gate now also allows a key that is a
+  feedback_messages.image_path, for the admin OR the ticket owner (privacy preserved).
+  Verified live: student gets a signed URL for the ticket image.
+- **Delete ticket → orphaned R2 images:** adminDeleteFeedback now collects the
+  ticket's feedback_messages.image_path keys BEFORE the delete and deleteFromR2's them
+  (best-effort), mirroring deleteBroadcast/deleteLecture cleanup.
+- Added feedback_messages to database.generated.ts (proper types, no cast).
+
 ## TICKET FIXES round 3 (follow-up 2026-07-18)
 - Reverted admin tabs to the original 5 (جديدة/قيد المراجعة/محلولة/متجاهلة/الكل);
   «قيد المراجعة» tab also includes any legacy awaiting_student rows.

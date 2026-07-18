@@ -363,6 +363,50 @@ export type Database = {
         }
         Relationships: []
       }
+      feedback_messages: {
+        Row: {
+          author_id: string | null
+          body: string
+          created_at: string
+          cta_label: string | null
+          cta_route: string | null
+          feedback_id: string
+          id: string
+          image_path: string | null
+          is_admin: boolean
+        }
+        Insert: {
+          author_id?: string | null
+          body: string
+          created_at?: string
+          cta_label?: string | null
+          cta_route?: string | null
+          feedback_id: string
+          id?: string
+          image_path?: string | null
+          is_admin?: boolean
+        }
+        Update: {
+          author_id?: string | null
+          body?: string
+          created_at?: string
+          cta_label?: string | null
+          cta_route?: string | null
+          feedback_id?: string
+          id?: string
+          image_path?: string | null
+          is_admin?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_messages_feedback_id_fkey"
+            columns: ["feedback_id"]
+            isOneToOne: false
+            referencedRelation: "feedback"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lecture_benefits: {
         Row: {
           body: string

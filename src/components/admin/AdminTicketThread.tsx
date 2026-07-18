@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
 
 import { uploadBroadcastImage } from '@/api/broadcasts';
+import { TicketImage } from '@/components/tickets/TicketImage';
 import { Txt } from '@/components/ui';
 import { colors, fonts, radius } from '@/constants/theme';
 import {
@@ -86,6 +87,9 @@ export function AdminTicketThread({ feedbackId, closed }: { feedbackId: string; 
               style={{
                 alignSelf: m.isAdmin ? 'flex-start' : 'flex-end',
                 maxWidth: '90%',
+                // A bubble with an image needs a concrete width so the image has
+                // a box to fill (otherwise it collapses to a sliver).
+                width: m.imagePath ? 260 : undefined,
                 backgroundColor: m.isAdmin ? colors.surfaceInset : 'rgba(44,97,87,0.08)',
                 borderRadius: radius.sm,
                 padding: 10,
@@ -99,6 +103,7 @@ export function AdminTicketThread({ feedbackId, closed }: { feedbackId: string; 
                   {m.body}
                 </Txt>
               ) : null}
+              {m.imagePath ? <TicketImage imagePath={m.imagePath} /> : null}
               {m.ctaLabel ? (
                 <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                   <Feather name="external-link" size={11} color={colors.primaryTeal600} />

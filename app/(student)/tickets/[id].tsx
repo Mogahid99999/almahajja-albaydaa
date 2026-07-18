@@ -11,14 +11,13 @@
  *
  * Route: /(student)/tickets/[id]
  */
-import Feather from '@expo/vector-icons/Feather';
-import { Image, KeyboardAvoidingView, Linking, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Pressable, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type { TicketMessage } from '@/api/feedback';
-import { getBroadcastImageUrl } from '@/api/broadcasts';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
+import { TicketImage } from '@/components/tickets/TicketImage';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
@@ -170,25 +169,19 @@ function MessageBubble({
   onCta: (route: string) => void;
 }) {
   const admin = message.isAdmin;
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    if (message.imagePath) {
-      getBroadcastImageUrl(message.imagePath).then((u) => {
-        if (alive) setImageUrl(u);
-      });
-    }
-    return () => {
-      alive = false;
-    };
-  }, [message.imagePath]);
+  const hasImage = !!message.imagePath;
 
   return (
     <View style={{ alignItems: admin ? 'flex-start' : 'flex-end' }}>
       <Card
         style={{
+          // minWidth stops a short message from collapsing into a one-character-
+          // per-line vertical strip (the reported broken bubbles). A bubble WITH
+          // an image gets a concrete width so `width:'100%'` on the image has a
+          // real box to fill instead of shrinking to content.
+          minWidth: 140,
           maxWidth: '88%',
+          width: hasImage ? '78%' : undefined,
           backgroundColor: admin ? colors.surfaceInset : colors.primaryTeal,
         }}
       >
@@ -206,12 +199,8 @@ function MessageBubble({
           </Txt>
         ) : null}
 
-        {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={{ width: '100%', height: 160, borderRadius: radius.sm, marginTop: 10 }}
-            resizeMode="cover"
-          />
+        {message.imagePath ? (
+          <TicketImage imagePath={message.imagePath} onDark={!admin} />
         ) : null}
 
         {message.ctaLabel && message.ctaRoute ? (

@@ -11,6 +11,7 @@ import * as Device from 'expo-device';
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import { BlockedWordError, isBlockedWordError } from '@/api/reports';
+import { deleteFromR2 } from '@/api/storage';
 import { APP_VERSION } from '@/lib/version';
 
 export type FeedbackCategory = 'bug' | 'improvement' | 'other';
@@ -100,10 +101,22 @@ export async function adminSetFeedbackStatus(
 
 export async function adminDeleteFeedback(feedbackId: string): Promise<void> {
   if (USE_MOCK) return;
+  // Collect the ticket's attached image keys BEFORE the delete (the DB rows
+  // cascade away with the feedback row, but the R2 objects would otherwise be
+  // orphaned). Mirrors deleteBroadcast/deleteLecture's R2 cleanup.
+  const { data: imgs } = await supabase
+    .from('feedback_messages')
+    .select('image_path')
+    .eq('feedback_id', feedbackId)
+    .not('image_path', 'is', null);
   const { error } = await supabase.rpc('admin_delete_feedback', {
     p_feedback_id: feedbackId,
   });
   if (error) throw error;
+  // Best-effort R2 cleanup — a storage hiccup must not fail the delete.
+  for (const row of imgs ?? []) {
+    if (row.image_path) await deleteFromR2(row.image_path);
+  }
 }
 
 // ─── Support tickets (item 10 — the feedback thread) ───────────────────────────
