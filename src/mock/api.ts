@@ -414,7 +414,15 @@ export async function saveLectureProgress(args: {
 }
 
 // --- Journey · رحلتي العلمية -------------------------------------------------
-/** Merge a catalog definition with this user's earned state. */
+/** The mock db only tracks lessons + streak; other metrics read 0 (mock is dead
+ *  code in the live app but must still typecheck against the V20 badge shape). */
+function mockMetricValue(def: BadgeDef): number {
+  if (def.metric === 'lessons') return db.completedLecturesCount();
+  if (def.metric === 'streak') return db.longestStreak();
+  return 0;
+}
+
+/** Merge a catalog definition with this user's earned state + progress. */
 function toBadge(def: BadgeDef): Badge {
   const earned = db.userBadges.find((b) => b.badge_key === def.key);
   return {
@@ -422,22 +430,21 @@ function toBadge(def: BadgeDef): Badge {
     titleAr: def.titleAr,
     descAr: def.descAr,
     threshold: def.threshold,
-    kind: def.kind,
+    metric: def.metric,
+    category: def.category,
+    tier: def.tier,
     earned: !!earned,
     earnedAt: earned?.earned_at ?? null,
+    progress: mockMetricValue(def),
   };
 }
 
 /** Earn any newly-qualified badges; return only the ones just earned. */
 export function evaluateBadges(): Badge[] {
-  const completed = db.completedLecturesCount();
-  const longest = db.longestStreak();
   const newly: Badge[] = [];
   for (const def of BADGES) {
     if (db.hasBadge(def.key)) continue;
-    const qualifies =
-      def.kind === 'completed' ? completed >= def.threshold : longest >= def.threshold;
-    if (qualifies) {
+    if (mockMetricValue(def) >= def.threshold) {
       db.earnBadge(def.key);
       newly.push(toBadge(def));
     }

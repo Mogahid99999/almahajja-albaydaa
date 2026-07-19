@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getLectureProgress, saveLectureProgress } from '@/api/progress';
+import { getLectureProgress, getResumeCard, saveLectureProgress } from '@/api/progress';
 import { queryKeys } from '@/constants/queryKeys';
 
 /** Resume info for a single lecture. */
@@ -9,6 +9,20 @@ export function useLectureProgress(lectureId: string) {
     queryKey: queryKeys.lectureProgress(lectureId),
     queryFn: () => getLectureProgress(lectureId),
     enabled: !!lectureId,
+  });
+}
+
+/**
+ * The «واصل رحلتك» resume card (§3) — most-recently-active lesson with full
+ * context. Off for guests (the journey is registration-gated); holds its last
+ * snapshot offline instead of blanking.
+ */
+export function useResumeCard(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.resumeCard,
+    queryFn: getResumeCard,
+    enabled: options?.enabled ?? true,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -25,6 +39,8 @@ export function useSaveProgress() {
       qc.invalidateQueries({ queryKey: queryKeys.badges });
       // ...and may flip today's streak state (26.1) — refresh the home card.
       qc.invalidateQueries({ queryKey: queryKeys.streak });
+      // The resume card (§3) tracks the most-recent lesson — refresh it too.
+      qc.invalidateQueries({ queryKey: queryKeys.resumeCard });
     },
   });
 }

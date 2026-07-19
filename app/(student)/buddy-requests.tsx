@@ -33,6 +33,9 @@ import {
   useRespondToRequest,
 } from '@/hooks/useBuddy';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
+import { useIncomingBuddyGoals, useRespondBuddyGoal } from '@/hooks/useBuddyGoals';
+import { formatBuddyGoalTarget } from '@/components/journey/labels';
+import { arNum } from '@/lib/format';
 
 export default function BuddyRequestsScreen() {
   const router = useRouter();
@@ -47,6 +50,9 @@ export default function BuddyRequestsScreen() {
   const { data: outgoing } = useOutgoingRequests({ enabled: !isGuest });
   const respond = useRespondToRequest();
   const cancelReq = useCancelBuddyRequest();
+  const { data: goalInvites } = useIncomingBuddyGoals({ enabled: !isGuest });
+  const respondGoal = useRespondBuddyGoal();
+  const goalInviteList = goalInvites ?? [];
 
   const list = buddies ?? [];
   const incomingList = incoming ?? [];
@@ -99,6 +105,70 @@ export default function BuddyRequestsScreen() {
         </Card>
       ) : (
         <View style={{ gap: 12 }}>
+          {/* ── دعوات أهداف الرفقة — shared-goal invitations (§12) ───────────── */}
+          {goalInviteList.length > 0 ? (
+            <>
+              <Txt size={13} weight="semibold" color={colors.textMuted}>
+                دعوات أهداف الرفقة
+              </Txt>
+              {goalInviteList.map((g) => (
+                <Card key={g.id}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                    <Chip icon="target" />
+                    <View style={{ flex: 1 }}>
+                      <Txt weight="display" size={15} color={colors.primaryTeal}>
+                        {`دعاك ${g.fromName} إلى هدف مشترك`}
+                      </Txt>
+                      <Txt size={12.5} color={colors.textMuted} style={{ marginTop: 4 }} tabular>
+                        {`${formatBuddyGoalTarget(g.target, g.metric)} خلال ${arNum(g.days)} يوماً`}
+                      </Txt>
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                        <Pressable
+                          onPress={() => respondGoal.mutate({ goalId: g.id, accept: true })}
+                          disabled={respondGoal.isPending}
+                          accessibilityRole="button"
+                          style={({ pressed }) => ({
+                            flex: 1,
+                            paddingVertical: 10,
+                            borderRadius: radius.input,
+                            alignItems: 'center',
+                            backgroundColor: colors.primaryTeal,
+                            opacity: pressed || respondGoal.isPending ? 0.7 : 1,
+                          })}
+                        >
+                          <Txt size={13} weight="semibold" color={colors.onTealPrimary}>
+                            قبول
+                          </Txt>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => respondGoal.mutate({ goalId: g.id, accept: false })}
+                          disabled={respondGoal.isPending}
+                          accessibilityRole="button"
+                          style={({ pressed }) => ({
+                            flex: 1,
+                            paddingVertical: 10,
+                            borderRadius: radius.input,
+                            alignItems: 'center',
+                            borderWidth: 1,
+                            borderColor: colors.borderSand2,
+                            opacity: pressed ? 0.7 : 1,
+                          })}
+                        >
+                          <Txt size={13} weight="semibold" color={colors.textMuted}>
+                            اعتذار
+                          </Txt>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                </Card>
+              ))}
+              <Txt size={13} weight="semibold" color={colors.textMuted} style={{ marginTop: 6 }}>
+                دعوات الرفقاء
+              </Txt>
+            </>
+          ) : null}
+
           {/* ── Incoming invitations — accept / decline ─────────────────────── */}
           {incomingList.map((invitation) => (
             <Card key={invitation.id}>

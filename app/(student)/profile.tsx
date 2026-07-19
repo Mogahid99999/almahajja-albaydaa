@@ -17,6 +17,8 @@ import Feather from '@expo/vector-icons/Feather';
 import { useRouter, Link } from 'expo-router';
 
 import { useCurrentUser, useDeleteAccount, useSignOut } from '@/hooks/useAuth';
+import { useUnreviewedBookmarkCount } from '@/hooks/useBookmarks';
+import { toArabicDigits } from '@/lib/format';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useRefreshAll } from '@/hooks/useRefreshAll';
@@ -145,6 +147,7 @@ export default function ProfileScreen() {
     void hasRated().then(setRated);
   }, []);
   const isGuest = user?.isGuest ?? true;
+  const unreviewedBookmarks = useUnreviewedBookmarkCount({ enabled: !isGuest });
   const email = user?.email ?? '';
   const name = user?.displayName?.trim() || '';
   const studentLabel = user?.gender === 'female' ? 'طالبة علم' : 'طالب علم';
@@ -288,6 +291,20 @@ export default function ProfileScreen() {
           label="رحلتي العلمية"
           onPress={() => router.push('/(student)/journey')}
         />
+        {!isGuest ? (
+          <>
+            <Divider />
+            <LinkRow
+              icon="bookmark"
+              label={
+                unreviewedBookmarks > 0
+                  ? `المراجعة لاحقًا — ${toArabicDigits(String(unreviewedBookmarks))}`
+                  : 'المراجعة لاحقًا'
+              }
+              onPress={() => router.push('/(student)/bookmarks' as Parameters<typeof router.push>[0])}
+            />
+          </>
+        ) : null}
         <Divider />
         <LinkRow
           icon="download"

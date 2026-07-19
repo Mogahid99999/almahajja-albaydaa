@@ -20,6 +20,8 @@ import { getLectureBenefits } from '@/api/benefits';
 import { getMyNote } from '@/api/notes';
 import { getPublicQuestions } from '@/api/questions';
 import { saveLectureProgress } from '@/api/progress';
+import { badgeCelebration } from '@/constants/badges';
+import { celebrate } from '@/stores/celebrationStore';
 import { queryKeys } from '@/constants/queryKeys';
 import { isOnlineSync, onReconnect } from '@/lib/connectivity';
 import {
@@ -693,7 +695,15 @@ function persist(positionSec: number, finished = false) {
     completed: reachedThreshold,
     justCompleted,
     firstTouch,
-  }).catch(() => {});
+  })
+    .then((newBadges) => {
+      // Newly-earned badges surface as celebrations (V20 · §15). Only a
+      // completion tick returns any (evaluateBadges runs on justCompleted); the
+      // store's server claim keeps each badge's modal to once-ever. Fire-and-forget
+      // so a celebration hiccup never affects the playback save.
+      for (const b of newBadges ?? []) void celebrate(badgeCelebration(b));
+    })
+    .catch(() => {});
 }
 
 /** Create a fresh player for `source` with its status + media-control listeners. */

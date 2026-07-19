@@ -18,6 +18,7 @@ import { colors, radius, shadows } from '@/constants/theme';
 import { useAttemptQuestions, useSaveAnswer, useSubmitAttempt } from '@/hooks/useQuizzes';
 import { arabicOr } from '@/lib/errorText';
 import { arDuration, arNum } from '@/lib/format';
+import { useCelebrationStore } from '@/stores/celebrationStore';
 
 const SAVE_WARNING_GENERIC = 'تعذّر حفظ الإجابة — تحقق من الاتصال، وسيُعاد الحفظ عند التسليم.';
 
@@ -37,6 +38,16 @@ export default function QuizAttemptScreen() {
   // What the server has confirmed saved — resave any drift before submitting.
   const savedRef = useRef<Record<string, string>>({});
   const submittedRef = useRef(false);
+
+  // Hold back any achievement celebration while the student is answering (§15
+  // "لا يظهر قبل إعلان نتيجة الاختبار"). Cleared on unmount — leaving for the
+  // result screen (or backing out) lets any queued celebration surface then.
+  const setCelebrationSuppressed = useCelebrationStore((s) => s.setSuppressed);
+  useEffect(() => {
+    setCelebrationSuppressed(true);
+    return () => setCelebrationSuppressed(false);
+  }, [setCelebrationSuppressed]);
+
   // Wall-clock deadline (audit F-051): the countdown recomputes from this every
   // tick instead of decrementing a counter — RN timers freeze in background, so
   // a decrement silently under-counts time away and never reaches zero.

@@ -182,18 +182,82 @@ export type JourneySummary = {
   week: WeekProgress;
 };
 
-/** A milestone badge: completed-lectures count or streak-days. */
+/** Legacy 2-kind model (pre-V20). Retained for any old references. */
 export type BadgeKind = 'completed' | 'streak';
 
-/** A badge catalog entry merged with this user's earned state. */
+/** Tiered badge system (V20 · §9). */
+export type BadgeTier = 'bronze' | 'silver' | 'gold' | 'diamond' | 'exceptional';
+
+/** Tab groupings on the badges page. */
+export type BadgeCategory = 'learning' | 'streak' | 'mastery' | 'notes' | 'buddy';
+
+/** Which metric a badge's threshold compares against (see src/constants/badges.ts). */
+export type BadgeMetric =
+  | 'lessons'
+  | 'hours'
+  | 'streak'
+  | 'active_days'
+  | 'series'
+  | 'quizzes'
+  | 'mastery'
+  | 'benefits'
+  | 'benefit_days'
+  | 'buddy_start'
+  | 'buddy_goals_done';
+
+/** A badge catalog entry merged with this user's earned state + live progress. */
 export type Badge = {
   key: string;
   titleAr: string;
   descAr: string;
   threshold: number;
-  kind: BadgeKind;
+  metric: BadgeMetric;
+  category: BadgeCategory;
+  tier: BadgeTier | null;
   earned: boolean;
   earnedAt: string | null;
+  /** The user's current value for this badge's metric (for the locked progress hint). */
+  progress: number;
+};
+
+/** The extra per-user metrics badge evaluation needs (get_badge_metrics, 0106). */
+export type BadgeMetrics = {
+  completedSeries: number;
+  quizzesPassed: number;
+  hasMastery: boolean;
+  benefitsCount: number;
+  benefitDays: number;
+};
+
+// --- Achievement celebrations · الاحتفال بالإنجازات (V20 · §15) ----------------
+/**
+ * Visual weight of a celebration (source §15):
+ *  - 'simple' → a small card atop the screen (lesson done, today's streak, benefit,
+ *    finishing your share of a buddy goal).
+ *  - 'medium' → a quiet centered modal (weekly goal, a badge/tier, a quiz, 7/30 days).
+ *  - 'large'  → a distinct-but-still-calm modal (series completion, 100/500 lessons,
+ *    100 days, a whole section).
+ */
+export type CelebrationLevel = 'simple' | 'medium' | 'large';
+
+/**
+ * One achievement worth celebrating, queued for the unified celebration modal.
+ *
+ * `key` is the SERVER-side idempotency key (`try_claim_celebration`): a given key
+ * is celebrated at most once per user, ever, across devices (migration 0104). So
+ * it must be stable and unique per achievement instance — e.g. `badge:completed_25`,
+ * `week:2026-W29`, `series:<id>`, `streak:30`. `iconBadgeKey`, when set, lets the
+ * modal render the matching brass seal + a secondary «عرض الوسام» action.
+ */
+export type CelebrationEvent = {
+  key: string;
+  level: CelebrationLevel;
+  /** Headline, e.g. «طالب العلم الفضي». */
+  titleAr: string;
+  /** One calm line under it, e.g. «أتممت خمسين درساً». */
+  bodyAr: string;
+  /** A badge key to show its seal + offer «عرض الوسام»; null for non-badge events. */
+  iconBadgeKey?: string | null;
 };
 
 // --- Notifications (Phase 2 · feature B) -------------------------------------

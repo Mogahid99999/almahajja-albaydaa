@@ -191,6 +191,60 @@ export async function getLecturesBySectionTitles(
   return out;
 }
 
+/**
+ * The «واصل رحلتك» resume card (V20 · §3) — the student's single most-recently-
+ * active lesson with the full context the card shows: breadcrumb, this lesson's
+ * position in its series, the series completed/total counts, pause position, and
+ * the next lesson. Built entirely server-side (`get_resume_card`, migration 0105)
+ * — one round-trip, no client tree-walking. Null when the student has no progress
+ * yet (a brand-new account), or on any error.
+ *
+ * `variant` is derived here for the UI: 'resume' when the current lesson is
+ * unfinished (show «أكمل الاستماع» at `positionSec`); 'next' when it's completed
+ * (show «ابدأ الدرس التالي» pointing at `nextLectureId`). When completed with no
+ * next lesson, the series is done — the caller can hide the card.
+ */
+export type ResumeCard = {
+  variant: 'resume' | 'next';
+  lectureId: string;
+  lectureTitle: string;
+  sectionId: string;
+  positionSec: number;
+  durationSec: number;
+  completed: boolean;
+  /** 1-based order of the current lesson within its series. */
+  lessonOrder: number;
+  seriesTotal: number;
+  seriesCompleted: number;
+  /** Ancestor section titles, outermost → innermost (≤ 3). */
+  breadcrumb: string[];
+  nextLectureId: string | null;
+  nextLectureTitle: string | null;
+};
+
+export async function getResumeCard(): Promise<ResumeCard | null> {
+  if (USE_MOCK) return null;
+  const { data, error } = await supabase.rpc('get_resume_card');
+  if (error || !data || data.length === 0) return null;
+  const row = data[0];
+  const completed = !!row.completed;
+  return {
+    variant: completed ? 'next' : 'resume',
+    lectureId: row.lecture_id,
+    lectureTitle: row.lecture_title ?? 'درسك',
+    sectionId: row.section_id,
+    positionSec: row.position_sec ?? 0,
+    durationSec: row.duration_sec ?? 0,
+    completed,
+    lessonOrder: Number(row.lesson_order ?? 0),
+    seriesTotal: Number(row.section_total ?? 0),
+    seriesCompleted: Number(row.section_completed ?? 0),
+    breadcrumb: (row.breadcrumb ?? []) as string[],
+    nextLectureId: row.next_lecture_id ?? null,
+    nextLectureTitle: row.next_lecture_title ?? null,
+  };
+}
+
 /** The current user's progress for a lecture, if any (for resume). */
 export async function getLectureProgress(lectureId: string): Promise<LectureProgress> {
   if (USE_MOCK) return mock.getLectureProgress(lectureId);

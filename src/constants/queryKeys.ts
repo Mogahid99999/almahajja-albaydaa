@@ -34,6 +34,11 @@ export const queryKeys = {
   journey: ['journey', 'summary'] as const,
   weeklyGoal: ['journey', 'goal'] as const,
   badges: ['journey', 'badges'] as const,
+  resumeCard: ['journey', 'resumeCard'] as const,
+  bookmarks: ['bookmarks'] as const,
+  journeyMap: ['journey', 'map'] as const,
+  activityCalendar: (month: string) => ['journey', 'activity', month] as const,
+  harvest: (range: string) => ['journey', 'harvest', range] as const,
 
   // Daily streak · المداومة (26.1)
   streak: ['journey', 'streak'] as const,
@@ -41,6 +46,8 @@ export const queryKeys = {
   // Study buddy · رفيق الدراسة (26.2)
   buddy: ['buddy', 'status'] as const,
   buddies: ['buddy', 'statuses'] as const,
+  buddyGoals: ['buddy', 'goals'] as const,
+  incomingBuddyGoals: ['buddy', 'goals', 'incoming'] as const,
   buddyRequests: ['buddy', 'requests'] as const,
   buddyOutgoing: ['buddy', 'outgoing'] as const,
   buddyOutgoingList: ['buddy', 'outgoing', 'list'] as const,

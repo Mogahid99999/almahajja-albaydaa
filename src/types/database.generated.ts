@@ -65,6 +65,7 @@ export type Database = {
           id: string
           lecture_id: string | null
           order: number
+          search_vec: unknown
           section_id: string | null
           storage_path: string | null
           title: string
@@ -79,6 +80,7 @@ export type Database = {
           id?: string
           lecture_id?: string | null
           order?: number
+          search_vec?: unknown
           section_id?: string | null
           storage_path?: string | null
           title: string
@@ -93,6 +95,7 @@ export type Database = {
           id?: string
           lecture_id?: string | null
           order?: number
+          search_vec?: unknown
           section_id?: string | null
           storage_path?: string | null
           title?: string
@@ -274,6 +277,99 @@ export type Database = {
         }
         Relationships: []
       }
+      buddy_encouragements: {
+        Row: {
+          from_user_id: string
+          id: string
+          phrase_key: string
+          sent_at: string
+          to_user_id: string
+        }
+        Insert: {
+          from_user_id: string
+          id?: string
+          phrase_key: string
+          sent_at?: string
+          to_user_id: string
+        }
+        Update: {
+          from_user_id?: string
+          id?: string
+          phrase_key?: string
+          sent_at?: string
+          to_user_id?: string
+        }
+        Relationships: []
+      }
+      buddy_goals: {
+        Row: {
+          a_user_id: string
+          b_user_id: string
+          created_at: string
+          created_by: string
+          ends_on: string
+          id: string
+          metric: string
+          responded_at: string | null
+          starts_on: string
+          status: string
+          target: number
+        }
+        Insert: {
+          a_user_id: string
+          b_user_id: string
+          created_at?: string
+          created_by: string
+          ends_on: string
+          id?: string
+          metric: string
+          responded_at?: string | null
+          starts_on?: string
+          status?: string
+          target: number
+        }
+        Update: {
+          a_user_id?: string
+          b_user_id?: string
+          created_at?: string
+          created_by?: string
+          ends_on?: string
+          id?: string
+          metric?: string
+          responded_at?: string | null
+          starts_on?: string
+          status?: string
+          target?: number
+        }
+        Relationships: []
+      }
+      buddy_nudge_log: {
+        Row: {
+          buddy_id: string
+          created_at: string
+          day: string
+          goal_id: string
+          kind: string
+          user_id: string
+        }
+        Insert: {
+          buddy_id: string
+          created_at?: string
+          day?: string
+          goal_id: string
+          kind: string
+          user_id: string
+        }
+        Update: {
+          buddy_id?: string
+          created_at?: string
+          day?: string
+          goal_id?: string
+          kind?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       buddy_requests: {
         Row: {
           created_at: string
@@ -298,6 +394,24 @@ export type Database = {
           responded_at?: string | null
           status?: string
           to_user_id?: string
+        }
+        Relationships: []
+      }
+      celebrated: {
+        Row: {
+          celebrated_at: string
+          event_key: string
+          user_id: string
+        }
+        Insert: {
+          celebrated_at?: string
+          event_key: string
+          user_id: string
+        }
+        Update: {
+          celebrated_at?: string
+          event_key?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -479,6 +593,7 @@ export type Database = {
           created_at: string
           id: string
           lecture_id: string
+          search_vec: unknown
           status: string
           user_id: string
         }
@@ -487,6 +602,7 @@ export type Database = {
           created_at?: string
           id?: string
           lecture_id: string
+          search_vec?: unknown
           status?: string
           user_id: string
         }
@@ -495,12 +611,54 @@ export type Database = {
           created_at?: string
           id?: string
           lecture_id?: string
+          search_vec?: unknown
           status?: string
           user_id?: string
         }
         Relationships: [
           {
             foreignKeyName: "lecture_benefits_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "lectures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lecture_bookmarks: {
+        Row: {
+          created_at: string
+          id: string
+          lecture_id: string
+          note: string | null
+          position_sec: number
+          reviewed_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lecture_id: string
+          note?: string | null
+          position_sec: number
+          reviewed_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lecture_id?: string
+          note?: string | null
+          position_sec?: number
+          reviewed_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_bookmarks_lecture_id_fkey"
             columns: ["lecture_id"]
             isOneToOne: false
             referencedRelation: "lectures"
@@ -545,6 +703,7 @@ export type Database = {
           duration_sec: number | null
           id: string
           order: number
+          search_vec: unknown
           section_id: string | null
           sheikh_id: string | null
           status: Database["public"]["Enums"]["lecture_status"]
@@ -558,6 +717,7 @@ export type Database = {
           duration_sec?: number | null
           id?: string
           order?: number
+          search_vec?: unknown
           section_id?: string | null
           sheikh_id?: string | null
           status?: Database["public"]["Enums"]["lecture_status"]
@@ -571,6 +731,7 @@ export type Database = {
           duration_sec?: number | null
           id?: string
           order?: number
+          search_vec?: unknown
           section_id?: string | null
           sheikh_id?: string | null
           status?: Database["public"]["Enums"]["lecture_status"]
@@ -746,6 +907,7 @@ export type Database = {
           is_anonymous: boolean
           lecture_id: string | null
           scope: string
+          search_vec: unknown
           status: string
         }
         Insert: {
@@ -762,6 +924,7 @@ export type Database = {
           is_anonymous?: boolean
           lecture_id?: string | null
           scope: string
+          search_vec?: unknown
           status?: string
         }
         Update: {
@@ -778,6 +941,7 @@ export type Database = {
           is_anonymous?: boolean
           lecture_id?: string | null
           scope?: string
+          search_vec?: unknown
           status?: string
         }
         Relationships: [
@@ -1053,6 +1217,7 @@ export type Database = {
           id: string
           order: number
           parent_id: string | null
+          search_vec: unknown
           show_header: boolean
           title: string
           updated_at: string
@@ -1066,6 +1231,7 @@ export type Database = {
           id?: string
           order?: number
           parent_id?: string | null
+          search_vec?: unknown
           show_header?: boolean
           title: string
           updated_at?: string
@@ -1079,6 +1245,7 @@ export type Database = {
           id?: string
           order?: number
           parent_id?: string | null
+          search_vec?: unknown
           show_header?: boolean
           title?: string
           updated_at?: string
@@ -1101,6 +1268,7 @@ export type Database = {
           id: string
           name: string
           photo_path: string | null
+          search_vec: unknown
           user_id: string | null
         }
         Insert: {
@@ -1109,6 +1277,7 @@ export type Database = {
           id?: string
           name: string
           photo_path?: string | null
+          search_vec?: unknown
           user_id?: string | null
         }
         Update: {
@@ -1117,6 +1286,7 @@ export type Database = {
           id?: string
           name?: string
           photo_path?: string | null
+          search_vec?: unknown
           user_id?: string | null
         }
         Relationships: []
@@ -1245,6 +1415,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_bookmark: {
+        Args: {
+          p_lecture_id: string
+          p_note?: string
+          p_position_sec: number
+          p_window_sec?: number
+        }
+        Returns: string
+      }
       add_featured_lecture: {
         Args: { p_lecture_id: string }
         Returns: undefined
@@ -1449,15 +1628,26 @@ export type Database = {
       }
       buddies_of: { Args: { p_user_id: string }; Returns: string[] }
       buddy_count: { Args: { p_user_id: string }; Returns: number }
+      buddy_goal_share: {
+        Args: {
+          p_from: string
+          p_metric: string
+          p_to: string
+          p_user_id: string
+        }
+        Returns: number
+      }
       buddy_of: { Args: { p_user_id: string }; Returns: string }
       can_read_storage_object: { Args: { p_key: string }; Returns: boolean }
       cancel_buddy:
         | { Args: never; Returns: undefined }
         | { Args: { p_buddy_id?: string }; Returns: undefined }
+      cancel_buddy_goal: { Args: { p_goal_id: string }; Returns: undefined }
       cancel_buddy_request: {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      clamp_client_day: { Args: { p_day: string }; Returns: string }
       contains_blocked_word: { Args: { p_text: string }; Returns: boolean }
       create_broadcast: {
         Args: {
@@ -1471,6 +1661,15 @@ export type Database = {
         }
         Returns: string
       }
+      create_buddy_goal: {
+        Args: {
+          p_buddy_id: string
+          p_days: number
+          p_metric: string
+          p_target: number
+        }
+        Returns: string
+      }
       delete_broadcast: { Args: { p_id: string }; Returns: undefined }
       delete_own_benefit: { Args: { p_id: string }; Returns: undefined }
       delete_own_question: {
@@ -1478,9 +1677,11 @@ export type Database = {
         Returns: undefined
       }
       delete_question: { Args: { p_question_id: string }; Returns: undefined }
+      dispatch_buddy_nudges: { Args: never; Returns: number }
       dispatch_resume_nudges: { Args: never; Returns: undefined }
       dispatch_streak_reminders: { Args: never; Returns: undefined }
       dispatch_weekly_goal_nudges: { Args: never; Returns: undefined }
+      encouragement_phrase: { Args: { p_key: string }; Returns: string }
       export_sequences: {
         Args: never
         Returns: {
@@ -1537,9 +1738,44 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_activity_calendar: {
+        Args: { p_month: string }
+        Returns: {
+          benefits_written: number
+          day: string
+          lessons_completed: number
+          level: string
+          quizzes_passed: number
+          seconds_listened: number
+        }[]
+      }
       get_attempt_detail: { Args: { p_attempt_id: string }; Returns: Json }
       get_attempt_questions: { Args: { p_attempt_id: string }; Returns: Json }
       get_attempt_result: { Args: { p_attempt_id: string }; Returns: Json }
+      get_badge_metrics: {
+        Args: never
+        Returns: {
+          benefit_days: number
+          benefits_count: number
+          completed_series: number
+          has_mastery: boolean
+          quizzes_passed: number
+        }[]
+      }
+      get_bookmarks: {
+        Args: never
+        Returns: {
+          created_at: string
+          id: string
+          lecture_id: string
+          lecture_title: string
+          note: string
+          position_sec: number
+          section_id: string
+          section_title: string
+          status: string
+        }[]
+      }
       get_broadcast: {
         Args: { p_id: string }
         Returns: {
@@ -1573,6 +1809,23 @@ export type Database = {
           weekly_goal_met: boolean
         }[]
       }
+      get_buddy_goals: {
+        Args: never
+        Returns: {
+          buddy_id: string
+          buddy_name: string
+          buddy_progress: number
+          days_left: number
+          ends_on: string
+          i_created: boolean
+          id: string
+          metric: string
+          my_progress: number
+          starts_on: string
+          status: string
+          target: number
+        }[]
+      }
       get_buddy_status: {
         Args: never
         Returns: {
@@ -1592,7 +1845,7 @@ export type Database = {
           total_lectures: number
         }[]
       }
-      get_current_streak: { Args: never; Returns: number }
+      get_current_streak: { Args: { p_today?: string }; Returns: number }
       get_featured_lectures: {
         Args: never
         Returns: {
@@ -1619,6 +1872,17 @@ export type Database = {
           title: string
         }[]
       }
+      get_harvest: {
+        Args: { p_range: string }
+        Returns: {
+          active_days: number
+          benefits_written: number
+          completed_lessons: number
+          completed_series: number
+          quizzes_passed: number
+          total_seconds: number
+        }[]
+      }
       get_home_broadcasts: {
         Args: never
         Returns: {
@@ -1629,6 +1893,17 @@ export type Database = {
         }[]
       }
       get_home_page: { Args: never; Returns: Json }
+      get_incoming_buddy_goals: {
+        Args: never
+        Returns: {
+          created_at: string
+          days: number
+          from_name: string
+          id: string
+          metric: string
+          target: number
+        }[]
+      }
       get_incoming_buddy_requests: {
         Args: never
         Returns: {
@@ -1637,8 +1912,21 @@ export type Database = {
           id: string
         }[]
       }
-      get_journey_summary: {
+      get_journey_map: {
         Args: never
+        Returns: {
+          completed_lectures: number
+          last_activity: string
+          next_lecture_id: string
+          next_lecture_title: string
+          parent_title: string
+          section_id: string
+          section_title: string
+          total_lectures: number
+        }[]
+      }
+      get_journey_summary: {
+        Args: { p_today?: string }
         Returns: {
           active_days: number
           completed_lectures: number
@@ -1782,6 +2070,24 @@ export type Database = {
           passed_count: number
         }[]
       }
+      get_resume_card: {
+        Args: never
+        Returns: {
+          breadcrumb: string[]
+          completed: boolean
+          duration_sec: number
+          lecture_id: string
+          lecture_title: string
+          lesson_order: number
+          next_lecture_id: string
+          next_lecture_title: string
+          position_sec: number
+          section_completed: number
+          section_id: string
+          section_total: number
+          updated_at: string
+        }[]
+      }
       get_section_page: { Args: { p_section_id: string }; Returns: Json }
       get_section_quizzes: {
         Args: { p_section_id: string }
@@ -1823,7 +2129,7 @@ export type Database = {
         }[]
       }
       get_streak_status: {
-        Args: never
+        Args: { p_today?: string }
         Returns: {
           current_streak: number
           recovery_available: boolean
@@ -1844,7 +2150,7 @@ export type Database = {
         }[]
       }
       get_week_progress: {
-        Args: never
+        Args: { p_today?: string }
         Returns: {
           current: number
           metric: Database["public"]["Enums"]["goal_metric"]
@@ -1902,6 +2208,10 @@ export type Database = {
         }
         Returns: string
       }
+      respond_buddy_goal: {
+        Args: { p_accept: boolean; p_goal_id: string }
+        Returns: undefined
+      }
       respond_buddy_request: {
         Args: { p_accept: boolean; p_request_id: string }
         Returns: undefined
@@ -1955,8 +2265,16 @@ export type Database = {
         Returns: boolean
       }
       send_buddy_request: { Args: { p_to_user_id: string }; Returns: undefined }
+      send_encouragement: {
+        Args: { p_phrase_key: string; p_to_user_id: string }
+        Returns: undefined
+      }
       set_app_config: {
         Args: { p_key: string; p_value: string }
+        Returns: undefined
+      }
+      set_bookmark_status: {
+        Args: { p_id: string; p_reviewed: boolean }
         Returns: undefined
       }
       set_own_profile: {
@@ -1982,9 +2300,13 @@ export type Database = {
         }
         Returns: undefined
       }
+      settle_buddy_goals: { Args: never; Returns: number }
       start_quiz_attempt: { Args: { p_quiz_id: string }; Returns: string }
       start_restore_session: { Args: { p_file_name?: string }; Returns: string }
-      streak_for_user: { Args: { p_user_id: string }; Returns: number }
+      streak_for_user: {
+        Args: { p_today?: string; p_user_id: string }
+        Returns: number
+      }
       student_reply_ticket: {
         Args: { p_body: string; p_feedback_id: string }
         Returns: string
@@ -1999,7 +2321,12 @@ export type Database = {
         Returns: undefined
       }
       touch_last_opened: { Args: never; Returns: undefined }
-      try_claim_goal_congrats: { Args: never; Returns: boolean }
+      try_claim_celebration: { Args: { p_key: string }; Returns: boolean }
+      try_claim_goal_congrats: { Args: { p_today?: string }; Returns: boolean }
+      update_bookmark_note: {
+        Args: { p_id: string; p_note: string }
+        Returns: undefined
+      }
       update_broadcast: {
         Args: {
           p_audio_path?: string
@@ -2022,6 +2349,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      web_prefix_tsquery: { Args: { p_search: string }; Returns: unknown }
       week_progress_for_user: {
         Args: { p_user_id: string }
         Returns: {

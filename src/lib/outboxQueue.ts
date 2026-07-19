@@ -29,7 +29,19 @@ export type OutboxActivity = {
 export type OutboxNote = { kind: 'note'; lectureId: string; body: string; updatedAt: string };
 /** One entry total — last write wins. */
 export type OutboxGoal = { kind: 'goal'; metric: GoalMetric; target: number };
-export type OutboxEntry = OutboxActivity | OutboxNote | OutboxGoal;
+/**
+ * A «للمراجعة لاحقًا» bookmark added while offline (V20 · §4). Each is a distinct
+ * mark (no coalescing — a student may bookmark several minutes of one lesson), so
+ * these accumulate and replay in order; the server-side dedup window in
+ * add_bookmark makes a double-replay harmless.
+ */
+export type OutboxBookmark = {
+  kind: 'bookmark';
+  lectureId: string;
+  positionSec: number;
+  note: string | null;
+};
+export type OutboxEntry = OutboxActivity | OutboxNote | OutboxGoal | OutboxBookmark;
 
 /** Device-local YYYY-MM-DD (the day the activity is credited to). */
 export function localDay(d: Date = new Date()): string {
@@ -188,6 +200,20 @@ export async function enqueueGoal(metric: GoalMetric, target: number): Promise<v
   } else {
     q.push({ kind: 'goal', metric, target });
   }
+  await persist();
+  onEnqueue?.();
+}
+
+/** Queue a «للمراجعة لاحقًا» mark for replay (V20 · §4). Each is distinct — no
+ *  coalescing — so several marks in one lesson all survive; add_bookmark's server
+ *  dedup window keeps a same-position double-replay harmless. */
+export async function enqueueBookmark(e: {
+  lectureId: string;
+  positionSec: number;
+  note: string | null;
+}): Promise<void> {
+  const q = await load();
+  q.push({ kind: 'bookmark', ...e });
   await persist();
   onEnqueue?.();
 }

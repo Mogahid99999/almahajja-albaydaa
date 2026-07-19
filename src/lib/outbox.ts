@@ -20,6 +20,7 @@ import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/constants/queryKeys';
 import { isOnline, onReconnect } from '@/lib/connectivity';
 import { replayActivity } from '@/api/progress';
+import { replayBookmark } from '@/api/bookmarks';
 import { saveMyNote } from '@/api/notes';
 import { setWeeklyGoal } from '@/api/journey';
 import {
@@ -78,6 +79,7 @@ async function doFlush(): Promise<void> {
 
   let didActivity = false;
   let didGoal = false;
+  let didBookmark = false;
   const noteIds: string[] = [];
   // If clearQueue runs mid-loop (sign-out/sign-in/ban clearing an identity
   // boundary), this snapshot is stale — replaying its remaining entries would
@@ -92,6 +94,9 @@ async function doFlush(): Promise<void> {
       } else if (entry.kind === 'note') {
         await saveMyNote(entry.lectureId, entry.body);
         noteIds.push(entry.lectureId);
+      } else if (entry.kind === 'bookmark') {
+        await replayBookmark(entry);
+        didBookmark = true;
       } else {
         await setWeeklyGoal(entry.metric, entry.target);
         didGoal = true;
@@ -128,6 +133,9 @@ async function doFlush(): Promise<void> {
   }
   for (const id of noteIds) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.lectureNote(id) });
+  }
+  if (didBookmark) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks });
   }
   if (!(await hasPending())) stopHeartbeat();
 }

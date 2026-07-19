@@ -3,19 +3,28 @@ import Feather from '@expo/vector-icons/Feather';
 
 import type { WeekProgress } from '@/api/types';
 import { colors } from '@/constants/theme';
+import { arNum } from '@/lib/format';
 import { Card } from '@/components/ui/Card';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Txt } from '@/components/ui/Txt';
-import { formatGoalProgress } from './labels';
+import {
+  formatDailyNeeded,
+  formatDaysLeft,
+  formatGoalProgress,
+  weekGoalStats,
+} from './labels';
 
 /**
- * Weekly goal card (Phase 2 · feature C): this week's progress toward the goal
- * the student set, with a quiet "edit" affordance. Calm tone — reaching the goal
- * shows a gentle thanks, never a celebration burst.
+ * Weekly goal card (Phase 2 · feature C; upgraded V20 · §5): this week's progress
+ * toward the goal the student set, now with the percentage, days left in the
+ * Sat→Fri week, the required daily rate, and an over-target line (progress does
+ * NOT stop at 100%). Calm tone — reaching the goal shows a gentle thanks, never a
+ * celebration burst (the unified celebration modal owns any celebration).
  */
 export function GoalCard({ week, onEdit }: { week: WeekProgress; onEdit: () => void }) {
-  const ratio = week.target > 0 ? Math.min(1, week.current / week.target) : 0;
-  const reached = week.target > 0 && week.current >= week.target;
+  const s = weekGoalStats(week.current, week.target);
+  // Bar fills to 100% max even when over-target; the over line carries the >100%.
+  const barRatio = Math.min(1, s.ratio);
 
   return (
     <Card>
@@ -48,17 +57,57 @@ export function GoalCard({ week, onEdit }: { week: WeekProgress; onEdit: () => v
         </Pressable>
       </View>
 
-      <Txt size={13} color={colors.textMuted} style={{ marginTop: 8 }}>
-        {`${formatGoalProgress(week.current, week.target, week.metric)} هذا الأسبوع`}
-      </Txt>
-
-      <ProgressBar value={ratio} style={{ marginTop: 12 }} />
-
-      {reached ? (
-        <Txt size={12} color={colors.stateSuccess} style={{ marginTop: 10 }}>
-          أتممت هدف هذا الأسبوع — جزاك الله خيراً
+      {/* Progress + percentage row */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: 8,
+        }}
+      >
+        <Txt size={13} color={colors.textMuted}>
+          {`${formatGoalProgress(week.current, week.target, week.metric)} هذا الأسبوع`}
         </Txt>
-      ) : null}
+        <Txt size={13} weight="semibold" color={colors.primaryTeal600} tabular>
+          {`${arNum(s.percent)}%`}
+        </Txt>
+      </View>
+
+      <ProgressBar value={barRatio} style={{ marginTop: 12 }} />
+
+      {s.reached ? (
+        // Reached (incl. over-target): gentle thanks + the over-target figure.
+        <View style={{ marginTop: 10, gap: 4 }}>
+          <Txt size={12.5} color={colors.stateSuccess}>
+            أتممت هدف هذا الأسبوع — جزاك الله خيراً
+          </Txt>
+          {s.overTarget ? (
+            <Txt size={12} color={colors.textMuted} tabular>
+              {`${formatGoalProgress(week.current, week.target, week.metric)} — ${arNum(
+                s.percent,
+              )}%`}
+            </Txt>
+          ) : null}
+        </View>
+      ) : (
+        // In progress: days left + required daily rate.
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: 10,
+          }}
+        >
+          <Txt size={12} color={colors.textMuted}>
+            {formatDaysLeft(s.daysLeft)}
+          </Txt>
+          <Txt size={12} color={colors.accentBrassMuted}>
+            {formatDailyNeeded(s.dailyNeeded, week.metric)}
+          </Txt>
+        </View>
+      )}
     </Card>
   );
 }

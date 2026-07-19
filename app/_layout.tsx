@@ -66,6 +66,7 @@ import { recordAppOpen } from '@/lib/notificationState';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
 import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
 import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
+import { AchievementCelebration } from '@/components/celebration/AchievementCelebration';
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient, reconcileContentListsAfterHydration } from '@/lib/queryClient';
@@ -750,6 +751,10 @@ export default function RootLayout() {
                   }}
                 />
               </Stack>
+              {/* Unified achievement celebration (V20 · §15). Mounted once above
+                  the Stack so it overlays every screen; it self-hides when the
+                  celebration queue is empty. */}
+              <AchievementCelebration />
             </UpdateGate>
           </SessionGate>
         </SafeAreaProvider>

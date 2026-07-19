@@ -13,7 +13,15 @@ import { supabase } from '@/lib/supabase';
 import { localDay } from '@/lib/outboxQueue';
 import * as mock from '@/mock/api';
 import { BADGES } from '@/constants/badges';
-import type { Badge, GoalMetric, JourneySummary, StreakStatus, WeeklyGoal } from './types';
+import type {
+  Badge,
+  BadgeMetric,
+  BadgeMetrics,
+  GoalMetric,
+  JourneySummary,
+  StreakStatus,
+  WeeklyGoal,
+} from './types';
 
 export type {
   Badge,
@@ -148,12 +156,107 @@ export async function setWeeklyGoal(metric: GoalMetric, target: number): Promise
   if (error) throw error;
 }
 
-/** Full badge catalog merged with this user's earned state (incl. locked). */
+/** One touched series on «خريطة رحلتي» (§6). */
+export type JourneyMapEntry = {
+  sectionId: string;
+  sectionTitle: string;
+  parentTitle: string | null;
+  total: number;
+  completed: number;
+  nextLectureId: string | null;
+  nextLectureTitle: string | null;
+};
+
+/** The series the student has touched, most-recently-active first (§6). */
+export async function getJourneyMap(): Promise<JourneyMapEntry[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase.rpc('get_journey_map');
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    sectionId: r.section_id,
+    sectionTitle: r.section_title ?? 'سلسلة',
+    parentTitle: r.parent_title ?? null,
+    total: Number(r.total_lectures ?? 0),
+    completed: Number(r.completed_lectures ?? 0),
+    nextLectureId: r.next_lecture_id ?? null,
+    nextLectureTitle: r.next_lecture_title ?? null,
+  }));
+}
+
+/** The extra per-user badge metrics (get_badge_metrics, 0106). */
+export async function getBadgeMetrics(): Promise<BadgeMetrics> {
+  if (USE_MOCK) {
+    return {
+      completedSeries: 0,
+      quizzesPassed: 0,
+      hasMastery: false,
+      benefitsCount: 0,
+      benefitDays: 0,
+    };
+  }
+  const { data, error } = await supabase.rpc('get_badge_metrics');
+  if (error) throw error;
+  const row = data?.[0];
+  return {
+    completedSeries: Number(row?.completed_series ?? 0),
+    quizzesPassed: Number(row?.quizzes_passed ?? 0),
+    hasMastery: !!row?.has_mastery,
+    benefitsCount: Number(row?.benefits_count ?? 0),
+    benefitDays: Number(row?.benefit_days ?? 0),
+  };
+}
+
+/**
+ * The user's current value for a given badge metric, from the two rollups. This
+ * is the single source of truth used by BOTH getBadges (locked progress hint) and
+ * evaluateBadges (award decision), so the "am I there yet?" number the UI shows can
+ * never disagree with what actually unlocks the badge.
+ */
+export function metricValue(
+  metric: BadgeMetric,
+  summary: JourneySummary,
+  metrics: BadgeMetrics,
+): number {
+  switch (metric) {
+    case 'lessons':
+      return summary.completedLectures;
+    case 'hours':
+      return Math.floor(summary.totalSeconds / 3600);
+    case 'streak':
+      return summary.streak.longest;
+    case 'active_days':
+      return summary.activeDays;
+    case 'series':
+      return metrics.completedSeries;
+    case 'quizzes':
+      return metrics.quizzesPassed;
+    case 'mastery':
+      return metrics.hasMastery ? 1 : 0;
+    case 'benefits':
+      return metrics.benefitsCount;
+    case 'benefit_days':
+      return metrics.benefitDays;
+    // Buddy metrics arrive in Phase 3 (buddy_goals); until then they read 0 and
+    // the buddy-category badges simply stay locked.
+    case 'buddy_start':
+    case 'buddy_goals_done':
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Full badge catalog merged with this user's earned state AND live progress
+ * toward each locked badge (V20 · §9). One user_badges read + the two rollups.
+ */
 export async function getBadges(): Promise<Badge[]> {
   if (USE_MOCK) return mock.getBadges();
-  const { data, error } = await supabase
-    .from('user_badges')
-    .select('badge_key, earned_at');
+  const [{ data, error }, summary, metrics] = await Promise.all([
+    supabase.from('user_badges').select('badge_key, earned_at'),
+    getJourneySummary(),
+    getBadgeMetrics(),
+  ]);
   if (error) throw error;
   const earned = new Map((data ?? []).map((b) => [b.badge_key, b.earned_at]));
   return BADGES.map((def) => ({
@@ -161,9 +264,12 @@ export async function getBadges(): Promise<Badge[]> {
     titleAr: def.titleAr,
     descAr: def.descAr,
     threshold: def.threshold,
-    kind: def.kind,
+    metric: def.metric,
+    category: def.category,
+    tier: def.tier,
     earned: earned.has(def.key),
     earnedAt: earned.get(def.key) ?? null,
+    progress: metricValue(def.metric, summary, metrics),
   }));
 }
 
@@ -180,26 +286,33 @@ export async function getBadges(): Promise<Badge[]> {
 export async function evaluateBadges(): Promise<Badge[]> {
   if (USE_MOCK) return mock.evaluateBadges();
 
-  const summary = await getJourneySummary();
-  const { completedLectures } = summary;
-  const longest = summary.streak.longest;
-
-  const { data: existing } = await supabase.from('user_badges').select('badge_key');
-  const have = new Set((existing ?? []).map((b) => b.badge_key));
+  const [summary, metrics, existing] = await Promise.all([
+    getJourneySummary(),
+    getBadgeMetrics(),
+    supabase.from('user_badges').select('badge_key'),
+  ]);
+  const have = new Set((existing.data ?? []).map((b) => b.badge_key));
 
   const newly: Badge[] = [];
   const toInsert: { user_id: string; badge_key: string }[] = [];
   let userId: string | null = null;
   for (const def of BADGES) {
     if (have.has(def.key)) continue;
-    const qualifies =
-      def.kind === 'completed'
-        ? completedLectures >= def.threshold
-        : longest >= def.threshold;
-    if (!qualifies) continue;
+    if (metricValue(def.metric, summary, metrics) < def.threshold) continue;
     userId ??= await requireUserId();
     toInsert.push({ user_id: userId, badge_key: def.key });
-    newly.push({ ...def, earned: true, earnedAt: new Date().toISOString() });
+    newly.push({
+      key: def.key,
+      titleAr: def.titleAr,
+      descAr: def.descAr,
+      threshold: def.threshold,
+      metric: def.metric,
+      category: def.category,
+      tier: def.tier,
+      earned: true,
+      earnedAt: new Date().toISOString(),
+      progress: metricValue(def.metric, summary, metrics),
+    });
   }
   if (toInsert.length) {
     await supabase

@@ -1,10 +1,22 @@
 import { useEffect } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { evaluateBadges, getBadges, getJourneySummary, getWeeklyGoal, setWeeklyGoal } from '@/api/journey';
+import { evaluateBadges, getBadges, getJourneyMap, getJourneySummary, getWeeklyGoal, setWeeklyGoal } from '@/api/journey';
 import type { GoalMetric, JourneySummary, WeeklyGoal } from '@/api/types';
+import { badgeCelebration } from '@/constants/badges';
 import { queryKeys } from '@/constants/queryKeys';
 import { enqueueGoal } from '@/lib/outbox';
+import { celebrate } from '@/stores/celebrationStore';
+
+/** The touched-series list for «خريطة رحلتي» (§6). Off for guests. */
+export function useJourneyMap(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.journeyMap,
+    queryFn: getJourneyMap,
+    enabled: options?.enabled ?? true,
+    placeholderData: keepPreviousData,
+  });
+}
 
 /**
  * Page-header stats: totals, streak (مداومة), this-week goal progress.
@@ -91,6 +103,9 @@ export function useSyncBadgesOnMount(enabled: boolean) {
       .then((newly) => {
         if (!cancelled && newly.length > 0) {
           qc.invalidateQueries({ queryKey: queryKeys.badges });
+          // Celebrate any badge earned offline / via a cron since last visit (§15).
+          // The server claim keeps each to once-ever, so this can't double-fire.
+          for (const b of newly) void celebrate(badgeCelebration(b));
         }
       })
       .catch(() => {

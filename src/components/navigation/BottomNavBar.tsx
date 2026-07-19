@@ -44,9 +44,43 @@ export const BOTTOM_NAV_CLEARANCE = BOTTOM_NAV_BAR_HEIGHT + 24;
 // "the active color lags the tap".
 const SPRING = { damping: 26, stiffness: 500, mass: 0.4 };
 
+/**
+ * Sub-routes that belong under a top-level tab, so the tab stays highlighted when
+ * you drill in from it (e.g. رحلتي العلمية → سجل النشاط keeps the compass active
+ * instead of snapping to Home). Longest-prefix-ish: checked before the Home
+ * fallback. Keyed by the tab index in TABS.
+ */
+const SECTION_PREFIXES: { prefix: string; tabKey: string }[] = [
+  // Journey (compass) section
+  { prefix: '/journey', tabKey: 'journey' },
+  { prefix: '/journey-map', tabKey: 'journey' },
+  { prefix: '/activity', tabKey: 'journey' },
+  { prefix: '/badges', tabKey: 'journey' },
+  { prefix: '/harvest', tabKey: 'journey' },
+  { prefix: '/bookmarks', tabKey: 'journey' },
+  // Profile (user) section
+  { prefix: '/profile', tabKey: 'profile' },
+  { prefix: '/downloads', tabKey: 'profile' },
+  { prefix: '/edit-profile', tabKey: 'profile' },
+  { prefix: '/tickets', tabKey: 'profile' },
+  { prefix: '/about', tabKey: 'profile' },
+  { prefix: '/buddy-requests', tabKey: 'profile' },
+  { prefix: '/buddy-search', tabKey: 'profile' },
+  { prefix: '/sheikh-info', tabKey: 'profile' },
+];
+
+/** Which tab index owns this route — exact tab path, else a section prefix, else Home. */
 function activeIndexFor(pathname: string): number {
-  const i = TABS.findIndex((t) => t.path === pathname);
-  return i === -1 ? 0 : i;
+  const exact = TABS.findIndex((t) => t.path === pathname);
+  if (exact !== -1) return exact;
+  const section = SECTION_PREFIXES.find(
+    (s) => pathname === s.prefix || pathname.startsWith(s.prefix + '/'),
+  );
+  if (section) {
+    const i = TABS.findIndex((t) => t.key === section.tabKey);
+    if (i !== -1) return i;
+  }
+  return 0;
 }
 
 export function BottomNavBar() {
@@ -182,7 +216,9 @@ function TabButton({
   });
 
   const pathname = usePathname();
-  const isActive = TABS[index].path === pathname;
+  // Active when this tab OWNS the current route (exact tab path or a section
+  // sub-route) — so the compass stays lit on سجل النشاط / الأوسمة / … etc.
+  const isActive = activeIndexFor(pathname) === index;
 
   // Icon color snaps INSTANTLY off the current route (isActive), NOT off the
   // pill's spring progress. Two bugs came from tying color to the pill:
