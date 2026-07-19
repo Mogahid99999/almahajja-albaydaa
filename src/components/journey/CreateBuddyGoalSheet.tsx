@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, View, type ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { BuddyGoalMetric } from '@/api/buddyGoals';
 import { colors, radius } from '@/constants/theme';
@@ -36,6 +37,7 @@ export function CreateBuddyGoalSheet({
   const [metric, setMetric] = useState<BuddyGoalMetric>('lectures');
   const [target, setTarget] = useState(5);
   const [days, setDays] = useState(7);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
@@ -59,7 +61,7 @@ export function CreateBuddyGoalSheet({
             borderTopRightRadius: radius.artwork,
             paddingHorizontal: 22,
             paddingTop: 18,
-            paddingBottom: 34,
+            paddingBottom: 24 + insets.bottom,
             gap: 14,
           }}
         >

@@ -8,6 +8,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radius } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
@@ -36,6 +37,7 @@ export function AddBookmarkSheet({
   onSave: (note: string) => void;
 }) {
   const [note, setNote] = useState('');
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) setNote('');
@@ -59,7 +61,7 @@ export function AddBookmarkSheet({
             borderTopRightRadius: radius.artwork,
             paddingHorizontal: 22,
             paddingTop: 18,
-            paddingBottom: 34,
+            paddingBottom: 24 + insets.bottom,
             gap: 12,
           }}
         >

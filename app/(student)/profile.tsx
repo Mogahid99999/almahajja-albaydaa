@@ -303,6 +303,14 @@ export default function ProfileScreen() {
               }
               onPress={() => router.push('/(student)/bookmarks' as Parameters<typeof router.push>[0])}
             />
+            <Divider />
+            <LinkRow
+              icon="users"
+              label="رفقاء الرحلة"
+              onPress={() =>
+                router.push('/(student)/buddy-requests' as Parameters<typeof router.push>[0])
+              }
+            />
           </>
         ) : null}
         <Divider />

@@ -11,6 +11,7 @@
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 
 import type { ActivityDay, ActivityLevel } from '@/api/activity';
@@ -56,6 +57,7 @@ export default function ActivityScreen() {
   const isGuest = user?.isGuest ?? true;
   const { data: summary } = useJourneySummary({ enabled: !isGuest });
   const miniPad = useMiniPlayerPad();
+  const insets = useSafeAreaInsets();
 
   const now = new Date();
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m0: now.getMonth() });
@@ -197,7 +199,9 @@ export default function ActivityScreen() {
               borderTopRightRadius: radius.artwork,
               paddingHorizontal: 22,
               paddingTop: 18,
-              paddingBottom: 34,
+              // Clear the system nav bar (gesture pill / 3-button) so the last
+              // detail line isn't hidden behind it.
+              paddingBottom: 24 + insets.bottom,
               gap: 10,
             }}
           >

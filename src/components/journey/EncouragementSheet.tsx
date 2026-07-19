@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ENCOURAGEMENT_PHRASES } from '@/api/encouragement';
 import { arabicOr } from '@/lib/errorText';
@@ -27,6 +28,7 @@ export function EncouragementSheet({
   const send = useSendEncouragement();
   const [sentKey, setSentKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
 
   function pick(key: string) {
     setError(null);
@@ -57,7 +59,7 @@ export function EncouragementSheet({
             borderTopRightRadius: radius.artwork,
             paddingHorizontal: 22,
             paddingTop: 18,
-            paddingBottom: 28,
+            paddingBottom: 20 + insets.bottom,
             gap: 12,
             maxHeight: '80%',
           }}

@@ -15,6 +15,7 @@ import { HomeHeader } from '@/components/home/HomeHeader';
 import { NewlyAddedRail } from '@/components/home/NewlyAddedRail';
 import { FeaturedRail } from '@/components/home/FeaturedRail';
 import { BuddyCard } from '@/components/home/BuddyCard';
+import { BuddyGoalInvitesCard } from '@/components/home/BuddyGoalInvitesCard';
 import { QuestionsHomeCard } from '@/components/home/QuestionsHomeCard';
 import { SectionsGrid } from '@/components/home/SectionsGrid';
 import { StreakCard } from '@/components/home/StreakCard';
@@ -96,6 +97,9 @@ export default function HomeScreen() {
 
           {/* رفيق الدراسة — invitation / today-state (registered users only) */}
           <BuddyCard />
+
+          {/* أهداف الرفقة — incoming shared-goal invitations (§10/§12) */}
+          <BuddyGoalInvitesCard />
 
           <SectionsGrid sections={data?.sections ?? []} />
 
