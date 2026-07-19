@@ -154,6 +154,43 @@ export async function getRestorableLectures(): Promise<RestorableLecture[]> {
   return out;
 }
 
+/**
+ * Every published lecture whose SECTION title is one of `sectionTitles`, shaped
+ * like {@link RestorableLecture} (positionSec 0 — no progress context here). The
+ * restore flow (V19) passes the section-folder names it scanned on disk so it can
+ * relink downloaded lectures the user NEVER played — those have no
+ * `user_lecture_progress` row, so {@link getRestorableLectures} alone misses them.
+ * Matching stays by section+title downstream. Chunked isn't needed: a user's
+ * downloaded sections are few. Returns [] for an empty input.
+ */
+export async function getLecturesBySectionTitles(
+  sectionTitles: string[],
+): Promise<RestorableLecture[]> {
+  if (USE_MOCK || sectionTitles.length === 0) return [];
+  const { data, error } = await supabase
+    .from('lectures')
+    .select('id, title, duration_sec, section_id, order, sheikhs(name), sections!inner(title)')
+    .eq('status', 'published')
+    .in('sections.title', sectionTitles);
+  if (error) throw error;
+  const out: RestorableLecture[] = [];
+  for (const l of data ?? []) {
+    const sheikh = Array.isArray(l.sheikhs) ? l.sheikhs[0] : (l.sheikhs as any);
+    const sec = Array.isArray(l.sections) ? l.sections[0] : (l.sections as any);
+    out.push({
+      id: l.id,
+      title: l.title,
+      sheikhName: sheikh?.name ?? null,
+      durationSec: l.duration_sec ?? 0,
+      sectionTitle: sec?.title ?? null,
+      sectionId: l.section_id ?? null,
+      order: l.order ?? 0,
+      positionSec: 0,
+    });
+  }
+  return out;
+}
+
 /** The current user's progress for a lecture, if any (for resume). */
 export async function getLectureProgress(lectureId: string): Promise<LectureProgress> {
   if (USE_MOCK) return mock.getLectureProgress(lectureId);

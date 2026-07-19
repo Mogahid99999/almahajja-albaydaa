@@ -50,6 +50,7 @@ type NavKey =
   | 'analytics'
   | 'buddies'
   | 'users'
+  | 'backup'
   | 'settings';
 
 // `adminOnly` items are hidden from a ناشر (publisher): analytics, users, and
@@ -85,6 +86,7 @@ const NAV_ITEMS: {
   { key: 'analytics', label: 'تحليلات التقدم', href: '/admin/analytics', icon: 'trending-up', adminOnly: true, sheikh: true },
   { key: 'buddies', label: 'رفقاء الدراسة', href: '/admin/buddies', icon: 'heart', adminOnly: true },
   { key: 'users', label: 'إدارة المستخدمين', href: '/admin/users', icon: 'user-check', adminOnly: true },
+  { key: 'backup', label: 'النسخ الاحتياطي', href: '/admin/backup', icon: 'database', adminOnly: true },
   { key: 'settings', label: 'الإعدادات وعن المنصة', href: '/admin/settings', icon: 'settings', adminOnly: true },
 ];
 

@@ -248,7 +248,17 @@ async function ensurePublicRoot(): Promise<string> {
   return perm.directoryUri;
 }
 
-/** Ensures <root>/<APP_FOLDER> exists, creating it if needed; returns its SAF URI. */
+/**
+ * Ensures the app folder «المحجة البيضاء» exists under the granted root and
+ * returns its SAF URI. Three cases:
+ *  1. The granted ROOT itself IS «المحجة البيضاء» (the user picked that folder in
+ *     the picker) → use it directly. Creating a child «المحجة البيضاء» here would
+ *     nest a second identically-named folder inside the real one and split
+ *     downloads across two — the bug this guard prevents.
+ *  2. Root already CONTAINS a «المحجة البيضاء» child → reuse that child.
+ *  3. Neither → create «المحجة البيضاء» under the root.
+ * The name check is Arabic-normalized so orthographic variants still match.
+ */
 async function ensurePublicAppFolder(rootUri: string): Promise<string> {
   const store = usePublicStorageStore.getState();
   if (store.appFolderUri) {
@@ -256,15 +266,38 @@ async function ensurePublicAppFolder(rootUri: string): Promise<string> {
       await StorageAccessFramework.readDirectoryAsync(store.appFolderUri);
       return store.appFolderUri;
     } catch {
-      /* deleted/moved externally — recreate below */
+      /* deleted/moved externally — re-resolve below */
     }
   }
+
+  const target = normalizeArabic(APP_FOLDER);
+
+  // Case 1: the user picked «المحجة البيضاء» itself as the root.
+  if (normalizeArabic(safDisplayName(rootUri)) === target) {
+    usePublicStorageStore.setState({ appFolderUri: rootUri, sectionDirs: {} });
+    return rootUri;
+  }
+
+  // Case 2: an existing «المحجة البيضاء» child under the root — reuse it rather
+  // than making a duplicate (SAF makeDirectoryAsync would create «... (1)»).
+  try {
+    for (const childUri of await StorageAccessFramework.readDirectoryAsync(rootUri)) {
+      if (normalizeArabic(safDisplayName(childUri)) === target) {
+        usePublicStorageStore.setState({ appFolderUri: childUri, sectionDirs: {} });
+        return childUri;
+      }
+    }
+  } catch {
+    /* unreadable root — fall through to create */
+  }
+
+  // Case 3: create it fresh.
   const uri = await StorageAccessFramework.makeDirectoryAsync(rootUri, APP_FOLDER);
   usePublicStorageStore.setState({ appFolderUri: uri, sectionDirs: {} });
   return uri;
 }
 
-/** Ensures <appFolder>/<section> exists, creating it if needed; returns its SAF URI. */
+/** Ensures <appFolder>/<section> exists, reusing an existing folder of that name; returns its SAF URI. */
 async function ensurePublicSectionDir(appFolderUri: string, section: string): Promise<string> {
   const store = usePublicStorageStore.getState();
   const cached = store.sectionDirs[section];
@@ -273,8 +306,22 @@ async function ensurePublicSectionDir(appFolderUri: string, section: string): Pr
       await StorageAccessFramework.readDirectoryAsync(cached);
       return cached;
     } catch {
-      /* deleted/moved externally — recreate below */
+      /* deleted/moved externally — re-resolve below */
     }
+  }
+  // Reuse an existing section folder (e.g. one a restore just relinked into)
+  // rather than letting SAF create a duplicate «<section> (1)» — so a download
+  // after a restore lands in the SAME folder the user already has.
+  const target = normalizeArabic(section);
+  try {
+    for (const childUri of await StorageAccessFramework.readDirectoryAsync(appFolderUri)) {
+      if (normalizeArabic(safDisplayName(childUri)) === target) {
+        store.setSectionDir(section, childUri);
+        return childUri;
+      }
+    }
+  } catch {
+    /* unreadable app folder — fall through to create */
   }
   const uri = await StorageAccessFramework.makeDirectoryAsync(appFolderUri, section);
   store.setSectionDir(section, uri);
@@ -600,7 +647,7 @@ async function safIsDir(uri: string): Promise<boolean> {
  * its SAF content:// URI plus the (case/space-normalized) `<section>/<lesson>`
  * key we match lectures against. `section` is the immediate parent folder name.
  */
-type ScannedAudio = { safUri: string; section: string; base: string };
+export type ScannedAudio = { safUri: string; section: string; base: string };
 
 /**
  * Fold cosmetic Arabic orthographic variants so a match isn't lost to them:
@@ -667,38 +714,56 @@ async function scanPublicAudio(rootUri: string, depth = 3): Promise<ScannedAudio
 export type RestoreResult = {
   /** Number of lectures newly relinked from public files. */
   restored: number;
+  /** Matched files that were ALREADY downloaded (present + in the manifest) — nothing to do. */
+  alreadyPresent: number;
   /** Audio files found in the folder that didn't match any of the user's lectures. */
   unmatched: number;
 };
 
-/**
- * Re-grant the public folder and relink any downloaded .mp3 files a reinstall
- * orphaned, using the caller's server lecture list to recover ids. Adds a
- * manifest entry (with the file's live SAF URI) for every match not already
- * downloaded; never overwrites an entry that's already good. Android only —
- * a no-op elsewhere (iOS keeps downloads in private storage, which uninstall
- * clears along with the manifest, so there's nothing to relink).
- */
-export async function restoreDownloadsFromPublicFolder(
-  lectures: RestorableLecture[],
-): Promise<RestoreResult> {
-  if (!isAndroid) return { restored: 0, unmatched: 0 };
+/** The files a restore scan found, plus the distinct section-folder names among them. */
+export type PublicFolderScan = {
+  files: ScannedAudio[];
+  /** Distinct immediate-parent folder names (the sections) — used to fetch matching lectures. */
+  sectionNames: string[];
+};
 
-  // Prompt the folder picker (or reuse an existing grant) and ensure the app
-  // folder exists so future downloads have a home — the same grant the
-  // downloader uses. We scan the granted ROOT (not just the app folder): the
-  // user may pick «المحجة البيضاء», its parent «المحجة», or «Download», and the
-  // recursive scan finds the lessons under any of them (each lesson's parent
-  // folder is its section).
+/**
+ * Re-grant the public folder and scan it for downloaded .mp3 files. Resolves the
+ * app folder «المحجة البيضاء» WITHOUT creating a duplicate: if the user picked
+ * that folder itself it's reused directly (no nested «.../المحجة البيضاء/المحجة
+ * البيضاء»); if they picked its parent «المحجة» or «Download», the existing child
+ * is reused. Future downloads then save back into this SAME folder. Scans the
+ * granted ROOT recursively so lessons are found regardless of the pick level.
+ * Android only. The returned `sectionNames` let the caller fetch EVERY lecture in
+ * those sections (incl. ones never played, which have no progress row) so
+ * matching isn't limited to the user's history.
+ */
+export async function scanPublicFolderForRestore(): Promise<PublicFolderScan> {
+  if (!isAndroid) return { files: [], sectionNames: [] };
   const rootUri = await ensurePublicRoot();
   await ensurePublicAppFolder(rootUri);
+  const files = await scanPublicAudio(rootUri);
+  const sectionNames = [...new Set(files.map((f) => f.section))];
+  return { files, sectionNames };
+}
 
-  const scanned = await scanPublicAudio(rootUri);
-  if (scanned.length === 0) return { restored: 0, unmatched: 0 };
+/**
+ * Relink scanned .mp3 files to lecture ids, matching each file's sanitized
+ * `<section>/<lesson>` name against `lectures` (progress rows UNION lectures in
+ * the scanned sections). Adds a manifest entry (with the file's live SAF URI) for
+ * every match not already downloaded; never overwrites an entry that's already
+ * good. Pure/offline — the grant + scan already happened in
+ * {@link scanPublicFolderForRestore}.
+ */
+export function relinkScannedFiles(
+  files: ScannedAudio[],
+  lectures: RestorableLecture[],
+): RestoreResult {
+  if (!isAndroid || files.length === 0) return { restored: 0, alreadyPresent: 0, unmatched: 0 };
 
-  // Index the user's lectures by the same <section>/<lesson> key the files use.
-  // Collisions (two lectures sanitizing to the same name) keep the first — rare,
-  // and there's no id in the filename to disambiguate anyway.
+  // Index lectures by the same <section>/<lesson> key the files use. Collisions
+  // (two lectures sanitizing to the same name) keep the first — no id in the
+  // filename to disambiguate anyway.
   const byKey = new Map<string, RestorableLecture>();
   for (const lec of lectures) {
     const section = sanitizeSegment(lec.sectionTitle ?? FALLBACK_SECTION, FALLBACK_SECTION);
@@ -709,15 +774,18 @@ export async function restoreDownloadsFromPublicFolder(
 
   const manifest = readManifest();
   let restored = 0;
+  let alreadyPresent = 0;
   let unmatched = 0;
-  for (const file of scanned) {
+  for (const file of files) {
     const lec = byKey.get(matchKey(file.section, file.base));
     if (!lec) {
       unmatched++;
       continue;
     }
-    // Already correctly downloaded (its file is present) — leave it be.
-    if (manifest[lec.id]?.safUri) continue;
+    if (manifest[lec.id]?.safUri) {
+      alreadyPresent++; // matched, but already downloaded — nothing to do
+      continue;
+    }
     manifest[lec.id] = {
       id: lec.id,
       title: lec.title,
@@ -733,7 +801,21 @@ export async function restoreDownloadsFromPublicFolder(
     restored++;
   }
   if (restored > 0) writeManifest(manifest);
-  return { restored, unmatched };
+  return { restored, alreadyPresent, unmatched };
+}
+
+/**
+ * Convenience wrapper: scan the public folder, then relink against `lectures`.
+ * Kept for callers/tests that already have the full lecture list; the app's own
+ * flow uses {@link scanPublicFolderForRestore} + {@link relinkScannedFiles} so it
+ * can widen `lectures` with the scanned sections between the two steps.
+ */
+export async function restoreDownloadsFromPublicFolder(
+  lectures: RestorableLecture[],
+): Promise<RestoreResult> {
+  if (!isAndroid) return { restored: 0, alreadyPresent: 0, unmatched: 0 };
+  const { files } = await scanPublicFolderForRestore();
+  return relinkScannedFiles(files, lectures);
 }
 
 if (!isWeb) migrateLegacyDownloads();

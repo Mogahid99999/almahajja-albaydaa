@@ -116,6 +116,72 @@ export type Database = {
           },
         ]
       }
+      backup_log: {
+        Row: {
+          actor_id: string | null
+          actor_name: string | null
+          app_version: string | null
+          backup_format_version: string | null
+          error_code: string | null
+          error_message: string | null
+          file_name: string | null
+          finished_at: string | null
+          id: string
+          media_bytes: number | null
+          media_count: number | null
+          operation_type: Database["public"]["Enums"]["backup_op_type"]
+          restore_id: string | null
+          restore_mode: Database["public"]["Enums"]["restore_mode"] | null
+          schema_version: string | null
+          size_bytes: number | null
+          started_at: string
+          status: Database["public"]["Enums"]["backup_op_status"]
+          table_counts: Json | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_name?: string | null
+          app_version?: string | null
+          backup_format_version?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          file_name?: string | null
+          finished_at?: string | null
+          id?: string
+          media_bytes?: number | null
+          media_count?: number | null
+          operation_type: Database["public"]["Enums"]["backup_op_type"]
+          restore_id?: string | null
+          restore_mode?: Database["public"]["Enums"]["restore_mode"] | null
+          schema_version?: string | null
+          size_bytes?: number | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["backup_op_status"]
+          table_counts?: Json | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_name?: string | null
+          app_version?: string | null
+          backup_format_version?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          file_name?: string | null
+          finished_at?: string | null
+          id?: string
+          media_bytes?: number | null
+          media_count?: number | null
+          operation_type?: Database["public"]["Enums"]["backup_op_type"]
+          restore_id?: string | null
+          restore_mode?: Database["public"]["Enums"]["restore_mode"] | null
+          schema_version?: string | null
+          size_bytes?: number | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["backup_op_status"]
+          table_counts?: Json | null
+        }
+        Relationships: []
+      }
       blocked_words: {
         Row: {
           created_at: string
@@ -925,6 +991,33 @@ export type Database = {
           },
         ]
       }
+      restore_sessions: {
+        Row: {
+          actor_id: string
+          created_at: string
+          expires_at: string
+          file_name: string | null
+          restore_id: string
+          status: Database["public"]["Enums"]["restore_session_status"]
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          expires_at?: string
+          file_name?: string | null
+          restore_id?: string
+          status?: Database["public"]["Enums"]["restore_session_status"]
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          expires_at?: string
+          file_name?: string | null
+          restore_id?: string
+          status?: Database["public"]["Enums"]["restore_session_status"]
+        }
+        Relationships: []
+      }
       section_follows: {
         Row: {
           created_at: string
@@ -1161,6 +1254,10 @@ export type Database = {
         Returns: string
       }
       admin_buddy_overview: { Args: never; Returns: Json }
+      admin_close_ticket: {
+        Args: { p_feedback_id: string }
+        Returns: undefined
+      }
       admin_dashboard_stats: { Args: never; Returns: Json }
       admin_delete_feedback: {
         Args: { p_feedback_id: string }
@@ -1235,6 +1332,16 @@ export type Database = {
       }
       admin_reorder_lectures: { Args: { p_ids: string[] }; Returns: undefined }
       admin_reorder_sections: { Args: { p_ids: string[] }; Returns: undefined }
+      admin_reply_ticket: {
+        Args: {
+          p_body: string
+          p_cta_label?: string
+          p_cta_route?: string
+          p_feedback_id: string
+          p_image_path?: string
+        }
+        Returns: string
+      }
       admin_set_benefit_status: {
         Args: { p_id: string; p_status: string }
         Returns: undefined
@@ -1305,6 +1412,41 @@ export type Database = {
         }
         Returns: string
       }
+      backup_excluded_tables: { Args: never; Returns: string[] }
+      backup_log_start: {
+        Args: {
+          p_file_name?: string
+          p_operation: Database["public"]["Enums"]["backup_op_type"]
+          p_restore_id?: string
+          p_restore_mode?: Database["public"]["Enums"]["restore_mode"]
+        }
+        Returns: string
+      }
+      backup_log_update: {
+        Args: {
+          p_app_version?: string
+          p_backup_format_version?: string
+          p_error_code?: string
+          p_error_message?: string
+          p_finished?: boolean
+          p_id: string
+          p_media_bytes?: number
+          p_media_count?: number
+          p_schema_version?: string
+          p_size_bytes?: number
+          p_status?: Database["public"]["Enums"]["backup_op_status"]
+          p_table_counts?: Json
+        }
+        Returns: undefined
+      }
+      backup_schema_fingerprint: { Args: never; Returns: Json }
+      backup_table_order: {
+        Args: never
+        Returns: {
+          ord: number
+          table_name: string
+        }[]
+      }
       buddies_of: { Args: { p_user_id: string }; Returns: string[] }
       buddy_count: { Args: { p_user_id: string }; Returns: number }
       buddy_of: { Args: { p_user_id: string }; Returns: string }
@@ -1319,6 +1461,7 @@ export type Database = {
       contains_blocked_word: { Args: { p_text: string }; Returns: boolean }
       create_broadcast: {
         Args: {
+          p_audio_path?: string
           p_body: string
           p_image_path?: string
           p_link_label?: string
@@ -1338,6 +1481,27 @@ export type Database = {
       dispatch_resume_nudges: { Args: never; Returns: undefined }
       dispatch_streak_reminders: { Args: never; Returns: undefined }
       dispatch_weekly_goal_nudges: { Args: never; Returns: undefined }
+      export_sequences: {
+        Args: never
+        Returns: {
+          last_value: number
+          seq_name: string
+        }[]
+      }
+      export_table: {
+        Args: { p_after?: string; p_limit?: number; p_table: string }
+        Returns: {
+          pk: string
+          row_json: Json
+        }[]
+      }
+      export_table_counts: {
+        Args: never
+        Returns: {
+          row_count: number
+          table_name: string
+        }[]
+      }
       fanout_to_all: {
         Args: {
           p_body: string
@@ -1379,6 +1543,7 @@ export type Database = {
       get_broadcast: {
         Args: { p_id: string }
         Returns: {
+          audio_path: string
           body: string
           id: string
           image_path: string
@@ -1515,6 +1680,18 @@ export type Database = {
         Returns: {
           attempted: number
           passed: number
+        }[]
+      }
+      get_my_tickets: {
+        Args: never
+        Returns: {
+          admin_replied: boolean
+          category: string
+          created_at: string
+          id: string
+          last_activity: string
+          message: string
+          status: string
         }[]
       }
       get_outgoing_buddy_requests: {
@@ -1654,6 +1831,18 @@ export type Database = {
           today_counted: boolean
         }[]
       }
+      get_ticket_thread: {
+        Args: { p_feedback_id: string }
+        Returns: {
+          body: string
+          created_at: string
+          cta_label: string
+          cta_route: string
+          id: string
+          image_path: string
+          is_admin: boolean
+        }[]
+      }
       get_week_progress: {
         Args: never
         Returns: {
@@ -1665,6 +1854,10 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_content_manager: { Args: never; Returns: boolean }
       is_moderator: { Args: never; Returns: boolean }
+      is_restore_session_active: {
+        Args: { p_restore_id: string }
+        Returns: boolean
+      }
       is_sheikh: { Args: never; Returns: boolean }
       is_staff_viewer: { Args: never; Returns: boolean }
       lecture_visible_to_viewer: {
@@ -1713,6 +1906,21 @@ export type Database = {
         Args: { p_accept: boolean; p_request_id: string }
         Returns: undefined
       }
+      restore_tables: {
+        Args: {
+          p_mode?: Database["public"]["Enums"]["restore_mode"]
+          p_payload: Json
+        }
+        Returns: {
+          out_expected: number
+          out_restored: number
+          out_table: string
+        }[]
+      }
+      reveal_question_author: {
+        Args: { p_question_id: string }
+        Returns: string
+      }
       save_activity: {
         Args: {
           p_completed: boolean
@@ -1759,12 +1967,28 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_question_audience: {
+        Args: { p_audience: string; p_question_id: string }
+        Returns: undefined
+      }
       set_question_hidden: {
         Args: { p_hidden: boolean; p_question_id: string }
         Returns: undefined
       }
+      set_restore_session_status: {
+        Args: {
+          p_restore_id: string
+          p_status: Database["public"]["Enums"]["restore_session_status"]
+        }
+        Returns: undefined
+      }
       start_quiz_attempt: { Args: { p_quiz_id: string }; Returns: string }
+      start_restore_session: { Args: { p_file_name?: string }; Returns: string }
       streak_for_user: { Args: { p_user_id: string }; Returns: number }
+      student_reply_ticket: {
+        Args: { p_body: string; p_feedback_id: string }
+        Returns: string
+      }
       submit_feedback: {
         Args: { p_category: string; p_device_info?: Json; p_message: string }
         Returns: string
@@ -1778,6 +2002,7 @@ export type Database = {
       try_claim_goal_congrats: { Args: never; Returns: boolean }
       update_broadcast: {
         Args: {
+          p_audio_path?: string
           p_body: string
           p_id: string
           p_image_path?: string
@@ -1809,6 +2034,17 @@ export type Database = {
     Enums: {
       app_role: "student" | "admin" | "publisher" | "sheikh"
       attachment_type: "pdf" | "book" | "transcript" | "image" | "link"
+      backup_op_status:
+        | "pending"
+        | "running"
+        | "validating"
+        | "uploading"
+        | "restoring"
+        | "verifying"
+        | "success"
+        | "failed"
+        | "cancelled"
+      backup_op_type: "backup" | "restore"
       goal_metric: "lectures" | "minutes"
       lecture_status: "draft" | "published"
       notification_type:
@@ -1829,6 +2065,15 @@ export type Database = {
         | "beneficial_reminder"
         | "content_reported"
         | "feedback_received"
+      restore_mode: "full_replace" | "merge"
+      restore_session_status:
+        | "open"
+        | "staged"
+        | "validated"
+        | "activated"
+        | "completed"
+        | "failed"
+        | "expired"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1958,6 +2203,18 @@ export const Constants = {
     Enums: {
       app_role: ["student", "admin", "publisher", "sheikh"],
       attachment_type: ["pdf", "book", "transcript", "image", "link"],
+      backup_op_status: [
+        "pending",
+        "running",
+        "validating",
+        "uploading",
+        "restoring",
+        "verifying",
+        "success",
+        "failed",
+        "cancelled",
+      ],
+      backup_op_type: ["backup", "restore"],
       goal_metric: ["lectures", "minutes"],
       lecture_status: ["draft", "published"],
       notification_type: [
@@ -1978,6 +2235,16 @@ export const Constants = {
         "beneficial_reminder",
         "content_reported",
         "feedback_received",
+      ],
+      restore_mode: ["full_replace", "merge"],
+      restore_session_status: [
+        "open",
+        "staged",
+        "validated",
+        "activated",
+        "completed",
+        "failed",
+        "expired",
       ],
     },
   },

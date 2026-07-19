@@ -3,7 +3,12 @@ import { Platform } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
 import { getLecturePlayback } from '@/api/lectures';
-import { getRestorableLectures, hasAccountHistory } from '@/api/progress';
+import {
+  getLecturesBySectionTitles,
+  getRestorableLectures,
+  hasAccountHistory,
+  type RestorableLecture,
+} from '@/api/progress';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { LectureCard } from '@/api/types';
@@ -13,7 +18,8 @@ import {
   getDownloadedCards,
   listDownloadedIds,
   localUriFor,
-  restoreDownloadsFromPublicFolder,
+  relinkScannedFiles,
+  scanPublicFolderForRestore,
   verifyDownload,
   verifyDownloads,
   type RestoreResult,
@@ -221,11 +227,25 @@ export function useRestoreDownloads() {
     setState('running');
     setError(null);
     try {
-      // The server lecture list is the bridge from a lossy `<section>/<lesson>.mp3`
-      // filename back to a real lecture id — needs one online call.
-      const lectures = await getRestorableLectures();
-      const res = await restoreDownloadsFromPublicFolder(lectures);
-      // Reflect the relinked files in the store right away.
+      // 1) Grant + scan the public folder FIRST (this is what pops the picker).
+      const { files, sectionNames } = await scanPublicFolderForRestore();
+
+      // 2) Build the lecture list to match against: the user's progress rows
+      //    UNION every lecture in the scanned sections. The union is what lets a
+      //    downloaded-but-never-played lecture (no progress row) still relink —
+      //    the server list is the only bridge from a lossy filename to a real id.
+      const [progressLectures, sectionLectures] = await Promise.all([
+        getRestorableLectures(),
+        getLecturesBySectionTitles(sectionNames),
+      ]);
+      const byId = new Map<string, RestorableLecture>();
+      // Progress rows first so their non-zero resume position wins over the
+      // position-less section-fetch copy of the same lecture.
+      for (const l of progressLectures) byId.set(l.id, l);
+      for (const l of sectionLectures) if (!byId.has(l.id)) byId.set(l.id, l);
+
+      // 3) Relink (pure/offline) and reflect the result in the store immediately.
+      const res = relinkScannedFiles(files, [...byId.values()]);
       for (const id of listDownloadedIds()) {
         const uri = localUriFor(id);
         if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });
@@ -240,7 +260,15 @@ export function useRestoreDownloads() {
     }
   }, [set]);
 
-  return { state, result, error, restore };
+  // Return the flow to its initial state so a reopened dialog starts fresh
+  // (otherwise it would re-show the previous run's result screen).
+  const reset = useCallback(() => {
+    setState('idle');
+    setResult(null);
+    setError(null);
+  }, []);
+
+  return { state, result, error, restore, reset };
 }
 
 /**

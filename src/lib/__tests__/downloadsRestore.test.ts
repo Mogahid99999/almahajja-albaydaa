@@ -159,7 +159,7 @@ describe('restoreDownloadsFromPublicFolder (V19)', () => {
     seedPublicFolder({ التوحيد: ['الدرس الأول.mp3'] });
 
     const res = await dl.restoreDownloadsFromPublicFolder([LEC({})]);
-    expect(res).toEqual({ restored: 1, unmatched: 0 });
+    expect(res).toEqual({ restored: 1, alreadyPresent: 0, unmatched: 0 });
 
     // Now visible through the normal read paths, with the SAF content:// URI.
     expect(dl.listDownloadedIds()).toEqual(['lec-1']);
@@ -190,7 +190,7 @@ describe('restoreDownloadsFromPublicFolder (V19)', () => {
     const dl = freshDownloads();
     seedPublicFolder({ التوحيد: ['درس غير معروف.mp3'] });
     const res = await dl.restoreDownloadsFromPublicFolder([LEC({})]);
-    expect(res).toEqual({ restored: 0, unmatched: 1 });
+    expect(res).toEqual({ restored: 0, alreadyPresent: 0, unmatched: 1 });
     expect(dl.listDownloadedIds()).toEqual([]);
   });
 
@@ -205,6 +205,57 @@ describe('restoreDownloadsFromPublicFolder (V19)', () => {
     const dl = freshDownloads();
     seedPublicFolder({});
     const res = await dl.restoreDownloadsFromPublicFolder([LEC({})]);
-    expect(res).toEqual({ restored: 0, unmatched: 0 });
+    expect(res).toEqual({ restored: 0, alreadyPresent: 0, unmatched: 0 });
+  });
+
+  test('re-running after a restore reports alreadyPresent, not "not found"', async () => {
+    const dl = freshDownloads();
+    seedPublicFolder({ التوحيد: ['الدرس الأول.mp3'] });
+    // First run links it.
+    expect((await dl.restoreDownloadsFromPublicFolder([LEC({})])).restored).toBe(1);
+    // Second run finds the same file already linked — counted as alreadyPresent.
+    const again = await dl.restoreDownloadsFromPublicFolder([LEC({})]);
+    expect(again).toEqual({ restored: 0, alreadyPresent: 1, unmatched: 0 });
+  });
+});
+
+describe('picking «المحجة البيضاء» itself (no nested duplicate)', () => {
+  // The user picks the app folder directly in the SAF picker: the granted ROOT
+  // display name IS «المحجة البيضاء». It must be reused as the app folder — NOT
+  // have a second «المحجة البيضاء» created inside it — and its lessons must relink.
+  function freshWithAppFolderPicked() {
+    jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { usePublicStorageStore } = require('@/stores/publicStorageStore');
+    // Root = the app folder itself; NO cached appFolderUri (fresh reinstall).
+    usePublicStorageStore.setState({
+      rootUri: APP_FOLDER_URI,
+      appFolderUri: null,
+      sectionDirs: {},
+    });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('../downloads') as typeof import('../downloads');
+  }
+
+  test('reuses the picked folder, creates no child, and relinks its lessons', async () => {
+    // Sections live DIRECTLY under the picked app folder (root).
+    for (const k of Object.keys(safTree)) delete safTree[k];
+    const sectionUri = `${APP_FOLDER_URI}/${enc('الأصول الثلاثة')}`;
+    safTree[sectionUri] = [`${sectionUri}/${enc('المجلس الاول.mp3')}`];
+    safTree[APP_FOLDER_URI] = [sectionUri];
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const legacy = require('expo-file-system/legacy');
+    legacy.StorageAccessFramework.makeDirectoryAsync.mockClear();
+
+    const dl = freshWithAppFolderPicked();
+    const res = await dl.restoreDownloadsFromPublicFolder([
+      LEC({ title: 'المجلس الأول', sectionTitle: 'الأصول الثلاثة' }),
+    ]);
+
+    expect(res.restored).toBe(1);
+    expect(dl.listDownloadedIds()).toEqual(['lec-1']);
+    // The crux: NO nested «المحجة البيضاء» folder was created under the app folder.
+    expect(legacy.StorageAccessFramework.makeDirectoryAsync).not.toHaveBeenCalled();
   });
 });
