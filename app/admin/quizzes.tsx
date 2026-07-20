@@ -14,7 +14,13 @@ import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Divider, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
-import { useAdminQuizzes, useDeleteQuiz, useSetQuizStatus } from '@/hooks/useQuizzes';
+import {
+  useAdminQuizzes,
+  useDeleteQuiz,
+  useSetQuizAvailability,
+  useSetQuizStatus,
+} from '@/hooks/useQuizzes';
+import { QUIZ_AVAILABILITY_META } from '@/components/quiz/quizAvailability';
 import { arNum, arQuestionCount } from '@/lib/format';
 
 function StatusPill({ status }: { status: 'draft' | 'published' }) {
@@ -35,16 +41,40 @@ function StatusPill({ status }: { status: 'draft' | 'published' }) {
   );
 }
 
+function AvailabilityPill({ quiz }: { quiz: AdminQuizRow }) {
+  const meta = QUIZ_AVAILABILITY_META[quiz.availability];
+  return (
+    <View
+      style={{
+        backgroundColor: meta.bg,
+        borderRadius: radius.pill,
+        paddingHorizontal: 10,
+        paddingVertical: 3,
+      }}
+    >
+      <Txt size={11} weight="semibold" color={meta.fg}>
+        {meta.label}
+      </Txt>
+    </View>
+  );
+}
+
 function QuizRow({
   quiz,
   onTogglePublish,
+  onToggleAvailability,
   onDelete,
 }: {
   quiz: AdminQuizRow;
   onTogglePublish: () => void;
+  onToggleAvailability: () => void;
   onDelete: () => void;
 }) {
   const router = useRouter();
+  // A scheduled window is managed in the editor (needs date pickers); the quick
+  // toggle only flips open↔closed for the always-on modes.
+  const canQuickToggle = quiz.availabilityMode !== 'scheduled';
+  const isClosed = quiz.availabilityMode === 'closed';
 
   return (
     <View style={styles.row}>
@@ -54,6 +84,7 @@ function QuizRow({
             {quiz.title}
           </Txt>
           <StatusPill status={quiz.status} />
+          <AvailabilityPill quiz={quiz} />
         </View>
         <Txt size={11.5} color={colors.textMuted} tabular>
           {`${arQuestionCount(quiz.questionCount)} · درجة النجاح: ${arNum(quiz.passScore)}`}
@@ -61,6 +92,19 @@ function QuizRow({
       </View>
 
       <View style={styles.actions}>
+        {canQuickToggle ? (
+          <Pressable
+            onPress={onToggleAvailability}
+            accessibilityLabel={isClosed ? 'فتح الاختبار' : 'إغلاق الاختبار'}
+            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+          >
+            <Feather
+              name={isClosed ? 'unlock' : 'lock'}
+              size={15}
+              color={isClosed ? colors.stateSuccess : colors.accentBrassMuted}
+            />
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={onTogglePublish}
           accessibilityLabel={quiz.status === 'published' ? 'إلغاء النشر' : 'نشر'}
@@ -107,6 +151,7 @@ export default function AdminQuizzesScreen() {
   const { data: quizzes = [], isLoading } = useAdminQuizzes();
   const deleteQuiz = useDeleteQuiz();
   const setStatus = useSetQuizStatus();
+  const setAvailability = useSetQuizAvailability();
   const [pendingDelete, setPendingDelete] = useState<AdminQuizRow | null>(null);
   // Publishing fans out a real push notification to every opted-in student
   // (0018_quiz_publish_notify.sql) — confirm before that transition, same as
@@ -119,6 +164,13 @@ export default function AdminQuizzesScreen() {
       return;
     }
     setPendingPublish(quiz);
+  }
+
+  function handleToggleAvailability(quiz: AdminQuizRow) {
+    setAvailability.mutate({
+      quizId: quiz.id,
+      mode: quiz.availabilityMode === 'closed' ? 'open' : 'closed',
+    });
   }
 
   const groups = useMemo(() => {
@@ -146,6 +198,7 @@ export default function AdminQuizzesScreen() {
               <QuizRow
                 quiz={quiz}
                 onTogglePublish={() => handleTogglePublish(quiz)}
+                onToggleAvailability={() => handleToggleAvailability(quiz)}
                 onDelete={() => setPendingDelete(quiz)}
               />
             </React.Fragment>

@@ -493,6 +493,18 @@ export type LecturePlayback = {
  */
 export type QuizStatus = 'not_started' | 'in_progress' | 'passed' | 'failed' | 'exhausted';
 
+/**
+ * Admin-set availability mode (independent of draft/published content status).
+ * 'open' = always available · 'closed' = manually shut · 'scheduled' = window.
+ */
+export type QuizAvailabilityMode = 'open' | 'closed' | 'scheduled';
+
+/**
+ * Derived effective availability from (mode, window, now) — the state the UI
+ * shows and the server gates new attempts on. 'scheduled' = not started yet.
+ */
+export type QuizAvailability = 'open' | 'closed' | 'scheduled' | 'expired';
+
 /** One quiz on the section page card (content-free — no questions/answers). */
 export type QuizCard = {
   id: string;
@@ -513,6 +525,11 @@ export type QuizCard = {
   /** Latest submitted attempt — for re-opening its result. */
   lastResultAttemptId: string | null;
   order: number;
+  /** Effective availability (server-derived); gates starting a NEW attempt. */
+  availability: QuizAvailability;
+  /** Scheduled window bounds (ISO), null when unset. */
+  availableFrom: string | null;
+  availableUntil: string | null;
 };
 
 /** Pre-quiz intro screen data (§12.2). */
@@ -618,6 +635,11 @@ export type QuizInput = {
   showCorrectAnswers: boolean;
   status: 'draft' | 'published';
   order: number;
+  /** Availability control (independent of draft/published). */
+  availabilityMode: QuizAvailabilityMode;
+  /** ISO datetimes; only meaningful in 'scheduled' mode. */
+  availableFrom: string | null;
+  availableUntil: string | null;
 };
 
 /** Admin quizzes list row (drafts visible; grouped by section client-side). */
@@ -631,6 +653,11 @@ export type AdminQuizRow = {
   passScore: number;
   order: number;
   updatedAt: string;
+  /** Admin-set mode + server-derived effective state for the list pill. */
+  availabilityMode: QuizAvailabilityMode;
+  availability: QuizAvailability;
+  availableFrom: string | null;
+  availableUntil: string | null;
 };
 
 /** Full quiz as loaded into the admin editor (includes the answer key). */

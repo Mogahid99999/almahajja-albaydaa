@@ -14,6 +14,7 @@ import {
   getSectionQuizzes,
   listQuizResultRows,
   saveAnswer,
+  setQuizAvailability,
   setQuizStatus,
   startAttempt,
   submitAttempt,
@@ -158,6 +159,16 @@ export function useSetQuizStatus() {
   return useMutation({
     mutationFn: (vars: { quizId: string; status: 'draft' | 'published' }) =>
       setQuizStatus(vars.quizId, vars.status),
+    onSuccess: invalidate,
+  });
+}
+
+/** Quick open/close a quiz's availability from the admin list. */
+export function useSetQuizAvailability() {
+  const invalidate = useInvalidateAdminQuizzes();
+  return useMutation({
+    mutationFn: (vars: { quizId: string; mode: 'open' | 'closed' }) =>
+      setQuizAvailability(vars.quizId, vars.mode),
     onSuccess: invalidate,
   });
 }

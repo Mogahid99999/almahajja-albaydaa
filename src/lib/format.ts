@@ -83,6 +83,17 @@ export function arDate(iso: string | null | undefined): string {
   return toArabicDigits(`${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`);
 }
 
+/** Date + 24h time, e.g. «٢٠٢٦/٨/١ - ٢٠:٠٠». For quiz availability windows. */
+export function arDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const date = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toArabicDigits(`${date} - ${time}`);
+}
+
 /** Friendly "آخر دخول": اليوم / أمس / منذ ن يوماً / a date for older. */
 export function arSince(iso: string | null | undefined): string {
   if (!iso) return 'لم يدخل بعد';

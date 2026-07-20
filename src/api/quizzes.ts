@@ -9,6 +9,7 @@
  * pattern). Components never call supabase directly (CLAUDE.md).
  */
 import { USE_MOCK } from '@/config';
+import { deriveAvailability } from '@/components/quiz/quizAvailability';
 import { supabase } from '@/lib/supabase';
 import type {
   AdminAttemptDetail,
@@ -62,6 +63,9 @@ export type RawStatusRow = {
   passed: boolean;
   in_progress_attempt_id: string | null;
   last_result_attempt_id: string | null;
+  availability: import('./types').QuizAvailability;
+  available_from: string | null;
+  available_until: string | null;
 };
 
 function deriveStatus(r: RawStatusRow): QuizStatus {
@@ -89,6 +93,9 @@ export function mapCard(r: RawStatusRow): QuizCard {
     inProgressAttemptId: r.in_progress_attempt_id,
     lastResultAttemptId: r.last_result_attempt_id,
     order: r.sort_order ?? 0,
+    availability: r.availability ?? 'open',
+    availableFrom: r.available_from,
+    availableUntil: r.available_until,
   };
 }
 
@@ -220,12 +227,15 @@ export async function adminListQuizzes(): Promise<AdminQuizRow[]> {
   if (USE_MOCK) return [];
   const { data, error } = await supabase
     .from('quizzes')
-    .select('id, title, status, pass_score, order, updated_at, section_id, sections(title), quiz_questions(count)')
+    .select('id, title, status, pass_score, order, updated_at, section_id, availability_mode, available_from, available_until, sections(title), quiz_questions(count)')
     .order('updated_at', { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r) => {
     const section = Array.isArray(r.sections) ? r.sections[0] : (r.sections as any);
     const counts = r.quiz_questions as unknown as { count: number }[] | null;
+    const mode = ((r as any).availability_mode ?? 'open') as AdminQuizRow['availabilityMode'];
+    const from = ((r as any).available_from ?? null) as string | null;
+    const until = ((r as any).available_until ?? null) as string | null;
     return {
       id: r.id,
       title: r.title,
@@ -236,6 +246,10 @@ export async function adminListQuizzes(): Promise<AdminQuizRow[]> {
       passScore: r.pass_score,
       order: r.order,
       updatedAt: r.updated_at,
+      availabilityMode: mode,
+      availability: deriveAvailability(mode, from, until),
+      availableFrom: from,
+      availableUntil: until,
     };
   });
 }
@@ -246,7 +260,7 @@ export async function adminGetQuiz(quizId: string): Promise<AdminQuizDetail> {
   const [{ data: quiz, error: qErr }, { data: questions, error: quErr }] = await Promise.all([
     supabase
       .from('quizzes')
-      .select('id, section_id, title, description, pass_score, time_limit_sec, max_attempts, show_result, show_correct_answers, status, order')
+      .select('id, section_id, title, description, pass_score, time_limit_sec, max_attempts, show_result, show_correct_answers, status, order, availability_mode, available_from, available_until')
       .eq('id', quizId)
       .single(),
     supabase
@@ -269,6 +283,9 @@ export async function adminGetQuiz(quizId: string): Promise<AdminQuizDetail> {
     showCorrectAnswers: quiz.show_correct_answers,
     status: quiz.status as 'draft' | 'published',
     order: quiz.order,
+    availabilityMode: ((quiz as any).availability_mode ?? 'open') as QuizInput['availabilityMode'],
+    availableFrom: ((quiz as any).available_from ?? null) as string | null,
+    availableUntil: ((quiz as any).available_until ?? null) as string | null,
     questions: (questions ?? []).map((q) => ({
       id: q.id,
       text: q.text,
@@ -367,6 +384,9 @@ export async function createQuiz(input: QuizInput, questions: QuizQuestionInput[
       show_correct_answers: input.showCorrectAnswers,
       status: input.status,
       order: input.order,
+      availability_mode: input.availabilityMode,
+      available_from: input.availabilityMode === 'scheduled' ? input.availableFrom : null,
+      available_until: input.availabilityMode === 'scheduled' ? input.availableUntil : null,
     })
     .select('id')
     .single();
@@ -395,10 +415,30 @@ export async function updateQuiz(
       show_correct_answers: input.showCorrectAnswers,
       status: input.status,
       order: input.order,
+      availability_mode: input.availabilityMode,
+      available_from: input.availabilityMode === 'scheduled' ? input.availableFrom : null,
+      available_until: input.availabilityMode === 'scheduled' ? input.availableUntil : null,
     })
     .eq('id', quizId);
   if (error) throw error;
   await writeQuestions(quizId, questions);
+}
+
+/**
+ * Admin/sheikh/publisher quick availability change from the list — open or
+ * close a quiz in one tap without opening the editor. Scheduling a window is
+ * done in the editor (needs the date pickers), so this only flips open/closed.
+ */
+export async function setQuizAvailability(
+  quizId: string,
+  mode: 'open' | 'closed',
+): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase
+    .from('quizzes')
+    .update({ availability_mode: mode, available_from: null, available_until: null })
+    .eq('id', quizId);
+  if (error) throw error;
 }
 
 /** Admin: delete a quiz (questions/options/attempts cascade). */

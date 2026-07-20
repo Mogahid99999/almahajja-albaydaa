@@ -22,6 +22,9 @@ const row = (over: Partial<RawStatusRow> = {}): RawStatusRow => ({
   passed: false,
   in_progress_attempt_id: null,
   last_result_attempt_id: null,
+  availability: 'open',
+  available_from: null,
+  available_until: null,
   ...over,
 });
 

@@ -19,7 +19,7 @@ import { colors, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useQuizIntro, useStartAttempt } from '@/hooks/useQuizzes';
 import { arabicOr } from '@/lib/errorText';
-import { arAttemptCount, arMinuteCount, arNum, arQuestionCount } from '@/lib/format';
+import { arAttemptCount, arDateTime, arMinuteCount, arNum, arQuestionCount } from '@/lib/format';
 
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
@@ -85,6 +85,29 @@ export default function QuizIntroScreen() {
   const exhausted = quiz.status === 'exhausted';
   const inProgress = quiz.status === 'in_progress';
   const canViewLastResult = quiz.lastResultAttemptId != null;
+
+  // Availability gates only the START of a new attempt. A student already
+  // mid-attempt keeps «تابع الاختبار» regardless — matching the server, which
+  // resumes an in-progress attempt before checking availability (0118).
+  const unavailable = !inProgress && quiz.availability !== 'open';
+  const unavailableNotice =
+    quiz.availability === 'closed'
+      ? { icon: 'lock' as const, text: 'هذا الاختبار غير متاح حاليًا.' }
+      : quiz.availability === 'scheduled'
+        ? {
+            icon: 'clock' as const,
+            text: quiz.availableFrom
+              ? `يبدأ هذا الاختبار في: ${arDateTime(quiz.availableFrom)}`
+              : 'لم يبدأ هذا الاختبار بعد.',
+          }
+        : quiz.availability === 'expired'
+          ? {
+              icon: 'slash' as const,
+              text: quiz.availableUntil
+                ? `انتهت مدة هذا الاختبار في: ${arDateTime(quiz.availableUntil)}`
+                : 'انتهت مدة هذا الاختبار.',
+            }
+          : null;
 
   const primaryLabel = startAttempt.isPending
     ? 'جارٍ التحضير...'
@@ -206,7 +229,23 @@ export default function QuizIntroScreen() {
           </View>
         ) : null}
 
-        {isGuest ? (
+        {unavailable && unavailableNotice ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: colors.surfaceInset,
+              borderRadius: radius.sm,
+              padding: 14,
+              gap: 10,
+            }}
+          >
+            <Feather name={unavailableNotice.icon} size={17} color={colors.textMuted} />
+            <Txt size={13} color={colors.textSlate} style={{ flex: 1, lineHeight: 21 }}>
+              {unavailableNotice.text}
+            </Txt>
+          </View>
+        ) : isGuest ? (
           <>
             <View
               style={{

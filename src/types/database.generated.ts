@@ -1101,6 +1101,9 @@ export type Database = {
       }
       quizzes: {
         Row: {
+          availability_mode: string
+          available_from: string | null
+          available_until: string | null
           created_at: string
           description: string | null
           id: string
@@ -1116,6 +1119,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          availability_mode?: string
+          available_from?: string | null
+          available_until?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -1131,6 +1137,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          availability_mode?: string
+          available_from?: string | null
+          available_until?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -2041,6 +2050,9 @@ export type Database = {
         Returns: {
           attempts_left: number
           attempts_used: number
+          availability: string
+          available_from: string | null
+          available_until: string | null
           best_score: number
           description: string
           id: string
@@ -2094,6 +2106,9 @@ export type Database = {
         Returns: {
           attempts_left: number
           attempts_used: number
+          availability: string
+          available_from: string | null
+          available_until: string | null
           best_score: number
           description: string
           id: string
@@ -2189,6 +2204,11 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_content_manager: { Args: never; Returns: boolean }
       is_moderator: { Args: never; Returns: boolean }
+      is_quiz_manager: { Args: never; Returns: boolean }
+      quiz_availability: {
+        Args: { p_mode: string; p_from: string | null; p_until: string | null }
+        Returns: string
+      }
       is_restore_session_active: {
         Args: { p_restore_id: string }
         Returns: boolean

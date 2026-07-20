@@ -10,7 +10,7 @@ import { Pressable, View } from 'react-native';
 import type { QuizCard } from '@/api/types';
 import { Card, Divider, Rhombus, SectionTitle, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
-import { arMinuteCount, arNum, arQuestionCount } from '@/lib/format';
+import { arDateTime, arMinuteCount, arNum, arQuestionCount } from '@/lib/format';
 import { QuizStatusPill } from './QuizStatusPill';
 
 function QuizRow({ quiz }: { quiz: QuizCard }) {
@@ -75,6 +75,17 @@ function QuizRow({ quiz }: { quiz: QuizCard }) {
             {meta.join(' · ')}
           </Txt>
         </View>
+        {quiz.status !== 'in_progress' && quiz.availability !== 'open' ? (
+          <Txt size={11} weight="semibold" color={colors.textMuted}>
+            {quiz.availability === 'closed'
+              ? 'غير متاح حاليًا'
+              : quiz.availability === 'scheduled'
+                ? quiz.availableFrom
+                  ? `يبدأ في: ${arDateTime(quiz.availableFrom)}`
+                  : 'لم يبدأ بعد'
+                : 'انتهت مدته'}
+          </Txt>
+        ) : null}
       </View>
 
       <Feather name="chevron-left" size={17} color={colors.textGhost} />

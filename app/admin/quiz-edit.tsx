@@ -19,12 +19,14 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import type { QuizQuestionInput } from '@/api/types';
+import type { QuizAvailabilityMode, QuizQuestionInput } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
+import { AvailabilityEditor } from '@/components/admin/AvailabilityEditor';
 import { Card, Divider, Txt } from '@/components/ui';
+import { QUIZ_AVAILABILITY_META, deriveAvailability } from '@/components/quiz/quizAvailability';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useAdminQuiz, useCreateQuiz, useUpdateQuiz } from '@/hooks/useQuizzes';
 import { arNum, toArabicDigits } from '@/lib/format';
@@ -112,6 +114,9 @@ export default function QuizEditScreen() {
   const [showResult, setShowResult] = useState(true);
   const [showCorrectAnswers, setShowCorrectAnswers] = useState(false);
   const [status, setStatus] = useState<'draft' | 'published'>('draft');
+  const [availabilityMode, setAvailabilityMode] = useState<QuizAvailabilityMode>('open');
+  const [availableFrom, setAvailableFrom] = useState<string | null>(null);
+  const [availableUntil, setAvailableUntil] = useState<string | null>(null);
   const [questions, setQuestions] = useState<EditableQuestion[]>([blankQuestion()]);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -131,6 +136,9 @@ export default function QuizEditScreen() {
     setShowResult(existing.showResult);
     setShowCorrectAnswers(existing.showCorrectAnswers);
     setStatus(existing.status);
+    setAvailabilityMode(existing.availabilityMode);
+    setAvailableFrom(existing.availableFrom);
+    setAvailableUntil(existing.availableUntil);
     setQuestions(
       existing.questions.length > 0
         ? existing.questions.map((q) => ({
@@ -202,6 +210,12 @@ export default function QuizEditScreen() {
     const pass = Number(passScore) || 0;
     if (pass <= 0) return 'أدخل درجة النجاح.';
     if (pass > totalScore) return 'درجة النجاح أعلى من الدرجة الكلية.';
+    if (availabilityMode === 'scheduled') {
+      if (!availableFrom && !availableUntil)
+        return 'حدد وقت البدء أو الانتهاء لمدة التوفّر، أو اختر «مفتوح دائمًا».';
+      if (availableFrom && availableUntil && Date.parse(availableUntil) <= Date.parse(availableFrom))
+        return 'وقت انتهاء التوفّر يجب أن يكون بعد وقت البدء.';
+    }
     return '';
   }
 
@@ -235,6 +249,9 @@ export default function QuizEditScreen() {
       showCorrectAnswers,
       status,
       order: Number(order) || 0,
+      availabilityMode,
+      availableFrom: availabilityMode === 'scheduled' ? availableFrom : null,
+      availableUntil: availabilityMode === 'scheduled' ? availableUntil : null,
     };
     const payload: QuizQuestionInput[] = questions.map((q, qi) => ({
       id: q.id,
@@ -403,6 +420,25 @@ export default function QuizEditScreen() {
               onToggle={() => setShowCorrectAnswers((v) => !v)}
             />
           </View>
+        </Card>
+
+        {/* Card 2b: availability control */}
+        <Card style={styles.sectionCard}>
+          <Txt weight="semibold" size={15} color={colors.textInk} style={styles.cardTitle}>
+            توفّر الاختبار
+          </Txt>
+          <Txt size={12} color={colors.textMuted} style={{ marginBottom: 14, lineHeight: 20 }}>
+            تحكّم في متى يصبح الاختبار متاحًا للطلاب، بمعزل عن حالة النشر. يمكنك تعديل
+            المدة في أي وقت — يُطبَّق التغيير فورًا دون إعادة إنشاء الاختبار.
+          </Txt>
+          <AvailabilityEditor
+            mode={availabilityMode}
+            from={availableFrom}
+            until={availableUntil}
+            onChangeMode={setAvailabilityMode}
+            onChangeFrom={setAvailableFrom}
+            onChangeUntil={setAvailableUntil}
+          />
         </Card>
 
         {/* Card 3: questions builder */}
@@ -584,6 +620,30 @@ export default function QuizEditScreen() {
             حالة النشر
           </Txt>
           <PublishToggle value={status} onChange={setStatus} />
+
+          <View style={styles.metaDivider} />
+
+          <View style={styles.metaRow}>
+            {(() => {
+              const av = deriveAvailability(availabilityMode, availableFrom, availableUntil);
+              const meta = QUIZ_AVAILABILITY_META[av];
+              return (
+                <View
+                  style={{
+                    backgroundColor: meta.bg,
+                    borderRadius: radius.pill,
+                    paddingHorizontal: 10,
+                    paddingVertical: 3,
+                  }}
+                >
+                  <Txt size={11} weight="semibold" color={meta.fg}>
+                    {meta.label}
+                  </Txt>
+                </View>
+              );
+            })()}
+            <Txt size={12} color={colors.textMuted}>حالة التوفّر</Txt>
+          </View>
 
           <View style={styles.metaDivider} />
 
