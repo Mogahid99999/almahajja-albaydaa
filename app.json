@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.riwaqalilm.app",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "entitlements": {
         "aps-environment": "production"
       },
@@ -61,7 +61,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 7,
+      "versionCode": 8,
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
