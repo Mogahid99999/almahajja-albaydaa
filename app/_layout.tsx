@@ -66,6 +66,7 @@ import { recordAppOpen } from '@/lib/notificationState';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
 import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
 import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
+import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { AchievementCelebration } from '@/components/celebration/AchievementCelebration';
 import { NOTIF_TEST_MODE } from '@/config';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -367,6 +368,19 @@ function NotificationsBootstrap() {
   const setRegistered = useNotificationsStore((s) => s.setRegistered);
   const registered = useNotificationsStore((s) => s.registered);
   const [ratingPromptVisible, setRatingPromptVisible] = useState(false);
+  // iOS deferred-gender flow: a women's-section lecture opened (via a
+  // notification/deep link) by a user whose gender isn't set yet. Instead of
+  // the "قسم النساء" denial, we prompt for gender here; after it's saved we
+  // re-check visibility and open the player if the viewer turned out female.
+  const [pendingWomenLecture, setPendingWomenLecture] = useState<{
+    lectureId: string;
+    t: string;
+  } | null>(null);
+  // Read the freshest gender from inside the deep-link listener without adding
+  // `user` to its deps (which would re-subscribe the listener on every user
+  // change and could drop a tap mid-flight).
+  const genderRef = useRef(user?.gender ?? null);
+  genderRef.current = user?.gender ?? null;
 
   // Foreground presentation handler — set once, independent of auth.
   useEffect(() => {
@@ -427,6 +441,11 @@ function NotificationsBootstrap() {
         void isLectureVisibleToViewer(lectureId).then((visible) => {
           if (visible) {
             router.push(`/player/${lectureId}${t}`);
+          } else if (Platform.OS === 'ios' && !genderRef.current) {
+            // iOS + gender never set: this is the "first attempt to access the
+            // women's section" case — prompt for gender instead of denying, then
+            // re-check (female ⇒ open, male ⇒ the usual denial fires on re-check).
+            setPendingWomenLecture({ lectureId, t });
           } else {
             Alert.alert('هذا الدرس ضمن قسم النساء', 'هذا المحتوى مخصص لقسم النساء.');
           }
@@ -595,10 +614,32 @@ function NotificationsBootstrap() {
   }, [user, router]);
 
   return (
-    <RatingPromptModal
-      visible={ratingPromptVisible}
-      onClose={() => setRatingPromptVisible(false)}
-    />
+    <>
+      <RatingPromptModal
+        visible={ratingPromptVisible}
+        onClose={() => setRatingPromptVisible(false)}
+      />
+      {/* iOS deferred-gender: prompt when a women's-section lecture was opened
+          before gender was set. After saving, re-check server visibility —
+          female ⇒ open the player, male ⇒ the standard "قسم النساء" denial. */}
+      <GenderPrompt
+        visible={!!pendingWomenLecture}
+        message="هذا المحتوى ضمن قسم النساء. يرجى تحديد الجنس للمتابعة."
+        onClose={() => setPendingWomenLecture(null)}
+        onResolved={() => {
+          const pending = pendingWomenLecture;
+          setPendingWomenLecture(null);
+          if (!pending) return;
+          void isLectureVisibleToViewer(pending.lectureId).then((visible) => {
+            if (visible) {
+              router.push(`/player/${pending.lectureId}${pending.t}`);
+            } else {
+              Alert.alert('هذا الدرس ضمن قسم النساء', 'هذا المحتوى مخصص لقسم النساء.');
+            }
+          });
+        }}
+      />
+    </>
   );
 }
 

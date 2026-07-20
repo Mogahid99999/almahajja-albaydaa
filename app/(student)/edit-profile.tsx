@@ -26,7 +26,7 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { Gender } from '@/api/types';
@@ -210,20 +210,26 @@ export default function EditProfileScreen() {
           </View>
         </View>
 
-        {/* Gender — locked after registration (Item 10 identity oath) */}
-        <View>
-          <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
-            النوع
-          </Txt>
-          <View style={readOnlyBoxStyle}>
-            <Txt size={14} color={colors.textInk}>
-              {user?.gender ? GENDER_LABEL[user.gender] : '—'}
+        {/* Gender — locked after registration (Item 10 identity oath). Hidden on
+            iOS, where gender is an internal value never surfaced in the profile
+            (Apple 5.1.1(v)); it's only used to gate قسم النساء / رفيق الدراسة. */}
+        {Platform.OS !== 'ios' ? (
+          <View>
+            <Txt size={13} weight="semibold" color={colors.textSlate} style={{ marginBottom: 7 }}>
+              النوع
             </Txt>
+            <View style={readOnlyBoxStyle}>
+              <Txt size={14} color={colors.textInk}>
+                {user?.gender ? GENDER_LABEL[user.gender] : '—'}
+              </Txt>
+            </View>
           </View>
-        </View>
+        ) : null}
 
         <Txt size={11} color={colors.textGhost} style={{ marginTop: 12 }}>
-          لا يمكن تعديل الاسم أو الجنس من هنا — تواصل مع الإدارة عند الحاجة
+          {Platform.OS === 'ios'
+            ? 'لا يمكن تعديل الاسم من هنا — تواصل مع الإدارة عند الحاجة'
+            : 'لا يمكن تعديل الاسم أو الجنس من هنا — تواصل مع الإدارة عند الحاجة'}
         </Txt>
       </Card>
 

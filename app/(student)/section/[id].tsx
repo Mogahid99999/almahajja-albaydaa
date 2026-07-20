@@ -226,7 +226,7 @@ export default function SectionScreen() {
       {/* ── Attachments (PRD §13) ────────────────────────────────────────────── */}
       {attachments.length > 0 ? (
         <View style={{ paddingHorizontal: spacing.screenH, marginTop: 26 }}>
-          <AttachmentList attachments={attachments} />
+          <AttachmentList attachments={attachments} sectionTitle={section.title} />
         </View>
       ) : null}
     </>

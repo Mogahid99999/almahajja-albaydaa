@@ -2,6 +2,7 @@
  * app/(student)/edit-profile.tsx — phase-3 cluster (F-029 min-8 password gate,
  * two-step email change, locked name/gender, F-030 Arabic error surfacing).
  */
+import { Platform } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 
 const mockRouter = { back: jest.fn(), replace: jest.fn(), push: jest.fn() };
@@ -34,11 +35,19 @@ jest.mock('@/hooks/useAuth', () => ({
 
 import EditProfileScreen from '../../app/(student)/edit-profile';
 
+// jest-expo defaults Platform.OS to 'ios'; the shared tests are platform-neutral
+// but the identity block asserts the gender row, which iOS hides (Apple
+// 5.1.1(v)) — so it pins Android, and a separate block covers the iOS hiding.
+const realOS = Platform.OS;
 beforeEach(() => {
+  (Platform as { OS: string }).OS = 'android';
   mockAuth.requestEmailChange = mkMutation();
   mockAuth.verifyEmailChange = mkMutation();
   mockAuth.changePassword = mkMutation();
   mockAuth.changePhone = mkMutation();
+});
+afterAll(() => {
+  (Platform as { OS: string }).OS = realOS;
 });
 
 describe('oath-locked identity', () => {
@@ -48,6 +57,17 @@ describe('oath-locked identity', () => {
     expect(getByText('ذكر')).toBeTruthy();
     expect(getByText('لا يمكن تعديل الاسم أو الجنس من هنا — تواصل مع الإدارة عند الحاجة')).toBeTruthy();
     expect(queryByDisplayValue('محمد')).toBeNull(); // not an editable input
+  });
+
+  test('iOS hides the gender row and its explanation line drops الجنس', async () => {
+    (Platform as { OS: string }).OS = 'ios';
+    const { getByText, queryByText } = await render(<EditProfileScreen />);
+    expect(getByText('محمد')).toBeTruthy(); // name still shown
+    expect(queryByText('ذكر')).toBeNull(); // gender value hidden
+    expect(getByText('لا يمكن تعديل الاسم من هنا — تواصل مع الإدارة عند الحاجة')).toBeTruthy();
+    expect(
+      queryByText('لا يمكن تعديل الاسم أو الجنس من هنا — تواصل مع الإدارة عند الحاجة'),
+    ).toBeNull();
   });
 });
 

@@ -22,8 +22,8 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { getInfoAsync, StorageAccessFramework } from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
-import type { LectureCard } from '@/api/types';
-import type { RestorableLecture } from '@/api/progress';
+import type { AttachmentType, LectureCard } from '@/api/types';
+import type { RestorableAttachment, RestorableLecture } from '@/api/progress';
 import { usePublicStorageStore } from '@/stores/publicStorageStore';
 
 const isWeb = Platform.OS === 'web';
@@ -61,8 +61,34 @@ type ManifestEntry = DownloadMeta & {
   relativePath: string;
   /** Android only: the SAF content:// URI of the audio file in public storage. */
   safUri?: string;
+  /**
+   * What this entry is. Absent = 'lecture' (every entry written before section
+   * files were downloadable) so old manifests keep working. 'attachment' entries
+   * are keyed `att:<id>` (see ATT_PREFIX) and add attachmentType/ext below.
+   */
+  kind?: 'lecture' | 'attachment';
+  /** Attachment entries only: the attachment's type (pdf/image/transcript). */
+  attachmentType?: AttachmentType;
+  /** Attachment entries only: the on-disk file extension (pdf/jpg/txt). */
+  ext?: string;
 };
 type Manifest = Record<string, ManifestEntry>;
+
+/**
+ * Attachment manifest keys are prefixed so they can never collide with a bare
+ * lecture-id key (both are UUIDs). Lecture keys stay bare — no migration of
+ * existing manifests needed.
+ */
+const ATT_PREFIX = 'att:';
+const attKey = (attachmentId: string): string => `${ATT_PREFIX}${attachmentId}`;
+const isAttachmentEntry = (entry: ManifestEntry): boolean => entry.kind === 'attachment';
+
+/** File extension per downloadable attachment type. */
+const ATTACHMENT_EXT: Partial<Record<AttachmentType, string>> = {
+  pdf: 'pdf',
+  image: 'jpg',
+  transcript: 'txt',
+};
 
 /** Fired as the transfer streams in — `totalBytes` is -1 when the server omitted Content-Length. */
 export type DownloadProgressCallback = (data: { bytesWritten: number; totalBytes: number }) => void;
@@ -116,15 +142,23 @@ function sanitizeSegment(name: string, fallback: string): string {
   return cleaned || fallback;
 }
 
-/** A unique `<section>/<lesson>.mp3` path for this lecture, avoiding collisions with other downloaded lectures. */
-function relativePathFor(meta: DownloadMeta, manifest: Manifest): string {
+/**
+ * A unique `<section>/<base>.<ext>` path under the app folder, avoiding collisions
+ * with anything else already downloaded (lectures OR attachments — they share the
+ * section folders now). `ext` defaults to `mp3` (lecture audio).
+ */
+function relativePathFor(
+  meta: { title: string; sectionTitle: string | null; id: string },
+  manifest: Manifest,
+  ext = 'mp3',
+): string {
   const section = sanitizeSegment(meta.sectionTitle ?? FALLBACK_SECTION, FALLBACK_SECTION);
   const base = sanitizeSegment(meta.title, meta.id);
   const taken = new Set(Object.values(manifest).map((e) => e.relativePath));
-  let candidate = `${section}/${base}.mp3`;
+  let candidate = `${section}/${base}.${ext}`;
   let n = 2;
   while (taken.has(candidate)) {
-    candidate = `${section}/${base} (${n}).mp3`;
+    candidate = `${section}/${base} (${n}).${ext}`;
     n++;
   }
   return candidate;
@@ -328,6 +362,48 @@ async function ensurePublicSectionDir(appFolderUri: string, section: string): Pr
   return uri;
 }
 
+/**
+ * Materialize a file into the public <section>/<base.ext> SAF folder and return
+ * its content:// URI. Shared by lecture AND attachment public downloads: SAF has
+ * no direct URL-download API, so the file is first produced into a private temp
+ * file (named as the final <base.ext>, in its own scratch folder so parallel
+ * transfers can't collide), then MOVED into the SAF folder. `File.move` streams
+ * the bytes natively and deletes the source (audit F-504 — a base64 round-trip
+ * would materialize the whole file as a JS string, an OOM risk). After the move,
+ * the File's own `uri` is the created SAF document's real content:// URI.
+ *
+ * `produce` fills the temp file — either downloading a URL (with progress) or
+ * writing inline text (a تفريغ transcript).
+ */
+async function writePublicFile(
+  relativePath: string,
+  tempTag: string,
+  produce: (tempFile: File) => Promise<void>,
+): Promise<string> {
+  const section = relativePath.slice(0, relativePath.lastIndexOf('/'));
+  const baseWithExt = relativePath.slice(relativePath.lastIndexOf('/') + 1);
+
+  const rootUri = await ensurePublicRoot();
+  const appFolderUri = await ensurePublicAppFolder(rootUri);
+  const sectionDirUri = await ensurePublicSectionDir(appFolderUri, section);
+
+  const safeTag = tempTag.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const tempDir = new Directory(Paths.cache, `dl-${safeTag}-${Date.now()}`);
+  if (!tempDir.exists) tempDir.create({ intermediates: true });
+  const tempFile = new File(tempDir, baseWithExt);
+  try {
+    await produce(tempFile);
+    await tempFile.move(new Directory(sectionDirUri), { overwrite: true });
+    return tempFile.uri;
+  } finally {
+    try {
+      tempDir.delete();
+    } catch {
+      /* best-effort cleanup (already gone after a successful move) */
+    }
+  }
+}
+
 /** Download a lecture's audio into the public <section>/<lesson>.mp3 (Android) via SAF. */
 async function downloadLecturePublic(
   lectureId: string,
@@ -347,40 +423,12 @@ async function downloadLecturePublic(
   }
 
   const relativePath = relativePathFor(meta, manifest);
-  const [section, baseWithExt] = [
-    relativePath.slice(0, relativePath.lastIndexOf('/')),
-    relativePath.slice(relativePath.lastIndexOf('/') + 1),
-  ];
-
-  const rootUri = await ensurePublicRoot();
-  const appFolderUri = await ensurePublicAppFolder(rootUri);
-  const sectionDirUri = await ensurePublicSectionDir(appFolderUri, section);
-
-  // SAF has no direct URL-download API — pull the audio into a private temp
-  // file first (named as the final <lesson>.mp3, in its own scratch folder so
-  // parallel downloads can't collide), then MOVE it into the SAF folder.
-  // `File.move` streams the bytes natively and deletes the source (audit
-  // F-504 — the previous `base64()` + `writeAsStringAsync` round-trip
-  // materialized the ENTIRE audio file as a base64 JS string, an OOM crash
-  // risk for long lectures on low-memory devices). After the move, the File's
-  // own `uri` is the created SAF document's real content:// URI.
-  const tempDir = new Directory(Paths.cache, `dl-${lectureId}-${Date.now()}`);
-  if (!tempDir.exists) tempDir.create({ intermediates: true });
-  const tempFile = new File(tempDir, baseWithExt);
-  try {
-    await File.downloadFileAsync(url, tempFile, { onProgress });
-    await tempFile.move(new Directory(sectionDirUri), { overwrite: true });
-    const safUri = tempFile.uri;
-    manifest[lectureId] = { ...meta, relativePath, safUri };
-    writeManifest(manifest);
-    return safUri;
-  } finally {
-    try {
-      tempDir.delete();
-    } catch {
-      /* best-effort cleanup (already gone after a successful move) */
-    }
-  }
+  const safUri = await writePublicFile(relativePath, lectureId, (tempFile) =>
+    File.downloadFileAsync(url, tempFile, { onProgress }).then(() => undefined),
+  );
+  manifest[lectureId] = { ...meta, relativePath, safUri };
+  writeManifest(manifest);
+  return safUri;
 }
 
 /** Download a lecture's audio into <section>/<lesson>.mp3 + update the manifest; returns the local URI. */
@@ -414,6 +462,194 @@ export async function downloadLecture(
   manifest[lectureId] = { ...meta, relativePath };
   writeManifest(manifest);
   return file.uri;
+}
+
+// ── Section files (attachments) ──────────────────────────────────────────────
+//
+// Section files (PDF / صورة / تفريغ) download into the SAME <app>/<section>
+// folders as lecture audio, tracked in the SAME manifest (keyed `att:<id>` so
+// they never collide with lecture-id keys) — so ONE restore scan relinks both,
+// and a downloaded file is user-visible next to its section's lectures. A تفريغ
+// carries inline text (no remote file); it's written to a `.txt`.
+
+/** What the downloader needs to save a section file (built from an Attachment + its section title). */
+export type AttachmentDownloadInput = {
+  id: string;
+  attachmentType: AttachmentType;
+  title: string;
+  /** The section this file belongs to — drives the <section> folder (parallels a lecture's sectionTitle). */
+  sectionTitle: string | null;
+  /** Remote file URL (pdf/image); null for a transcript. */
+  url: string | null;
+  /** Inline transcript text (transcript only). */
+  body: string | null;
+};
+
+/** Build the attachment's manifest entry (sans relativePath/safUri, filled by the downloader). */
+function attachmentMetaFor(att: AttachmentDownloadInput, ext: string): ManifestEntry {
+  return {
+    id: att.id,
+    kind: 'attachment',
+    attachmentType: att.attachmentType,
+    ext,
+    title: att.title,
+    sheikhName: null,
+    durationSec: 0,
+    sectionTitle: att.sectionTitle,
+    relativePath: '', // set by the caller
+  };
+}
+
+/** Download (or write) a section file into the public <section>/<title>.<ext> (Android) via SAF. */
+async function downloadAttachmentPublic(
+  att: AttachmentDownloadInput,
+  ext: string,
+  onProgress?: DownloadProgressCallback,
+): Promise<string> {
+  const key = attKey(att.id);
+  const manifest = readManifest();
+  const prior = manifest[key];
+  if (prior?.safUri) {
+    try {
+      await StorageAccessFramework.deleteAsync(prior.safUri);
+    } catch {
+      /* ignore — old file may already be gone */
+    }
+    delete manifest[key];
+  }
+
+  const relativePath = relativePathFor(
+    { title: att.title, sectionTitle: att.sectionTitle, id: att.id },
+    manifest,
+    ext,
+  );
+  const safUri = await writePublicFile(relativePath, key, async (tempFile) => {
+    if (att.attachmentType === 'transcript') {
+      if (!att.body) throw new Error('لا يوجد نص للتفريغ');
+      tempFile.create();
+      tempFile.write(att.body);
+    } else {
+      if (!att.url) throw new Error('لا يوجد ملف للتحميل');
+      await File.downloadFileAsync(att.url, tempFile, { onProgress });
+    }
+  });
+  manifest[key] = { ...attachmentMetaFor(att, ext), relativePath, safUri };
+  writeManifest(manifest);
+  return safUri;
+}
+
+/**
+ * Download a section file into <section>/<title>.<ext> + record it in the manifest;
+ * returns the local URI. Android → public SAF folder (like lectures); iOS →
+ * private <app>/<section>/… . Throws on web.
+ */
+export async function downloadAttachmentFile(
+  att: AttachmentDownloadInput,
+  onProgress?: DownloadProgressCallback,
+): Promise<string> {
+  if (isWeb) throw new Error('التحميل غير مدعوم على الويب');
+  const ext = ATTACHMENT_EXT[att.attachmentType] ?? 'bin';
+  if (isAndroid) return downloadAttachmentPublic(att, ext, onProgress);
+
+  const key = attKey(att.id);
+  const manifest = readManifest();
+  const prior = manifest[key];
+  if (prior) {
+    try {
+      const oldFile = fileFor(prior.relativePath);
+      if (oldFile.exists) oldFile.delete();
+    } catch {
+      /* ignore */
+    }
+    delete manifest[key];
+  }
+
+  const relativePath = relativePathFor(
+    { title: att.title, sectionTitle: att.sectionTitle, id: att.id },
+    manifest,
+    ext,
+  );
+  const dest = fileFor(relativePath);
+  if (dest.exists) dest.delete();
+  if (att.attachmentType === 'transcript') {
+    if (!att.body) throw new Error('لا يوجد نص للتفريغ');
+    dest.create();
+    dest.write(att.body);
+  } else {
+    if (!att.url) throw new Error('لا يوجد ملف للتحميل');
+    await File.downloadFileAsync(att.url, dest);
+  }
+  manifest[key] = { ...attachmentMetaFor(att, ext), relativePath };
+  writeManifest(manifest);
+  return dest.uri;
+}
+
+/** Local URI if the section file is already downloaded, else null (parallels localUriFor). */
+export function localUriForAttachmentEntry(attachmentId: string): string | null {
+  if (isWeb) return null;
+  try {
+    const entry = readManifest()[attKey(attachmentId)];
+    if (!entry) return null;
+    if (entry.safUri) return entry.safUri;
+    const f = fileFor(entry.relativePath);
+    return f.exists ? f.uri : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify a single downloaded section file still exists in its storage location;
+ * prunes the manifest entry and returns false if it's gone (parallels
+ * verifyDownload). Returns false for an attachment not in the manifest.
+ */
+export async function verifyAttachmentDownload(attachmentId: string): Promise<boolean> {
+  if (isWeb) return false;
+  try {
+    const manifest = readManifest();
+    const key = attKey(attachmentId);
+    const entry = manifest[key];
+    if (!entry) return false;
+    if (await entryFileExists(entry)) return true;
+    delete manifest[key];
+    writeManifest(manifest);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Delete a downloaded section file and its manifest entry (parallels deleteLecture). */
+export async function deleteAttachmentDownload(attachmentId: string): Promise<void> {
+  if (isWeb) return;
+  try {
+    const manifest = readManifest();
+    const key = attKey(attachmentId);
+    const entry = manifest[key];
+    if (!entry) return;
+    if (entry.safUri) {
+      try {
+        await StorageAccessFramework.deleteAsync(entry.safUri);
+      } catch {
+        /* file may already be gone (deleted externally) */
+      }
+    } else {
+      const f = fileFor(entry.relativePath);
+      if (f.exists) f.delete();
+    }
+    delete manifest[key];
+    writeManifest(manifest);
+  } catch {
+    /* ignored */
+  }
+}
+
+/** Ids of every section file with a downloaded file on disk (for hydration). */
+export function listDownloadedAttachmentIds(): string[] {
+  if (isWeb) return [];
+  return Object.entries(readManifest())
+    .filter(([, e]) => isAttachmentEntry(e))
+    .map(([key]) => key.slice(ATT_PREFIX.length));
 }
 
 /**
@@ -583,7 +819,9 @@ export async function deleteLecture(lectureId: string): Promise<void> {
 /** Ids of every lecture with a downloaded audio file on disk (for hydration). */
 export function listDownloadedIds(): string[] {
   if (isWeb) return [];
-  return Object.keys(readManifest());
+  return Object.entries(readManifest())
+    .filter(([, e]) => !isAttachmentEntry(e))
+    .map(([id]) => id);
 }
 
 /**
@@ -593,14 +831,16 @@ export function listDownloadedIds(): string[] {
 export function getDownloadedCards(): LectureCard[] {
   if (isWeb) return [];
   const manifest = readManifest();
-  return Object.entries(manifest).map(([id, m]) => ({
-    id,
-    title: m.title,
-    sheikhName: m.sheikhName,
-    durationSec: m.durationSec,
-    coverLetter: m.sectionTitle?.[0] ?? '◆',
-    sectionTitle: m.sectionTitle ?? null,
-  }));
+  return Object.entries(manifest)
+    .filter(([, m]) => !isAttachmentEntry(m))
+    .map(([id, m]) => ({
+      id,
+      title: m.title,
+      sheikhName: m.sheikhName,
+      durationSec: m.durationSec,
+      coverLetter: m.sectionTitle?.[0] ?? '◆',
+      sectionTitle: m.sectionTitle ?? null,
+    }));
 }
 
 // ── Restore downloads after a reinstall (V19) ────────────────────────────────
@@ -650,6 +890,16 @@ async function safIsDir(uri: string): Promise<boolean> {
 export type ScannedAudio = { safUri: string; section: string; base: string };
 
 /**
+ * A single section-file (pdf/image/transcript) found during a restore scan —
+ * same shape as {@link ScannedAudio} plus the extension, so relink can confirm
+ * the matched attachment's type and reconstruct its manifest entry.
+ */
+export type ScannedAttachment = { safUri: string; section: string; base: string; ext: string };
+
+/** On-disk extensions of downloadable section files (mirrors ATTACHMENT_EXT values). */
+const ATTACHMENT_SCAN_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'txt'];
+
+/**
  * Fold cosmetic Arabic orthographic variants so a match isn't lost to them:
  * alef forms (أ إ آ ٱ → ا), alef-maqsura → yaa, taa-marbuta → haa, and the
  * tatweel/diacritics are stripped. The file on disk was named from an OLDER
@@ -669,9 +919,11 @@ function normalizeArabic(s: string): string {
     .toLowerCase();
 }
 
-/** Normalise for matching: the collision suffix « (2)» and the .mp3 extension are dropped, then Arabic-folded. */
+/** Normalise for matching: any known extension and the collision suffix « (2)» are dropped, then Arabic-folded. */
 function matchKey(section: string, base: string): string {
-  const stripped = base.replace(/\.mp3$/i, '').replace(/ \(\d+\)$/, '');
+  const stripped = base
+    .replace(/\.(mp3|pdf|jpe?g|png|txt)$/i, '')
+    .replace(/ \(\d+\)$/, '');
   return `${normalizeArabic(section)}///${normalizeArabic(stripped)}`;
 }
 
@@ -687,43 +939,70 @@ function matchKey(section: string, base: string): string {
  * capped so a user who picks a huge tree (e.g. all of Download) doesn't trigger
  * an unbounded walk. Best-effort — an unreadable subfolder is skipped.
  */
-async function scanPublicAudio(rootUri: string, depth = 3): Promise<ScannedAudio[]> {
-  const found: ScannedAudio[] = [];
+async function scanPublicFiles(
+  rootUri: string,
+  depth = 3,
+): Promise<{ audio: ScannedAudio[]; attachments: ScannedAttachment[] }> {
+  const audio: ScannedAudio[] = [];
+  const attachments: ScannedAttachment[] = [];
   let childUris: string[] = [];
   try {
     childUris = await StorageAccessFramework.readDirectoryAsync(rootUri);
   } catch {
-    return found;
+    return { audio, attachments };
   }
   const parent = safDisplayName(rootUri);
   for (const childUri of childUris) {
     const name = safDisplayName(childUri);
-    if (name.toLowerCase().endsWith('.mp3')) {
-      found.push({ safUri: childUri, section: parent, base: name });
+    const lower = name.toLowerCase();
+    if (lower.endsWith('.mp3')) {
+      audio.push({ safUri: childUri, section: parent, base: name });
+      continue;
+    }
+    const ext = ATTACHMENT_SCAN_EXTS.find((e) => lower.endsWith(`.${e}`));
+    if (ext) {
+      attachments.push({ safUri: childUri, section: parent, base: name, ext });
       continue;
     }
     // A subfolder — descend while we still have depth budget.
     if (depth > 0 && (await safIsDir(childUri))) {
-      found.push(...(await scanPublicAudio(childUri, depth - 1)));
+      const sub = await scanPublicFiles(childUri, depth - 1);
+      audio.push(...sub.audio);
+      attachments.push(...sub.attachments);
     }
   }
-  return found;
+  return { audio, attachments };
 }
 
-/** Outcome of a restore attempt, for a calm user-facing summary. */
+/**
+ * Outcome of a relink pass (lectures OR section files), for a calm user-facing
+ * summary. The restore flow relinks both in one scan and sums the two results
+ * (see {@link mergeRestoreResults}).
+ */
 export type RestoreResult = {
-  /** Number of lectures newly relinked from public files. */
+  /** Items newly relinked from public files. */
   restored: number;
   /** Matched files that were ALREADY downloaded (present + in the manifest) — nothing to do. */
   alreadyPresent: number;
-  /** Audio files found in the folder that didn't match any of the user's lectures. */
+  /** Files found in the folder that didn't match any of the user's lectures/attachments. */
   unmatched: number;
 };
+
+/** Sum two relink results (lectures + section files) into one summary. */
+export function mergeRestoreResults(a: RestoreResult, b: RestoreResult): RestoreResult {
+  return {
+    restored: a.restored + b.restored,
+    alreadyPresent: a.alreadyPresent + b.alreadyPresent,
+    unmatched: a.unmatched + b.unmatched,
+  };
+}
 
 /** The files a restore scan found, plus the distinct section-folder names among them. */
 export type PublicFolderScan = {
   files: ScannedAudio[];
-  /** Distinct immediate-parent folder names (the sections) — used to fetch matching lectures. */
+  /** Section files (pdf/image/transcript) found in the same folders. */
+  attachmentFiles: ScannedAttachment[];
+  /** Distinct immediate-parent folder names (the sections) — used to fetch matching lectures/attachments. */
   sectionNames: string[];
 };
 
@@ -739,12 +1018,14 @@ export type PublicFolderScan = {
  * matching isn't limited to the user's history.
  */
 export async function scanPublicFolderForRestore(): Promise<PublicFolderScan> {
-  if (!isAndroid) return { files: [], sectionNames: [] };
+  if (!isAndroid) return { files: [], attachmentFiles: [], sectionNames: [] };
   const rootUri = await ensurePublicRoot();
   await ensurePublicAppFolder(rootUri);
-  const files = await scanPublicAudio(rootUri);
-  const sectionNames = [...new Set(files.map((f) => f.section))];
-  return { files, sectionNames };
+  const { audio, attachments } = await scanPublicFiles(rootUri);
+  const sectionNames = [
+    ...new Set([...audio.map((f) => f.section), ...attachments.map((f) => f.section)]),
+  ];
+  return { files: audio, attachmentFiles: attachments, sectionNames };
 }
 
 /**
@@ -795,6 +1076,63 @@ export function relinkScannedFiles(
       positionSec: lec.positionSec || undefined,
       sectionId: lec.sectionId,
       order: lec.order,
+      relativePath: `${file.section}/${file.base}`,
+      safUri: file.safUri,
+    };
+    restored++;
+  }
+  if (restored > 0) writeManifest(manifest);
+  return { restored, alreadyPresent, unmatched };
+}
+
+/**
+ * Relink scanned section files (pdf/image/transcript) to attachment ids, matching
+ * each file's sanitized `<section>/<title>` against `attachments` (attachments in
+ * the scanned sections). Writes an `att:<id>` manifest entry with the file's live
+ * SAF URI for each match not already downloaded. Pure/offline — parallels
+ * {@link relinkScannedFiles} for lectures.
+ */
+export function relinkScannedAttachments(
+  files: ScannedAttachment[],
+  attachments: RestorableAttachment[],
+): RestoreResult {
+  if (!isAndroid || files.length === 0) return { restored: 0, alreadyPresent: 0, unmatched: 0 };
+
+  const byKey = new Map<string, RestorableAttachment>();
+  for (const att of attachments) {
+    const section = sanitizeSegment(att.sectionTitle ?? FALLBACK_SECTION, FALLBACK_SECTION);
+    const base = sanitizeSegment(att.title, att.id);
+    const key = matchKey(section, base);
+    if (!byKey.has(key)) byKey.set(key, att);
+  }
+
+  const manifest = readManifest();
+  let restored = 0;
+  let alreadyPresent = 0;
+  let unmatched = 0;
+  for (const file of files) {
+    const att = byKey.get(matchKey(file.section, file.base));
+    if (!att) {
+      unmatched++;
+      continue;
+    }
+    const key = attKey(att.id);
+    if (manifest[key]?.safUri) {
+      alreadyPresent++;
+      continue;
+    }
+    manifest[key] = {
+      ...attachmentMetaFor(
+        {
+          id: att.id,
+          attachmentType: att.attachmentType,
+          title: att.title,
+          sectionTitle: att.sectionTitle,
+          url: null,
+          body: null,
+        },
+        file.ext,
+      ),
       relativePath: `${file.section}/${file.base}`,
       safUri: file.safUri,
     };

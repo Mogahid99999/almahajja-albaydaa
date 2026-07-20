@@ -46,7 +46,7 @@ export function PlayerAttachmentsStrip({
           return (
             <Pressable
               key={attachment.id}
-              onPress={() => openAttachment(attachment, router)}
+              onPress={() => void openAttachment(attachment, router)}
               accessibilityRole="button"
               accessibilityLabel={`${meta.label}: ${attachment.title}`}
               style={({ pressed }) => ({

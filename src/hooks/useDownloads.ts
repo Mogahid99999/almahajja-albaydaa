@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { getLecturePlayback } from '@/api/lectures';
 import {
+  getAttachmentsBySectionTitles,
   getLecturesBySectionTitles,
   getRestorableLectures,
   hasAccountHistory,
@@ -18,6 +19,8 @@ import {
   getDownloadedCards,
   listDownloadedIds,
   localUriFor,
+  mergeRestoreResults,
+  relinkScannedAttachments,
   relinkScannedFiles,
   scanPublicFolderForRestore,
   verifyDownload,
@@ -228,15 +231,19 @@ export function useRestoreDownloads() {
     setError(null);
     try {
       // 1) Grant + scan the public folder FIRST (this is what pops the picker).
-      const { files, sectionNames } = await scanPublicFolderForRestore();
+      //    The scan finds BOTH lecture audio and section files (attachments).
+      const { files, attachmentFiles, sectionNames } = await scanPublicFolderForRestore();
 
       // 2) Build the lecture list to match against: the user's progress rows
       //    UNION every lecture in the scanned sections. The union is what lets a
       //    downloaded-but-never-played lecture (no progress row) still relink —
       //    the server list is the only bridge from a lossy filename to a real id.
-      const [progressLectures, sectionLectures] = await Promise.all([
+      //    Section files have no progress row, so the section fetch is their only
+      //    bridge.
+      const [progressLectures, sectionLectures, sectionAttachments] = await Promise.all([
         getRestorableLectures(),
         getLecturesBySectionTitles(sectionNames),
+        getAttachmentsBySectionTitles(sectionNames),
       ]);
       const byId = new Map<string, RestorableLecture>();
       // Progress rows first so their non-zero resume position wins over the
@@ -244,8 +251,12 @@ export function useRestoreDownloads() {
       for (const l of progressLectures) byId.set(l.id, l);
       for (const l of sectionLectures) if (!byId.has(l.id)) byId.set(l.id, l);
 
-      // 3) Relink (pure/offline) and reflect the result in the store immediately.
-      const res = relinkScannedFiles(files, [...byId.values()]);
+      // 3) Relink both (pure/offline) and reflect the result in the store
+      //    immediately — lectures AND section files show as downloaded, no restart.
+      const res = mergeRestoreResults(
+        relinkScannedFiles(files, [...byId.values()]),
+        relinkScannedAttachments(attachmentFiles, sectionAttachments),
+      );
       for (const id of listDownloadedIds()) {
         const uri = localUriFor(id);
         if (uri) set(id, { status: 'downloaded', progress: 1, localUri: uri });

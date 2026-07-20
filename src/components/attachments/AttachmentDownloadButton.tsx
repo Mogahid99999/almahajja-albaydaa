@@ -13,12 +13,15 @@ import { useAttachmentDownload } from '@/hooks/useAttachmentDownloads';
  */
 export function AttachmentDownloadButton({
   attachment,
+  sectionTitle = null,
   size = 18,
 }: {
   attachment: Attachment;
+  /** Section this file belongs to — places its download under <app>/<section>/…. */
+  sectionTitle?: string | null;
   size?: number;
 }) {
-  const { status, download, remove } = useAttachmentDownload(attachment);
+  const { status, download, remove } = useAttachmentDownload(attachment, sectionTitle);
 
   return (
     <Pressable

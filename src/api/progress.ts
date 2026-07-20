@@ -17,7 +17,12 @@ import * as mock from '@/mock/api';
 import { evaluateBadges } from './journey';
 import { enqueueActivity, localDay } from '@/lib/outboxQueue';
 import { isOnlineSync } from '@/lib/connectivity';
-import { defaultNotificationEnabled, type Badge, type NotificationType } from './types';
+import {
+  defaultNotificationEnabled,
+  type AttachmentType,
+  type Badge,
+  type NotificationType,
+} from './types';
 
 export type LectureProgress = { position_sec: number; completed: boolean } | null;
 
@@ -186,6 +191,53 @@ export async function getLecturesBySectionTitles(
       sectionId: l.section_id ?? null,
       order: l.order ?? 0,
       positionSec: 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * A downloadable section file (attachment) with the section title needed to
+ * reconstruct its download filename — the attachment counterpart of
+ * {@link RestorableLecture}. A section file has no per-user "progress row", so the
+ * ONLY bridge from a lossy `<section>/<title>.<ext>` filename back to a real
+ * attachment id is fetching every downloadable attachment in the scanned section
+ * folders (see {@link getAttachmentsBySectionTitles}) and matching by name.
+ */
+export type RestorableAttachment = {
+  id: string;
+  attachmentType: AttachmentType;
+  title: string;
+  sectionTitle: string | null;
+};
+
+/**
+ * Every downloadable section file (attachment of type pdf/image/transcript) whose
+ * owning SECTION title is one of `sectionTitles`. The restore flow (V19) passes the
+ * section-folder names it scanned on disk so it can relink downloaded section files
+ * to their ids the same way it relinks lectures. Only file-backed types are
+ * downloadable (link/book open externally), so those are excluded. Returns [] for
+ * an empty input.
+ */
+export async function getAttachmentsBySectionTitles(
+  sectionTitles: string[],
+): Promise<RestorableAttachment[]> {
+  if (USE_MOCK || sectionTitles.length === 0) return [];
+  const { data, error } = await supabase
+    .from('attachments')
+    .select('id, type, title, sections!inner(title)')
+    .not('section_id', 'is', null)
+    .in('type', ['pdf', 'image', 'transcript'])
+    .in('sections.title', sectionTitles);
+  if (error) throw error;
+  const out: RestorableAttachment[] = [];
+  for (const a of data ?? []) {
+    const sec = Array.isArray(a.sections) ? a.sections[0] : (a.sections as any);
+    out.push({
+      id: a.id,
+      attachmentType: a.type as AttachmentType,
+      title: a.title,
+      sectionTitle: sec?.title ?? null,
     });
   }
   return out;

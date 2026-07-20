@@ -47,12 +47,12 @@ export function TransportControls({ isPlaying }: Props) {
         <Feather name="skip-forward" size={26} color={colors.onTealIcon} />
       </Pressable>
 
-      {/* Forward 10s (swapped to this side — was back-10) */}
+      {/* rotate-cw icon (clockwise ↻ = rewind glyph in RTL) → rewind 10s */}
       <Pressable
-        onPress={() => seekBy(10)}
+        onPress={() => seekBy(-10)}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel="تقدم ١٠ ثوانٍ"
+        accessibilityLabel="رجوع ١٠ ثوانٍ"
         style={({ pressed }) => ({
           width: 54,
           height: 54,
@@ -97,12 +97,12 @@ export function TransportControls({ isPlaying }: Props) {
         />
       </Pressable>
 
-      {/* Back 10s (swapped to this side — was forward-10) */}
+      {/* rotate-ccw icon (counter-clockwise ↺ = forward glyph in RTL) → forward 10s */}
       <Pressable
-        onPress={() => seekBy(-10)}
+        onPress={() => seekBy(10)}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel="رجوع ١٠ ثوانٍ"
+        accessibilityLabel="تقدم ١٠ ثوانٍ"
         style={({ pressed }) => ({
           width: 54,
           height: 54,
