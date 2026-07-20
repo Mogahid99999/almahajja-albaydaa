@@ -37,6 +37,8 @@ export const queryKeys = {
   resumeCard: ['journey', 'resumeCard'] as const,
   bookmarks: ['bookmarks'] as const,
   journeyMap: ['journey', 'map'] as const,
+  seriesSummary: (sectionId: string) => ['journey', 'seriesSummary', sectionId] as const,
+  seriesBenefits: (sectionId: string) => ['journey', 'seriesBenefits', sectionId] as const,
   activityCalendar: (month: string) => ['journey', 'activity', month] as const,
   harvest: (range: string) => ['journey', 'harvest', range] as const,
 

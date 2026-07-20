@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/Card';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { CreateBuddyGoalSheet } from './CreateBuddyGoalSheet';
 import { EncouragementSheet } from './EncouragementSheet';
 import { formatBuddyGoalTarget, formatBuddySides } from './labels';
@@ -30,14 +31,14 @@ function BuddyCard({
   goal,
   onCreate,
   onEncourage,
+  onCancelGoal,
 }: {
   buddy: BuddyStatus;
   goal: BuddyGoal | undefined;
   onCreate: () => void;
   onEncourage: () => void;
+  onCancelGoal: (goal: BuddyGoal) => void;
 }) {
-  const cancel = useCancelBuddyGoal();
-
   return (
     <Card style={{ gap: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -74,7 +75,7 @@ function BuddyCard({
           <Txt size={12.5} weight="medium" color={colors.textInk} tabular>
             {formatBuddyGoalTarget(goal.target, goal.metric)}
           </Txt>
-          <Pressable onPress={() => cancel.mutate(goal.id)} hitSlop={6} accessibilityRole="button">
+          <Pressable onPress={() => onCancelGoal(goal)} hitSlop={6} accessibilityRole="button">
             <Txt size={12} color={colors.stateDanger}>
               إلغاء
             </Txt>
@@ -122,9 +123,11 @@ export function BuddyGoalsSection() {
   const { data: buddies } = useMyBuddies();
   const { data: goals } = useBuddyGoals();
   const createGoal = useCreateBuddyGoal();
+  const cancelGoal = useCancelBuddyGoal();
 
   const [creatingFor, setCreatingFor] = useState<BuddyStatus | null>(null);
   const [encouragingFor, setEncouragingFor] = useState<BuddyStatus | null>(null);
+  const [cancellingGoal, setCancellingGoal] = useState<BuddyGoal | null>(null);
 
   // Map each buddy to their single active/pending goal (at most one per §10).
   const goalByBuddy = useMemo(() => {
@@ -161,6 +164,7 @@ export function BuddyGoalsSection() {
             goal={goalByBuddy.get(b.buddyId)}
             onCreate={() => setCreatingFor(b)}
             onEncourage={() => setEncouragingFor(b)}
+            onCancelGoal={setCancellingGoal}
           />
         ))}
       </View>
@@ -178,6 +182,21 @@ export function BuddyGoalsSection() {
         buddyId={encouragingFor?.buddyId ?? ''}
         buddyName={encouragingFor?.displayName ?? ''}
         onClose={() => setEncouragingFor(null)}
+      />
+
+      {/* Confirm before cancelling a buddy-goal invitation (mid-turn request). */}
+      <ConfirmDialog
+        visible={!!cancellingGoal}
+        title="إلغاء هدف الرفقة"
+        message="سيُلغى هذا الهدف المشترك. هل أنت متأكد؟"
+        confirmLabel="إلغاء الهدف"
+        cancelLabel="رجوع"
+        pending={cancelGoal.isPending}
+        onConfirm={() => {
+          if (!cancellingGoal) return;
+          cancelGoal.mutate(cancellingGoal.id, { onSettled: () => setCancellingGoal(null) });
+        }}
+        onCancel={() => setCancellingGoal(null)}
       />
     </View>
   );

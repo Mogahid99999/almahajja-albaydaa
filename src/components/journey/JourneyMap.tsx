@@ -8,6 +8,7 @@ import { preloadLecture } from '@/lib/audioController';
 import { Card } from '@/components/ui/Card';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Txt } from '@/components/ui/Txt';
+import { SeriesSeal } from '@/components/journey/SeriesSeal';
 
 /** One touched-series row: breadcrumb, %, completed/total, continue button. */
 function SeriesRow({ e }: { e: JourneyMapEntry }) {
@@ -24,17 +25,24 @@ function SeriesRow({ e }: { e: JourneyMapEntry }) {
     }
   }
 
+  function goSummary() {
+    router.push({ pathname: '/series-complete/[id]', params: { id: e.sectionId } });
+  }
+
   return (
     <Card style={{ gap: 8 }}>
-      {e.parentTitle ? (
-        <Txt size={11.5} weight="medium" color={colors.accentBrassMuted} numberOfLines={1}>
-          {`${e.parentTitle} ← ${e.sectionTitle}`}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <Txt
+          size={11.5}
+          weight="medium"
+          color={colors.accentBrassMuted}
+          numberOfLines={1}
+          style={{ flex: 1 }}
+        >
+          {e.parentTitle ? `${e.parentTitle} ← ${e.sectionTitle}` : e.sectionTitle}
         </Txt>
-      ) : (
-        <Txt size={11.5} weight="medium" color={colors.accentBrassMuted} numberOfLines={1}>
-          {e.sectionTitle}
-        </Txt>
-      )}
+        {done ? <SeriesSeal /> : null}
+      </View>
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Txt size={13} color={colors.textMuted} tabular>
@@ -48,7 +56,7 @@ function SeriesRow({ e }: { e: JourneyMapEntry }) {
       <ProgressBar value={e.total > 0 ? e.completed / e.total : 0} height={6} tint="teal" />
 
       <Pressable
-        onPress={go}
+        onPress={done ? goSummary : go}
         accessibilityRole="button"
         style={({ pressed }) => ({
           alignSelf: 'flex-start',
@@ -57,7 +65,7 @@ function SeriesRow({ e }: { e: JourneyMapEntry }) {
         })}
       >
         <Txt size={12.5} weight="semibold" color={colors.accentBrassMuted}>
-          {done ? 'عرض السلسلة' : 'متابعة السلسلة'}
+          {done ? 'عرض الملخص' : 'متابعة السلسلة'}
         </Txt>
       </Pressable>
     </Card>

@@ -8,6 +8,29 @@ import Constants from 'expo-constants';
 export const APP_VERSION: string = Constants.expoConfig?.version ?? '0.0.0';
 
 /**
+ * Build number — iOS buildNumber or Android versionCode from app.json, whichever
+ * this platform carries. Shown beside APP_VERSION in About/Profile (Feature B) so
+ * a bug report can be pinned to an exact build.
+ */
+export const BUILD_NUMBER: string = String(
+  Constants.expoConfig?.ios?.buildNumber ??
+    Constants.expoConfig?.android?.versionCode ??
+    '—',
+);
+
+/**
+ * «الإصدار ١٫١٫٠» — the human version, Arabic-Indic digits, for the muted footer
+ * line. The build number is intentionally NOT shown (owner preference 2026-07-20);
+ * BUILD_NUMBER stays exported for bug reports (src/api/feedback.ts). Single-sourced
+ * from Constants.expoConfig (app.json), so the version bump is the only place that
+ * has to change.
+ */
+export function appVersionLabel(): string {
+  const toAr = (s: string) => s.replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)]);
+  return `الإصدار ${toAr(APP_VERSION)}`;
+}
+
+/**
  * Compare two dotted numeric version strings (e.g. "1.2.0" vs "1.10.0").
  * Returns -1 if a < b, 0 if equal, 1 if a > b. Non-numeric / missing parts
  * count as 0, so "1.0" and "1.0.0" compare equal.

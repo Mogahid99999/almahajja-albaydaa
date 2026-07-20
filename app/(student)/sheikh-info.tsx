@@ -230,14 +230,14 @@ export default function SheikhInfoScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 20,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
+        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
           التعريف بالشيخ
         </Txt>
-        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
 
       {isLoading ? (

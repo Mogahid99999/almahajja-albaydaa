@@ -23,10 +23,11 @@ import { Txt } from '@/components/ui/Txt';
 import { JourneyGate } from '@/components/journey/JourneyGate';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 
+// Order right→left (RTL): منذ البداية · هذا الشهر · هذا الأسبوع (owner, 2026-07-20).
 const RANGES: { range: HarvestRange; label: string }[] = [
-  { range: 'week', label: 'هذا الأسبوع' },
-  { range: 'month', label: 'هذا الشهر' },
   { range: 'all', label: 'منذ البداية' },
+  { range: 'month', label: 'هذا الشهر' },
+  { range: 'week', label: 'هذا الأسبوع' },
 ];
 
 export default function HarvestScreen() {
@@ -43,14 +44,14 @@ export default function HarvestScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 18,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
+        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
           حصاد الرحلة
         </Txt>
-        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
 
       {isGuest ? (

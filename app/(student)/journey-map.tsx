@@ -36,14 +36,14 @@ export default function JourneyMapScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 18,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
+        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
           خريطة رحلتي
         </Txt>
-        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
 
       {isGuest ? (

@@ -11,6 +11,7 @@ export { SectionTitle } from './SectionTitle';
 export { PaginationDots } from './PaginationDots';
 export { SectionIcon } from './SectionIcon';
 export { Screen } from './Screen';
+export { ScreenHeader } from './ScreenHeader';
 export { Logo } from './Logo';
 export { Divider } from './Divider';
 export { Rhombus, ConcentricMotif, RhombusEmblem } from './Rhombus';

@@ -262,5 +262,23 @@ export function badgeCelebration(badge: Badge): CelebrationEvent {
   };
 }
 
+/**
+ * The celebration for finishing a WHOLE series (V20 · Feature A) — distinct from
+ * the tiered «إتمام السلاسل» badge (which counts how many series). Keyed
+ * `series:<sectionId>` so it fires at most once ever per series (server claim).
+ * `iconBadgeKey` is left unset — the modal shows the generic completion mark, and
+ * the closing «ملخص إتمام السلسلة» page is where the detail lives.
+ */
+export function seriesCelebration(sectionId: string, seriesTitle: string): CelebrationEvent {
+  return {
+    key: `series:${sectionId}`,
+    level: 'large',
+    titleAr: 'أتممت السلسلة بحمد الله',
+    bodyAr: seriesTitle,
+    iconBadgeKey: null,
+    action: { label: 'عرض الملخص', path: `/series-complete/${sectionId}` },
+  };
+}
+
 // Re-imported at the bottom to avoid a cycle in the type-only import list above.
 import type { CelebrationEvent } from '@/api/types';

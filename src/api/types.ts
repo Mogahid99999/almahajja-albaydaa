@@ -258,6 +258,13 @@ export type CelebrationEvent = {
   bodyAr: string;
   /** A badge key to show its seal + offer «عرض الوسام»; null for non-badge events. */
   iconBadgeKey?: string | null;
+  /**
+   * Optional deep-link the modal offers as a secondary action, e.g. the series
+   * completion event routes to «ملخص إتمام السلسلة». `{ label, path }`; tapping
+   * dismisses the modal then navigates. Non-badge events use this instead of the
+   * «عرض الوسام» action.
+   */
+  action?: { label: string; path: string } | null;
 };
 
 // --- Notifications (Phase 2 · feature B) -------------------------------------

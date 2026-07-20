@@ -171,18 +171,18 @@ export default function NotificationsScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 22,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
-          الإشعارات
-        </Txt>
         <IconButton
           icon="chevron-right"
           onPress={() => router.back()}
           accessibilityLabel="رجوع"
         />
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
+          الإشعارات
+        </Txt>
       </View>
 
       {/* ── تعليم الكل كمقروء ──────────────────────────────────────────────── */}

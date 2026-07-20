@@ -176,14 +176,14 @@ export default function LectureBenefitsScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 6,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
+        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
           فوائد الدارسين
         </Txt>
-        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
       {lecture?.title ? (
         <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 18 }} numberOfLines={2}>

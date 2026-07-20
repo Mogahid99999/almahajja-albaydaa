@@ -2128,6 +2128,35 @@ export type Database = {
           title: string
         }[]
       }
+      get_series_benefits: {
+        Args: { p_section_id: string }
+        Returns: {
+          body: string
+          created_at: string
+          id: string
+          is_mine: boolean
+          lecture_id: string
+          lecture_order: number
+          lecture_title: string
+        }[]
+      }
+      get_series_completion_summary: {
+        Args: { p_section_id: string }
+        Returns: {
+          benefits_count: number
+          bookmarks_count: number
+          completed_at: string
+          completed_lectures: number
+          listening_seconds: number
+          notes_count: number
+          quiz_attempts: number
+          quiz_best_total: number
+          quiz_points_total: number
+          quizzes_taken: number
+          started_at: string
+          total_lectures: number
+        }[]
+      }
       get_streak_status: {
         Args: { p_today?: string }
         Returns: {
