@@ -20,11 +20,14 @@ import { ATTACHMENT_META, openAttachment } from './attachmentMeta';
 
 export function AttachmentRow({
   attachment,
+  sectionTitle = null,
   onRemove,
   onMoveUp,
   onMoveDown,
 }: {
   attachment: Attachment;
+  /** Section this file belongs to — places its download under <app>/<section>/…. */
+  sectionTitle?: string | null;
   onRemove?: () => void;
   /** Admin-only: move this attachment one step earlier (omit at the top). */
   onMoveUp?: () => void;
@@ -37,7 +40,7 @@ export function AttachmentRow({
 
   return (
     <Pressable
-      onPress={() => openAttachment(attachment, router)}
+      onPress={() => void openAttachment(attachment, router)}
       style={({ pressed }) => [
         {
           flexDirection: 'row',
@@ -116,7 +119,7 @@ export function AttachmentRow({
           </Pressable>
         </View>
       ) : isDownloadable(attachment) ? (
-        <AttachmentDownloadButton attachment={attachment} />
+        <AttachmentDownloadButton attachment={attachment} sectionTitle={sectionTitle} />
       ) : (
         <Feather
           name={attachment.type === 'transcript' ? 'chevron-left' : 'external-link'}

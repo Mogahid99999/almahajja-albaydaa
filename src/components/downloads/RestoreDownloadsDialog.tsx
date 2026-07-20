@@ -54,14 +54,14 @@ export function RestoreDownloadsDialog({
     }
     if (state === 'done' && result) {
       if (result.restored > 0) {
-        return `تمت استعادة ${result.restored} محاضرة. أصبحت متاحة الآن للاستماع بدون اتصال.`;
+        return `تمت استعادة ${result.restored} عنصرًا. أصبحت متاحة الآن للاستخدام بدون اتصال.`;
       }
       // Nothing new to add, but the folder's files are already linked — reassure
       // rather than imply they weren't found.
       if (result.alreadyPresent > 0) {
-        return 'محاضراتك المحمّلة مرتبطة بالفعل ومتاحة للاستماع بدون اتصال.';
+        return 'تحميلاتك مرتبطة بالفعل ومتاحة للاستخدام بدون اتصال.';
       }
-      return 'لم يُعثر على محاضرات محمّلة في المجلد المحدد. تأكد من اختيار المجلد الصحيح الذي حفظت فيه التحميلات سابقًا.';
+      return 'لم يُعثر على تحميلات في المجلد المحدد. تأكد من اختيار المجلد الصحيح الذي حفظت فيه التحميلات سابقًا.';
     }
     return '';
   })();

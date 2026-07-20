@@ -105,7 +105,7 @@ jest.mock('expo-file-system/legacy', () => ({
   },
 }));
 
-import type { RestorableLecture } from '@/api/progress';
+import type { RestorableAttachment, RestorableLecture } from '@/api/progress';
 
 function freshDownloads() {
   jest.resetModules();
@@ -257,5 +257,71 @@ describe('picking «المحجة البيضاء» itself (no nested duplicate)',
     expect(dl.listDownloadedIds()).toEqual(['lec-1']);
     // The crux: NO nested «المحجة البيضاء» folder was created under the app folder.
     expect(legacy.StorageAccessFramework.makeDirectoryAsync).not.toHaveBeenCalled();
+  });
+});
+
+// ── Section files (attachments) restore ──────────────────────────────────────
+//
+// Section files download into the SAME <section> folders as lectures and are
+// relinked by the SAME scan. A restore must recover a .pdf (or .txt/.jpg) next to
+// its lectures, matching by sanitized <section>/<title>, keyed `att:<id>` so it
+// never collides with a lecture-id key.
+const ATT = (over: Partial<RestorableAttachment>): RestorableAttachment => ({
+  id: 'att-1',
+  attachmentType: 'pdf',
+  title: 'كتاب التوحيد',
+  sectionTitle: 'التوحيد',
+  ...over,
+});
+
+describe('relinkScannedAttachments (section files)', () => {
+  test('relinks a matching .pdf to its attachment id + live SAF uri', async () => {
+    const dl = freshDownloads();
+    seedPublicFolder({ التوحيد: ['كتاب التوحيد.pdf'] });
+    const { attachmentFiles } = await dl.scanPublicFolderForRestore();
+
+    const res = dl.relinkScannedAttachments(attachmentFiles, [ATT({})]);
+    expect(res).toEqual({ restored: 1, alreadyPresent: 0, unmatched: 0 });
+
+    // Visible through the attachment read paths — and NOT counted as a lecture.
+    expect(dl.listDownloadedAttachmentIds()).toEqual(['att-1']);
+    expect(dl.listDownloadedIds()).toEqual([]);
+    expect(dl.localUriForAttachmentEntry('att-1')).toBe(
+      `${APP_FOLDER_URI}/${enc('التوحيد')}/${enc('كتاب التوحيد.pdf')}`,
+    );
+  });
+
+  test('lectures and section files in the same folder both relink', async () => {
+    const dl = freshDownloads();
+    seedPublicFolder({ التوحيد: ['الدرس الأول.mp3', 'كتاب التوحيد.pdf'] });
+    const { files, attachmentFiles } = await dl.scanPublicFolderForRestore();
+
+    const lecRes = dl.relinkScannedFiles(files, [LEC({})]);
+    const attRes = dl.relinkScannedAttachments(attachmentFiles, [ATT({})]);
+    const merged = dl.mergeRestoreResults(lecRes, attRes);
+
+    expect(merged).toEqual({ restored: 2, alreadyPresent: 0, unmatched: 0 });
+    expect(dl.listDownloadedIds()).toEqual(['lec-1']);
+    expect(dl.listDownloadedAttachmentIds()).toEqual(['att-1']);
+  });
+
+  test('folds the « (2)» collision suffix and Arabic variants for section files', async () => {
+    const dl = freshDownloads();
+    seedPublicFolder({ 'الأصول الثلاثة': ['كتاب الاصول (2).pdf'] });
+    const { attachmentFiles } = await dl.scanPublicFolderForRestore();
+    const res = dl.relinkScannedAttachments(attachmentFiles, [
+      ATT({ title: 'كتاب الأصول', sectionTitle: 'الأصول الثلاثة' }),
+    ]);
+    expect(res.restored).toBe(1);
+    expect(dl.listDownloadedAttachmentIds()).toEqual(['att-1']);
+  });
+
+  test('a section file with no matching attachment is unmatched, never mis-linked', async () => {
+    const dl = freshDownloads();
+    seedPublicFolder({ التوحيد: ['ملف غير معروف.pdf'] });
+    const { attachmentFiles } = await dl.scanPublicFolderForRestore();
+    const res = dl.relinkScannedAttachments(attachmentFiles, [ATT({})]);
+    expect(res).toEqual({ restored: 0, alreadyPresent: 0, unmatched: 1 });
+    expect(dl.listDownloadedAttachmentIds()).toEqual([]);
   });
 });

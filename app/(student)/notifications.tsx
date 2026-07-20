@@ -9,16 +9,18 @@
  *
  * Route: /(student)/notifications  (opened from the Home header bell)
  */
-import { ActivityIndicator, Alert, FlatList, Pressable, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isLectureVisibleToViewer } from '@/api/lectures';
 import type { NotificationItem } from '@/api/types';
 import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useRefreshAll } from '@/hooks/useRefreshAll';
@@ -125,6 +127,28 @@ export default function NotificationsScreen() {
   const miniPad = useMiniPlayerPad();
   const refreshAll = useRefreshAll();
   const { refreshing, onRefresh } = usePullToRefresh([refetch, refreshAll]);
+  const { data: user } = useCurrentUser();
+  // iOS deferred-gender: a women's-section lecture tapped before gender is set
+  // (see app/_layout.tsx for the same flow on the cold-start/warm deep-link).
+  const [pendingWomenLecture, setPendingWomenLecture] = useState<{
+    lectureId: string;
+    t: string;
+  } | null>(null);
+
+  const openLectureGuarded = useCallback(
+    (lectureId: string, t: string) => {
+      void isLectureVisibleToViewer(lectureId).then((visible) => {
+        if (visible) {
+          router.push(`/player/${lectureId}${t}`);
+        } else if (Platform.OS === 'ios' && !user?.gender) {
+          setPendingWomenLecture({ lectureId, t });
+        } else {
+          Alert.alert('هذا الدرس ضمن قسم النساء', 'هذا المحتوى مخصص لقسم النساء.');
+        }
+      });
+    },
+    [router, user?.gender],
+  );
 
   const onOpen = useCallback(
     (item: NotificationItem) => {
@@ -134,23 +158,16 @@ export default function NotificationsScreen() {
           typeof item.data.positionSec === 'number' && item.data.positionSec > 0
             ? `?t=${Math.round(item.data.positionSec)}`
             : '';
-        const lectureId = item.data.lectureId;
         // Notification-open gender guard (0072) — see app/_layout.tsx for the
         // matching cold-start/warm-tap path.
-        void isLectureVisibleToViewer(lectureId).then((visible) => {
-          if (visible) {
-            router.push(`/player/${lectureId}${t}`);
-          } else {
-            Alert.alert('هذا الدرس ضمن قسم النساء', 'هذا المحتوى مخصص لقسم النساء.');
-          }
-        });
+        openLectureGuarded(item.data.lectureId, t);
       } else if (item.data.sectionId) {
         router.push(`/(student)/section/${item.data.sectionId}`);
       } else if (item.data.route) {
         router.push(item.data.route as Parameters<typeof router.push>[0]);
       }
     },
-    [markRead, router],
+    [markRead, router, openLectureGuarded],
   );
 
   const items = data?.pages.flatMap((p) => p.items) ?? [];
@@ -251,6 +268,24 @@ export default function NotificationsScreen() {
             </View>
           ) : null
         }
+      />
+      {/* iOS deferred-gender: prompt then re-check (female ⇒ open, male ⇒ deny). */}
+      <GenderPrompt
+        visible={!!pendingWomenLecture}
+        message="هذا المحتوى ضمن قسم النساء. يرجى تحديد الجنس للمتابعة."
+        onClose={() => setPendingWomenLecture(null)}
+        onResolved={() => {
+          const pending = pendingWomenLecture;
+          setPendingWomenLecture(null);
+          if (!pending) return;
+          void isLectureVisibleToViewer(pending.lectureId).then((visible) => {
+            if (visible) {
+              router.push(`/player/${pending.lectureId}${pending.t}`);
+            } else {
+              Alert.alert('هذا الدرس ضمن قسم النساء', 'هذا المحتوى مخصص لقسم النساء.');
+            }
+          });
+        }}
       />
     </Screen>
   );

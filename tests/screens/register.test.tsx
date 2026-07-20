@@ -1,7 +1,13 @@
 /**
  * app/(auth)/register.tsx — phase-3 defect cluster (F-026 re-register guard,
  * F-029 min-8 password gate, F-030 Arabic error mapping, F-032 oath modal).
+ *
+ * iOS drops the phone + gender fields (Apple review 5.1.1(v) data-minimisation):
+ * email becomes the required identifier, and gender is captured later. The
+ * platform-specific behavior is pinned in the two describe blocks at the bottom;
+ * the shared guards/validation run under the Android form (phone + gender).
  */
+import { Platform } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 
 const mockRouter = { replace: jest.fn(), push: jest.fn(), back: jest.fn() };
@@ -36,7 +42,12 @@ jest.mock('@/hooks/useAuth', () => ({
 
 import RegisterScreen from '../../app/(auth)/register';
 
+// jest-expo defaults Platform.OS to 'ios'. Most shared tests exercise the
+// Android form (phone + inline gender), so restore it around each test and let
+// the iOS-specific block flip it explicitly.
+const realOS = Platform.OS;
 beforeEach(() => {
+  (Platform as { OS: string }).OS = 'android';
   mockAuth.user = { isGuest: true };
   mockAuth.register = {
     mutate: jest.fn(),
@@ -45,6 +56,9 @@ beforeEach(() => {
     isError: false,
     error: null,
   };
+});
+afterAll(() => {
+  (Platform as { OS: string }).OS = realOS;
 });
 
 const fillValidForm = async (api: Awaited<ReturnType<typeof render>>) => {
@@ -150,5 +164,55 @@ describe('server error surfacing (F-030)', () => {
     const { getByText, queryByText } = await render(<RegisterScreen />);
     expect(getByText('هذا البريد أو الرقم مستخدم في حساب آخر.')).toBeTruthy();
     expect(queryByText(/already registered/i)).toBeNull();
+  });
+});
+
+// ── iOS data-minimisation (Apple 5.1.1(v)) ──────────────────────────────────
+describe('iOS registration — no phone, no gender, email required', () => {
+  beforeEach(() => {
+    (Platform as { OS: string }).OS = 'ios';
+  });
+
+  test('the phone and gender fields are not rendered', async () => {
+    const api = await render(<RegisterScreen />);
+    expect(api.queryByPlaceholderText('9xxxxxxxx')).toBeNull(); // no phone field
+    expect(api.queryByText('النوع')).toBeNull(); // no gender field label
+    // Email is required, so its label loses the "(اختياري)" suffix.
+    expect(api.getByText('البريد الإلكتروني')).toBeTruthy();
+    expect(api.queryByText('البريد الإلكتروني (اختياري)')).toBeNull();
+  });
+
+  test('submit stays blocked until a valid email is entered', async () => {
+    const api = await render(<RegisterScreen />);
+    await fireEvent.changeText(api.getByPlaceholderText('اسمك'), 'محمد');
+    await fireEvent.changeText(api.getByPlaceholderText('8 أحرف أو ارقام على الأقل'), 'password123');
+    await fireEvent.changeText(api.getByPlaceholderText('أعد إدخال كلمة المرور'), 'password123');
+    // No email yet → the oath sheet must not open.
+    await fireEvent.press(api.getByText('إنشاء الحساب'));
+    expect(api.queryByText('تأكيد البيانات')).toBeNull();
+  });
+
+  test('a valid email registers with no phone and a null gender', async () => {
+    const api = await render(<RegisterScreen />);
+    await fireEvent.changeText(api.getByPlaceholderText('اسمك'), 'محمد');
+    await fireEvent.changeText(api.getByPlaceholderText('example@gmail.com'), 'm@example.com');
+    await fireEvent.changeText(api.getByPlaceholderText('8 أحرف أو ارقام على الأقل'), 'password123');
+    await fireEvent.changeText(api.getByPlaceholderText('أعد إدخال كلمة المرور'), 'password123');
+    // No gender step on iOS — the oath opens straight away.
+    await fireEvent.press(api.getByText('إنشاء الحساب'));
+    expect(api.getByText('تأكيد البيانات')).toBeTruthy();
+    await fireEvent.press(api.getByText('أقسم بالله أن هذه البيانات صحيحة'));
+    await fireEvent.press(api.getByText('متابعة'));
+    expect(mockAuth.register.mutate).toHaveBeenCalledWith(
+      {
+        name: 'محمد',
+        phone: '',
+        countryCode: '249',
+        email: 'm@example.com',
+        password: 'password123',
+        gender: null,
+      },
+      expect.anything(),
+    );
   });
 });

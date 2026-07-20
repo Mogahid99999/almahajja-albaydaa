@@ -130,7 +130,7 @@ export function useRegister() {
       countryCode: string;
       email: string;
       password: string;
-      gender: Gender;
+      gender: Gender | null;
     }) => register(vars.name, vars.phone, vars.countryCode, vars.email, vars.password, vars.gender),
     onSuccess: (user) => {
       qc.setQueryData(queryKeys.currentUser, user);

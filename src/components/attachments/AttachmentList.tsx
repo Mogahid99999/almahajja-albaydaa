@@ -12,9 +12,12 @@ import { AttachmentRow } from './AttachmentRow';
 export function AttachmentList({
   attachments,
   title = 'المرفقات',
+  sectionTitle = null,
 }: {
   attachments: Attachment[];
   title?: string;
+  /** Section these files belong to — threads down so downloads land under <app>/<section>/…. */
+  sectionTitle?: string | null;
 }) {
   if (attachments.length === 0) return null;
 
@@ -25,7 +28,7 @@ export function AttachmentList({
         {attachments.map((attachment, index) => (
           <View key={attachment.id}>
             {index > 0 ? <Divider /> : null}
-            <AttachmentRow attachment={attachment} />
+            <AttachmentRow attachment={attachment} sectionTitle={sectionTitle} />
           </View>
         ))}
       </Card>

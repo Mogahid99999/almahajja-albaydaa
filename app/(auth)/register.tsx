@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
 
 import type { Gender } from '@/api/types';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
@@ -12,7 +12,12 @@ import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser, useRegister } from '@/hooks/useAuth';
 import { arabicAuthError } from '@/lib/authErrors';
 
-const OATH_TEXT =
+// iOS drops the phone + gender fields at registration (Apple review 5.1.1(v)
+// data-minimisation): email replaces phone as the required identifier, and
+// gender is captured later only when a gender-scoped feature needs it.
+const OATH_TEXT_IOS =
+  'بمجرد إنشاء الحساب، سيتم اعتماد الاسم الذي أدخلته بشكل نهائي ولا يمكن تعديله لاحقًا. بالمتابعة، أنت تُقسم بالله أن ما أدخلته صحيح وأنك مسؤول عن ذلك أمام الله.';
+const OATH_TEXT_DEFAULT =
   'بمجرد إنشاء الحساب، سيتم اعتماد البيانات التي أدخلتها (الاسم والجنس) بشكل نهائي ولا يمكن تعديلها لاحقًا. بالمتابعة، أنت تُقسم بالله أن ما أدخلته صحيح وأنك مسؤول عن ذلك أمام الله.';
 
 /**
@@ -41,18 +46,25 @@ export default function RegisterScreen() {
   const [oathChecked, setOathChecked] = useState(false);
   const register = useRegister();
 
+  const IS_IOS = Platform.OS === 'ios';
+  const OATH_TEXT = IS_IOS ? OATH_TEXT_IOS : OATH_TEXT_DEFAULT;
+
   const trimmedName = name.trim();
   const trimmedPhone = phone.trim();
   const trimmedEmail = email.trim();
-  // Email is optional — phone is the required identifier (Task: phone registration).
-  const emailOk = trimmedEmail.length === 0 || trimmedEmail.includes('@');
+  // On iOS email is the REQUIRED identifier (phone field is removed); elsewhere
+  // phone is required and email stays optional (Task: phone registration).
+  const emailOk = IS_IOS
+    ? trimmedEmail.includes('@')
+    : trimmedEmail.length === 0 || trimmedEmail.includes('@');
+  const phoneOk = IS_IOS || trimmedPhone.replace(/[^0-9]/g, '').length >= 8;
   const passwordsMatch = password === confirmPassword;
   // Min 8 matches the server (Supabase password_min_length) — a shorter gate
   // here let 6–7-char passwords through to a raw English server rejection.
   const passwordLongEnough = password.length >= 8;
   const canSubmit =
     trimmedName.length > 0 &&
-    trimmedPhone.replace(/[^0-9]/g, '').length >= 8 &&
+    phoneOk &&
     emailOk &&
     passwordLongEnough &&
     passwordsMatch;
@@ -69,7 +81,8 @@ export default function RegisterScreen() {
 
   const onSubmit = () => {
     if (!canSubmit) return;
-    if (!gender) {
+    // Gender is only collected inline on Android; iOS captures it later.
+    if (!IS_IOS && !gender) {
       setGenderError(true);
       return;
     }
@@ -78,7 +91,7 @@ export default function RegisterScreen() {
   };
 
   const onConfirmOath = () => {
-    if (!oathChecked || !gender) return;
+    if (!oathChecked || (!IS_IOS && !gender)) return;
     setOathVisible(false);
     register.mutate(
       { name: trimmedName, phone: trimmedPhone, countryCode, email: trimmedEmail, password, gender },
@@ -140,18 +153,21 @@ export default function RegisterScreen() {
           />
         </Field>
 
-        <Field label="رقم الهاتف">
-          <PhoneInput
-            countryCode={countryCode}
-            onChangeCountryCode={setCountryCode}
-            value={phone}
-            onChangeValue={setPhone}
-            placeholder="9xxxxxxxx"
-            height={42}
-          />
-        </Field>
+        {/* Phone is removed on iOS (Apple 5.1.1(v)); email is the identifier there. */}
+        {!IS_IOS ? (
+          <Field label="رقم الهاتف">
+            <PhoneInput
+              countryCode={countryCode}
+              onChangeCountryCode={setCountryCode}
+              value={phone}
+              onChangeValue={setPhone}
+              placeholder="9xxxxxxxx"
+              height={42}
+            />
+          </Field>
+        ) : null}
 
-        <Field label="البريد الإلكتروني (اختياري)">
+        <Field label={IS_IOS ? 'البريد الإلكتروني' : 'البريد الإلكتروني (اختياري)'}>
           <TextInput
             value={email}
             onChangeText={setEmail}
@@ -221,21 +237,25 @@ export default function RegisterScreen() {
           ) : null}
         </Field>
 
-        {/* Required for رفيق الدراسة (26.2) — the buddy pairing is gender-segregated */}
-        <Field label="النوع">
-          <GenderPills
-            value={gender}
-            onChange={(g) => {
-              setGender(g);
-              setGenderError(false);
-            }}
-          />
-          {genderError ? (
-            <Txt size={12} color={colors.stateDanger} style={{ marginTop: 6 }}>
-              يرجى تحديد الجنس
-            </Txt>
-          ) : null}
-        </Field>
+        {/* Required for رفيق الدراسة (26.2) — the buddy pairing is gender-segregated.
+            Removed at registration on iOS (Apple 5.1.1(v)); captured later, the
+            first time a gender-scoped feature (قسم النساء / رفيق الدراسة) needs it. */}
+        {!IS_IOS ? (
+          <Field label="النوع">
+            <GenderPills
+              value={gender}
+              onChange={(g) => {
+                setGender(g);
+                setGenderError(false);
+              }}
+            />
+            {genderError ? (
+              <Txt size={12} color={colors.stateDanger} style={{ marginTop: 6 }}>
+                يرجى تحديد الجنس
+              </Txt>
+            ) : null}
+          </Field>
+        ) : null}
 
         {register.isError ? (
           <Txt size={12} color={colors.stateDanger} style={{ marginBottom: 10 }}>

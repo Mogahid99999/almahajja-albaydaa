@@ -98,7 +98,8 @@
           "backgroundColor": "#f3ecdd"
         }
       ],
-      "./plugins/withReleaseSigning.js"
+      "./plugins/withReleaseSigning.js",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

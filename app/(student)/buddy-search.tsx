@@ -10,7 +10,7 @@
  * Route: /(student)/buddy-search
  */
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, TextInput, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
@@ -18,6 +18,7 @@ import type { BuddyCandidate } from '@/api/types';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { arDayCount, arNum } from '@/lib/format';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { MAX_BUDDIES } from '@/api/buddy';
 import { useBuddySearch, useMyBuddies, useSendBuddyRequest } from '@/hooks/useBuddy';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
@@ -33,6 +34,10 @@ export default function BuddySearchScreen() {
   const { data: user } = useCurrentUser();
   const [query, setQuery] = useState('');
   const [candidate, setCandidate] = useState<BuddyCandidate | null>(null);
+  // iOS deferred-gender: gender isn't set at registration on iOS, so it's
+  // captured here (رفيق الدراسة is gender-segregated) via a prompt the first
+  // time it's needed, instead of the "set it in تعديل الملف" redirect.
+  const [genderPromptOpen, setGenderPromptOpen] = useState(false);
   const { data: candidates, isLoading } = useBuddySearch(query);
   const send = useSendBuddyRequest();
   const miniPad = useMiniPlayerPad();
@@ -96,14 +101,22 @@ export default function BuddySearchScreen() {
           </Pressable>
         </Card>
       ) : !hasGender ? (
-        /* Gender must be set before searching (segregation needs it) */
+        /* Gender must be set before searching (segregation needs it). On iOS it
+           was never collected at registration — prompt for it inline; elsewhere
+           it's locked to the identity oath, so send the user to تعديل الملف. */
         <Card style={{ alignItems: 'center', paddingVertical: 26, gap: 12 }}>
           <Feather name="user-check" size={26} color={colors.accentBrassMuted} />
           <Txt size={14} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
-            لاختيار رفيق دراسة، يرجى تحديد الجنس أولاً من تعديل الملف الشخصي
+            {Platform.OS === 'ios'
+              ? 'لاختيار رفيق دراسة، يرجى تحديد الجنس أولاً'
+              : 'لاختيار رفيق دراسة، يرجى تحديد الجنس أولاً من تعديل الملف الشخصي'}
           </Txt>
           <Pressable
-            onPress={() => router.push('/(student)/edit-profile')}
+            onPress={() =>
+              Platform.OS === 'ios'
+                ? setGenderPromptOpen(true)
+                : router.push('/(student)/edit-profile')
+            }
             accessibilityRole="button"
             style={({ pressed }) => [
               {
@@ -117,7 +130,7 @@ export default function BuddySearchScreen() {
             ]}
           >
             <Txt size={13.5} weight="semibold" color={colors.onTealPrimary}>
-              تعديل الملف الشخصي
+              {Platform.OS === 'ios' ? 'تحديد الجنس' : 'تعديل الملف الشخصي'}
             </Txt>
           </Pressable>
         </Card>
@@ -306,6 +319,15 @@ export default function BuddySearchScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* iOS deferred-gender capture — once saved, `hasGender` flips and the
+          search UI replaces the prompt card automatically. */}
+      <GenderPrompt
+        visible={genderPromptOpen}
+        message="اختيار رفيق الدراسة يراعي الفصل بين الجنسين. يرجى تحديد الجنس للمتابعة."
+        onClose={() => setGenderPromptOpen(false)}
+        onResolved={() => setGenderPromptOpen(false)}
+      />
     </Screen>
   );
 }

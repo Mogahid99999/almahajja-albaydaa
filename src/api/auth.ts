@@ -466,9 +466,12 @@ export async function register(
   countryCode: string,
   email: string,
   password: string,
-  gender: Gender,
+  gender: Gender | null,
 ): Promise<CurrentUser> {
-  const p = normalizePhone(phone, countryCode);
+  // iOS omits phone (email is the identifier) and gender (captured later). An
+  // empty phone normalizes to "" — skip the phone field entirely in that case
+  // so the account is linked by email+password alone.
+  const p = phone.trim() ? normalizePhone(phone, countryCode) : '';
   const e = email.trim().toLowerCase();
   const display = name.trim();
   if (USE_MOCK) {
@@ -484,10 +487,16 @@ export async function register(
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
     return user;
   }
+  // `data` (user_metadata) only carries gender when it was actually collected
+  // (Android) — an iOS account has no gender until a scoped feature prompts for
+  // it. Phone is only sent when present, so an email-only iOS account links
+  // cleanly (an empty phone would be rejected by GoTrue).
+  const meta: Record<string, string> = { display_name: display };
+  if (gender) meta.gender = gender;
   const { data, error } = await supabase.auth.updateUser({
-    phone: p,
+    ...(p ? { phone: p } : {}),
     password,
-    data: { display_name: display, gender },
+    data: meta,
   });
   if (error) throw error;
   let u = data.user;
@@ -526,18 +535,30 @@ export async function register(
     }
     if (!emailErr) {
       savedEmail = e;
+    } else if (!p) {
+      // iOS (no phone): email is the ONLY sign-in identifier and the sole
+      // password-recovery channel. If it didn't save, the account would be
+      // unreachable after this session — a hard failure the user must retry,
+      // not a silent best-effort skip. (The phone+password link already
+      // succeeded, so a retry re-runs updateUser harmlessly and re-attempts
+      // the email set.)
+      throw emailErr;
     } else {
-      // Observable, not swallowed: registration still succeeds (email is
-      // optional), but the failure is no longer invisible — it surfaces in
-      // logs/telemetry so a systemic problem (function down, env drift) can be
-      // caught instead of silently accumulating email-less accounts.
+      // Android (phone is the identifier): email is optional, so a failed save
+      // is observable-but-non-fatal — it surfaces in logs/telemetry so a
+      // systemic problem (function down, env drift) can be caught instead of
+      // silently accumulating email-less accounts.
       console.warn('[register] email save failed (best-effort):', emailErr?.message);
     }
   }
   // This uid is no longer a guest — restoring its stored tokens after a
   // sign-out would silently log back into the registered account.
   await clearStoredGuestSession();
-  await syncOwnProfile({ gender, displayName: display, oathAccepted: true });
+  await syncOwnProfile({
+    ...(gender ? { gender } : {}),
+    displayName: display,
+    oathAccepted: true,
+  });
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
   return {
     id: u.id,
