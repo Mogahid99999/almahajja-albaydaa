@@ -83,14 +83,14 @@ export default function TicketThreadScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 18,
         }}
       >
-        <Txt size={20} weight="display" color={colors.primaryTeal}>
+        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
+        <Txt size={20} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
           التذكرة
         </Txt>
-        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
 
       <View style={{ gap: 12 }}>

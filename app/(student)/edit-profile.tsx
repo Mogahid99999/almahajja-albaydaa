@@ -187,14 +187,14 @@ export default function EditProfileScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 24,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
+        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
           تعديل الملف
         </Txt>
-        <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
       </View>
 
       <Card style={{ padding: 20 }}>

@@ -15,13 +15,15 @@
  *
  * Design ref: screens/صفحة القسم.dc.html
  */
-import { ActivityIndicator, FlatList, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
+import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { arLectureCount } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
+import { seriesCelebration } from '@/constants/badges';
+import { celebrate } from '@/stores/celebrationStore';
 import { useSectionPage } from '@/hooks/useSections';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -38,6 +40,7 @@ import { cardRowStyle } from '@/components/ui/cardRowStyle';
 
 import { LectureRowItem } from '@/components/section/LectureRowItem';
 import { ProgressCard } from '@/components/section/ProgressCard';
+import { SeriesSeal } from '@/components/journey/SeriesSeal';
 import { SectionHeaderBadge } from '@/components/section/SectionHeaderBadge';
 import { SectionNavBar } from '@/components/section/SectionNavBar';
 import { SubsectionsScroller } from '@/components/section/SubsectionsScroller';
@@ -46,9 +49,24 @@ import { QuizListCard } from '@/components/quiz/QuizListCard';
 
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const { data, isLoading, refetch } = useSectionPage(id ?? '');
   const refreshAll = useRefreshAll();
   const lectures = data?.lectures ?? [];
+
+  // Whole-series completion (recursive subtree rollup from the RPC): the seal +
+  // closing-summary entry, and a once-ever server-deduped celebration. A section
+  // with zero lessons in its subtree (a pure container being built out) is never
+  // "complete". celebrate() claims `series:<id>` server-side, so this fires at
+  // most once per series across devices — re-opening a finished series won't nag.
+  const rollupData = data?.rollup;
+  const seriesComplete =
+    !!rollupData && rollupData.total > 0 && rollupData.completed >= rollupData.total;
+  useEffect(() => {
+    if (seriesComplete && id && data) {
+      void celebrate(seriesCelebration(id, data.section.title));
+    }
+  }, [seriesComplete, id, data]);
   const insets = useSafeAreaInsets();
   const miniPad = useMiniPlayerPad();
   const { refreshing, onRefresh } = usePullToRefresh([refetch, refreshAll]);
@@ -157,6 +175,30 @@ export default function SectionScreen() {
           total={rollup.total}
         />
       </View>
+
+      {/* ── Series-complete seal → «ملخص إتمام السلسلة» (V20 · Feature A) ─────── */}
+      {seriesComplete ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="عرض ملخص إتمام السلسلة"
+          onPress={() =>
+            router.push({ pathname: '/series-complete/[id]', params: { id: id ?? '' } })
+          }
+          style={({ pressed }) => ({
+            paddingHorizontal: spacing.screenH,
+            marginTop: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <SeriesSeal />
+          <Txt size={12.5} weight="semibold" color={colors.accentBrassMuted}>
+            عرض الملخص
+          </Txt>
+        </Pressable>
+      ) : null}
 
       {/* ── Sub-sections horizontal scroller ────────────────────────────────── */}
       {subsections.length > 0 ? (

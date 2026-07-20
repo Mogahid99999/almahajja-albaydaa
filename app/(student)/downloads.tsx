@@ -48,24 +48,25 @@ export default function DownloadsScreen() {
           marginBottom: 20,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
-          المحاضرات المحمّلة
-        </Txt>
+        {/* Back on the RIGHT (RTL): the back button leads, the title follows, and
+            the restore action sits on the LEFT edge. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          {canRestore ? (
-            <IconButton
-              icon="download-cloud"
-              onPress={() => setRestoreOpen(true)}
-              accessibilityLabel="استعادة التحميلات"
-            />
-          ) : null}
-          {/* chevron-right = back in RTL (mirrors left-to-right "back" semantics) */}
           <IconButton
             icon="chevron-right"
             onPress={() => router.back()}
             accessibilityLabel="رجوع"
           />
         </View>
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }} numberOfLines={1}>
+          المحاضرات المحمّلة
+        </Txt>
+        {canRestore ? (
+          <IconButton
+            icon="download-cloud"
+            onPress={() => setRestoreOpen(true)}
+            accessibilityLabel="استعادة التحميلات"
+          />
+        ) : null}
       </View>
 
       {/* ── Empty state ──────────────────────────────────────────────────────── */}

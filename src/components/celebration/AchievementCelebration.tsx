@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   AccessibilityInfo,
   Modal,
@@ -74,6 +75,7 @@ function CelebrationView({
   reduceMotion: boolean;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const scale = useSharedValue(reduceMotion ? 1 : 0.7);
   const opacity = useSharedValue(reduceMotion ? 1 : 0);
   const firedCue = useRef(false);
@@ -185,7 +187,24 @@ function CelebrationView({
                   الحمد لله
                 </Txt>
               </Pressable>
-              {badge ? (
+              {event.action ? (
+                <Pressable
+                  onPress={() => {
+                    onClose();
+                    router.push(event.action!.path as never);
+                  }}
+                  accessibilityRole="button"
+                  style={({ pressed }) => ({
+                    paddingVertical: 10,
+                    alignItems: 'center',
+                    opacity: pressed ? 0.6 : 1,
+                  })}
+                >
+                  <Txt size={13} weight="medium" color={colors.accentBrassMuted}>
+                    {event.action.label}
+                  </Txt>
+                </Pressable>
+              ) : badge ? (
                 <Pressable
                   onPress={onClose}
                   accessibilityRole="button"

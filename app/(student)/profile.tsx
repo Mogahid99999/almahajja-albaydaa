@@ -19,6 +19,7 @@ import { useRouter, Link } from 'expo-router';
 import { useCurrentUser, useDeleteAccount, useSignOut } from '@/hooks/useAuth';
 import { useUnreviewedBookmarkCount } from '@/hooks/useBookmarks';
 import { toArabicDigits } from '@/lib/format';
+import { appVersionLabel } from '@/lib/version';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useRefreshAll } from '@/hooks/useRefreshAll';
@@ -168,18 +169,18 @@ export default function ProfileScreen() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           marginBottom: 24,
         }}
       >
-        <Txt size={22} weight="display" color={colors.primaryTeal}>
-          الحساب
-        </Txt>
         <IconButton
           icon="chevron-right"
           onPress={() => router.back()}
           accessibilityLabel="رجوع"
         />
+        <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
+          الحساب
+        </Txt>
       </View>
 
       {/* ── User identity card ───────────────────────────────────────────────── */}
@@ -422,6 +423,17 @@ export default function ProfileScreen() {
           />
         </Card>
       ) : null}
+
+      {/* Muted app-version line — single-sourced from app.json (Feature B). */}
+      <Txt
+        size={11}
+        color={colors.textGhost}
+        align="center"
+        tabular
+        style={{ marginTop: 24 }}
+      >
+        {appVersionLabel()}
+      </Txt>
 
       {/* Blocking overlay while signing out / deleting: a spinner covers the whole
           screen so the user can't tap anything (or trigger it twice) until the

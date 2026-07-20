@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 
 import { colors, radius, shadows } from '@/constants/theme';
 
+import { appVersionLabel } from '@/lib/version';
 import { ABOUT_FALLBACK } from '@/api/appContent';
 import { useAboutContent } from '@/hooks/useAppContent';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
@@ -35,12 +36,12 @@ export default function AboutScreen() {
 
   return (
     <Screen bottomPad={(miniPad || 24) + BOTTOM_NAV_CLEARANCE} padded>
-      {/* ── Nav row ──────────────────────────────────────────────────────────── */}
+      {/* ── Nav row ── back button on the RIGHT (RTL): flex-start = right edge ── */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'flex-end',
+          justifyContent: 'flex-start',
           marginBottom: 28,
         }}
       >
@@ -178,6 +179,11 @@ export default function AboutScreen() {
           <Rhombus size={8} color={colors.accentBrassMuted} filled={false} />
           <Rhombus size={5} color={colors.accentBrassSoft} />
         </View>
+
+        {/* Muted version footer — single-sourced from app.json (Feature B). */}
+        <Txt size={11.5} color={colors.textGhost} align="center" style={{ marginTop: 8 }} tabular>
+          {appVersionLabel()}
+        </Txt>
       </View>
     </Screen>
   );
