@@ -95,6 +95,8 @@ export const queryKeys = {
   adminBroadcasts: ['admin', 'broadcasts'] as const,
   homeBroadcasts: ['broadcasts', 'home'] as const,
   broadcast: (id: string) => ['broadcasts', id] as const,
+  broadcastRecipients: (search: string, noEmail: boolean, notRegistered: boolean) =>
+    ['admin', 'broadcastRecipients', search, noEmail, notRegistered] as const,
 
   // Admin V5 (dashboard / analytics / users / settings)
   adminStats: ['admin', 'stats'] as const,

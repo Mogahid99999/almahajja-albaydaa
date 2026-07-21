@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  adminEndBuddyPair,
   cancelBuddy,
   cancelBuddyRequest,
   getAdminBuddyOverview,
@@ -21,6 +22,19 @@ export function useAdminBuddyOverview() {
   return useQuery({
     queryKey: queryKeys.adminBuddies,
     queryFn: getAdminBuddyOverview,
+  });
+}
+
+/** Admin-only: end an active pairing between two students, then refresh the overview. */
+export function useAdminEndBuddyPair() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { aId: string; bId: string }) => adminEndBuddyPair(vars.aId, vars.bId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminBuddies });
+      // The two students' own buddy cards should refresh too if mounted.
+      void qc.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' });
+    },
   });
 }
 

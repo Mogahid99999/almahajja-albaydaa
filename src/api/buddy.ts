@@ -111,6 +111,8 @@ export async function getPendingIncomingRequests(): Promise<BuddyRequest[]> {
 // ─── Admin overview (V14 · migration 0079) ────────────────────────────────────
 
 export type AdminBuddyPair = {
+  aId: string;
+  bId: string;
   aName: string;
   bName: string;
   since: string | null;
@@ -142,11 +144,23 @@ export async function getAdminBuddyOverview(): Promise<AdminBuddyOverview> {
     activePairsCount: d.active_pairs_count ?? 0,
     pendingCount: d.pending_count ?? 0,
     pairs: (d.pairs ?? []).map((p: any) => ({
+      aId: p.a_id,
+      bId: p.b_id,
       aName: p.a_name ?? 'طالب علم',
       bName: p.b_name ?? 'طالب علم',
       since: p.since ?? null,
     })),
   };
+}
+
+/** Admin-only: end an active pairing between two students (migration 0119). */
+export async function adminEndBuddyPair(aId: string, bId: string): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.rpc('admin_end_buddy_pair' as never, {
+    p_a: aId,
+    p_b: bId,
+  } as never);
+  if (error) throw error;
 }
 
 /** Whether I have an outgoing invitation still pending (own rows via RLS). */

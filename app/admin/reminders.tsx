@@ -22,8 +22,13 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import type { Broadcast } from '@/api/broadcasts';
+import { FEEDBACK_LINK, type Broadcast, type BroadcastTarget } from '@/api/broadcasts';
 import { AdminShell } from '@/components/admin/AdminShell';
+import {
+  BroadcastTargeting,
+  EMPTY_TARGETING,
+  type TargetingState,
+} from '@/components/admin/BroadcastTargeting';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Divider, Rhombus, Txt, cardRowStyle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
@@ -49,6 +54,26 @@ function shortDate(iso: string): string {
     return iso.slice(0, 10);
   }
 }
+
+/**
+ * Common in-app destinations an admin can point a reminder button at, without
+ * needing to know Expo Router paths. Tapping a chip fills the link URL field;
+ * the reminder detail screen navigates internally when the URL starts with "/"
+ * (see app/(student)/reminder/[id].tsx), so route entries must be leading-slash
+ * routes. FEEDBACK_LINK is a sentinel that opens the «إرسال ملاحظة» sheet there
+ * instead of navigating.
+ */
+const IN_APP_DESTINATIONS: { label: string; url: string }[] = [
+  { label: 'إنشاء حساب', url: '/(auth)/register' },
+  { label: 'تسجيل الدخول', url: '/sign-in' },
+  { label: 'الرئيسية', url: '/' },
+  { label: 'رحلتي العلمية', url: '/(student)/journey' },
+  { label: 'ساحة الأسئلة', url: '/(student)/questions' },
+  { label: 'رفيق الدراسة', url: '/(student)/buddy-search' },
+  { label: 'التنبيهات', url: '/(student)/notifications' },
+  { label: 'عن المنصة', url: '/(student)/about' },
+  { label: 'إرسال ملاحظة', url: FEEDBACK_LINK },
+];
 
 function BroadcastRow({
   broadcast,
@@ -130,6 +155,7 @@ export default function RemindersScreen() {
   const [audioName, setAudioName] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkLabel, setLinkLabel] = useState('');
+  const [targeting, setTargeting] = useState<TargetingState>({ ...EMPTY_TARGETING });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pendingDelete, setPendingDelete] = useState<Broadcast | null>(null);
@@ -156,6 +182,7 @@ export default function RemindersScreen() {
     setAudioName(null);
     setLinkUrl('');
     setLinkLabel('');
+    setTargeting({ ...EMPTY_TARGETING });
     setError('');
   }
 
@@ -262,7 +289,33 @@ export default function RemindersScreen() {
     }
   }
 
+  /**
+   * Translate the targeting panel into a send target + human summary.
+   * Ticked users win (send exactly them); otherwise the attribute filters send
+   * to the whole matching pool; nothing = every student (undefined target).
+   */
+  function resolveTarget(): { target?: BroadcastTarget; summary: string } {
+    if (!targeting.enabled) return { summary: 'جميع الدارسين' };
+    if (targeting.selectedIds.size > 0) {
+      return {
+        target: { userIds: Array.from(targeting.selectedIds) },
+        summary: `${arNum(targeting.selectedIds.size)} دارس محدَّد`,
+      };
+    }
+    if (targeting.noEmail || targeting.notRegistered) {
+      const parts: string[] = [];
+      if (targeting.noEmail) parts.push('بلا بريد');
+      if (targeting.notRegistered) parts.push('غير مسجّل');
+      return {
+        target: { noEmail: targeting.noEmail, notRegistered: targeting.notRegistered },
+        summary: `الدارسون المطابقون (${parts.join(' و')})`,
+      };
+    }
+    return { summary: 'جميع الدارسين' };
+  }
+
   function confirmSend() {
+    const { target, summary } = resolveTarget();
     const input = {
       title: title.trim(),
       body: body.trim(),
@@ -271,10 +324,11 @@ export default function RemindersScreen() {
       audioPath,
       linkUrl: linkUrl.trim() || null,
       linkLabel: linkLabel.trim() || null,
+      target,
     };
     create.mutate(input, {
       onSuccess: () => {
-        setNotice('أُرسل التذكير إلى جميع الدارسين.');
+        setNotice(`أُرسل التذكير إلى: ${summary}.`);
         resetForm();
       },
       onError: (err) => setError(err instanceof Error ? err.message : 'تعذّر الإرسال.'),
@@ -411,7 +465,47 @@ export default function RemindersScreen() {
             autoCapitalize="none"
             style={[styles.input, { textAlign: 'left' }]}
           />
+
+          {/* Quick-pick in-app destinations — tapping fills the URL (and the
+              button text, if still empty) so no Expo Router path is needed. */}
+          <Txt size={11.5} color={colors.textGhost}>
+            أو اختر صفحة داخل التطبيق:
+          </Txt>
+          <View style={styles.destChips}>
+            {IN_APP_DESTINATIONS.map((d) => {
+              const active = linkUrl.trim() === d.url;
+              return (
+                <Pressable
+                  key={d.url + d.label}
+                  onPress={() => {
+                    setLinkUrl(d.url);
+                    if (!linkLabel.trim()) setLinkLabel(d.label);
+                  }}
+                  style={({ pressed }) => [
+                    styles.destChip,
+                    active && styles.destChipActive,
+                    pressed && { opacity: 0.6 },
+                  ]}
+                >
+                  <Txt
+                    size={12.5}
+                    weight="medium"
+                    color={active ? colors.onTealPrimary : colors.textSlate}
+                  >
+                    {d.label}
+                  </Txt>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
+
+        {/* Recipient targeting — new sends only (editing doesn't re-fan-out). */}
+        {!editingId ? (
+          <View style={{ marginTop: 12 }}>
+            <BroadcastTargeting value={targeting} onChange={setTargeting} />
+          </View>
+        ) : null}
 
         <View style={styles.switchRow}>
           <Switch
@@ -530,8 +624,8 @@ export default function RemindersScreen() {
       <ConfirmDialog
         visible={confirmingSend}
         destructive={false}
-        title="إرسال إلى جميع الدارسين؟"
-        message="سيصل إشعار فوري إلى كل الدارسين المفعّل لديهم استقبال التذكيرات النافعة. تأكد من العنوان والنص قبل الإرسال."
+        title={`إرسال إلى: ${resolveTarget().summary}؟`}
+        message="سيصل إشعار فوري إلى المستقبِلين المفعّل لديهم استقبال التذكيرات النافعة. تأكد من العنوان والنص قبل الإرسال."
         confirmLabel="إرسال"
         cancelLabel="تراجع"
         pending={create.isPending}
@@ -583,6 +677,26 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.borderSand2,
     backgroundColor: colors.surfaceInset,
+  } as ViewStyle,
+
+  destChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  } as ViewStyle,
+
+  destChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.borderSand2,
+    backgroundColor: colors.surfaceWhite,
+  } as ViewStyle,
+
+  destChipActive: {
+    backgroundColor: colors.primaryTeal,
+    borderColor: colors.primaryTeal,
   } as ViewStyle,
 
   imagePreviewWrap: {

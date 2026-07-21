@@ -12,7 +12,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { getBroadcastAudioUrl, recordBroadcastView } from '@/api/broadcasts';
+import { FEEDBACK_LINK, getBroadcastAudioUrl, recordBroadcastView } from '@/api/broadcasts';
+import { FeedbackSheet } from '@/components/feedback/FeedbackSheet';
 import { VoiceNotePlayer } from '@/components/questions/VoiceNotePlayer';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -57,6 +58,7 @@ export default function ReminderDetailScreen() {
   // Show the reminder image at its TRUE aspect ratio so a tall poster (like the
   // course flyer) is never cropped by a fixed 16:9 frame. Measure the real
   // dimensions once the URL is known; fall back to 16:9 until then.
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [imgRatio, setImgRatio] = useState<number | null>(null);
   useEffect(() => {
     setImgRatio(null);
@@ -79,7 +81,9 @@ export default function ReminderDetailScreen() {
   function openLink() {
     const url = data?.linkUrl;
     if (!url) return;
-    if (url.startsWith('/')) {
+    if (url === FEEDBACK_LINK) {
+      setFeedbackOpen(true);
+    } else if (url.startsWith('/')) {
       router.push(url as Parameters<typeof router.push>[0]);
     } else {
       void Linking.openURL(url);
@@ -218,6 +222,8 @@ export default function ReminderDetailScreen() {
           </View>
         </>
       )}
+
+      <FeedbackSheet visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </Screen>
   );
 }

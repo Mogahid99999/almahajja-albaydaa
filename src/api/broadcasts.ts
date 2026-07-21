@@ -12,6 +12,14 @@ import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import { deleteFromR2, getReadUrl, uploadToR2, type PickedFile } from './storage';
 
+/**
+ * Sentinel link value for a reminder button that opens the in-app «إرسال ملاحظة»
+ * feedback sheet instead of navigating to a route. The reminder detail screen
+ * (app/(student)/reminder/[id].tsx) special-cases it; the admin reminders form
+ * offers it as a quick-pick chip. Not a real URL — never passed to router/Linking.
+ */
+export const FEEDBACK_LINK = 'app://feedback';
+
 /** One broadcast reminder (admin list + detail page share the shape). */
 export type Broadcast = {
   id: string;
@@ -48,6 +56,34 @@ export type BroadcastInput = {
   audioPath?: string | null;
   linkUrl?: string | null;
   linkLabel?: string | null;
+  /** Optional recipient targeting (0120). Omitted / all-empty = every student. */
+  target?: BroadcastTarget;
+};
+
+/**
+ * Who a broadcast is aimed at (migration 0120). Attribute filters combine with
+ * AND; `userIds` are unioned on top of the filtered pool. All-empty = the
+ * historical "every student" behaviour.
+ */
+export type BroadcastTarget = {
+  noEmail?: boolean;
+  notRegistered?: boolean;
+  userIds?: string[];
+};
+
+/** One candidate row for the targeting picker. */
+export type BroadcastRecipient = {
+  id: string;
+  displayName: string | null;
+  email: string | null;
+  phone: string | null;
+  isAnonymous: boolean;
+};
+
+export type BroadcastRecipientPage = {
+  items: BroadcastRecipient[];
+  nextOffset: number | null;
+  totalCount: number;
 };
 
 /** Admin/publisher list — every non-deleted broadcast, newest first. */
@@ -133,12 +169,17 @@ export async function getBroadcastAudioUrl(audioPath: string): Promise<string | 
   return getReadUrl(audioPath);
 }
 
-/** Create + immediately fan out the push to every student. Returns the id. */
+/**
+ * Create + immediately fan out the push. With no `target` (or an all-empty one)
+ * this reaches every student, exactly as before; a `target` narrows the
+ * recipients (0120). Returns the new broadcast id.
+ */
 export async function createBroadcast(input: BroadcastInput): Promise<string> {
   if (USE_MOCK) return 'mock-broadcast';
-  // `as never`: the new p_audio_path arg isn't in database.generated.ts until
-  // types are regenerated post-0096. Runtime is unaffected.
-  const { data, error } = await supabase.rpc('create_broadcast', {
+  const t = input.target;
+  // `as never`: create_broadcast_targeted (0120) isn't in database.generated.ts
+  // until types are regenerated. Runtime is unaffected.
+  const { data, error } = await supabase.rpc('create_broadcast_targeted' as never, {
     p_title: input.title,
     p_body: input.body,
     p_show_on_home: input.showOnHome,
@@ -146,9 +187,52 @@ export async function createBroadcast(input: BroadcastInput): Promise<string> {
     p_link_url: input.linkUrl ?? undefined,
     p_link_label: input.linkLabel ?? undefined,
     p_audio_path: input.audioPath ?? undefined,
+    p_no_email: t?.noEmail ?? false,
+    p_not_registered: t?.notRegistered ?? false,
+    p_user_ids: t?.userIds && t.userIds.length ? t.userIds : null,
   } as never);
   if (error) throw error;
   return data as string;
+}
+
+/**
+ * Admin-only paged candidate list for the targeting picker (0120). `noEmail` /
+ * `notRegistered` filter the student pool (AND); `search` matches name/email/phone.
+ */
+const RECIPIENTS_PAGE_SIZE = 50;
+
+export async function getBroadcastRecipients(
+  search: string | undefined,
+  offset = 0,
+  noEmail = false,
+  notRegistered = false,
+): Promise<BroadcastRecipientPage> {
+  if (USE_MOCK) return { items: [], nextOffset: null, totalCount: 0 };
+  const { data, error } = await (
+    supabase.rpc as unknown as (
+      fn: string,
+      args: object,
+    ) => Promise<{ data: unknown; error: unknown }>
+  )('admin_broadcast_recipients', {
+    p_search: search && search.trim() ? search.trim() : undefined,
+    p_no_email: noEmail,
+    p_not_registered: notRegistered,
+    p_limit: RECIPIENTS_PAGE_SIZE,
+    p_offset: offset,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as (Record<string, any> & { total_count?: number })[];
+  const items: BroadcastRecipient[] = rows.map((r) => ({
+    id: r.id,
+    displayName: r.display_name ?? null,
+    email: r.email ?? null,
+    phone: r.phone ?? null,
+    isAnonymous: !!r.is_anonymous,
+  }));
+  const nextOffset =
+    items.length === RECIPIENTS_PAGE_SIZE ? offset + RECIPIENTS_PAGE_SIZE : null;
+  const totalCount = rows[0]?.total_count ? Number(rows[0].total_count) : items.length;
+  return { items, nextOffset, totalCount };
 }
 
 /**

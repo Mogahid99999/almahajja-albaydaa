@@ -1,10 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   createBroadcast,
   deleteBroadcast,
   getBroadcast,
   getBroadcastImageUrl,
+  getBroadcastRecipients,
   getHomeBroadcasts,
   listBroadcasts,
   updateBroadcast,
@@ -87,6 +89,38 @@ export function useUploadBroadcastAudio() {
   return useMutation({
     mutationFn: (file: PickedFile) => uploadBroadcastAudio(file),
   });
+}
+
+/**
+ * Debounced, paginated candidate list for the التذكيرات النافعة targeting picker.
+ * `noEmail` / `notRegistered` filter the student pool server-side (0120).
+ */
+export function useBroadcastRecipients(
+  search: string,
+  noEmail: boolean,
+  notRegistered: boolean,
+  options?: { enabled?: boolean },
+) {
+  const [debounced, setDebounced] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.broadcastRecipients(debounced, noEmail, notRegistered),
+    queryFn: ({ pageParam }) =>
+      getBroadcastRecipients(debounced, pageParam, noEmail, notRegistered),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
+    staleTime: 30_000,
+    enabled: options?.enabled ?? true,
+  });
+  return {
+    ...query,
+    items: query.data?.pages.flatMap((p) => p.items) ?? [],
+    totalCount: query.data?.pages[0]?.totalCount ?? 0,
+  };
 }
 
 /** Resolve an existing reminder's image key to a signed preview URL (edit mode). */
