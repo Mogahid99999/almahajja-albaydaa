@@ -60,14 +60,18 @@ export type BroadcastInput = {
   target?: BroadcastTarget;
 };
 
+/** Gender filter value for targeting (0121); null/undefined = any gender. */
+export type BroadcastGender = 'male' | 'female';
+
 /**
- * Who a broadcast is aimed at (migration 0120). Attribute filters combine with
- * AND; `userIds` are unioned on top of the filtered pool. All-empty = the
- * historical "every student" behaviour.
+ * Who a broadcast is aimed at (migration 0120, gender added in 0121). Attribute
+ * filters combine with AND; `userIds` are unioned on top of the filtered pool.
+ * All-empty = the historical "every student" behaviour.
  */
 export type BroadcastTarget = {
   noEmail?: boolean;
   notRegistered?: boolean;
+  gender?: BroadcastGender | null;
   userIds?: string[];
 };
 
@@ -189,6 +193,7 @@ export async function createBroadcast(input: BroadcastInput): Promise<string> {
     p_audio_path: input.audioPath ?? undefined,
     p_no_email: t?.noEmail ?? false,
     p_not_registered: t?.notRegistered ?? false,
+    p_gender: t?.gender ?? null,
     p_user_ids: t?.userIds && t.userIds.length ? t.userIds : null,
   } as never);
   if (error) throw error;
@@ -196,8 +201,9 @@ export async function createBroadcast(input: BroadcastInput): Promise<string> {
 }
 
 /**
- * Admin-only paged candidate list for the targeting picker (0120). `noEmail` /
- * `notRegistered` filter the student pool (AND); `search` matches name/email/phone.
+ * Admin-only paged candidate list for the targeting picker (0120, gender 0121).
+ * `noEmail` / `notRegistered` / `gender` filter the student pool (AND); `search`
+ * matches name/email/phone.
  */
 const RECIPIENTS_PAGE_SIZE = 50;
 
@@ -206,6 +212,7 @@ export async function getBroadcastRecipients(
   offset = 0,
   noEmail = false,
   notRegistered = false,
+  gender: BroadcastGender | null = null,
 ): Promise<BroadcastRecipientPage> {
   if (USE_MOCK) return { items: [], nextOffset: null, totalCount: 0 };
   const { data, error } = await (
@@ -215,6 +222,7 @@ export async function getBroadcastRecipients(
     ) => Promise<{ data: unknown; error: unknown }>
   )('admin_broadcast_recipients', {
     p_search: search && search.trim() ? search.trim() : undefined,
+    p_gender: gender ?? undefined,
     p_no_email: noEmail,
     p_not_registered: notRegistered,
     p_limit: RECIPIENTS_PAGE_SIZE,

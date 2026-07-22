@@ -12,6 +12,7 @@ import {
   updateBroadcast,
   uploadBroadcastAudio,
   uploadBroadcastImage,
+  type BroadcastGender,
   type BroadcastInput,
 } from '@/api/broadcasts';
 import type { PickedFile } from '@/api/storage';
@@ -93,12 +94,14 @@ export function useUploadBroadcastAudio() {
 
 /**
  * Debounced, paginated candidate list for the التذكيرات النافعة targeting picker.
- * `noEmail` / `notRegistered` filter the student pool server-side (0120).
+ * `noEmail` / `notRegistered` / `gender` filter the student pool server-side
+ * (0120, gender 0121).
  */
 export function useBroadcastRecipients(
   search: string,
   noEmail: boolean,
   notRegistered: boolean,
+  gender: BroadcastGender | null,
   options?: { enabled?: boolean },
 ) {
   const [debounced, setDebounced] = useState(search);
@@ -108,9 +111,9 @@ export function useBroadcastRecipients(
   }, [search]);
 
   const query = useInfiniteQuery({
-    queryKey: queryKeys.broadcastRecipients(debounced, noEmail, notRegistered),
+    queryKey: queryKeys.broadcastRecipients(debounced, noEmail, notRegistered, gender),
     queryFn: ({ pageParam }) =>
-      getBroadcastRecipients(debounced, pageParam, noEmail, notRegistered),
+      getBroadcastRecipients(debounced, pageParam, noEmail, notRegistered, gender),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
     staleTime: 30_000,

@@ -24,6 +24,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import type { BroadcastGender } from '@/api/broadcasts';
 import { Txt } from '@/components/ui';
 import { colors, fonts, radius } from '@/constants/theme';
 import { useBroadcastRecipients } from '@/hooks/useBroadcasts';
@@ -33,6 +34,8 @@ export type TargetingState = {
   enabled: boolean;
   noEmail: boolean;
   notRegistered: boolean;
+  /** null = any gender; 'male'/'female' narrow to رجال/نساء (0121). */
+  gender: BroadcastGender | null;
   search: string;
   selectedIds: Set<string>;
 };
@@ -41,6 +44,7 @@ export const EMPTY_TARGETING: TargetingState = {
   enabled: false,
   noEmail: false,
   notRegistered: false,
+  gender: null,
   search: '',
   selectedIds: new Set<string>(),
 };
@@ -89,7 +93,7 @@ export function BroadcastTargeting({
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
-  } = useBroadcastRecipients(value.search, value.noEmail, value.notRegistered, {
+  } = useBroadcastRecipients(value.search, value.noEmail, value.notRegistered, value.gender, {
     enabled: value.enabled,
   });
 
@@ -158,6 +162,30 @@ export function BroadcastTargeting({
           active={value.notRegistered}
           onPress={() => set({ notRegistered: !value.notRegistered })}
         />
+        {/* Gender is one value per student, so these two are mutually exclusive —
+            tapping the active one clears it (back to any gender). */}
+        <FilterChip
+          label="رجال"
+          active={value.gender === 'male'}
+          onPress={() => set({ gender: value.gender === 'male' ? null : 'male' })}
+        />
+        <FilterChip
+          label="نساء"
+          active={value.gender === 'female'}
+          onPress={() => set({ gender: value.gender === 'female' ? null : 'female' })}
+        />
+      </View>
+
+      {/* Recipient count — updates after any filter change. */}
+      <View style={styles.countBanner}>
+        <Feather name="users" size={15} color={colors.primaryTeal} />
+        <Txt size={13} weight="semibold" color={colors.primaryTeal}>
+          {isFetching && !items.length
+            ? 'جارٍ حساب المستقبِلين…'
+            : selectedCount > 0
+              ? `${arNum(selectedCount)} مستقبِلاً محدَّداً`
+              : `${arNum(totalCount)} مستقبِلاً`}
+        </Txt>
       </View>
 
       <TextInput
@@ -171,10 +199,7 @@ export function BroadcastTargeting({
 
       <View style={styles.listHeader}>
         <Txt size={11.5} color={colors.textMuted}>
-          {isFetching && !items.length
-            ? 'جارٍ التحميل…'
-            : `${arNum(totalCount)} دارس مطابق` +
-              (selectedCount ? ` · ${arNum(selectedCount)} محدَّد` : '')}
+          {selectedCount > 0 ? `${arNum(selectedCount)} محدَّد من ${arNum(totalCount)}` : 'القائمة'}
         </Txt>
         {items.length > 0 ? (
           <Pressable
@@ -270,6 +295,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  } as ViewStyle,
+
+  countBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceWhite,
+    borderWidth: 1.5,
+    borderColor: colors.primaryTeal,
   } as ViewStyle,
 
   filterChip: {

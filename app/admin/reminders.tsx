@@ -302,12 +302,18 @@ export default function RemindersScreen() {
         summary: `${arNum(targeting.selectedIds.size)} دارس محدَّد`,
       };
     }
-    if (targeting.noEmail || targeting.notRegistered) {
+    if (targeting.noEmail || targeting.notRegistered || targeting.gender) {
       const parts: string[] = [];
+      if (targeting.gender === 'male') parts.push('رجال');
+      if (targeting.gender === 'female') parts.push('نساء');
       if (targeting.noEmail) parts.push('بلا بريد');
       if (targeting.notRegistered) parts.push('غير مسجّل');
       return {
-        target: { noEmail: targeting.noEmail, notRegistered: targeting.notRegistered },
+        target: {
+          noEmail: targeting.noEmail,
+          notRegistered: targeting.notRegistered,
+          gender: targeting.gender,
+        },
         summary: `الدارسون المطابقون (${parts.join(' و')})`,
       };
     }
