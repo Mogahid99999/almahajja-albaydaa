@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.riwaqalilm.app",
-      "buildNumber": "9",
+      "buildNumber": "10",
       "entitlements": {
         "aps-environment": "production"
       },
