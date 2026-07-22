@@ -460,6 +460,32 @@ export async function signIn(identifier: string, password: string): Promise<Curr
  * immediately without any mail being sent. To re-enable OTP verification,
  * restore the commented call below AND add a verify step to the register UI.
  */
+/**
+ * Attach an email to the caller's own account via the `register-set-email`
+ * edge function — service role + `email_confirm: true`, so it lands in
+ * auth.users.email immediately with NO confirmation mail and NO OTP for the
+ * user to enter (see the register() docstring above for why the direct client
+ * `updateUser({ email })` call is avoided).
+ *
+ * Retries once: a single transient network blip here previously lost the email
+ * silently for good — the biggest cause of "email not saved". A second attempt
+ * costs nothing and rescues the common flaky-network case. Returns the error on
+ * failure (null on success) so the caller decides whether it's fatal (iOS: the
+ * email is the sole identifier) or best-effort (Android: phone is the identifier).
+ */
+async function setRegistrationEmail(email: string): Promise<Error | null> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { error } = await supabase.functions
+      .invoke('register-set-email', { body: { email } })
+      .then((r) => ({ error: r.error as Error | null }))
+      .catch((err) => ({ error: err as Error }));
+    if (!error) return null;
+    lastErr = error;
+  }
+  return lastErr;
+}
+
 export async function register(
   name: string,
   phone: string,
@@ -489,10 +515,29 @@ export async function register(
   }
   // `data` (user_metadata) only carries gender when it was actually collected
   // (Android) — an iOS account has no gender until a scoped feature prompts for
-  // it. Phone is only sent when present, so an email-only iOS account links
-  // cleanly (an empty phone would be rejected by GoTrue).
+  // it.
   const meta: Record<string, string> = { display_name: display };
   if (gender) meta.gender = gender;
+
+  let savedEmail = '';
+  // ORDER MATTERS on the email-only (iOS, no-phone) path. GoTrue refuses to set
+  // a password on an anonymous user that still has NO email and NO phone
+  // ("Updating password of an anonymous user without an email or phone is not
+  // allowed") — the request even surfaced as a bogus "weak password" error
+  // because the message contains the word "password". So when there's no phone,
+  // the email (the sole identifier) MUST be attached to the anonymous account
+  // BEFORE the password update, not after. Android sends the phone inline with
+  // the password below, so its identifier is present and the email stays a
+  // best-effort step afterwards.
+  if (!p && e) {
+    // No phone → email is the ONLY identifier. Attach it first, and if it
+    // doesn't save, fail hard: without it the password update below would be
+    // rejected AND the account would be unreachable afterwards.
+    const emailErr = await setRegistrationEmail(e);
+    if (emailErr) throw emailErr;
+    savedEmail = e;
+  }
+
   const { data, error } = await supabase.auth.updateUser({
     ...(p ? { phone: p } : {}),
     password,
@@ -500,54 +545,16 @@ export async function register(
   });
   if (error) throw error;
   let u = data.user;
-  let savedEmail = '';
-  if (e) {
-    // Best-effort: registration must not fail because of the OPTIONAL email.
-    // Only trust it as saved if this call actually succeeded — otherwise the
-    // returned user must NOT claim an email that never made it to the server
-    // (e.g. "already registered"), or the profile screen would show an email
-    // that silently isn't there.
-    //
-    // DISABLED (see docstring above) — this direct client call sends a
-    // confirmation-code email with no UI step to consume it:
-    //   const emailResult = await supabase.auth.updateUser({ email: e }).catch(() => null);
-    //   if (emailResult?.data.user) u = emailResult.data.user;
-    //
-    // Instead, set the email via the service role so it's saved without
-    // sending any mail (NO OTP — the whole point: the email lands in
-    // auth.users.email + the admin panel with nothing for the user to confirm).
-    //
-    // Retry once: this fires right after the phone+password link, and a single
-    // transient network blip here previously lost the email silently for good
-    // (best-effort catch) — the single biggest cause of "email not saved". A
-    // second attempt costs nothing and rescues the common flaky-network case.
-    let emailErr: Error | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const { error } = await supabase.functions
-        .invoke('register-set-email', { body: { email: e } })
-        .then((r) => ({ error: r.error as Error | null }))
-        .catch((err) => ({ error: err as Error }));
-      if (!error) {
-        emailErr = null;
-        break;
-      }
-      emailErr = error;
-    }
+
+  if (p && e) {
+    // Android (phone is the identifier): email is OPTIONAL, so it's set after
+    // the phone+password link and a failed save is observable-but-non-fatal —
+    // it surfaces in logs/telemetry so a systemic problem (function down, env
+    // drift) can be caught instead of silently accumulating email-less accounts.
+    const emailErr = await setRegistrationEmail(e);
     if (!emailErr) {
       savedEmail = e;
-    } else if (!p) {
-      // iOS (no phone): email is the ONLY sign-in identifier and the sole
-      // password-recovery channel. If it didn't save, the account would be
-      // unreachable after this session — a hard failure the user must retry,
-      // not a silent best-effort skip. (The phone+password link already
-      // succeeded, so a retry re-runs updateUser harmlessly and re-attempts
-      // the email set.)
-      throw emailErr;
     } else {
-      // Android (phone is the identifier): email is optional, so a failed save
-      // is observable-but-non-fatal — it surfaces in logs/telemetry so a
-      // systemic problem (function down, env drift) can be caught instead of
-      // silently accumulating email-less accounts.
       console.warn('[register] email save failed (best-effort):', emailErr?.message);
     }
   }
