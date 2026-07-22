@@ -1,12 +1,4 @@
-import { useState } from 'react';
-import {
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  Pressable,
-  ScrollView,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import type { LectureCard } from '@/api/types';
@@ -15,6 +7,7 @@ import { arDuration } from '@/lib/format';
 import { preloadLecture } from '@/lib/audioController';
 import { PaginationDots, SectionTitle, Txt } from '@/components/ui';
 import { SectionIcon } from '@/components/ui/SectionIcon';
+import { useRtlRail } from './useRtlRail';
 
 /** Diameter of the subject-icon badge straddling the card's top-right corner. */
 const BADGE_SIZE = 34;
@@ -39,8 +32,6 @@ type Props = {
 export function NewlyAddedRail({ lectures }: Props) {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [activePage, setActivePage] = useState(0);
-  if (lectures.length === 0) return null;
 
   // 2 cards flush with both edges: edge + card + gap + card + edge, all 12px.
   const cardWidth = (width - spacing.screenH * 3) / 2;
@@ -48,10 +39,11 @@ export function NewlyAddedRail({ lectures }: Props) {
   const pageWidth = cardWidth * 2 + spacing.screenH;
   const pageCount = Math.ceil(lectures.length / 2);
 
-  function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    const page = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
-    setActivePage(Math.max(0, Math.min(page, pageCount - 1)));
-  }
+  // RTL horizontal scrolling that keeps cards tappable on iOS 17 — see useRtlRail.
+  const { scrollRef, activePage, handleScroll, onContentSizeChange, railStyle, railContentStyle } =
+    useRtlRail(pageWidth, pageCount);
+
+  if (lectures.length === 0) return null;
 
   return (
     <View>
@@ -64,14 +56,18 @@ export function NewlyAddedRail({ lectures }: Props) {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         onScroll={handleScroll}
+        onContentSizeChange={onContentSizeChange}
         scrollEventThrottle={16}
+        style={railStyle}
         contentContainerStyle={{
           gap: spacing.screenH,
           paddingHorizontal: spacing.screenH,
           paddingBottom: 4,
+          ...railContentStyle,
         }}
       >
         {lectures.map((lecture, idx) => {
