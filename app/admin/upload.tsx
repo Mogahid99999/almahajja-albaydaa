@@ -23,6 +23,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  Switch,
   TextInput,
   View,
   useWindowDimensions,
@@ -97,6 +98,11 @@ export default function UploadScreen() {
   const [order, setOrder] = useState('');
   const [sheikhId, setSheikhId] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<'draft' | 'published'>('draft');
+  // «إشعار الطلاب» — ON is the long-standing behaviour (every publish notifies
+  // all students). OFF publishes the lecture into its section quietly: no push,
+  // no inbox row. Enforced server-side by the publish trigger (migration 0123),
+  // so it also holds if the lecture is published later from شاشة المحاضرات.
+  const [notifyStudents, setNotifyStudents] = useState(true);
   const [titleFocused, setTitleFocused] = useState(false);
   const [orderFocused, setOrderFocused] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -304,13 +310,16 @@ export default function UploadScreen() {
         order: order ? Number(order) : 0,
         durationSec: audioDuration,
         status: effectiveStatus,
+        notifyOnPublish: notifyStudents,
         audioFile: uploadAudio,
       },
       {
         onSuccess: (created) => {
           setSuccessMsg(
             effectiveStatus === 'published'
-              ? 'تم نشر المحاضرة بنجاح وستظهر للطلاب.'
+              ? notifyStudents
+                ? 'تم نشر المحاضرة بنجاح وستظهر للطلاب.'
+                : 'تم نشر المحاضرة بنجاح وستظهر للطلاب دون إرسال إشعار.'
               : effectiveStatus === 'unclassified'
                 ? 'تم حفظ المحاضرة في قائمة الواردة (بدون قسم). صنّفها لاحقاً لنشرها.'
                 : 'تم حفظ المحاضرة كمسودة. انشرها من شاشة المحاضرات.',
@@ -323,6 +332,7 @@ export default function UploadScreen() {
           autoOrderSectionRef.current = null;
           setSheikhId(null);
           setPublishStatus('draft');
+          setNotifyStudents(true);
           setAudioFile(null);
           setAudioDuration(null);
           jobRef.current++;
@@ -623,7 +633,32 @@ export default function UploadScreen() {
                 لم تختر قسماً — ستُحفظ المحاضرة في «الواردة» ولن تظهر للطلاب حتى تُصنَّف وتُنشر.
               </Txt>
             </View>
-          ) : null}
+          ) : (
+            /* «نشر بدون إشعار» — only meaningful once the lecture has a section,
+               since an unclassified lecture never notifies anyone anyway. */
+            <View style={styles.switchRow}>
+              <Switch
+                value={notifyStudents}
+                onValueChange={setNotifyStudents}
+                trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}
+                thumbColor={colors.surfaceWhite}
+                ios_backgroundColor={colors.surfaceInset}
+                accessibilityLabel="إشعار الطلاب بالمحاضرة الجديدة"
+              />
+              <View style={{ flex: 1 }}>
+                <Txt size={13.5} weight="medium" color={colors.textInk}>
+                  إشعار الطلاب
+                </Txt>
+                <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 2 }}>
+                  {notifyStudents
+                    ? publishStatus === 'published'
+                      ? 'سيصل إشعار لجميع الطلاب عند النشر'
+                      : 'سيصل إشعار لجميع الطلاب عند نشرها لاحقاً'
+                    : 'ستُضاف المحاضرة إلى القسم بهدوء — دون إشعار'}
+                </Txt>
+              </View>
+            </View>
+          )}
 
           <View style={styles.metaDivider} />
 
@@ -726,7 +761,11 @@ export default function UploadScreen() {
         visible={confirmingPublish}
         destructive={false}
         title="نشر المحاضرة؟"
-        message="سيصل إشعار فوري إلى جميع الدارسين بأن هذه المحاضرة متاحة الآن."
+        message={
+          notifyStudents
+            ? 'سيصل إشعار فوري إلى جميع الدارسين بأن هذه المحاضرة متاحة الآن.'
+            : 'ستظهر المحاضرة في القسم مباشرة، ولن يصل أي إشعار للدارسين.'
+        }
         confirmLabel="نشر"
         cancelLabel="تراجع"
         pending={createLecture.isPending}
@@ -990,6 +1029,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     padding: 10,
     marginBottom: 14,
+  } as ViewStyle,
+
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
   } as ViewStyle,
 
   noSectionNote: {

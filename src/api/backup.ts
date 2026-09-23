@@ -30,7 +30,11 @@ import {
   type SchemaTable,
 } from '@/lib/backupFormat';
 
-const EXPORT_PAGE = 2000; // rows per export_table call
+// Rows per export_table call. Kept at/below the project's PostgREST `max_rows`
+// (1000) — asking for more just gets truncated server-side, it doesn't fetch
+// more. The paging loop below no longer depends on this matching, but a request
+// that can be answered in full still saves a wasted round trip per table.
+const EXPORT_PAGE = 1000;
 
 // ─── Environment capability check ────────────────────────────────────────────
 
@@ -94,6 +98,40 @@ async function exportTablePage(
     p_after: after,
     p_limit: EXPORT_PAGE,
   });
+}
+
+/**
+ * Every row of one table as JSONL, paged through the opaque `pk` cursor.
+ *
+ * Pages until the server returns NOTHING — never until a page looks "short".
+ * PostgREST caps every response at `max_rows` (1000 on this project), so a
+ * 2000-row request came back with 1000 rows, and the old
+ * `if (page.length < EXPORT_PAGE) break` ended the table right there: every
+ * table over 1000 rows was silently backed up with only its first 1000 rows.
+ * A short page means nothing; an empty page means done.
+ *
+ * Extracted from the ZIP generator so this — the part that decides whether a
+ * backup is complete — is testable on its own.
+ */
+export async function collectTableJsonl(
+  table: string,
+  fetchPage: (table: string, after: string | null) => Promise<ExportRow[]> = exportTablePage,
+): Promise<string> {
+  let jsonl = '';
+  let after: string | null = null;
+  for (;;) {
+    const page = await fetchPage(table, after);
+    if (page.length === 0) break;
+    for (const row of page) jsonl += JSON.stringify(row.row_json) + '\n';
+    const next = page[page.length - 1].pk;
+    // A cursor that doesn't advance would spin forever, appending the same rows
+    // until the browser dies — fail the backup loudly instead.
+    if (next === after) {
+      throw new Error(`تعذّر إكمال النسخة: لم يتقدّم مؤشّر التصدير في جدول ${table}`);
+    }
+    after = next;
+  }
+  return jsonl;
 }
 
 // ─── Media (Edge Function) wrappers ──────────────────────────────────────────
@@ -320,15 +358,7 @@ export function createBackup(
         emit();
 
         // Accumulate JSONL for this table (DB is small relative to media).
-        let jsonl = '';
-        let after: string | null = null;
-        for (;;) {
-          const page: ExportRow[] = await exportTablePage(table, after);
-          if (page.length === 0) break;
-          for (const row of page) jsonl += JSON.stringify(row.row_json) + '\n';
-          after = page[page.length - 1].pk;
-          if (page.length < EXPORT_PAGE) break;
-        }
+        const jsonl = await collectTableJsonl(table);
         const bytes = enc.encode(jsonl);
         checksums[`database/${table}.jsonl`] = await sha256Hex(bytes);
         progress.doneFiles += 1;

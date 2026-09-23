@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Attachment } from '@/api/types';
 import { Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
+import { rtlStripStyles } from '@/components/home/useRtlRail';
 import { ATTACHMENT_META, openAttachment } from './attachmentMeta';
 
 export function PlayerAttachmentsStrip({
@@ -25,6 +26,8 @@ export function PlayerAttachmentsStrip({
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // iOS-17 RTL tap fix — see rtlStripStyles.
+  const { stripStyle, stripContentStyle } = rtlStripStyles();
   if (attachments.length === 0) return null;
 
   return (
@@ -34,11 +37,13 @@ export function PlayerAttachmentsStrip({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        // RTL: lay chips out from the right edge inward.
+        style={stripStyle}
+        // RTL: lay chips out from the right edge inward (row-reverse under ltr on iOS).
         contentContainerStyle={{
           flexDirection: 'row',
           gap: 10,
           paddingHorizontal: 18,
+          ...stripContentStyle,
         }}
       >
         {attachments.map((attachment) => {

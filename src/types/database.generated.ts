@@ -702,6 +702,7 @@ export type Database = {
           created_at: string
           duration_sec: number | null
           id: string
+          notify_on_publish: boolean
           order: number
           search_vec: unknown
           section_id: string | null
@@ -716,6 +717,7 @@ export type Database = {
           created_at?: string
           duration_sec?: number | null
           id?: string
+          notify_on_publish?: boolean
           order?: number
           search_vec?: unknown
           section_id?: string | null
@@ -730,6 +732,7 @@ export type Database = {
           created_at?: string
           duration_sec?: number | null
           id?: string
+          notify_on_publish?: boolean
           order?: number
           search_vec?: unknown
           section_id?: string | null

@@ -44,6 +44,7 @@ import {
 import { useReportContent } from '@/hooks/useReports';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useRefreshAll } from '@/hooks/useRefreshAll';
+import { arabicOr } from '@/lib/errorText';
 import { arSince } from '@/lib/format';
 
 function SegChip({
@@ -161,7 +162,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
           setBody('');
           setSent({ anonymous, audience });
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر إرسال السؤال'),
+        onError: (e) => setError(arabicOr(e, 'تعذّر إرسال السؤال')),
       },
     );
   }
@@ -359,7 +360,7 @@ function MyQuestionCard({
       { id: q.id, body: text, audience, category },
       {
         onSuccess: () => setEditing(false),
-        onError: (e) => setEditError(e instanceof Error ? e.message : 'تعذّر حفظ التعديل'),
+        onError: (e) => setEditError(arabicOr(e, 'تعذّر حفظ التعديل')),
       },
     );
   }

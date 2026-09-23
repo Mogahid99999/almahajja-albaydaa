@@ -9,15 +9,19 @@
  * matching the platform's non-competitive tone.
  */
 import Feather from '@expo/vector-icons/Feather';
-import { ActivityIndicator, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Divider, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
-import { useAdminBuddyOverview } from '@/hooks/useBuddy';
+import { useAdminBuddyOverview, useAdminEndBuddyPair } from '@/hooks/useBuddy';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { arNum, arSince } from '@/lib/format';
+import { notify } from '@/lib/notify';
+import type { AdminBuddyPair } from '@/api/buddy';
 
 function StatCard({
   label,
@@ -54,6 +58,8 @@ export default function AdminBuddies() {
   useAdminOnly();
   const { data, isLoading, refetch } = useAdminBuddyOverview();
   const { refreshing, onRefresh } = usePullToRefresh([refetch]);
+  const endPair = useAdminEndBuddyPair();
+  const [pendingEnd, setPendingEnd] = useState<AdminBuddyPair | null>(null);
 
   return (
     <AdminShell
@@ -126,12 +132,46 @@ export default function AdminBuddies() {
                       {arSince(p.since)}
                     </Txt>
                   ) : null}
+                  <Pressable
+                    onPress={() => setPendingEnd(p)}
+                    accessibilityRole="button"
+                    accessibilityLabel="إنهاء الثنائية"
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}
+                  >
+                    <Feather name="user-x" size={16} color={colors.stateDanger} />
+                  </Pressable>
                 </View>
               ))
             )}
           </Card>
         </>
       )}
+
+      <ConfirmDialog
+        visible={!!pendingEnd}
+        title="إنهاء الثنائية"
+        message={
+          pendingEnd
+            ? `ستُنهى ثنائية «${pendingEnd.aName}» و«${pendingEnd.bName}». يمكن لأيٍّ منهما إرسال دعوة جديدة لاحقاً.`
+            : ''
+        }
+        confirmLabel="إنهاء"
+        pending={endPair.isPending}
+        onConfirm={() => {
+          if (!pendingEnd) return;
+          const pair = pendingEnd;
+          endPair.mutate(
+            { aId: pair.aId, bId: pair.bId },
+            {
+              onSuccess: () => notify('تم إنهاء الثنائية'),
+              onError: () => notify('تعذّر إنهاء الثنائية، حاول مرة أخرى'),
+              onSettled: () => setPendingEnd(null),
+            },
+          );
+        }}
+        onCancel={() => setPendingEnd(null)}
+      />
     </AdminShell>
   );
 }
@@ -193,6 +233,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flex: 1,
+  } as ViewStyle,
+
+  removeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceInset,
   } as ViewStyle,
 
   loadingBox: { paddingVertical: 60, alignItems: 'center' } as ViewStyle,

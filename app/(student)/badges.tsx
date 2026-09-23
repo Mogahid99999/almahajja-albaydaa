@@ -27,6 +27,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Txt';
 import { BadgeSeal } from '@/components/journey/BadgeSeal';
 import { JourneyGate } from '@/components/journey/JourneyGate';
+import { rtlStripStyles } from '@/components/home/useRtlRail';
 
 type Tab = BadgeCategory | 'all';
 
@@ -39,6 +40,9 @@ export default function BadgesScreen() {
   const { refreshing, onRefresh } = usePullToRefresh([refetch]);
 
   const [tab, setTab] = useState<Tab>('all');
+
+  // iOS-17 RTL tap fix for the horizontal tab strip — see rtlStripStyles.
+  const { stripStyle, stripContentStyle } = rtlStripStyles();
 
   const earnedCount = badges?.filter((b) => b.earned).length ?? 0;
   const total = badges?.length ?? 0;
@@ -97,8 +101,8 @@ export default function BadgesScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: 16 }}
-            contentContainerStyle={{ gap: 8, flexDirection: 'row' }}
+            style={[{ marginBottom: 16 }, stripStyle]}
+            contentContainerStyle={{ gap: 8, flexDirection: 'row', ...stripContentStyle }}
           >
             {BADGE_TABS.map((t) => {
               const active = tab === t.category;

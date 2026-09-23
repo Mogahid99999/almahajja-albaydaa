@@ -20,6 +20,24 @@ describe('arabicOr', () => {
     expect(arabicOr(new Error('Network request failed'), FALLBACK)).toBe(FALLBACK);
   });
 
+  test('a supabase RPC error — a PLAIN object, not an Error — still surfaces its Arabic reason (0125)', () => {
+    // Exactly what supabase.rpc('ask_question') rejected a just-registered
+    // student with: postgrest-js parses the body into an object, it never
+    // constructs an Error. The screen used to show only «تعذّر إرسال السؤال».
+    const rpcError = {
+      code: 'P0001',
+      details: null,
+      hint: null,
+      message: 'يلزم إنشاء حساب لطرح سؤال',
+    };
+    expect(arabicOr(rpcError, 'تعذّر إرسال السؤال')).toBe('يلزم إنشاء حساب لطرح سؤال');
+  });
+
+  test('a plain RPC error with an English message still falls back — no plumbing leaks', () => {
+    const rpcError = { code: '23505', message: 'duplicate key value violates unique constraint' };
+    expect(arabicOr(rpcError, FALLBACK)).toBe(FALLBACK);
+  });
+
   test('non-Error garbage (null, objects, empty) falls back', () => {
     expect(arabicOr(null, FALLBACK)).toBe(FALLBACK);
     expect(arabicOr({ code: 500 }, FALLBACK)).toBe(FALLBACK);

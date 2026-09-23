@@ -3,14 +3,14 @@
     "name": "المحجة البيضاء",
     "slug": "riwaq-al-ilm",
     "scheme": "riwaqalilm",
-    "version": "1.1.0",
+    "version": "1.1.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.riwaqalilm.app",
-      "buildNumber": "8",
+      "buildNumber": "12",
       "entitlements": {
         "aps-environment": "production"
       },
@@ -61,8 +61,9 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 8,
+      "versionCode": 10,
       "permissions": [
+        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
@@ -77,8 +78,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": false,
-          "recordAudioAndroid": false
+          "microphonePermission": "يستخدم التطبيق الميكروفون لتسجيل الإجابات الصوتية على أسئلة طلبة العلم.",
+          "recordAudioAndroid": true
         }
       ],
       "expo-asset",

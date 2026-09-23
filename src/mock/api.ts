@@ -649,6 +649,8 @@ export async function createLecture(input: {
   order: number;
   durationSec?: number | null;
   status: AppLectureStatus;
+  /** «نشر بدون إشعار» — server-side only (migration 0123); the mock has no fan-out to suppress. */
+  notifyOnPublish?: boolean;
   /** The uri/name/mimeType are ignored in mock — the live path uploads them to the `lectures` bucket. `size` is kept so the mock size label matches what was actually picked. */
   audioFile?: { uri: string; name: string; mimeType?: string | null; size?: number | null } | null;
 }) {
