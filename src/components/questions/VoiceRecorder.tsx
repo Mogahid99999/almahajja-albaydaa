@@ -27,7 +27,15 @@ import {
   type RecordingOptions,
 } from 'expo-audio';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, I18nManager, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  I18nManager,
+  Linking,
+  Pressable,
+  StyleSheet,
+  View,
+  type ViewStyle,
+} from 'react-native';
 
 import type { PickedFile } from '@/api/storage';
 import { Txt } from '@/components/ui';
@@ -76,6 +84,9 @@ export function VoiceRecorder({
   const [phase, setPhase] = useState<Phase>('idle');
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // Permission denied with «don't ask again» — the OS dialog will never show
+  // again, so the only way out is the app's settings page.
+  const [permBlocked, setPermBlocked] = useState(false);
   const [preparing, setPreparing] = useState(false);
 
   const emit = useCallback(
@@ -91,10 +102,17 @@ export function VoiceRecorder({
     try {
       const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {
-        setError('لا يمكن التسجيل دون إذن الميكروفون');
+        const blocked = perm.canAskAgain === false;
+        setPermBlocked(blocked);
+        setError(
+          blocked
+            ? 'إذن الميكروفون مرفوض. فعّله من إعدادات التطبيق لتتمكن من التسجيل'
+            : 'لا يمكن التسجيل دون إذن الميكروفون',
+        );
         setPreparing(false);
         return;
       }
+      setPermBlocked(false);
       await recorder.prepareToRecordAsync();
       recorder.record();
       setPhase('recording');
@@ -284,6 +302,17 @@ export function VoiceRecorder({
         <Txt size={11.5} color={colors.stateDanger} style={{ marginTop: 6 }}>
           {error}
         </Txt>
+      ) : null}
+      {permBlocked ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void Linking.openSettings()}
+          style={({ pressed }) => [{ marginTop: 6 }, pressed && { opacity: 0.75 }]}
+        >
+          <Txt size={12} weight="medium" color={colors.primaryTeal}>
+            فتح إعدادات التطبيق
+          </Txt>
+        </Pressable>
       ) : null}
     </View>
   );

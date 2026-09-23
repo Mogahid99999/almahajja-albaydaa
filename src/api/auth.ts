@@ -558,6 +558,20 @@ export async function register(
       console.warn('[register] email save failed (best-effort):', emailErr?.message);
     }
   }
+  // updateUser() links the account but keeps the access token minted while this
+  // uid was a guest, and that token's `is_anonymous` claim stays TRUE until the
+  // next auto-refresh (up to the 1 h token lifetime). Anything that trusts the
+  // claim then treats the brand-new student as a guest — ask_question refused
+  // 4 real students «يلزم إنشاء حساب لطرح سؤال» minutes after they registered.
+  // 0125 moved the server's own checks to auth.users; refreshing here keeps the
+  // token itself honest too. Best-effort and bounded: a stalled GoTrue lock
+  // must never wedge registration (see withAuthTimeout).
+  try {
+    await withAuthTimeout(supabase.auth.refreshSession());
+  } catch {
+    // Non-fatal — the regular auto-refresh catches up within the hour, and the
+    // server no longer relies on the claim for its guest gates anyway.
+  }
   // This uid is no longer a guest — restoring its stored tokens after a
   // sign-out would silently log back into the registered account.
   await clearStoredGuestSession();

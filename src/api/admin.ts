@@ -109,6 +109,13 @@ export async function createLecture(input: {
   order: number;
   durationSec?: number | null;
   status: AppLectureStatus;
+  /**
+   * «نشر بدون إشعار» — false publishes the lecture into its section without
+   * notifying anyone (no push, no inbox row). The guard lives in the publish
+   * trigger (migration 0123), not here, so the same applies when the lecture is
+   * published later from the lectures list. Defaults to true.
+   */
+  notifyOnPublish?: boolean;
   /** Audio file picked in the upload form; uploaded to the `lectures` bucket. */
   audioFile?: PickedAudio | null;
 }): Promise<{ id: string }> {
@@ -126,6 +133,7 @@ export async function createLecture(input: {
       order: input.order,
       duration_sec: input.durationSec ?? null,
       status: dbStatus,
+      notify_on_publish: input.notifyOnPublish ?? true,
       audio_path: audioPath,
       audio_size_bytes: input.audioFile?.size ?? null,
     })
