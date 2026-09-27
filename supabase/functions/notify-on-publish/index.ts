@@ -166,9 +166,16 @@ Deno.serve(async (req) => {
     if (!r2 || typeof imagePath !== "string" || !imagePath) continue;
     if (richByPath.has(imagePath)) continue;
     try {
+      // Prefer the letterboxed 2:1 companion the admin web uploads alongside
+      // the image (`<key>.push.jpg`): Android's BigPicture crops to a wide
+      // strip, cutting the top/bottom off tall posters. Older reminders have
+      // no companion → the original, exactly as before.
+      const pushKey = (await r2ObjectExists(r2, `${imagePath}.push.jpg`))
+        ? `${imagePath}.push.jpg`
+        : imagePath;
       const image = await getSignedUrl(
         r2,
-        new GetObjectCommand({ Bucket: R2_BUCKET, Key: imagePath }),
+        new GetObjectCommand({ Bucket: R2_BUCKET, Key: pushKey }),
         { expiresIn: 3600 },
       );
       richByPath.set(imagePath, { image });
@@ -313,4 +320,21 @@ function json(body: unknown, status: number): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/**
+ * Does `key` exist in the bucket? A ranged (1-byte) GET, NOT HeadObject —
+ * HeadObjectCommand against this R2 bucket silently hangs/503s (see
+ * r2-upload-url's uniqueLectureKey). Any failure reads as "absent".
+ */
+async function r2ObjectExists(client: S3Client, key: string): Promise<boolean> {
+  try {
+    const res = await client.send(
+      new GetObjectCommand({ Bucket: R2_BUCKET, Key: key, Range: "bytes=0-0" }),
+    );
+    await res.Body?.transformToByteArray().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
 }

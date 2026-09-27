@@ -135,13 +135,20 @@ Deno.serve(async (req) => {
     folder?: string;
     /** Lecture only: the admin-entered lesson title — used verbatim (sanitized) as the file name. */
     displayName?: string;
+    /**
+     * Broadcast only: an existing reminder-image key. The upload goes to the
+     * fixed companion key `<variantOf>.push.jpg` — the letterboxed 2:1 copy
+     * notify-on-publish sends as the push BigPicture (Android crops the
+     * original to a wide strip, cutting tall posters).
+     */
+    variantOf?: string;
   };
   try {
     body = await req.json();
   } catch {
     return json({ error: "invalid json" }, 400);
   }
-  const { kind, fileName, contentType, folder, displayName } = body;
+  const { kind, fileName, contentType, folder, displayName, variantOf } = body;
   if (kind !== "lecture" && kind !== "attachment" && kind !== "broadcast" && kind !== "answer") {
     return json({ error: "invalid kind" }, 400);
   }
@@ -162,6 +169,27 @@ Deno.serve(async (req) => {
   }
   if (!ALLOWED_CONTENT_TYPES[kind].includes(contentType)) {
     return json({ error: `content type not allowed for ${kind}` }, 400);
+  }
+
+  if (variantOf !== undefined) {
+    // Only the push companion of an existing flat broadcasts/ key, JPEG only —
+    // never an arbitrary path (sanitize() strips "/" from generated names).
+    if (
+      kind !== "broadcast" ||
+      typeof variantOf !== "string" ||
+      !/^broadcasts\/[^/]+$/.test(variantOf) ||
+      variantOf.endsWith(".push.jpg") ||
+      contentType !== "image/jpeg"
+    ) {
+      return json({ error: "invalid variant" }, 400);
+    }
+    const variantKey = `${variantOf}.push.jpg`;
+    const variantUrl = await getSignedUrl(
+      s3,
+      new PutObjectCommand({ Bucket: R2_BUCKET, Key: variantKey, ContentType: contentType }),
+      { expiresIn: 600 },
+    );
+    return json({ uploadUrl: variantUrl, key: variantKey });
   }
 
   const ext = (fileName.split(".").pop() || "bin").toLowerCase();

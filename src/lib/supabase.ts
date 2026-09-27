@@ -9,11 +9,48 @@ import type { Database } from '@/types/database';
 import { env } from './env';
 
 /**
+ * Hard ceiling on a single auth (GoTrue) or database (PostgREST) request.
+ * React Native's fetch has NO timeout on Android, so on a weak mobile signal a
+ * request can hang forever — registration sat on «جارٍ التسجيل…» indefinitely
+ * and never reached the server (reported 2026-09-27). Worse, a hung token
+ * refresh is single-flighted inside supabase-js, so every later call that
+ * needs the session waits on it too. PostgREST statements are already capped
+ * at 8 s server-side, so 30 s never cuts off legitimate work. An aborted auth
+ * fetch surfaces as a *retryable* error in auth-js, so the stored session is
+ * kept (never wiped). Edge functions are left unbounded here — backup-media /
+ * admin-users can legitimately run long; callers bound their own.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+function isBoundedRequest(url: string): boolean {
+  return url.includes('/auth/v1/') || url.includes('/rest/v1/');
+}
+
+export function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  ms: number = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (!isBoundedRequest(url)) return fetch(input, init);
+  const controller = new AbortController();
+  // Respect a caller's own AbortSignal (e.g. React Query cancellation).
+  const outer = init?.signal;
+  if (outer) {
+    if (outer.aborted) controller.abort();
+    else outer.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+/**
  * The single Supabase client for the whole app.
  *
  * - Sessions are persisted with AsyncStorage (works on native and web).
  * - `detectSessionInUrl` is only enabled on web, where OAuth/magic-link
  *   redirects come back through the URL.
+ * - Every auth/database request is time-bounded (see fetchWithTimeout).
  *
  * Components must NOT import this directly — all data access goes through
  * `src/api/*` (see CLAUDE.md › Stack conventions).
@@ -28,6 +65,7 @@ export const supabase = createClient<Database>(
       persistSession: true,
       detectSessionInUrl: Platform.OS === 'web',
     },
+    global: { fetch: fetchWithTimeout },
   },
 );
 

@@ -132,6 +132,13 @@ export function useRegister() {
       password: string;
       gender: Gender | null;
     }) => register(vars.name, vars.phone, vars.countryCode, vars.email, vars.password, vars.gender),
+    // 'always', not the default 'online': when expo-network reports the
+    // internet as unreachable (common on weak/borderline mobile data, even
+    // while requests would go through), the default PAUSES the mutation — no
+    // request, no error, the button just sits on «جارٍ التسجيل…» forever.
+    // Running it means a genuinely offline attempt fails fast with an Arabic
+    // error instead, and the user can retry.
+    networkMode: 'always',
     onSuccess: (user) => {
       qc.setQueryData(queryKeys.currentUser, user);
       // Phase 3.6 safety net: `register()` links onto the SAME auth.uid() (no new

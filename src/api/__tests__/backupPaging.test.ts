@@ -14,7 +14,7 @@ jest.mock('@/config', () => ({ USE_MOCK: false }));
 // client-zip ships ESM only; nothing here builds a ZIP, so stub the import out.
 jest.mock('client-zip', () => ({ makeZip: jest.fn() }));
 
-import { collectTableJsonl } from '@/api/backup';
+import { collectTableJsonl, collectTableJsonlChunked, type ExportChunk } from '@/api/backup';
 
 type Row = { pk: string; row_json: unknown };
 
@@ -61,4 +61,38 @@ test('an empty table yields an empty file', async () => {
 test('a cursor that never advances fails loudly instead of looping forever', async () => {
   const stuck = async (): Promise<Row[]> => [{ pk: '["1"]', row_json: { id: 1 } }];
   await expect(collectTableJsonl('notifications', stuck)).rejects.toThrow(/لم يتقدّم مؤشّر التصدير/);
+});
+
+// ─── Chunked export (0128) — ~5× fewer round trips, same completeness rules ───
+
+/** A fake export_table_chunk: `size` rows per chunk as one JSONL string. */
+function fakeChunks(total: number, size = 5000) {
+  return async (_table: string, after: string | null): Promise<ExportChunk> => {
+    const start = after === null ? 0 : Number(JSON.parse(after)[0]);
+    const ids = Array.from({ length: Math.max(0, Math.min(size, total - start)) }, (_, i) => start + i + 1);
+    return {
+      rows: ids.length,
+      next: ids.length ? JSON.stringify([String(ids[ids.length - 1])]) : null,
+      jsonl: ids.map((id) => JSON.stringify({ id })).join('\n'),
+    };
+  };
+}
+
+test('chunked export returns every row, in order, across chunks', async () => {
+  const out = lines(await collectTableJsonlChunked('notifications', fakeChunks(12_345)));
+  expect(out).toHaveLength(12_345);
+  expect(JSON.parse(out[4999])).toEqual({ id: 5000 });
+  expect(JSON.parse(out[5000])).toEqual({ id: 5001 }); // chunk 2 starts where chunk 1 ended
+  expect(JSON.parse(out[12_344])).toEqual({ id: 12_345 });
+  expect(new Set(out).size).toBe(12_345);
+});
+
+test('chunked export: exact multiple of the chunk size and empty tables', async () => {
+  expect(lines(await collectTableJsonlChunked('profiles', fakeChunks(10_000)))).toHaveLength(10_000);
+  expect(await collectTableJsonlChunked('push_tokens', fakeChunks(0))).toBe('');
+});
+
+test('chunked export: a stuck cursor fails loudly', async () => {
+  const stuck = async (): Promise<ExportChunk> => ({ rows: 1, next: '["1"]', jsonl: '{"id":1}' });
+  await expect(collectTableJsonlChunked('notifications', stuck)).rejects.toThrow(/لم يتقدّم مؤشّر التصدير/);
 });

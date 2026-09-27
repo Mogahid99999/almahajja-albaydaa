@@ -39,7 +39,7 @@ import RNRestart from 'react-native-restart';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { checkBannedAndSignOut } from '@/api/auth';
+import { checkBannedAndSignOut, onSessionLost } from '@/api/auth';
 import { isLectureVisibleToViewer } from '@/api/lectures';
 import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/notifications';
 import { getResumeTarget, hasResumableLesson } from '@/api/progress';
@@ -263,7 +263,7 @@ function SessionGate({
   const ensureMutate = ensure.mutate; // stable identity — the effect must not churn per render
   useEffect(() => {
     if (Platform.OS === 'web' || user || !ensureFailed) return;
-    return onReconnect(() => {
+    const retry = () => {
       // Re-check against the live cache, not this effect's captured `user`: a
       // sign-in/register completed on the (auth) screens while this listener
       // was armed must win — never mint an anon session over a real one.
@@ -271,8 +271,34 @@ function SessionGate({
       ensureMutate(undefined, {
         onSuccess: () => void queryClient.invalidateQueries(),
       });
+    };
+    const offReconnect = onReconnect(retry);
+    // Also on every return to the foreground: a phone whose data was slow at
+    // boot (never reported "offline") had no offline→online transition to
+    // retry on, so it stayed session-less — every request rejected — until a
+    // force-restart.
+    const appStateSub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') retry();
     });
+    return () => {
+      offReconnect();
+      appStateSub.remove();
+    };
   }, [user, ensureFailed, ensureMutate]);
+
+  // Mid-session loss: supabase-js dropped the session on its own (a failed
+  // token refresh) while the cached user still says "signed in" — see
+  // onSessionLost. Recover exactly like boot does; if that can't complete now
+  // (offline), clear the stale user so the retry effect above takes over.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    return onSessionLost(() => {
+      ensureMutate(undefined, {
+        onSuccess: () => void queryClient.invalidateQueries(),
+        onError: () => queryClient.setQueryData(queryKeys.currentUser, null),
+      });
+    });
+  }, [ensureMutate]);
 
   // Ready once we have a session; if the anon sign-in fails (e.g. offline on a
   // brand-new install) fall through anyway so the app is never stuck on a loader.

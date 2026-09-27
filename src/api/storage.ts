@@ -142,6 +142,26 @@ export async function getReadUrl(key: string): Promise<string | null> {
   return data?.url ?? null;
 }
 
+/**
+ * Upload the push-notification companion of a reminder image (web admin only):
+ * a JPEG at the fixed key `<imageKey>.push.jpg` (r2-upload-url `variantOf`).
+ * notify-on-publish sends it instead of the original when present.
+ */
+export async function uploadBroadcastPushVariant(imageKey: string, jpeg: Blob): Promise<void> {
+  const { uploadUrl } = await invokeR2<{ uploadUrl: string; key: string }>('r2-upload-url', {
+    kind: 'broadcast',
+    fileName: 'push.jpg',
+    contentType: 'image/jpeg',
+    variantOf: imageKey,
+  });
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: jpeg,
+    headers: { 'Content-Type': 'image/jpeg' },
+  });
+  if (!res.ok) throw new Error(`تعذّر رفع الملف (${res.status}).`);
+}
+
 /** Best-effort delete of an R2 object (mirrors the old storage.remove([path])). */
 export async function deleteFromR2(key: string): Promise<void> {
   try {

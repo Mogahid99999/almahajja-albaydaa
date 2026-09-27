@@ -8,9 +8,17 @@
  * authenticated user, non-deleted rows). While `USE_MOCK` is true everything
  * returns inert empty shapes (quiz/Q&A pattern).
  */
+import { Platform } from 'react-native';
+
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
-import { deleteFromR2, getReadUrl, uploadToR2, type PickedFile } from './storage';
+import {
+  deleteFromR2,
+  getReadUrl,
+  uploadBroadcastPushVariant,
+  uploadToR2,
+  type PickedFile,
+} from './storage';
 
 /**
  * Sentinel link value for a reminder button that opens the in-app «إرسال ملاحظة»
@@ -152,7 +160,49 @@ export async function getBroadcastViewCounts(): Promise<Record<string, number>> 
 /** Upload a picked image to R2 for a reminder; returns its object key. */
 export async function uploadBroadcastImage(file: PickedFile): Promise<string> {
   if (USE_MOCK) return 'mock-broadcast-image';
-  return uploadToR2('broadcast', file);
+  const key = await uploadToR2('broadcast', file);
+  // Also store a letterboxed 2:1 copy for the push notification: Android's
+  // BigPicture crops the image to a wide strip, cutting the top and bottom off
+  // a tall poster. The in-app page keeps using the original. Best-effort — a
+  // failure only means the push falls back to the original image.
+  if (Platform.OS === 'web') {
+    try {
+      const jpeg = await letterboxForPush(file.uri);
+      if (jpeg) await uploadBroadcastPushVariant(key, jpeg);
+    } catch {
+      // Non-fatal.
+    }
+  }
+  return key;
+}
+
+/** Android BigPicture's frame (2:1) — the whole image fits, padded not cropped. */
+const PUSH_W = 1024;
+const PUSH_H = 512;
+const PUSH_BG = '#f3ecdd'; // colors.bgSand — calm padding, not black bars
+
+/** Web only: draw the image contained (never cropped) in a 2:1 JPEG. */
+async function letterboxForPush(uri: string): Promise<Blob | null> {
+  if (typeof document === 'undefined') return null;
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('image load failed'));
+    el.src = uri;
+  });
+  if (!img.naturalWidth || !img.naturalHeight) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = PUSH_W;
+  canvas.height = PUSH_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = PUSH_BG;
+  ctx.fillRect(0, 0, PUSH_W, PUSH_H);
+  const scale = Math.min(PUSH_W / img.naturalWidth, PUSH_H / img.naturalHeight);
+  const w = Math.round(img.naturalWidth * scale);
+  const h = Math.round(img.naturalHeight * scale);
+  ctx.drawImage(img, Math.round((PUSH_W - w) / 2), Math.round((PUSH_H - h) / 2), w, h);
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.85));
 }
 
 /** Resolve a broadcast's image key → a short-lived signed URL, or null. */
@@ -268,6 +318,7 @@ export async function updateBroadcast(id: string, input: BroadcastInput): Promis
   if (error) throw error;
   if (prev?.image_path && prev.image_path !== input.imagePath) {
     await deleteFromR2(prev.image_path);
+    await deleteFromR2(`${prev.image_path}.push.jpg`); // push companion, if any
   }
   // Clean up a replaced/removed audio clip too (best-effort).
   const prevAudio = (prev as { audio_path?: string | null } | null)?.audio_path;
@@ -291,6 +342,7 @@ export async function deleteBroadcast(id: string): Promise<void> {
   if (error) throw error;
   if (prev?.image_path) {
     await deleteFromR2(prev.image_path);
+    await deleteFromR2(`${prev.image_path}.push.jpg`); // push companion, if any
   }
   const prevAudio = (prev as { audio_path?: string | null } | null)?.audio_path;
   if (prevAudio) {

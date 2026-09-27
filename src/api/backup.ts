@@ -134,6 +134,63 @@ export async function collectTableJsonl(
   return jsonl;
 }
 
+// Rows per export_table_chunk call (migration 0128; the server caps at 5000).
+// The chunk comes back as ONE row, so PostgREST's max_rows doesn't apply.
+const EXPORT_CHUNK = 5000;
+
+export type ExportChunk = { rows: number; next: string | null; jsonl: string };
+
+/** Thrown when the server predates migration 0128 — caller falls back. */
+class ChunkRpcMissing extends Error {}
+
+async function exportTableChunk(table: string, after: string | null): Promise<ExportChunk> {
+  const { data, error } = await supabase.rpc('export_table_chunk' as never, {
+    p_table: table,
+    p_after: after,
+    p_limit: EXPORT_CHUNK,
+  } as never);
+  if (error) {
+    // PGRST202 = function not in PostgREST's schema cache (not deployed yet).
+    if ((error as { code?: string }).code === 'PGRST202') throw new ChunkRpcMissing(error.message);
+    throw new Error(error.message);
+  }
+  return data as unknown as ExportChunk;
+}
+
+/**
+ * Same contract as {@link collectTableJsonl} — whole table, ends only on an
+ * EMPTY chunk, fails loudly on a stuck cursor — but ~5000 rows per round trip
+ * instead of 1000. A full backup was ~10 min, dominated by ~1.5 s per call
+ * over ~350 notifications pages.
+ */
+export async function collectTableJsonlChunked(
+  table: string,
+  fetchChunk: (table: string, after: string | null) => Promise<ExportChunk> = exportTableChunk,
+): Promise<string> {
+  let jsonl = '';
+  let after: string | null = null;
+  for (;;) {
+    const chunk = await fetchChunk(table, after);
+    if (chunk.rows === 0) break;
+    jsonl += chunk.jsonl + '\n';
+    if (chunk.next === null || chunk.next === after) {
+      throw new Error(`تعذّر إكمال النسخة: لم يتقدّم مؤشّر التصدير في جدول ${table}`);
+    }
+    after = chunk.next;
+  }
+  return jsonl;
+}
+
+/** Chunked export, falling back to row pages on a server without 0128. */
+async function exportWholeTable(table: string): Promise<string> {
+  try {
+    return await collectTableJsonlChunked(table);
+  } catch (e) {
+    if (e instanceof ChunkRpcMissing) return collectTableJsonl(table);
+    throw e;
+  }
+}
+
 // ─── Media (Edge Function) wrappers ──────────────────────────────────────────
 
 export type MediaObject = { key: string; size: number; etag: string | null };
@@ -358,7 +415,7 @@ export function createBackup(
         emit();
 
         // Accumulate JSONL for this table (DB is small relative to media).
-        const jsonl = await collectTableJsonl(table);
+        const jsonl = await exportWholeTable(table);
         const bytes = enc.encode(jsonl);
         checksums[`database/${table}.jsonl`] = await sha256Hex(bytes);
         progress.doneFiles += 1;

@@ -75,20 +75,31 @@ export function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTR
  * Sync gender/name into `profiles` (SECURITY DEFINER; students may set only
  * these two columns). Best-effort — an auth update must never fail on it; the
  * next profile save retries the sync.
+ *
+ * supabase.rpc() reports a network failure as a returned `{ error }`, not a
+ * throw, so the result is checked and the call retried once — a single blip
+ * here used to leave a just-registered student with no name/gender in
+ * `profiles` (5 accounts, 2026-09-23→27). Each attempt is time-bounded so a
+ * stalled request can't wedge the caller. (Migration 0127 also syncs these
+ * server-side at registration, so this is now belt-and-braces.)
  */
 async function syncOwnProfile(fields: {
   gender?: Gender;
   displayName?: string;
   oathAccepted?: boolean;
 }): Promise<void> {
-  try {
-    await supabase.rpc('set_own_profile', {
-      ...(fields.gender ? { p_gender: fields.gender } : {}),
-      ...(fields.displayName ? { p_display_name: fields.displayName } : {}),
-      ...(fields.oathAccepted ? { p_oath_accepted: true } : {}),
-    });
-  } catch {
-    // Non-fatal.
+  const args = {
+    ...(fields.gender ? { p_gender: fields.gender } : {}),
+    ...(fields.displayName ? { p_display_name: fields.displayName } : {}),
+    ...(fields.oathAccepted ? { p_oath_accepted: true } : {}),
+  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { error } = await withAuthTimeout(supabase.rpc('set_own_profile', args));
+      if (!error) return;
+    } catch {
+      // Timed out or threw — retry once, then give up (non-fatal).
+    }
   }
 }
 
@@ -112,7 +123,7 @@ const AUTH_OP_TIMEOUT_MS = 20_000;
  * underlying operation isn't cancellable, but rejecting frees the UI; a retry
  * finds the lock released (the stalled holder eventually errors out) and works.
  */
-function withAuthTimeout<T>(p: Promise<T>, ms = AUTH_OP_TIMEOUT_MS): Promise<T> {
+function withAuthTimeout<T>(p: PromiseLike<T>, ms = AUTH_OP_TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error('تعذّر إكمال العملية، تحقّق من اتصالك وحاول مرة أخرى')),
@@ -278,6 +289,45 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 let ensureSessionInFlight: Promise<CurrentUser | null> | null = null;
 
 /**
+ * Count of in-flight DELIBERATE session changes (sign-out, account deletion,
+ * ensureSession's own restore attempts). A SIGNED_OUT event emitted while one
+ * is running is expected and handled by that caller; any other SIGNED_OUT means
+ * supabase-js dropped the session on its own — see {@link onSessionLost}.
+ */
+let deliberateSessionChanges = 0;
+
+async function deliberately<T>(fn: () => Promise<T>): Promise<T> {
+  deliberateSessionChanges++;
+  try {
+    return await fn();
+  } finally {
+    deliberateSessionChanges--;
+  }
+}
+
+/**
+ * Fires when the session disappears WITHOUT the user signing out — supabase-js
+ * removes it on a non-retryable token-refresh failure (revoked/reused refresh
+ * token, e.g. the app was killed mid-rotation). The app used to carry on with
+ * its cached "signed-in" user while every request went out anonymous: prod saw
+ * 19 Android devices / 150 calls a day rejected (home, section pages, and
+ * save_activity — listening progress not syncing) until a force-restart.
+ * SessionGate re-runs ensureSession on this (restores the last session or the
+ * device guest, else a fresh guest) and refetches. Native only — web is the
+ * admin dashboard, where AuthGate sends a signed-out visitor to /sign-in.
+ */
+export function onSessionLost(cb: () => void): () => void {
+  if (USE_MOCK || Platform.OS === 'web') return () => {};
+  const { data } = supabase.auth.onAuthStateChange((event) => {
+    if (event !== 'SIGNED_OUT' || deliberateSessionChanges > 0) return;
+    // Deferred: never call back into supabase.auth from inside its own
+    // state-change callback (supabase-js awaits these callbacks).
+    setTimeout(cb, 0);
+  });
+  return () => data.subscription.unsubscribe();
+}
+
+/**
  * Guest-first foundation (Task 1). Sign in silently as an anonymous user so every
  * install has a session — Home opens for anyone, and resume/downloads/notifications
  * work because there's a hidden account behind them. The Supabase trigger
@@ -287,7 +337,7 @@ let ensureSessionInFlight: Promise<CurrentUser | null> | null = null;
  */
 export function ensureSession(): Promise<CurrentUser | null> {
   if (ensureSessionInFlight) return ensureSessionInFlight;
-  ensureSessionInFlight = ensureSessionInner().finally(() => {
+  ensureSessionInFlight = deliberately(ensureSessionInner).finally(() => {
     ensureSessionInFlight = null;
   });
   return ensureSessionInFlight;
@@ -476,8 +526,12 @@ export async function signIn(identifier: string, password: string): Promise<Curr
 async function setRegistrationEmail(email: string): Promise<Error | null> {
   let lastErr: Error | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { error } = await supabase.functions
-      .invoke('register-set-email', { body: { email } })
+    // Edge-function calls aren't bounded by the client-wide fetch timeout
+    // (see src/lib/supabase.ts), so bound this one here — registration must
+    // never sit on «جارٍ التسجيل…» waiting on a stalled request.
+    const { error } = await withAuthTimeout(
+      supabase.functions.invoke('register-set-email', { body: { email } }),
+    )
       .then((r) => ({ error: r.error as Error | null }))
       .catch((err) => ({ error: err as Error }));
     if (!error) return null;
@@ -538,11 +592,18 @@ export async function register(
     savedEmail = e;
   }
 
-  const { data, error } = await supabase.auth.updateUser({
-    ...(p ? { phone: p } : {}),
-    password,
-    data: meta,
-  });
+  // Bounded like signIn (see withAuthTimeout): on a weak signal this request
+  // could hang forever and the button sat on «جارٍ التسجيل…» with the account
+  // never created (2026-09-27 report). On timeout the user gets an Arabic
+  // error and can simply retry — updateUser on the same guest uid with the
+  // same phone is idempotent, even if the first attempt did land server-side.
+  const { data, error } = await withAuthTimeout(
+    supabase.auth.updateUser({
+      ...(p ? { phone: p } : {}),
+      password,
+      data: meta,
+    }),
+  );
   if (error) throw error;
   let u = data.user;
 
@@ -695,6 +756,10 @@ export async function signOut(): Promise<CurrentUser | null> {
     await AsyncStorage.removeItem(MOCK_SESSION_KEY);
     return null;
   }
+  return deliberately(signOutInner);
+}
+
+async function signOutInner(): Promise<CurrentUser | null> {
   // The global sign-out revokes server-side but fails on a network hiccup or a
   // stale refresh token — which used to leave the button visibly dead. Fall
   // back to clearing the LOCAL session so signing out always takes effect.
@@ -766,14 +831,16 @@ export async function deleteAccount(): Promise<CurrentUser | null> {
     await AsyncStorage.removeItem(MOCK_SESSION_KEY);
     return null;
   }
-  const { error } = await supabase.functions.invoke('delete-account');
-  if (error) throw error;
-  // The account no longer exists server-side — only a local sign-out applies.
-  await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-  if (Platform.OS === 'web') return null;
-  const restored = await restoreGuestSession();
-  if (!restored) return null;
-  return getCurrentUser();
+  return deliberately(async () => {
+    const { error } = await supabase.functions.invoke('delete-account');
+    if (error) throw error;
+    // The account no longer exists server-side — only a local sign-out applies.
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    if (Platform.OS === 'web') return null;
+    const restored = await restoreGuestSession();
+    if (!restored) return null;
+    return getCurrentUser();
+  });
 }
 
 /**
