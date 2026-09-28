@@ -27,6 +27,7 @@ export function GenderPrompt({
   visible,
   onClose,
   onResolved,
+  onCancel,
   message,
 }: {
   visible: boolean;
@@ -34,6 +35,9 @@ export function GenderPrompt({
   /** Called after the gender is persisted — receives the chosen value so the
    *  caller can immediately allow/deny (female → allow قسم النساء, male → deny). */
   onResolved: (gender: Gender) => void;
+  /** The user dismissed without choosing (also calls `onClose`). `onClose` alone
+   *  can't tell the two apart — it runs on success too, BEFORE `onResolved`. */
+  onCancel?: () => void;
   /** Why the prompt is shown (feature-specific one-liner). */
   message: string;
 }) {
@@ -59,14 +63,15 @@ export function GenderPrompt({
     );
   };
 
-  const onCancel = () => {
+  const cancel = () => {
     setGender(null);
     setError(false);
     onClose();
+    onCancel?.();
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={cancel}>
       <View style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}>
         <View
           style={{
@@ -124,7 +129,7 @@ export function GenderPrompt({
             </Txt>
           </Pressable>
 
-          <Pressable onPress={onCancel} style={{ alignItems: 'center', paddingVertical: 4 }}>
+          <Pressable onPress={cancel} style={{ alignItems: 'center', paddingVertical: 4 }}>
             <Txt size={13} weight="semibold" color={colors.textMuted}>
               رجوع
             </Txt>

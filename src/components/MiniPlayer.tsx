@@ -8,12 +8,15 @@ import { BOTTOM_NAV_BAR_HEIGHT } from '@/components/navigation/BottomNavBar';
 import { colors, radius, shadows } from '@/constants/theme';
 import { playNext, stop, toggle } from '@/lib/audioController';
 import { usePlayerStore } from '@/stores/playerStore';
+import { useLiveStore } from '@/stores/liveStore';
+import { LiveMiniBar } from '@/components/live/LiveMiniBar';
 
 /**
  * Fixed mini player, pinned above the bottom inset. Mounted once in the student
  * layout so it persists across Home ↔ Section. Tapping the body opens the full
  * player; the round brass button toggles play/pause (shared state — PRD §8).
- * Renders nothing until a lecture is loaded.
+ * Renders nothing until a lecture is loaded. While a live «الحلقة» is joined the
+ * slot shows its LiveMiniBar instead (a live owns the audio — V23 §7.3).
  */
 export function MiniPlayer({ liftAboveNavBar = false }: { liftAboveNavBar?: boolean }) {
   const router = useRouter();
@@ -22,7 +25,9 @@ export function MiniPlayer({ liftAboveNavBar = false }: { liftAboveNavBar?: bool
   const title = usePlayerStore((s) => s.title);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const nextLectureId = usePlayerStore((s) => s.nextLectureId);
+  const inLive = useLiveStore((s) => s.session !== null);
 
+  if (inLive) return <LiveMiniBar liftAboveNavBar={liftAboveNavBar} />;
   if (!currentLectureId) return null;
 
   return (

@@ -23,6 +23,7 @@ import { stop as stopPlayback } from '@/lib/audioController';
 import { cancelAllLocalNotifications } from '@/lib/notifications';
 import { clearOutbox } from '@/lib/outbox';
 import { queryClient } from '@/lib/queryClient';
+import { useLiveStore } from '@/stores/liveStore';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 import { useTourStore } from '@/stores/tourStore';
 
@@ -38,6 +39,9 @@ import { useTourStore } from '@/stores/tourStore';
  */
 async function stopDeviceSideEffects(): Promise<void> {
   stopPlayback();
+  // A live room is joined under the outgoing identity (its real name, D2) —
+  // never let it carry over to the next user or guest.
+  await useLiveStore.getState().leave().catch(() => undefined);
   await cancelAllLocalNotifications();
   // Outbox entries carry no user id — anything still queued would replay under
   // the NEXT identity's session (guest, or another user on a shared device),

@@ -2,6 +2,7 @@ import { ActivityIndicator, View } from 'react-native';
 
 import { colors, spacing } from '@/constants/theme';
 import { useHome } from '@/hooks/useSections';
+import { useLiveNow } from '@/hooks/useLive';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useRefreshAll } from '@/hooks/useRefreshAll';
@@ -20,13 +21,15 @@ import { QuestionsHomeCard } from '@/components/home/QuestionsHomeCard';
 import { SectionsGrid } from '@/components/home/SectionsGrid';
 import { StreakCard } from '@/components/home/StreakCard';
 import { JourneyHomeCard } from '@/components/journey/JourneyHomeCard';
+import { LiveHomeCard } from '@/components/live/LiveHomeCard';
+import { LiveUpcomingCard } from '@/components/live/LiveUpcomingCard';
 import { SupportContactLink } from '@/components/SupportContactLink';
 
 /**
  * Home — student landing screen.
  * Reference: screens/رواق العلم.dc.html
  * Layout (top → bottom):
- *   HomeHeader (fixed) · ContinueCard · NewlyAddedRail · FeaturedRail · SectionsGrid · DuaCard
+ *   HomeHeader (fixed) · LiveHomeCard | ContinueCard · NewlyAddedRail · FeaturedRail · SectionsGrid · DuaCard
  *
  * HomeHeader is rendered OUTSIDE the scrolling <Screen> so it stays pinned
  * while the rest of the page scrolls beneath it (Telegram/WhatsApp-style
@@ -38,6 +41,10 @@ import { SupportContactLink } from '@/components/SupportContactLink';
  */
 export default function HomeScreen() {
   const { data, isLoading } = useHome();
+  // «مباشر الآن» takes the ContinueCard slot while a live is on (V23 §7.3).
+  const { data: liveNow } = useLiveNow();
+  const live = liveNow?.live ?? null;
+  const upcoming = live ? [] : (liveNow?.upcoming ?? []);
   const miniPad = useMiniPlayerPad();
   // Pull-to-refresh refreshes EVERYTHING the server can change — sections, the
   // buddy card, broadcasts, notifications AND the shared app-config values (the
@@ -76,8 +83,19 @@ export default function HomeScreen() {
           <BroadcastCard />
         </View>
 
-        {/* Continue listening — full width, own trailing gap before the rail below */}
-        {data?.continueListening ? (
+        {/* Next scheduled live(s) — «ذكّرني» arrives with P5 notifications */}
+        {upcoming.length > 0 ? (
+          <View style={{ paddingHorizontal: spacing.screenH, marginBottom: 12 }}>
+            <LiveUpcomingCard sessions={upcoming} remindedIds={liveNow?.remindedIds} />
+          </View>
+        ) : null}
+
+        {/* مباشر الآن, else continue listening — full width, own trailing gap before the rail below */}
+        {live ? (
+          <View style={{ paddingHorizontal: spacing.screenH, marginBottom: 28 }}>
+            <LiveHomeCard session={live} />
+          </View>
+        ) : data?.continueListening ? (
           <View style={{ paddingHorizontal: spacing.screenH, marginBottom: 28 }}>
             <ContinueCard continueListening={data.continueListening} />
           </View>

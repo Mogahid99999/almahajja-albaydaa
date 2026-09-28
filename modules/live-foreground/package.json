@@ -1,0 +1,7 @@
+{
+  "name": "live-foreground",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android foreground service that keeps a live «الحلقة» session audible with the screen off (V23 P3).",
+  "main": "index.ts"
+}

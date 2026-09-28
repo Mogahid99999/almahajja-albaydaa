@@ -121,4 +121,11 @@ export const queryKeys = {
   // Server-side lecture compression (V23 §6.1)
   serverTranscodeFlag: ['admin', 'serverTranscode'] as const,
   mediaJob: (jobId: string) => ['admin', 'mediaJob', jobId] as const,
+
+  // Live audio sessions · البث المباشر (V23 P3). Root 'live' is volatile — never
+  // persisted (not in PERSISTED_QUERY_ROOTS); staff participants carry real names.
+  liveNow: ['live', 'now'] as const,
+  liveSession: (sessionId: string) => ['live', 'session', sessionId] as const,
+  liveByCode: (code: string) => ['live', 'code', code] as const,
+  liveStaffParticipants: (sessionId: string) => ['live', 'staffParticipants', sessionId] as const,
 } as const;

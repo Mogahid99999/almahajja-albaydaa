@@ -387,8 +387,15 @@ describe('layout key (§7.4 memoization)', () => {
 test('a 335-seat board is computed in well under 1 ms', () => {
   const input: HalaqaInput = { size: SIZE, brothers: 201, sisters: 134, ...SPECIALS };
   for (let i = 0; i < 20; i++) computeHalaqaLayout(input); // warm up
-  const runs = 200;
-  const t0 = Date.now();
-  for (let i = 0; i < runs; i++) computeHalaqaLayout(input);
-  expect((Date.now() - t0) / runs).toBeLessThan(1);
+  // Best of 5 batches: the full suite runs workers in parallel, and one batch
+  // can be starved by a neighbour (the flaky full-run failure) — the fastest
+  // batch is the layout's own cost.
+  const runs = 100;
+  let best = Infinity;
+  for (let b = 0; b < 5; b++) {
+    const t0 = performance.now();
+    for (let i = 0; i < runs; i++) computeHalaqaLayout(input);
+    best = Math.min(best, (performance.now() - t0) / runs);
+  }
+  expect(best).toBeLessThan(1);
 });

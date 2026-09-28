@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Keeps a live session's WebRTC audio alive with the screen off (listener: mediaPlayback;
+         speaker: + microphone, P4). Started only while the app is in the foreground (on join). -->
+    <service
+      android:name="expo.modules.liveforeground.LiveForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="mediaPlayback|microphone" />
+  </application>
+</manifest>

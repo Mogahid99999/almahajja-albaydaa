@@ -44,6 +44,7 @@ import { SeriesSeal } from '@/components/journey/SeriesSeal';
 import { SectionHeaderBadge } from '@/components/section/SectionHeaderBadge';
 import { SectionNavBar } from '@/components/section/SectionNavBar';
 import { SubsectionsScroller } from '@/components/section/SubsectionsScroller';
+import { LiveSectionPin } from '@/components/live/LiveSectionPin';
 import { AttachmentList } from '@/components/attachments/AttachmentList';
 import { QuizListCard } from '@/components/quiz/QuizListCard';
 
@@ -165,6 +166,11 @@ export default function SectionScreen() {
         <Txt size={12} color={colors.textGhost} tabular>
           {arLectureCount(rollup.total)}
         </Txt>
+      </View>
+
+      {/* ── «مباشر الآن» / next scheduled live of THIS section (V23 §7.3) ─────── */}
+      <View style={{ paddingHorizontal: spacing.screenH }}>
+        <LiveSectionPin sectionId={section.id} />
       </View>
 
       {/* ── Progress card ───────────────────────────────────────────────────── */}

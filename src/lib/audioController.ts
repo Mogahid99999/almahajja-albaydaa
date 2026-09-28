@@ -832,7 +832,19 @@ export function preloadLecture(lectureId: string, opts?: LoadOpts) {
   return loadLecture(lectureId, opts);
 }
 
+/**
+ * Called before a lecture starts playing (load or resume). A live «الحلقة»
+ * registers here (liveStore) so a lecture never plays on top of it — the app
+ * has one audio owner at a time. A hook, not an import: liveStore imports this
+ * module.
+ */
+let beforeLecturePlay: (() => void) | null = null;
+export function onBeforeLecturePlay(fn: (() => void) | null): void {
+  beforeLecturePlay = fn;
+}
+
 function loadLecture(lectureId: string, opts?: LoadOpts): Promise<void> {
+  beforeLecturePlay?.();
   // Switching to a genuinely different lecture — pause whatever's currently
   // playing right away. Without this, a NEW lecture that fails to load (e.g.
   // offline and not downloaded) left the OLD one playing silently behind the
@@ -1082,6 +1094,7 @@ export function toggle() {
     void persist(player.currentTime ?? store().positionSec);
     invalidateProgressViews();
   } else {
+    beforeLecturePlay?.();
     // Resuming a track that already ran to its natural end: the native player is
     // in an ENDED state where a bare play() is a silent no-op. Reload it fresh
     // from the start so "play" actually replays the finished lecture — reached

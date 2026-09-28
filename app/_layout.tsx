@@ -73,6 +73,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { queryClient, reconcileContentListsAfterHydration } from '@/lib/queryClient';
 import { BOOT_TIMEOUT_MS, deriveBootReady } from '@/lib/bootReady';
 import { initConnectivity, onReconnect } from '@/lib/connectivity';
+import { initLiveKit } from '@/lib/liveClient';
 import { flushOutbox, startOutbox } from '@/lib/outbox';
 import { getMostRecentlyActiveLectureId } from '@/lib/resumeCache';
 import { APP_VERSION } from '@/lib/version';
@@ -184,6 +185,8 @@ const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreCl
 if (Platform.OS !== 'web' && !I18nManager.isRTL && !isExpoGo) {
   RNRestart.restart();
 }
+// «البث المباشر» (V23): one-time LiveKit registerGlobals, deferred past boot; no-op on web.
+initLiveKit();
 
 /** Calm branded opening screen — the logo over the sand background, with a quiet
  *  spinner beneath. Shown while fonts load and while the session is established,
@@ -338,6 +341,10 @@ function AuthGate() {
     const inAdmin = segments[0] === 'admin';
     const inAuth = segments[0] === '(auth)';
     const inSheikh = segments[0] === 'sheikh';
+    // «الحلقة» (V23) is shared by every role — a sheikh/staff opening a live room
+    // must not be steered back to /sheikh or /admin.
+    // (cast: typed routes learn app/live only after the next `expo start`)
+    const inLive = (segments[0] as string) === 'live';
 
     // A publisher (ناشر) is content staff — routed into the admin panel like an
     // admin, but their landing is /admin/lectures (no dashboard) and the shell
@@ -368,6 +375,7 @@ function AuthGate() {
     // /sheikh, others out of both; the (auth) screens stay reachable so a guest
     // can register / sign in. A sheikh may also open the /admin staff screens.
     if (!user) return;
+    if (inLive) return;
     if (isSheikh) {
       if (!inSheikh && !inAdmin) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
     } else if (isStaff) {
@@ -810,6 +818,17 @@ export default function RootLayout() {
                     the same value; the short native fade just overlaps it. */}
                 <Stack.Screen
                   name="player/[id]"
+                  options={{
+                    presentation: Platform.OS === 'android' ? 'transparentModal' : 'modal',
+                    animation: Platform.OS === 'android' ? 'fade' : undefined,
+                    contentStyle:
+                      Platform.OS === 'android' ? { backgroundColor: 'transparent' } : undefined,
+                  }}
+                />
+                {/* «الحلقة» (V23 §7.3) — presented exactly like the player: the room
+                    renders its own Android peek-sheet (LiveRoomSheet). */}
+                <Stack.Screen
+                  name="live/[id]"
                   options={{
                     presentation: Platform.OS === 'android' ? 'transparentModal' : 'modal',
                     animation: Platform.OS === 'android' ? 'fade' : undefined,

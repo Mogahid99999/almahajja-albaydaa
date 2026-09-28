@@ -66,7 +66,9 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "web": {
@@ -100,7 +102,16 @@
         }
       ],
       "./plugins/withReleaseSigning.js",
-      "expo-sharing"
+      "./plugins/withLiveKitProguard.js",
+      "expo-sharing",
+      [
+        "@livekit/react-native-expo-plugin",
+        {
+          "android": {
+            "audioType": "media"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
