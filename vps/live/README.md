@@ -44,6 +44,14 @@ TURN from the bridge gateway, not from the permitted peer IP, and is dropped). I
 fallback for UDP-blocked networks. If a 443-only network ever matters, configure an external TURN
 (e.g. Cloudflare TURN) under `rtc.turn_servers` — don't move LiveKit to host networking on this VPS.
 
+## Live recordings are never lost (PLAN §1.1 #12)
+Egress writes every raw recording to this disk first: `recordings/<env>/<room>-<time>.ogg`
+(`recordings/` is `1001:1000`, mode `2775`, so files belong to egress and group 1000 = the worker's
+`node` user). Each worker mounts only its own env folder at the same path (`RECORDINGS_DIR`). The worker
+compresses the raw, uploads the MP3 and a raw backup (`live-raw/`) to R2, and deletes the local raw only
+after the lecture is published + 7 days and the R2 backup is verified. Staff can download a raw through
+the worker's `/recordings/:sessionId` endpoint (staff JWT). ~30 MB per hour at 64 kbps Opus.
+
 ## CPU / memory budget
 Our containers run with `cpu_shares` below the default so LIMS wins under contention. During a live:
 LiveKit ≤ 2 cores + Egress ≤ 1 core; the media worker defers transcodes while an egress is active,

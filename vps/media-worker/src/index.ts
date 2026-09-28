@@ -1,20 +1,26 @@
-// Entry point: validate env → wire real deps → HTTP server + claim loop.
+// Entry point: validate env → wire real deps → HTTP server + claim loop +
+// background tasks (orphan sweep, live-raw retention).
 // SIGTERM/SIGINT: stop claiming, kill ffmpeg, leave the job for re-claim, exit.
 
 import { WebhookReceiver } from 'livekit-server-sdk';
 import { ConfigError, loadConfig } from './config.js';
 import { createSupabaseDb } from './db.js';
 import { EgressTracker } from './egressTracker.js';
+import { HostAbsenceWatch } from './hostWatch.js';
 import { runJob } from './jobRunner.js';
+import { createLiveControl } from './liveControl.js';
 import { consoleLogger as log, errorMessage } from './log.js';
 import { createFfmpegTools } from './media.js';
 import { OrphanSweeper, sweepIncomingOrphans } from './orphanSweep.js';
+import { RawRetention, sweepLiveRaws } from './rawRetention.js';
+import { handleRecordingDownload } from './recordingDownload.js';
+import { inspectRecordingsDir, RecordingsDir } from './recordings.js';
 import { createHttpServer } from './server.js';
 import { createR2Storage } from './storage.js';
 import { handleWebhook } from './webhooks.js';
 import { Worker } from './worker.js';
 
-function main(): void {
+async function main(): Promise<void> {
   let cfg;
   try {
     cfg = loadConfig();
@@ -22,6 +28,17 @@ function main(): void {
     // Names only — ConfigError never contains values.
     console.error(err instanceof ConfigError ? err.message : `config error: ${errorMessage(err)}`);
     process.exit(1);
+  }
+
+  // The recordings mount is part of the deployment contract: refuse to start
+  // without it (a live raw we cannot see is a raw we cannot protect).
+  const dirState = await inspectRecordingsDir(cfg.recordingsDir);
+  if (!dirState.exists) {
+    console.error('RECORDINGS_DIR is not a readable directory (check the volume mount)');
+    process.exit(1);
+  }
+  if (!dirState.writable) {
+    log('warn', 'recordings.not_writable', { note: 'retention cannot delete local raws until fixed' });
   }
 
   const db = createSupabaseDb(cfg.supabaseUrl, cfg.supabaseServiceRoleKey);
@@ -33,28 +50,41 @@ function main(): void {
   });
   const media = createFfmpegTools();
   const egress = new EgressTracker();
+  const recordings = new RecordingsDir(cfg.recordingsDir);
+  const hostWatch = new HostAbsenceWatch(createLiveControl(cfg.supabaseUrl, cfg.supabaseServiceRoleKey), { log });
 
   const worker = new Worker({
     db,
     egress,
     log,
     runJob: (job, signal) =>
-      runJob(job, { db, storage, media, tmpDir: cfg.tmpDir, liveLoudnorm: cfg.liveLoudnorm, log }, signal),
+      runJob(
+        job,
+        { db, storage, media, recordings, tmpDir: cfg.tmpDir, liveLoudnorm: cfg.liveLoudnorm, log },
+        signal,
+      ),
   });
 
   const sweeper = new OrphanSweeper((signal) => sweepIncomingOrphans({ storage, db, signal }), { log });
+  const retention = new RawRetention((signal) => sweepLiveRaws({ db, storage, recordings, log, signal }), { log });
 
   const verifier = new WebhookReceiver(cfg.livekitWebhookKey, cfg.livekitWebhookSecret);
   const server = createHttpServer({
     health: () => ({ ok: worker.healthy, env: cfg.workerEnv, busy: worker.busy, egressActive: worker.egressActive }),
     onWebhook: (raw, auth) =>
-      handleWebhook({ verifier, env: cfg.workerEnv, egress, db, kick: () => worker.kick(), log }, raw, auth),
+      handleWebhook(
+        { verifier, env: cfg.workerEnv, egress, db, recordings, hostWatch, kick: () => worker.kick(), log },
+        raw,
+        auth,
+      ),
+    onRecording: (req, res, sessionId) => handleRecordingDownload(req, res, sessionId, { db, recordings, storage, log }),
   });
 
   server.listen(cfg.port, () => {
     log('info', 'worker.started', { env: cfg.workerEnv, port: cfg.port, loudnorm: cfg.liveLoudnorm });
     worker.start();
     sweeper.start();
+    retention.start();
   });
 
   let shuttingDown = false;
@@ -67,7 +97,8 @@ function main(): void {
       process.exit(1);
     }, 20_000);
     force.unref();
-    Promise.all([worker.stop(), sweeper.stop()])
+    hostWatch.stop();
+    Promise.all([worker.stop(), sweeper.stop(), retention.stop()])
       .catch((err: unknown) => log('error', 'worker.stop_error', { error: errorMessage(err, 200) }))
       .finally(() => {
         server.close(() => {
@@ -82,4 +113,7 @@ function main(): void {
   process.on('unhandledRejection', (err) => log('error', 'unhandled_rejection', { error: errorMessage(err, 300) }));
 }
 
-main();
+main().catch((err: unknown) => {
+  console.error(`fatal: ${errorMessage(err)}`);
+  process.exit(1);
+});

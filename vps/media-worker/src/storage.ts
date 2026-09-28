@@ -8,6 +8,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AbortedError } from './errors.js';
 
 export interface ListedObject {
@@ -33,7 +34,11 @@ export interface Storage {
     opts?: { signal?: AbortSignal; onFraction?: (f: number) => void },
   ): Promise<number>;
   exists(key: string): Promise<boolean>;
+  /** Byte size via a 1-byte ranged GET (never HEAD — hangs on R2), or null when absent. */
+  objectSize(key: string): Promise<number | null>;
   delete(key: string): Promise<void>;
+  /** Short-lived presigned GET (e.g. the staff raw-backup download). */
+  presignGet(key: string, opts: { expiresInSec: number; contentDisposition?: string; contentType?: string }): Promise<string>;
   /** One ListObjectsV2 page (≤ 1000 keys) under `prefix`. */
   listPage(prefix: string, continuationToken?: string | null): Promise<ListPage>;
 }
@@ -63,6 +68,12 @@ export function isInvalidRange(err: unknown): boolean {
   return e?.name === 'InvalidRange' || e?.Code === 'InvalidRange' || e?.$metadata?.httpStatusCode === 416;
 }
 
+/** Total size from a `Content-Range: bytes 0-0/12345` header, or null. */
+export function parseContentRangeTotal(header: string | undefined): number | null {
+  const m = /\/(\d+)\s*$/.exec(header ?? '');
+  return m ? Number(m[1]) : null;
+}
+
 export function createR2Storage(opts: R2Options): Storage {
   const client = new S3Client({
     region: 'auto',
@@ -78,6 +89,21 @@ export function createR2Storage(opts: R2Options): Storage {
     requestHandler: { connectionTimeout: 10_000, socketTimeout: 120_000 },
   });
   const Bucket = opts.bucket;
+
+  const objectSize = async (key: string): Promise<number | null> => {
+    try {
+      const res = await client.send(new GetObjectCommand({ Bucket, Key: key, Range: 'bytes=0-0' }));
+      // Release the socket — we only wanted the headers.
+      (res.Body as Readable | undefined)?.destroy?.();
+      // 206 → "bytes 0-0/<total>"; a 200 (range ignored) → the full length.
+      return parseContentRangeTotal(res.ContentRange) ?? res.ContentLength ?? 0;
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      if (isInvalidRange(err)) return 0; // exists but empty
+      // Unknown failure: refuse to guess (a false "free" would overwrite a lecture).
+      throw err;
+    }
+  };
 
   return {
     async downloadToFile(key, path, o = {}) {
@@ -129,21 +155,26 @@ export function createR2Storage(opts: R2Options): Storage {
     },
 
     async exists(key) {
-      try {
-        const res = await client.send(new GetObjectCommand({ Bucket, Key: key, Range: 'bytes=0-0' }));
-        // Release the socket — we only wanted the status.
-        (res.Body as Readable | undefined)?.destroy?.();
-        return true;
-      } catch (err) {
-        if (isNotFound(err)) return false;
-        if (isInvalidRange(err)) return true;
-        // Unknown failure: refuse to guess (a false "free" would overwrite a lecture).
-        throw err;
-      }
+      return (await objectSize(key)) !== null;
     },
+
+    objectSize,
 
     async delete(key) {
       await client.send(new DeleteObjectCommand({ Bucket, Key: key }));
+    },
+
+    async presignGet(key, o) {
+      return getSignedUrl(
+        client,
+        new GetObjectCommand({
+          Bucket,
+          Key: key,
+          ...(o.contentDisposition ? { ResponseContentDisposition: o.contentDisposition } : {}),
+          ...(o.contentType ? { ResponseContentType: o.contentType } : {}),
+        }),
+        { expiresIn: o.expiresInSec },
+      );
     },
 
     async listPage(prefix, continuationToken) {

@@ -45,6 +45,8 @@ services:
       EGRESS_CONFIG_FILE: /etc/egress.yaml
     volumes:
       - ./egress.yaml:/etc/egress.yaml:ro
+      # Owner rule: a live recording is never lost — raws land on this disk first (PLAN §1.1 #12).
+      - ./recordings:/recordings
     cap_add: [SYS_ADMIN]
     # Audio-only room composite runs egress's SDK pipeline (no Chrome):
     # P0 10-min recording = 16–29 % of a core, ~65 MB.
@@ -57,12 +59,15 @@ services:
   # Media worker (vps/media-worker): lecture transcodes + live recordings, staging env.
   # Build: docker build -t almahajja-media-worker:<tag> /opt/almahajja-live/media-worker
   almahajja-media-worker-stg:
-    image: almahajja-media-worker:${MEDIA_WORKER_TAG:?set in .env}
+    image: almahajja-media-worker:${MEDIA_WORKER_TAG_STG:?set in .env}
     container_name: almahajja-media-worker-stg
     restart: unless-stopped
     env_file: ./secrets/worker-stg.env
+    environment:
+      RECORDINGS_DIR: /recordings/stg
     volumes:
       - ./work/stg:/tmp/media-worker     # temp input/output (originals up to 2 GB)
+      - ./recordings/stg:/recordings/stg # this env's live raws only
     cpus: 1.0
     mem_limit: 512m
     cpu_shares: 256
@@ -70,12 +75,15 @@ services:
 
   # Production media worker — same image, production database + bucket (worker refuses a mismatch).
   almahajja-media-worker:
-    image: almahajja-media-worker:${MEDIA_WORKER_TAG:?set in .env}
+    image: almahajja-media-worker:${MEDIA_WORKER_TAG_PRD:?set in .env}
     container_name: almahajja-media-worker
     restart: unless-stopped
     env_file: ./secrets/worker-prd.env
+    environment:
+      RECORDINGS_DIR: /recordings/prd
     volumes:
       - ./work/prd:/tmp/media-worker
+      - ./recordings/prd:/recordings/prd
     cpus: 1.0
     mem_limit: 512m
     cpu_shares: 256

@@ -1,11 +1,15 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type JobRunnerDeps, runJob } from '../src/jobRunner.js';
+import { RecordingsDir } from '../src/recordings.js';
 import { FakeDb, FakeMedia, FakeStorage, makeJob } from './fakes.js';
 
 let tmpDir: string;
+let recRoot: string;
+let recDir: string;
+let outsideDir: string;
 let db: FakeDb;
 let storage: FakeStorage;
 let media: FakeMedia;
@@ -14,6 +18,7 @@ const deps = (over: Partial<JobRunnerDeps> = {}): JobRunnerDeps => ({
   db,
   storage,
   media,
+  recordings: new RecordingsDir(recDir),
   tmpDir,
   liveLoudnorm: false,
   reporter: { minIntervalMs: 0 },
@@ -24,6 +29,11 @@ const tmpIsEmpty = async () => expect(await readdir(tmpDir)).toEqual([]);
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'mw-test-'));
+  recRoot = await mkdtemp(join(tmpdir(), 'mw-rec-'));
+  recDir = join(recRoot, 'recordings', 'stg');
+  outsideDir = join(recRoot, 'recordings', 'prd');
+  await mkdir(recDir, { recursive: true });
+  await mkdir(outsideDir, { recursive: true });
   db = new FakeDb();
   storage = new FakeStorage();
   media = new FakeMedia();
@@ -32,6 +42,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
+  await rm(recRoot, { recursive: true, force: true });
 });
 
 describe('lecture_transcode', () => {
@@ -40,7 +51,7 @@ describe('lecture_transcode', () => {
 
     const key = 'lectures/كتاب التوحيد/الدرس الأول.mp3';
     expect(out).toMatchObject({ status: 'done', outputKey: key, durationSec: 30 });
-    expect(storage.uploads).toEqual([{ key, contentType: 'audio/mpeg' }]);
+    expect(storage.uploads.map((u) => [u.key, u.contentType])).toEqual([[key, 'audio/mpeg']]);
     expect(db.completed).toEqual([{ jobId: 'job-1', key, durationSec: 30, size: storage.objects.get(key)!.length }]);
     expect(storage.deleted).toEqual(['incoming/5f0c.m4a']);
     expect(db.failed).toEqual([]);
@@ -205,20 +216,205 @@ describe('watchdog', () => {
   });
 });
 
-describe('live_recording (P2 — RPC pending)', () => {
-  const liveJob = () =>
-    makeJob({ kind: 'live_recording', lecture_id: null, input_key: 'live-raw/stg_abc-2026-09-28T1900.ogg' });
+describe('live_recording (P2: local raw, never lost)', () => {
+  const RAW_NAME = 'stg_abc123-2026-09-28T190000.ogg';
+  const RAW_BYTES = Buffer.from('OggS-fake-live-raw-bytes');
+  let rawPath: string;
+  const liveJob = (over: Parameters<typeof makeJob>[0] = {}) =>
+    makeJob({ kind: 'live_recording', lecture_id: null, input_key: rawPath, live_session_id: 'sess-1', ...over });
+  const rawStillThere = async () => expect(await readFile(rawPath)).toEqual(RAW_BYTES);
 
-  beforeEach(() => {
-    storage.objects.set('live-raw/stg_abc-2026-09-28T1900.ogg', Buffer.from('ogg'));
+  beforeEach(async () => {
+    rawPath = join(recDir, RAW_NAME);
+    await writeFile(rawPath, RAW_BYTES);
   });
 
-  it('creates the lecture via create_live_lecture and keeps the raw (D5 retention)', async () => {
+  const rawGone = async () =>
+    expect(
+      await readFile(rawPath).then(
+        () => 'present',
+        () => 'gone',
+      ),
+    ).toBe('gone');
+
+  it('reads the raw IN PLACE, names via live_job_naming, uploads MP3 + raw backup, then create_live_lecture', async () => {
+    const realRaw = await realpathOf(rawPath); // before the job deletes it
     const out = await runJob(liveJob(), deps());
-    expect(out).toMatchObject({ status: 'done', outputKey: 'lectures/_live/stg_abc-2026-09-28T1900.mp3' });
-    expect(db.liveCreated).toEqual([{ jobId: 'job-1', key: 'lectures/_live/stg_abc-2026-09-28T1900.mp3' }]);
+
+    const mp3 = 'lectures/السيرة النبوية/مجلس الخميس.mp3';
+    const backup = `live-raw/${RAW_NAME}`;
+    expect(out).toMatchObject({ status: 'done', outputKey: mp3, rawBackupKey: backup });
+    // no download of the raw; ffmpeg read the local file itself
+    expect(media.transcodes[0]!.input).toBe(realRaw);
+    expect(storage.uploads.map((u) => [u.key, u.contentType])).toEqual([
+      [mp3, 'audio/mpeg'],
+      [backup, 'audio/ogg'],
+    ]);
+    expect(storage.objects.get(backup)).toEqual(RAW_BYTES);
+    expect(db.liveCreated).toEqual([
+      { jobId: 'job-1', key: mp3, durationSec: 30, size: storage.objects.get(mp3)!.length, backup },
+    ]);
+    // order: naming → create_live_lecture → (verified) local delete + mark
+    expect(db.calls.indexOf('live_naming')).toBeLessThan(db.calls.indexOf('create_live_lecture'));
+    expect(db.calls.indexOf('create_live_lecture')).toBeLessThan(db.calls.indexOf('mark_live_raw_deleted'));
+    // amended owner rule: local raw deleted once the R2 copy is confirmed; R2 backup kept
+    expect(out).toMatchObject({ localRawDeleted: true });
+    await rawGone();
+    expect(db.markedRawDeleted).toEqual(['sess-1']);
+    expect(storage.objects.get(backup)).toEqual(RAW_BYTES);
     expect(storage.deleted).toEqual([]);
-    expect(media.transcodes[0]!.loudnorm).toBe(false);
+    await tmpIsEmpty();
+  });
+
+  it('keeps the local raw when the R2 backup size does not match after the lecture is created (raw.keep)', async () => {
+    const events: Array<[string, Record<string, unknown> | undefined]> = [];
+    const orig = storage.objectSize.bind(storage);
+    let n = 0;
+    storage.objectSize = async (k) => (k.startsWith('live-raw/') && n++ > 0 ? 3 : orig(k)); // 2nd look = verification
+    const out = await runJob(liveJob(), deps({ log: (_l, e, f) => void events.push([e, f]) }));
+    expect(out).toMatchObject({ status: 'done', localRawDeleted: false });
+    await rawStillThere();
+    expect(db.markedRawDeleted).toEqual([]);
+    expect(events.find(([e]) => e === 'raw.keep')?.[1]).toMatchObject({ reason: 'backup_size_mismatch' });
+  });
+
+  it('keeps the local raw when the backup is missing or the MP3 is not in R2', async () => {
+    const orig = storage.objectSize.bind(storage);
+    let n = 0;
+    storage.objectSize = async (k) => (k.startsWith('live-raw/') && n++ > 0 ? null : orig(k));
+    expect(await runJob(liveJob(), deps())).toMatchObject({ status: 'done', localRawDeleted: false });
+    await rawStillThere();
+
+    storage.objectSize = orig;
+    storage.exists = async () => false; // naming sees free keys; verification sees no MP3
+    const reasons: unknown[] = [];
+    await runJob(liveJob(), deps({ log: (_l, e, f) => void (e === 'raw.keep' && reasons.push(f?.reason)) }));
+    expect(reasons).toEqual(['mp3_missing']);
+    await rawStillThere();
+  });
+
+  it('keeps the local raw when the job has no live_session_id', async () => {
+    const out = await runJob(liveJob({ live_session_id: null }), deps());
+    expect(out).toMatchObject({ status: 'done', localRawDeleted: false });
+    await rawStillThere();
+  });
+
+  it('a mark_live_raw_deleted failure after a good job does NOT fail the job (the sweep stamps it later)', async () => {
+    db.markError = new Error('mark_live_raw_deleted failed: timeout');
+    const events: string[] = [];
+    const out = await runJob(liveJob(), deps({ log: (_l, e) => void events.push(e) }));
+    expect(out).toMatchObject({ status: 'done', localRawDeleted: true });
+    expect(db.failed).toEqual([]);
+    expect(events).toContain('raw.mark_failed');
+  });
+
+  it('a local delete error after a good job does NOT fail the job; the raw is kept', async () => {
+    const real = new RecordingsDir(recDir);
+    const out = await runJob(
+      liveJob(),
+      deps({
+        recordings: {
+          check: (p) => real.check(p),
+          delete: async () => {
+            throw new Error('EACCES: permission denied');
+          },
+        },
+      }),
+    );
+    expect(out).toMatchObject({ status: 'done', localRawDeleted: false });
+    expect(db.failed).toEqual([]);
+    await rawStillThere();
+  });
+
+  it('skips the backup upload when an object of the same size is already in R2 (retry)', async () => {
+    storage.objects.set(`live-raw/${RAW_NAME}`, Buffer.from(RAW_BYTES));
+    const out = await runJob(liveJob(), deps());
+    expect(out.status).toBe('done');
+    expect(storage.uploads.map((u) => u.key)).toEqual(['lectures/السيرة النبوية/مجلس الخميس.mp3']);
+    expect(db.liveCreated[0]!.backup).toBe(`live-raw/${RAW_NAME}`);
+  });
+
+  it('re-uploads a backup whose size differs (partial earlier upload)', async () => {
+    storage.objects.set(`live-raw/${RAW_NAME}`, Buffer.from('short'));
+    await runJob(liveJob(), deps());
+    expect(storage.uploads.map((u) => u.key)).toContain(`live-raw/${RAW_NAME}`);
+    expect(storage.objects.get(`live-raw/${RAW_NAME}`)).toEqual(RAW_BYTES);
+  });
+
+  it('name collision → " (2)" like any lecture', async () => {
+    storage.objects.set('lectures/السيرة النبوية/مجلس الخميس.mp3', Buffer.from('older'));
+    const out = await runJob(liveJob(), deps());
+    expect(out).toMatchObject({ outputKey: 'lectures/السيرة النبوية/مجلس الخميس (2).mp3' });
+  });
+
+  it('ffmpeg failure → fail_media_job; the raw stays; nothing created', async () => {
+    media = new FakeMedia('fail');
+    const out = await runJob(liveJob(), deps());
+    expect(out.status).toBe('retry');
+    expect(db.failed[0]!.error).toContain('ffmpeg exited');
+    expect(db.liveCreated).toEqual([]);
+    await rawStillThere();
+    await tmpIsEmpty();
+  });
+
+  it('backup upload failure → fail_media_job (the lecture is not created without a backup); raw stays', async () => {
+    storage.failUploadPrefix = 'live-raw/';
+    const out = await runJob(liveJob(), deps());
+    expect(out.status).toBe('retry');
+    expect(db.failed[0]!.error).toContain('upload failed');
+    expect(db.liveCreated).toEqual([]);
+    await rawStillThere();
+  });
+
+  it('create_live_lecture failure → fail_media_job; raw stays', async () => {
+    db.completeError = new Error('create_live_lecture failed: boom');
+    const out = await runJob(liveJob(), deps());
+    expect(out.status).toBe('retry');
+    await rawStillThere();
+  });
+
+  it('missing raw → fail_media_job, nothing uploaded', async () => {
+    const out = await runJob(liveJob({ input_key: join(recDir, 'nope.ogg') }), deps());
+    expect(out.status).toBe('retry');
+    expect(db.failed[0]!.error).toContain('live raw is not usable (missing)');
+    expect(storage.uploads).toEqual([]);
+  });
+
+  it('refuses a raw outside RECORDINGS_DIR (other env / ".." / relative) without touching it', async () => {
+    const foreign = join(outsideDir, 'prd_x.ogg');
+    await writeFile(foreign, 'prd raw');
+    for (const input of [foreign, `${recDir}/../prd/prd_x.ogg`, 'stg_abc.ogg']) {
+      db.failed = [];
+      const out = await runJob(liveJob({ input_key: input }), deps());
+      expect(out.status).toBe('retry');
+      expect(db.failed[0]!.error).toMatch(/live raw is not usable \((outside|invalid)\)/);
+    }
+    expect(media.transcodes).toEqual([]);
+    expect(await readFile(foreign, 'utf8')).toBe('prd raw');
+  });
+
+  it('refuses a symlink that escapes RECORDINGS_DIR', async (ctx) => {
+    const foreign = join(outsideDir, 'secret.ogg');
+    await writeFile(foreign, 'x');
+    // a directory link works on Windows without privileges ('junction'); plain symlink on Linux
+    try {
+      await symlink(outsideDir, join(recDir, 'escape'), 'junction');
+    } catch {
+      ctx.skip();
+    }
+    const out = await runJob(liveJob({ input_key: join(recDir, 'escape', 'secret.ogg') }), deps());
+    expect(out.status).toBe('retry');
+    expect(db.failed[0]!.error).toContain('(outside)');
+    expect(media.transcodes).toEqual([]);
+  });
+
+  it('lost mid-run → no fail, no lecture; the raw stays', async () => {
+    db.touchResult = false;
+    media = new FakeMedia('hang');
+    const out = await runJob(liveJob(), deps());
+    expect(out).toEqual({ status: 'lost' });
+    expect(db.failed).toEqual([]);
+    await rawStillThere();
   });
 
   it('applies loudnorm only for live recordings when LIVE_LOUDNORM=1', async () => {
@@ -229,4 +425,16 @@ describe('live_recording (P2 — RPC pending)', () => {
     await runJob(makeJob(), deps({ liveLoudnorm: true, media: m2 }));
     expect(m2.transcodes[0]!.loudnorm).toBe(false);
   });
+
+  it('the raw is never modified before its verified deletion (read-only use by ffmpeg)', async () => {
+    const before = (await stat(rawPath)).size;
+    media = new FakeMedia('fail');
+    await runJob(liveJob(), deps());
+    expect((await stat(rawPath)).size).toBe(before);
+  });
 });
+
+async function realpathOf(p: string): Promise<string> {
+  const { realpath } = await import('node:fs/promises');
+  return realpath(p);
+}

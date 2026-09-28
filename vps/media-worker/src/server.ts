@@ -1,6 +1,7 @@
-// Internal HTTP surface (almahajja_net only — never published publicly):
-//   GET  /health  → Docker HEALTHCHECK
-//   POST /lk      → LiveKit webhooks (raw body needed for the signature hash)
+// Internal HTTP surface (almahajja_net; /recordings gets a tunnel hostname in P6):
+//   GET  /health                → Docker HEALTHCHECK
+//   POST /lk                    → LiveKit webhooks (raw body needed for the signature hash)
+//   GET  /recordings/:sessionId → staff download of a live raw (recordingDownload.ts)
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { WebhookResult } from './webhooks.js';
@@ -17,6 +18,7 @@ export interface HealthBody {
 export interface ServerDeps {
   health: () => HealthBody;
   onWebhook: (rawBody: string, authHeader: string | undefined) => Promise<WebhookResult>;
+  onRecording?: (req: IncomingMessage, res: ServerResponse, sessionId: string) => Promise<void>;
 }
 
 class BodyTooLarge extends Error {}
@@ -45,9 +47,11 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(json);
 }
 
+const RECORDING_ROUTE = /^\/recordings\/([^/]+)$/;
+
 export function createHttpServer(deps: ServerDeps): Server {
   return createServer((req, res) => {
-    const path = (req.url ?? '/').split('?')[0];
+    const path = (req.url ?? '/').split('?')[0] ?? '/';
 
     if (path === '/health') {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { ok: false });
@@ -66,6 +70,21 @@ export function createHttpServer(deps: ServerDeps): Server {
           if (res.headersSent) return;
           send(res, err instanceof BodyTooLarge ? 413 : 500, { ok: false });
         });
+      return;
+    }
+
+    const rec = RECORDING_ROUTE.exec(path);
+    if (rec && deps.onRecording) {
+      let sessionId: string;
+      try {
+        sessionId = decodeURIComponent(rec[1] ?? '');
+      } catch {
+        return send(res, 404, { ok: false });
+      }
+      deps.onRecording(req, res, sessionId).catch(() => {
+        if (!res.headersSent) send(res, 500, { ok: false });
+        else res.destroy();
+      });
       return;
     }
 

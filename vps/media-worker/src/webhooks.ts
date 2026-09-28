@@ -1,26 +1,32 @@
 // LiveKit webhooks (POST /lk, internal network only). Every request is
-// verified with WebhookReceiver (JWT signed with the env's API secret + sha256
-// of the RAW body). One LiveKit server serves both envs; rooms are named
+// verified with WebhookReceiver (JWT signed with the webhook key + sha256 of the
+// RAW body). One LiveKit server serves both envs; rooms are named
 // `${WORKER_ENV}_…`, so each worker only acts on its own env's rooms.
 // Signing key id on the live server: `almahajja_int` (same pair for both workers).
 //
-// egress_ended (confirmed on the live server 2026-09-28): status EGRESS_COMPLETE,
-// fileResults[0].filename = the R2 key, e.g. `live-raw/stg_p0_rec-2026-09-28T164931.ogg`.
-// A recording is enqueued for EGRESS_COMPLETE or EGRESS_LIMIT_REACHED (a partial
-// recording is still a valid lesson) + an `.ogg` key; manifests
-// (`live-raw/<egressId>.json`) are ignored; FAILED / ABORTED are logged only
-// (the raw file, if any, is kept).
+// egress_ended (P2): egress writes the raw to the VPS disk, and
+// fileResults[].filename is the LOCAL path `/recordings/<env>/<room>-<time>.ogg`.
+// A recording is enqueued (`enqueue_live_recording(room, egress, raw_path)`)
+// only for EGRESS_COMPLETE / EGRESS_LIMIT_REACHED (a partial recording is still
+// a lesson) + an `.ogg` output that exists as a regular file inside
+// RECORDINGS_DIR (symlink / `..` escapes refused). Manifests (`.json`) are
+// ignored; FAILED / ABORTED are logged only. The raw is never deleted here.
+//
+// Room lifecycle events go to `live_room_event(...)`; its result feeds the D4
+// host-absence watch (hostWatch.ts).
 
 import type { WorkerEnv } from './config.js';
-import type { JobDb } from './db.js';
+import type { JobDb, RoomEventResult } from './db.js';
 import type { EgressTracker } from './egressTracker.js';
 import { errorMessage, type Logger, silentLogger } from './log.js';
+import type { RecordingsDir } from './recordings.js';
 
 /** Structural subset of livekit-server-sdk's WebhookEvent that we use. */
 export interface LkEventLike {
   event: string;
   id?: string;
-  room?: { name?: string } | undefined;
+  room?: { name?: string; numParticipants?: number } | undefined;
+  participant?: { identity?: string } | undefined;
   egressInfo?:
     | {
         egressId?: string;
@@ -36,11 +42,17 @@ export interface WebhookVerifier {
   receive(body: string, authHeader?: string): Promise<LkEventLike>;
 }
 
+export interface RoomEventSink {
+  onRoomEvent(event: string, result: RoomEventResult | null): Promise<void> | void;
+}
+
 export interface WebhookDeps {
   verifier: WebhookVerifier;
   env: WorkerEnv;
   egress: EgressTracker;
-  db: Pick<JobDb, 'enqueueLiveRecording'>;
+  db: Pick<JobDb, 'enqueueLiveRecording' | 'liveRoomEvent'>;
+  recordings: Pick<RecordingsDir, 'check'>;
+  hostWatch?: RoomEventSink;
   kick: () => void;
   log?: Logger;
 }
@@ -49,6 +61,16 @@ export interface WebhookResult {
   status: number;
   body: Record<string, unknown>;
 }
+
+/** Events forwarded to `live_room_event`. */
+export const ROOM_EVENTS = new Set([
+  'room_started',
+  'room_finished',
+  'participant_joined',
+  'participant_left',
+  'track_published',
+  'track_unpublished',
+]);
 
 // livekit.EgressStatus
 const EGRESS_STARTING = 0;
@@ -64,17 +86,21 @@ function statusName(status: number | undefined): string {
   return status === undefined ? 'unknown' : (EGRESS_STATUS_NAMES[status] ?? String(status));
 }
 
-/** The `.ogg` recording key among the egress outputs (manifests etc. ignored), or null. */
-export function rawKeyOf(info: LkEventLike['egressInfo']): string | null {
+/** The `.ogg` recording path among the egress outputs (manifests etc. ignored), or null. */
+export function rawPathOf(info: LkEventLike['egressInfo']): string | null {
   for (const f of info?.fileResults ?? []) {
-    const key = (f.filename ?? '').replace(/^\/+/, '');
-    if (key.toLowerCase().endsWith('.ogg')) return key;
+    const p = (f.filename ?? '').trim();
+    if (p.toLowerCase().endsWith('.ogg')) return p;
   }
   return null;
 }
 
 export function roomNameOf(ev: LkEventLike): string {
   return ev.room?.name || ev.egressInfo?.roomName || '';
+}
+
+function baseNameOf(p: string): string {
+  return p.split(/[\\/]/).pop() ?? '';
 }
 
 export async function handleWebhook(
@@ -114,48 +140,87 @@ export async function handleWebhook(
       return ok();
     }
 
-    case 'egress_ended': {
-      deps.egress.ended(egressId);
-      const status = ev.egressInfo?.status;
-      const rawKey = rawKeyOf(ev.egressInfo);
-      const statusOk = status !== undefined && ENQUEUE_STATUSES.has(status);
-      if (!statusOk || !rawKey) {
-        // Not enqueued; any raw file stays in live-raw/ for manual recovery.
-        log('warn', 'lk.egress_not_enqueued', {
-          room,
-          egress: egressId,
-          status: statusName(status),
-          raw: rawKey ?? undefined,
-          reason: !statusOk ? 'status' : 'no .ogg output',
-          error: ev.egressInfo?.error ? errorMessage(ev.egressInfo.error, 200) : undefined,
-        });
-        deps.kick();
-        return ok();
-      }
-      try {
-        // P2 — RPC pending: enqueue_live_recording.
-        await deps.db.enqueueLiveRecording(room, egressId, rawKey);
-      } catch (err) {
-        log('error', 'lk.enqueue_failed', { room, egress: egressId, error: errorMessage(err, 200) });
-        deps.kick();
-        return { status: 500, body: { ok: false, error: 'enqueue failed' } };
-      }
-      log('info', 'lk.recording_enqueued', { room, egress: egressId, raw: rawKey, status: statusName(status) });
-      deps.kick();
-      return ok();
-    }
+    case 'egress_ended':
+      return egressEnded(deps, log, ev, room, egressId);
 
-    case 'room_finished':
-      // P2 — pending: safety-net `live_sessions.status = ended` (D4) via RPC.
-      deps.egress.roomFinished(room);
-      deps.kick();
-      return ok();
-
-    // P2 — pending: room_started, participant_joined/left (peak count),
-    // track_published/unpublished (spoke_seconds). Logged only for now.
     default:
+      if (ROOM_EVENTS.has(ev.event)) return roomEvent(deps, log, ev, room);
       return ok();
   }
+}
+
+async function egressEnded(
+  deps: WebhookDeps,
+  log: Logger,
+  ev: LkEventLike,
+  room: string,
+  egressId: string,
+): Promise<WebhookResult> {
+  deps.egress.ended(egressId);
+  const status = ev.egressInfo?.status;
+  const rawPath = rawPathOf(ev.egressInfo);
+  const statusOk = status !== undefined && ENQUEUE_STATUSES.has(status);
+  if (!statusOk || !rawPath) {
+    // Not enqueued; any raw file stays on disk for manual recovery.
+    log('warn', 'lk.egress_not_enqueued', {
+      room,
+      egress: egressId,
+      status: statusName(status),
+      raw: rawPath ? baseNameOf(rawPath) : undefined,
+      reason: !statusOk ? 'status' : 'no .ogg output',
+      error: ev.egressInfo?.error ? errorMessage(ev.egressInfo.error, 200) : undefined,
+    });
+    deps.kick();
+    return ok();
+  }
+
+  const local = await deps.recordings.check(rawPath);
+  if (typeof local === 'string') {
+    // Missing / outside RECORDINGS_DIR / escape attempt → never enqueue a path
+    // we can't safely read. 500 lets LiveKit redeliver if it was a timing issue.
+    log('error', 'lk.recording_unusable', { room, egress: egressId, raw: baseNameOf(rawPath), reason: local });
+    deps.kick();
+    return { status: local === 'missing' ? 500 : 200, body: { ok: false, error: `recording ${local}` } };
+  }
+
+  try {
+    const jobId = await deps.db.enqueueLiveRecording(room, egressId, local.path);
+    log('info', 'lk.recording_enqueued', {
+      room,
+      egress: egressId,
+      raw: local.name,
+      bytes: local.size,
+      status: statusName(status),
+      job: jobId ?? 'deferred_until_end',
+    });
+  } catch (err) {
+    log('error', 'lk.enqueue_failed', { room, egress: egressId, error: errorMessage(err, 200) });
+    deps.kick();
+    return { status: 500, body: { ok: false, error: 'enqueue failed' } };
+  }
+  deps.kick();
+  return ok();
+}
+
+async function roomEvent(deps: WebhookDeps, log: Logger, ev: LkEventLike, room: string): Promise<WebhookResult> {
+  if (ev.event === 'room_finished') {
+    deps.egress.roomFinished(room);
+    deps.kick();
+  }
+  const identity = ev.participant?.identity || null;
+  const num = typeof ev.room?.numParticipants === 'number' ? ev.room.numParticipants : null;
+  let result: RoomEventResult | null;
+  try {
+    result = await deps.db.liveRoomEvent(room, ev.event, identity, num);
+  } catch (err) {
+    // Informational for most events; room_finished is re-derived by the next
+    // lifecycle call anyway. Return 500 so LiveKit may redeliver.
+    log('error', 'lk.room_event_failed', { room, event: ev.event, error: errorMessage(err, 200) });
+    return { status: 500, body: { ok: false, error: 'room event failed' } };
+  }
+  // Not awaited: an auto_end call must not hold up LiveKit's webhook delivery.
+  void deps.hostWatch?.onRoomEvent(ev.event, result);
+  return ok();
 }
 
 function ok(): WebhookResult {

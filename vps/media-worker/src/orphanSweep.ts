@@ -10,7 +10,8 @@
 // before deleting that batch. Logs counts only.
 
 import type { JobDb, MediaJobStatus } from './db.js';
-import { errorMessage, type Logger, silentLogger } from './log.js';
+import type { Logger } from './log.js';
+import { PeriodicTask } from './periodic.js';
 import type { Storage } from './storage.js';
 
 export const SWEEP_PREFIX = 'incoming/';
@@ -105,57 +106,24 @@ export interface OrphanSweeperOptions {
   log?: Logger;
 }
 
-/** Schedules `sweep` (never overlapping itself); errors are logged, never thrown. */
-export class OrphanSweeper {
-  private firstTimer: ReturnType<typeof setTimeout> | null = null;
-  private interval: ReturnType<typeof setInterval> | null = null;
-  private running: Promise<void> | null = null;
-  private readonly abort = new AbortController();
-  private readonly log: Logger;
-
-  constructor(
-    private readonly sweep: (signal: AbortSignal) => Promise<SweepStats>,
-    private readonly opts: OrphanSweeperOptions = {},
-  ) {
-    this.log = opts.log ?? silentLogger;
-  }
-
-  start(): void {
-    this.firstTimer = setTimeout(() => void this.runOnce(), this.opts.firstDelayMs ?? DEFAULT_FIRST_SWEEP_DELAY_MS);
-    this.interval = setInterval(() => void this.runOnce(), this.opts.everyMs ?? DEFAULT_SWEEP_EVERY_MS);
-    this.firstTimer.unref?.();
-    this.interval.unref?.();
-  }
-
-  runOnce(): Promise<void> {
-    if (this.running || this.abort.signal.aborted) return this.running ?? Promise.resolve();
-    const started = Date.now();
-    this.running = this.sweep(this.abort.signal)
-      .then((s) =>
-        this.log('info', 'sweep.done', {
-          prefix: SWEEP_PREFIX,
-          pages: s.pages,
-          scanned: s.scanned,
-          old: s.old,
-          referenced: s.referenced,
-          deleted: s.deleted,
-          done_only: s.doneOnly,
-          delete_failed: s.deleteFailed,
-          ms: Date.now() - started,
-        }),
-      )
-      .catch((err: unknown) => this.log('error', 'sweep.error', { error: errorMessage(err, 200) }))
-      .finally(() => {
-        this.running = null;
-      });
-    return this.running;
-  }
-
-  async stop(): Promise<void> {
-    this.abort.abort();
-    if (this.firstTimer) clearTimeout(this.firstTimer);
-    if (this.interval) clearInterval(this.interval);
-    this.firstTimer = this.interval = null;
-    if (this.running) await this.running;
+/** Schedules the sweep (never overlapping itself); errors are logged, never thrown. */
+export class OrphanSweeper extends PeriodicTask<SweepStats> {
+  constructor(sweep: (signal: AbortSignal) => Promise<SweepStats>, opts: OrphanSweeperOptions = {}) {
+    super(sweep, {
+      name: 'sweep',
+      firstDelayMs: opts.firstDelayMs ?? DEFAULT_FIRST_SWEEP_DELAY_MS,
+      everyMs: opts.everyMs ?? DEFAULT_SWEEP_EVERY_MS,
+      ...(opts.log ? { log: opts.log } : {}),
+      fields: (s) => ({
+        prefix: SWEEP_PREFIX,
+        pages: s.pages,
+        scanned: s.scanned,
+        old: s.old,
+        referenced: s.referenced,
+        deleted: s.deleted,
+        done_only: s.doneOnly,
+        delete_failed: s.deleteFailed,
+      }),
+    });
   }
 }

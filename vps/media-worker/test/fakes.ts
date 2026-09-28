@@ -1,7 +1,19 @@
 // In-memory fakes for the injected job dependencies (no network, no ffmpeg).
 
 import { readFile, writeFile } from 'node:fs/promises';
-import type { FailOutcome, JobDb, LectureNaming, MediaJob, MediaJobKind, MediaJobStatus } from '../src/db.js';
+import type {
+  FailOutcome,
+  JobDb,
+  LectureNaming,
+  LiveNaming,
+  LiveRawDue,
+  LiveSessionRaw,
+  MediaJob,
+  MediaJobKind,
+  MediaJobStatus,
+  RoomEventResult,
+  StaffIdentity,
+} from '../src/db.js';
 import { AbortedError } from '../src/errors.js';
 import type { MediaTools, TranscodeOptions } from '../src/media.js';
 import type { ListPage, Storage } from '../src/storage.js';
@@ -30,7 +42,12 @@ export function makeJob(over: Partial<MediaJob> = {}): MediaJob {
 
 export class FakeStorage implements Storage {
   objects = new Map<string, Buffer>();
-  uploads: Array<{ key: string; contentType: string }> = [];
+  uploads: Array<{ key: string; contentType: string; from: string }> = [];
+  /** Throw from uploadFile for keys starting with this prefix. */
+  failUploadPrefix: string | null = null;
+  objectSizeError: Error | null = null;
+  presigned: Array<{ key: string; expiresInSec: number; contentDisposition?: string; contentType?: string }> = [];
+  presignError: Error | null = null;
   deleted: string[] = [];
   existsChecks: string[] = [];
   failDelete = false;
@@ -48,9 +65,10 @@ export class FakeStorage implements Storage {
   }
 
   async uploadFile(key: string, path: string, contentType: string, o?: { onFraction?: (f: number) => void }) {
+    if (this.failUploadPrefix && key.startsWith(this.failUploadPrefix)) throw new Error(`upload failed for ${key}`);
     const body = await readFile(path);
     this.objects.set(key, body);
-    this.uploads.push({ key, contentType });
+    this.uploads.push({ key, contentType, from: path });
     o?.onFraction?.(1);
     return body.length;
   }
@@ -58,6 +76,17 @@ export class FakeStorage implements Storage {
   async exists(key: string): Promise<boolean> {
     this.existsChecks.push(key);
     return this.objects.has(key);
+  }
+
+  async presignGet(key: string, o: { expiresInSec: number; contentDisposition?: string; contentType?: string }) {
+    if (this.presignError) throw this.presignError;
+    this.presigned.push({ key, ...o });
+    return `https://r2.test/${encodeURIComponent(key)}?X-Amz-Expires=${o.expiresInSec}&sig=fake`;
+  }
+
+  async objectSize(key: string): Promise<number | null> {
+    if (this.objectSizeError) throw this.objectSizeError;
+    return this.objects.get(key)?.length ?? null;
   }
 
   async delete(key: string): Promise<void> {
@@ -126,7 +155,20 @@ export class FakeDb implements JobDb {
   lookups: string[][] = [];
   lookupError: Error | null = null;
   completed: Array<{ jobId: string; key: string; durationSec: number | null; size: number }> = [];
-  liveCreated: Array<{ jobId: string; key: string }> = [];
+  liveCreated: Array<{ jobId: string; key: string; durationSec: number | null; size: number; backup: string }> = [];
+  liveNaming: LiveNaming = { sectionTitle: 'السيرة النبوية', title: 'مجلس الخميس', roomName: 'stg_abc123' };
+  /** enqueue_live_recording result (null = session still live). */
+  enqueueResult: string | null = 'job-live-1';
+  roomEvents: Array<{ room: string; event: string; identity: string | null; num: number | null }> = [];
+  roomEventResult: RoomEventResult | null = null;
+  roomEventError: Error | null = null;
+  rawsDue: LiveRawDue[] = [];
+  rawsDueError: Error | null = null;
+  markedRawDeleted: string[] = [];
+  markError: Error | null = null;
+  sessionRaws = new Map<string, LiveSessionRaw>();
+  tokens = new Map<string, StaffIdentity>();
+  staffError: Error | null = null;
   failed: Array<{ jobId: string; error: string }> = [];
   enqueued: Array<{ room: string; egress: string; raw: string }> = [];
   queue: MediaJob[] = [];
@@ -165,10 +207,36 @@ export class FakeDb implements JobDb {
     if (this.completeError) throw this.completeError;
     this.completed.push({ jobId, key, durationSec, size });
   }
-  async createLiveLecture(jobId: string, key: string) {
+  async liveJobNaming(_jobId: string) {
+    this.calls.push('live_naming');
+    return { ...this.liveNaming };
+  }
+  async createLiveLecture(jobId: string, key: string, durationSec: number | null, size: number, backup: string) {
     this.calls.push('create_live_lecture');
-    this.liveCreated.push({ jobId, key });
+    if (this.completeError) throw this.completeError;
+    this.liveCreated.push({ jobId, key, durationSec, size, backup });
     return 'lec-live-1';
+  }
+  async liveRoomEvent(room: string, event: string, identity: string | null, num: number | null) {
+    this.roomEvents.push({ room, event, identity, num });
+    if (this.roomEventError) throw this.roomEventError;
+    return this.roomEventResult;
+  }
+  async liveRawsDueForDeletion() {
+    if (this.rawsDueError) throw this.rawsDueError;
+    return this.rawsDue;
+  }
+  async markLiveRawDeleted(sessionId: string) {
+    this.calls.push('mark_live_raw_deleted');
+    if (this.markError) throw this.markError;
+    this.markedRawDeleted.push(sessionId);
+  }
+  async liveSessionRaw(sessionId: string) {
+    return this.sessionRaws.get(sessionId) ?? null;
+  }
+  async staffForToken(jwt: string) {
+    if (this.staffError) throw this.staffError;
+    return this.tokens.get(jwt) ?? null;
   }
   async failJob(jobId: string, error: string) {
     this.calls.push('fail');
@@ -179,5 +247,6 @@ export class FakeDb implements JobDb {
     this.calls.push('enqueue_live_recording');
     if (this.enqueueError) throw this.enqueueError;
     this.enqueued.push({ room, egress, raw });
+    return this.enqueueResult;
   }
 }

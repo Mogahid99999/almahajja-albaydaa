@@ -35,6 +35,41 @@ export interface LectureNaming {
   sectionTitle: string | null;
 }
 
+/** `live_job_naming(p_job)` — where a live recording's MP3 goes. */
+export interface LiveNaming {
+  sectionTitle: string | null;
+  title: string;
+  roomName: string;
+}
+
+/** `live_room_event(...)` jsonb result; null when the room has no session. */
+export interface RoomEventResult {
+  sessionId: string;
+  status: string;
+  isHost: boolean;
+  hostPresent: boolean;
+}
+
+/** One row of `live_raws_due_for_deletion()`. */
+export interface LiveRawDue {
+  sessionId: string;
+  rawPath: string;
+  rawBackupKey: string | null;
+}
+
+/** The raw-recording columns of one live_sessions row. */
+export interface LiveSessionRaw {
+  /** Local raw on the VPS disk; null once deleted (raw_deleted_at) or never set. */
+  rawPath: string | null;
+  /** R2 copy (live-raw/<basename>), kept forever; null when not backed up yet. */
+  rawBackupKey: string | null;
+}
+
+export interface StaffIdentity {
+  userId: string;
+  role: string | null;
+}
+
 /** 'ignored' = the job was no longer running (someone else finished/cancelled it). */
 export type FailOutcome = 'retry' | 'failed' | 'ignored';
 
@@ -48,11 +83,32 @@ export interface JobDb {
   touchJob(jobId: string, progress: number): Promise<boolean>;
   getLectureNaming(lectureId: string): Promise<LectureNaming>;
   completeLectureTranscode(jobId: string, outputKey: string, durationSec: number | null, sizeBytes: number): Promise<void>;
-  /** P2 — RPC pending (`create_live_lecture`). Returns the new lecture id. */
-  createLiveLecture(jobId: string, outputKey: string, durationSec: number | null, sizeBytes: number): Promise<string>;
   failJob(jobId: string, error: string): Promise<FailOutcome>;
-  /** P2 — RPC pending (`enqueue_live_recording`). */
-  enqueueLiveRecording(roomName: string, egressId: string, rawKey: string): Promise<void>;
+
+  // ---- P2 live (service-role RPCs, 0138) ----
+  liveJobNaming(jobId: string): Promise<LiveNaming>;
+  /** Returns the lecture id. */
+  createLiveLecture(
+    jobId: string,
+    outputKey: string,
+    durationSec: number | null,
+    sizeBytes: number,
+    rawBackupKey: string,
+  ): Promise<string>;
+  /** Job id, or null while the session is still live (the job starts at end). */
+  enqueueLiveRecording(roomName: string, egressId: string, rawPath: string): Promise<string | null>;
+  liveRoomEvent(
+    roomName: string,
+    event: string,
+    identity: string | null,
+    numParticipants: number | null,
+  ): Promise<RoomEventResult | null>;
+  liveRawsDueForDeletion(): Promise<LiveRawDue[]>;
+  markLiveRawDeleted(sessionId: string): Promise<void>;
+  /** live_sessions.raw_path (unless deleted) + raw_backup_key in one read; null when no such session. */
+  liveSessionRaw(sessionId: string): Promise<LiveSessionRaw | null>;
+  /** Verify a user JWT (auth.getUser) and read profiles.role; null when the token is invalid. */
+  staffForToken(jwt: string): Promise<StaffIdentity | null>;
   /** Status of every job whose input_key is one of `keys` (keys with no job are absent). */
   inputKeyJobStatuses(keys: string[]): Promise<Map<string, MediaJobStatus[]>>;
 }
@@ -125,12 +181,24 @@ export function createSupabaseDb(url: string, serviceRoleKey: string): JobDb {
     },
 
     // P2 — RPC pending: create_live_lecture(p_job, p_output_key, p_duration_sec, p_size_bytes) returns uuid.
-    async createLiveLecture(jobId, outputKey, durationSec, sizeBytes) {
+    async liveJobNaming(jobId) {
+      const { data, error } = await sb.rpc('live_job_naming', { p_job: jobId });
+      if (error) fail('live_job_naming', error);
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { section_title?: string | null; title?: string | null; room_name?: string | null }
+        | null
+        | undefined;
+      if (!row) throw new Error(`live_job_naming returned nothing for job ${jobId}`);
+      return { sectionTitle: row.section_title ?? null, title: row.title ?? '', roomName: row.room_name ?? '' };
+    },
+
+    async createLiveLecture(jobId, outputKey, durationSec, sizeBytes, rawBackupKey) {
       const { data, error } = await sb.rpc('create_live_lecture', {
         p_job: jobId,
         p_output_key: outputKey,
         p_duration_sec: roundSec(durationSec),
         p_size_bytes: sizeBytes,
+        p_raw_backup_key: rawBackupKey,
       });
       if (error) fail('create_live_lecture', error);
       return String(data);
@@ -143,14 +211,78 @@ export function createSupabaseDb(url: string, serviceRoleKey: string): JobDb {
       throw new Error(`fail_media_job returned unexpected ${JSON.stringify(data)}`);
     },
 
-    // P2 — RPC pending: enqueue_live_recording(p_room_name, p_egress_id, p_raw_key).
-    async enqueueLiveRecording(roomName, egressId, rawKey) {
-      const { error } = await sb.rpc('enqueue_live_recording', {
+    // enqueue_live_recording(p_room_name, p_egress_id, p_raw_path) — 0138.
+    async enqueueLiveRecording(roomName, egressId, rawPath) {
+      const { data, error } = await sb.rpc('enqueue_live_recording', {
         p_room_name: roomName,
         p_egress_id: egressId,
-        p_raw_key: rawKey,
+        p_raw_path: rawPath,
       });
       if (error) fail('enqueue_live_recording', error);
+      return data ? String(data) : null;
+    },
+
+    async liveRoomEvent(roomName, event, identity, numParticipants) {
+      const { data, error } = await sb.rpc('live_room_event', {
+        p_room_name: roomName,
+        p_event: event,
+        p_identity: identity,
+        p_num_participants: numParticipants,
+      });
+      if (error) fail('live_room_event', error);
+      const r = data as { session_id?: string | null; status?: string; is_host?: boolean; host_present?: boolean } | null;
+      if (!r || !r.session_id) return null;
+      return {
+        sessionId: r.session_id,
+        status: String(r.status ?? ''),
+        isHost: r.is_host === true,
+        hostPresent: r.host_present === true,
+      };
+    },
+
+    async liveRawsDueForDeletion() {
+      const { data, error } = await sb.rpc('live_raws_due_for_deletion');
+      if (error) fail('live_raws_due_for_deletion', error);
+      const rows = (data ?? []) as Array<{ session_id: string; raw_path: string; raw_backup_key: string | null }>;
+      return rows.map((r) => ({ sessionId: r.session_id, rawPath: r.raw_path, rawBackupKey: r.raw_backup_key ?? null }));
+    },
+
+    async markLiveRawDeleted(sessionId) {
+      const { error } = await sb.rpc('mark_live_raw_deleted', { p_session: sessionId });
+      if (error) fail('mark_live_raw_deleted', error);
+    },
+
+    async liveSessionRaw(sessionId) {
+      const { data, error } = await sb
+        .from('live_sessions')
+        .select('raw_path, raw_backup_key, raw_deleted_at')
+        .eq('id', sessionId)
+        .maybeSingle();
+      if (error) fail('live_sessions lookup', error);
+      const row = data as { raw_path: string | null; raw_backup_key: string | null; raw_deleted_at: string | null } | null;
+      if (!row) return null;
+      return {
+        rawPath: row.raw_deleted_at ? null : (row.raw_path ?? null),
+        rawBackupKey: row.raw_backup_key ?? null,
+      };
+    },
+
+    async staffForToken(jwt) {
+      const { data, error } = await sb.auth.getUser(jwt);
+      if (error) {
+        // 4xx = the token is bad (→ 401); anything else (network, 5xx) is ours (→ 503).
+        const status = (error as { status?: number }).status ?? 0;
+        if (status >= 400 && status < 500) return null;
+        throw new Error(`auth.getUser failed: ${error.message}`);
+      }
+      if (!data.user) return null;
+      const { data: profile, error: pErr } = await sb
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .maybeSingle();
+      if (pErr) fail('profiles lookup', pErr);
+      return { userId: data.user.id, role: (profile?.role as string | undefined) ?? null };
     },
 
     async inputKeyJobStatuses(keys) {

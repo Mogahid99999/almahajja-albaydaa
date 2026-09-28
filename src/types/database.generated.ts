@@ -702,11 +702,14 @@ export type Database = {
           created_at: string
           duration_sec: number | null
           id: string
+          live_session_id: string | null
           notify_on_publish: boolean
           order: number
+          review_state: string | null
           search_vec: unknown
           section_id: string | null
           sheikh_id: string | null
+          source: string
           status: Database["public"]["Enums"]["lecture_status"]
           title: string
           updated_at: string
@@ -717,11 +720,14 @@ export type Database = {
           created_at?: string
           duration_sec?: number | null
           id?: string
+          live_session_id?: string | null
           notify_on_publish?: boolean
           order?: number
+          review_state?: string | null
           search_vec?: unknown
           section_id?: string | null
           sheikh_id?: string | null
+          source?: string
           status?: Database["public"]["Enums"]["lecture_status"]
           title: string
           updated_at?: string
@@ -732,16 +738,26 @@ export type Database = {
           created_at?: string
           duration_sec?: number | null
           id?: string
+          live_session_id?: string | null
           notify_on_publish?: boolean
           order?: number
+          review_state?: string | null
           search_vec?: unknown
           section_id?: string | null
           sheikh_id?: string | null
+          source?: string
           status?: Database["public"]["Enums"]["lecture_status"]
           title?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "lectures_live_session_id_fkey"
+            columns: ["live_session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lectures_section_id_fkey"
             columns: ["section_id"]
@@ -751,6 +767,267 @@ export type Database = {
           },
           {
             foreignKeyName: "lectures_sheikh_id_fkey"
+            columns: ["sheikh_id"]
+            isOneToOne: false
+            referencedRelation: "sheikhs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      live_buddy_invites: {
+        Row: {
+          created_at: string
+          from_user: string
+          session_id: string
+          to_user: string
+        }
+        Insert: {
+          created_at?: string
+          from_user: string
+          session_id: string
+          to_user: string
+        }
+        Update: {
+          created_at?: string
+          from_user?: string
+          session_id?: string
+          to_user?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_buddy_invites_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      live_config: {
+        Row: {
+          id: boolean
+          identity_salt: string
+          room_prefix: string
+        }
+        Insert: {
+          id?: boolean
+          identity_salt: string
+          room_prefix: string
+        }
+        Update: {
+          id?: boolean
+          identity_salt?: string
+          room_prefix?: string
+        }
+        Relationships: []
+      }
+      live_moderation_log: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          created_at: string
+          detail: Json
+          id: number
+          session_id: string
+          target_identity: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          created_at?: string
+          detail?: Json
+          id?: number
+          session_id: string
+          target_identity?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          created_at?: string
+          detail?: Json
+          id?: number
+          session_id?: string
+          target_identity?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_moderation_log_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      live_participants: {
+        Row: {
+          display_name: string | null
+          gender: string
+          hidden_name: boolean
+          identity: string
+          joined_at: string
+          left_at: string | null
+          present: boolean
+          role: string
+          session_id: string
+          speaking_since: string | null
+          spoke_seconds: number
+          user_id: string
+        }
+        Insert: {
+          display_name?: string | null
+          gender: string
+          hidden_name?: boolean
+          identity: string
+          joined_at?: string
+          left_at?: string | null
+          present?: boolean
+          role?: string
+          session_id: string
+          speaking_since?: string | null
+          spoke_seconds?: number
+          user_id: string
+        }
+        Update: {
+          display_name?: string | null
+          gender?: string
+          hidden_name?: boolean
+          identity?: string
+          joined_at?: string
+          left_at?: string | null
+          present?: boolean
+          role?: string
+          session_id?: string
+          speaking_since?: string | null
+          spoke_seconds?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_participants_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      live_reminders: {
+        Row: {
+          created_at: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_reminders_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      live_sessions: {
+        Row: {
+          allow_requests: boolean
+          created_at: string
+          egress_id: string | null
+          ended_at: string | null
+          host_user_id: string | null
+          id: string
+          lecture_id: string | null
+          lecture_published_at: string | null
+          notify_all: boolean
+          peak_listeners: number
+          raw_backup_key: string | null
+          raw_deleted_at: string | null
+          raw_path: string | null
+          room_name: string
+          scheduled_at: string | null
+          section_id: string
+          share_code: string
+          sheikh_id: string | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["live_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          allow_requests?: boolean
+          created_at?: string
+          egress_id?: string | null
+          ended_at?: string | null
+          host_user_id?: string | null
+          id?: string
+          lecture_id?: string | null
+          lecture_published_at?: string | null
+          notify_all?: boolean
+          peak_listeners?: number
+          raw_backup_key?: string | null
+          raw_deleted_at?: string | null
+          raw_path?: string | null
+          room_name: string
+          scheduled_at?: string | null
+          section_id: string
+          share_code: string
+          sheikh_id?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["live_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          allow_requests?: boolean
+          created_at?: string
+          egress_id?: string | null
+          ended_at?: string | null
+          host_user_id?: string | null
+          id?: string
+          lecture_id?: string | null
+          lecture_published_at?: string | null
+          notify_all?: boolean
+          peak_listeners?: number
+          raw_backup_key?: string | null
+          raw_deleted_at?: string | null
+          raw_path?: string | null
+          room_name?: string
+          scheduled_at?: string | null
+          section_id?: string
+          share_code?: string
+          sheikh_id?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["live_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_sessions_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "lectures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "live_sessions_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "live_sessions_sheikh_id_fkey"
             columns: ["sheikh_id"]
             isOneToOne: false
             referencedRelation: "sheikhs"
@@ -822,6 +1099,13 @@ export type Database = {
             columns: ["lecture_id"]
             isOneToOne: false
             referencedRelation: "lectures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "media_jobs_live_session_id_fkey"
+            columns: ["live_session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -1492,7 +1776,45 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      live_sessions_public: {
+        Row: {
+          allow_requests: boolean | null
+          created_at: string | null
+          ended_at: string | null
+          id: string | null
+          lecture_id: string | null
+          scheduled_at: string | null
+          section_id: string | null
+          share_code: string | null
+          sheikh_id: string | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["live_status"] | null
+          title: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_sessions_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "lectures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "live_sessions_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "live_sessions_sheikh_id_fkey"
+            columns: ["sheikh_id"]
+            isOneToOne: false
+            referencedRelation: "sheikhs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       add_bookmark: {
@@ -1727,6 +2049,7 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      cancel_live_session: { Args: { p_session: string }; Returns: undefined }
       claim_media_job: {
         Args: {
           p_kinds?: Database["public"]["Enums"]["media_job_kind"][]
@@ -1783,6 +2106,27 @@ export type Database = {
         }
         Returns: string
       }
+      create_live_lecture: {
+        Args: {
+          p_duration_sec: number | null
+          p_job: string
+          p_output_key: string
+          p_raw_backup_key: string | null
+          p_size_bytes: number | null
+        }
+        Returns: string
+      }
+      create_live_session: {
+        Args: {
+          p_allow_requests?: boolean
+          p_notify?: boolean
+          p_scheduled_at?: string
+          p_section: string
+          p_sheikh?: string
+          p_title: string
+        }
+        Returns: string
+      }
       delete_broadcast: { Args: { p_id: string }; Returns: undefined }
       delete_own_benefit: { Args: { p_id: string }; Returns: undefined }
       delete_own_question: {
@@ -1801,6 +2145,10 @@ export type Database = {
           p_lecture: string
           p_publish_on_done?: boolean
         }
+        Returns: string
+      }
+      enqueue_live_recording: {
+        Args: { p_egress_id: string; p_raw_path: string; p_room_name: string }
         Returns: string
       }
       export_sequences: {
@@ -1855,6 +2203,10 @@ export type Database = {
           p_title: string
           p_type: Database["public"]["Enums"]["notification_type"]
         }
+        Returns: undefined
+      }
+      finalize_live_lecture: {
+        Args: { p_lecture: string; p_sheikh: string; p_title: string }
         Returns: undefined
       }
       followers_of_section: {
@@ -2070,6 +2422,21 @@ export type Database = {
           created_at: string
           id: string
           is_mine: boolean
+        }[]
+      }
+      get_live_by_code: { Args: { p_code: string }; Returns: Json }
+      get_live_now: { Args: never; Returns: Json }
+      get_live_participants: {
+        Args: { p_session: string }
+        Returns: {
+          display_name: string
+          gender: string
+          hidden_name: boolean
+          identity: string
+          joined_at: string
+          left_at: string
+          role: string
+          spoke_seconds: number
         }[]
       }
       get_my_buddy_id: { Args: never; Returns: string }
@@ -2321,6 +2688,34 @@ export type Database = {
       is_content_manager: { Args: never; Returns: boolean }
       is_moderator: { Args: never; Returns: boolean }
       is_quiz_manager: { Args: never; Returns: boolean }
+      live_gender_code: { Args: { p_gender: string }; Returns: string }
+      live_identity: { Args: { p_session: string; p_user: string }; Returns: string }
+      live_job_naming: {
+        Args: { p_job: string }
+        Returns: {
+          room_name: string
+          section_title: string
+          title: string
+        }[]
+      }
+      live_raws_due_for_deletion: {
+        Args: never
+        Returns: {
+          raw_backup_key: string
+          raw_path: string
+          session_id: string
+        }[]
+      }
+      live_room_event: {
+        Args: {
+          p_event: string
+          p_identity?: string
+          p_num_participants?: number
+          p_room_name: string
+        }
+        Returns: Json
+      }
+      mark_live_raw_deleted: { Args: { p_session: string }; Returns: undefined }
       quiz_availability: {
         Args: { p_mode: string; p_from: string | null; p_until: string | null }
         Returns: string
@@ -2392,6 +2787,7 @@ export type Database = {
           out_table: string
         }[]
       }
+      retry_live_recording: { Args: { p_session: string }; Returns: string }
       reveal_question_author: {
         Args: { p_question_id: string }
         Returns: string
@@ -2441,6 +2837,37 @@ export type Database = {
       set_bookmark_status: {
         Args: { p_id: string; p_reviewed: boolean }
         Returns: undefined
+      }
+      set_live_session_status: {
+        Args: {
+          p_egress_id?: string
+          p_session: string
+          p_status: Database["public"]["Enums"]["live_status"]
+        }
+        Returns: {
+          allow_requests: boolean
+          created_at: string
+          egress_id: string | null
+          ended_at: string | null
+          host_user_id: string | null
+          id: string
+          lecture_id: string | null
+          lecture_published_at: string | null
+          notify_all: boolean
+          peak_listeners: number
+          raw_backup_key: string | null
+          raw_deleted_at: string | null
+          raw_path: string | null
+          room_name: string
+          scheduled_at: string | null
+          section_id: string
+          share_code: string
+          sheikh_id: string | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["live_status"]
+          title: string
+          updated_at: string
+        }
       }
       set_own_profile: {
         Args: {
@@ -2544,6 +2971,15 @@ export type Database = {
       backup_op_type: "backup" | "restore"
       goal_metric: "lectures" | "minutes"
       lecture_status: "draft" | "published"
+      live_status:
+        | "scheduled"
+        | "green"
+        | "live"
+        | "ended"
+        | "processing"
+        | "ready"
+        | "failed"
+        | "cancelled"
       media_job_kind: "lecture_transcode" | "live_recording"
       media_job_status: "queued" | "running" | "done" | "failed"
       notification_type:
@@ -2716,6 +3152,16 @@ export const Constants = {
       backup_op_type: ["backup", "restore"],
       goal_metric: ["lectures", "minutes"],
       lecture_status: ["draft", "published"],
+      live_status: [
+        "scheduled",
+        "green",
+        "live",
+        "ended",
+        "processing",
+        "ready",
+        "failed",
+        "cancelled",
+      ],
       media_job_kind: ["lecture_transcode", "live_recording"],
       media_job_status: ["queued", "running", "done", "failed"],
       notification_type: [

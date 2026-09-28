@@ -2,6 +2,8 @@
 // collects ALL problems and reports variable NAMES only — never values, since
 // most of them are secrets.
 
+import { recordingsDirMatchesEnv } from './recordings.js';
+
 export type WorkerEnv = 'stg' | 'prd';
 
 export interface Config {
@@ -18,6 +20,8 @@ export interface Config {
   liveLoudnorm: boolean;
   /** Scratch space for input/output files (one sub-directory per job). */
   tmpDir: string;
+  /** This env's local live raws (`/recordings/<env>`), mounted from the VPS. */
+  recordingsDir: string;
 }
 
 export class ConfigError extends Error {
@@ -37,6 +41,7 @@ const REQUIRED = [
   'R2_SECRET_ACCESS_KEY',
   'LIVEKIT_WEBHOOK_KEY',
   'LIVEKIT_WEBHOOK_SECRET',
+  'RECORDINGS_DIR',
 ] as const;
 
 function isHttpUrl(value: string, httpsOnly: boolean): boolean {
@@ -71,6 +76,14 @@ export function loadConfig(
   }
   if (get('SUPABASE_URL') && !isHttpUrl(get('SUPABASE_URL'), false)) {
     problems.push('SUPABASE_URL must be an http(s) URL');
+  }
+  const recordingsDir = get('RECORDINGS_DIR');
+  if (recordingsDir) {
+    if (!recordingsDir.startsWith('/') || recordingsDir.split('/').includes('..')) {
+      problems.push('RECORDINGS_DIR must be an absolute path without ".."');
+    } else if ((workerEnv === 'stg' || workerEnv === 'prd') && !recordingsDirMatchesEnv(recordingsDir, workerEnv)) {
+      problems.push('RECORDINGS_DIR must be this env\'s folder (/recordings/<WORKER_ENV>)');
+    }
   }
   if (get('R2_ENDPOINT') && !isHttpUrl(get('R2_ENDPOINT'), true)) {
     problems.push('R2_ENDPOINT must be an https URL');
@@ -115,5 +128,6 @@ export function loadConfig(
     port,
     liveLoudnorm: rawLoudnorm === '1',
     tmpDir: get('TMP_DIR') || defaultTmpDir,
+    recordingsDir: recordingsDir.replace(/\/+$/, ''),
   };
 }

@@ -98,6 +98,9 @@ async function makeLecture(label: string): Promise<string> {
   return data.id;
 }
 
+const RACE_NOTE =
+  "a staging media worker claimed this suite's job between un-park and claim (it polls claim_media_job) — stop the staging worker or rerun";
+
 const inputKey = (label: string) => `incoming/tajriba-${label}-${ts}.m4a`;
 
 /** Keep a staging worker (if one is polling) away from our jobs. */
@@ -136,17 +139,22 @@ async function assertNoForeignClaimable() {
 
 /** Make `jobId` the oldest claimable job, then claim as the worker would. */
 async function claimMine(jobId: string, kinds?: string[]): Promise<Record<string, any>> {
+  // Foreign check first, so un-park → claim is a single round trip apart (a
+  // staging worker polling claim_media_job has the smallest possible window).
+  await assertNoForeignClaimable();
   const { error } = await service
     .from('media_jobs')
     .update({ created_at: OLDEST, not_before: new Date(Date.now() - 60_000).toISOString() })
     .eq('id', jobId);
   if (error) throw error;
-  await assertNoForeignClaimable();
   const res = kinds
     ? await service.rpc('claim_media_job', { p_kinds: kinds })
     : await service.rpc('claim_media_job');
   expect(res.error).toBeNull();
   const rows = res.data as Record<string, any>[];
+  if (rows.length === 0 || rows[0].id !== jobId) {
+    throw new Error(`${RACE_NOTE} (job ${jobId} is now ${(await jobRow(jobId)).status})`);
+  }
   expect(rows).toHaveLength(1);
   expect(rows[0].id).toBe(jobId);
   return rows[0];
@@ -350,16 +358,18 @@ describe('media_jobs — publish guard + claim → touch → complete', () => {
 
   test('claim honours p_kinds: a live_recording-only claim skips a queued transcode', async () => {
     const [jobA] = jobIds;
+    await assertNoForeignClaimable();
+    // Claimable for as short a time as possible (a staging worker polls).
     await service
       .from('media_jobs')
       .update({ created_at: OLDEST, not_before: new Date(Date.now() - 60_000).toISOString() })
       .eq('id', jobA);
-    await assertNoForeignClaimable();
     const res = await service.rpc('claim_media_job', { p_kinds: ['live_recording'] });
+    await park(jobA);
     expect(res.error).toBeNull();
     expect(res.data).toEqual([]);
     const row = await jobRow(jobA);
-    expect(row.status).toBe('queued');
+    if (row.status !== 'queued') throw new Error(`${RACE_NOTE} (job ${jobA} is now ${row.status})`);
     expect(row.attempts).toBe(0);
   });
 

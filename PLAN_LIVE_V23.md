@@ -56,23 +56,23 @@ after any migration touching RLS/functions.
 9. **Shareable link** on social apps: opens the room if the app is installed, otherwise routes to Google Play / App Store.
 10. **Lecture compression moves to the VPS** (media worker); the admin uploads the original.
 11. Audio only. No video, no camera, no chat.
-12. **A live recording is never lost** (owner, 2026-09-28). Egress writes the raw file to the VPS disk
-    (`/opt/almahajja-live/recordings/<env>/`, mounted into egress and the worker), not straight to R2.
-    The worker transcodes from that local file, uploads the MP3 **and** a backup copy of the raw to R2
-    `live-raw/`, and deletes the local raw only after the lecture is **published** and 7 days have passed
-    (supersedes D5's "7 days after the lecture is created"). On any failure the raw stays on the VPS and the
-    admin can **download it** or **retry** from the admin «البث المباشر» page (worker endpoint behind our
-    tunnel, staff JWT required).
+12. **A live recording is never lost** (owner, 2026-09-28; amended the same day). Egress writes the raw file to
+    the VPS disk (`/opt/almahajja-live/recordings/<env>/`, mounted into egress and the worker), not straight to R2.
+    The worker transcodes from that local file and uploads the MP3 **and** a backup copy of the raw to R2
+    `live-raw/` (kept, no automatic deletion). **As soon as both uploads are confirmed (sizes verified) the local
+    raw is deleted automatically** (migration 0139; a 30-min sweep is the safety net). On any failure the raw stays
+    on the VPS and the admin can **download it** or **retry** from the admin «البث المباشر» page (worker endpoint
+    behind our tunnel, staff JWT required; after deletion the download redirects to the R2 backup).
 
 ### 1.2 Open — confirm before the phase that needs them
 
 | # | Question | Default we build unless told otherwise | Needed by |
 |---|---|---|---|
-| D1 | «ارجاعه لمستمع بواسطة أي أدمن أو متحدث» — can a *speaker* demote *another* speaker? | No. Moderators (admin/sheikh/publisher) demote; a speaker can step down himself. | P4 |
-| D2 | Can moderators see the real name of a sister who chose «بدون اسم»? | No, same as anonymous Q&A (V14). The DB keeps `user_id` for abuse handling only. | P3 |
-| D3 | Max concurrent live sessions | 1 (VPS budget, §3.6) | P2 |
-| D4 | Host disconnects: auto-end after how long? | 10 minutes of no host, then end + record as normal | P4 |
-| D5 | Keep the raw recording after processing? | Delete raw 7 days after the lecture is created | P2 |
+| D1 | «ارجاعه لمستمع بواسطة أي أدمن أو متحدث» — can a *speaker* demote *another* speaker? | **Confirmed 2026-09-28:** No. Moderators (admin/sheikh/publisher) demote; a speaker can step down himself. | P4 |
+| D2 | Can moderators see the real name of a sister who chose «بدون اسم»? | **Decided 2026-09-28: YES — moderators see every real name.** Other listeners see «طالبة»; the real name never goes into LiveKit (names/attributes are broadcast to all), moderators fetch it through a staff-only RPC. | P3 |
+| D3 | Max concurrent live sessions | **Confirmed:** 1 (VPS budget, §3.6) | P2 |
+| D4 | Host disconnects: auto-end after how long? | **Confirmed:** 10 minutes of no host, then end + record as normal | P4 |
+| D5 | Keep the raw recording after processing? | **Superseded by §1.1 item 12:** local raw deleted once the MP3 + raw backup are confirmed in R2; the R2 raw backup is kept | P2 |
 | D6 | Does `live_start` push respect quiet hours (23:00–05:00)? | Yes (skip push, still in inbox) | P5 |
 | D7 | Can admins/publishers host from the **web** admin too? | Later (P6+); v1 hosts from the mobile app | P6 |
 | D8 | Share-link host: `almahajja.app/live/<code>` or `go.almahajja.app/live/<code>`? | `go.almahajja.app` — fully in our stack (§9.3); apex only if its current host is ours to change | P5 |

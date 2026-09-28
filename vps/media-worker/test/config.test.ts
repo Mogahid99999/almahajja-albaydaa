@@ -11,12 +11,31 @@ const valid = {
   R2_SECRET_ACCESS_KEY: 'R2-SECRET-VALUE',
   LIVEKIT_WEBHOOK_KEY: 'APIkey',
   LIVEKIT_WEBHOOK_SECRET: 'LK-SECRET-VALUE',
+  RECORDINGS_DIR: '/recordings/stg',
 };
 
 describe('loadConfig', () => {
   it('applies defaults (PORT 8080, loudnorm off)', () => {
     const c = loadConfig(valid);
     expect(c).toMatchObject({ workerEnv: 'stg', port: 8080, liveLoudnorm: false });
+  });
+
+  it("requires RECORDINGS_DIR to be this env's absolute folder", () => {
+    expect(loadConfig({ ...valid, RECORDINGS_DIR: '/recordings/stg/' }).recordingsDir).toBe('/recordings/stg');
+    const problemsFor = (v: Record<string, string>) => {
+      try {
+        loadConfig({ ...valid, ...v });
+      } catch (e) {
+        return (e as Error).message;
+      }
+      return '';
+    };
+    expect(problemsFor({ RECORDINGS_DIR: '' })).toContain('RECORDINGS_DIR is required');
+    expect(problemsFor({ RECORDINGS_DIR: 'recordings/stg' })).toContain('RECORDINGS_DIR must be an absolute path');
+    expect(problemsFor({ RECORDINGS_DIR: '/recordings/stg/../prd' })).toContain('RECORDINGS_DIR must be an absolute path');
+    // the stg worker must never be pointed at the prd raws (or the parent folder)
+    expect(problemsFor({ RECORDINGS_DIR: '/recordings/prd' })).toContain("RECORDINGS_DIR must be this env's folder");
+    expect(problemsFor({ RECORDINGS_DIR: '/recordings' })).toContain("RECORDINGS_DIR must be this env's folder");
   });
 
   it('reads PORT, LIVE_LOUDNORM and TMP_DIR', () => {
@@ -48,8 +67,13 @@ describe('loadConfig', () => {
     );
     expect(() => loadConfig({ ...valid, WORKER_ENV: 'prd' })).toThrow(/SUPABASE_URL is not the prd project/);
     expect(
-      loadConfig({ ...valid, WORKER_ENV: 'prd', SUPABASE_URL: 'https://prpyxnxgkpspjoxvcaro.supabase.co', R2_BUCKET: 'almahajja-media' })
-        .workerEnv,
+      loadConfig({
+        ...valid,
+        WORKER_ENV: 'prd',
+        SUPABASE_URL: 'https://prpyxnxgkpspjoxvcaro.supabase.co',
+        R2_BUCKET: 'almahajja-media',
+        RECORDINGS_DIR: '/recordings/prd',
+      }).workerEnv,
     ).toBe('prd');
   });
 });
