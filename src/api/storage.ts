@@ -18,7 +18,8 @@ export type PickedFile = {
   mimeType?: string | null;
 };
 
-async function invokeR2<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+/** Call an r2-* Edge Function; exported for mediaJobs.ts (`lecture_raw` uploads). */
+export async function invokeR2<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
   if (error) {
     // FunctionsHttpError carries the non-2xx Response in `context`; surface the

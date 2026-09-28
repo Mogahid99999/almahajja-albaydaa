@@ -1,0 +1,42 @@
+# LiveKit server config (PLAN_LIVE_V23 §3.5). No secrets here: API key pairs are in key_file
+# (/opt/almahajja-live/secrets/livekit-keys.yaml, mode 600, one "id: secret" per line). Key ids (not secret):
+#   almahajja_prd — production edge functions (rooms prefixed prd_)
+#   almahajja_stg — staging edge functions   (rooms prefixed stg_)
+#   almahajja_int — internal only: egress + webhook signing; never leaves the VPS
+port: 7880
+log_level: info
+key_file: /etc/livekit-keys.yaml
+
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: 161.97.135.4
+
+redis:
+  address: almahajja-lk-redis:6379
+
+room:
+  # Rooms are created only by the live-control edge function (CreateRoom), never by a join.
+  auto_create: false
+  empty_timeout: 600
+  departure_timeout: 20
+  max_participants: 1000
+
+audio:
+  update_interval: 400
+
+# Embedded TURN is OFF on purpose. Inside a Docker bridge network its relay can't reach the SFU:
+# the SFU dials the relay at node_ip, the hairpin arrives from the bridge gateway, and TURN drops it
+# for lack of a permission (verified 2026-09-28: 8 checks, 0 responses). UDP-blocked clients use
+# ICE/TCP on 7881 instead (verified with every server UDP candidate stripped). If a 443-only network
+# ever matters, add an external TURN (e.g. Cloudflare TURN on 443) under rtc.turn_servers.
+turn:
+  enabled: false
+
+webhook:
+  api_key: almahajja_int
+  # Internal Docker DNS only. Each worker ignores rooms of the other environment.
+  urls:
+    - http://almahajja-media-worker:8080/lk
+    - http://almahajja-media-worker-stg:8080/lk

@@ -20,7 +20,13 @@ module.exports = {
   },
   // tests/contract/ is deliberately excluded: those hit the live staging
   // Supabase project and run only via `npm run test:contract` (own config).
-  testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts?(x)', '<rootDir>/tests/screens/**/*.test.ts?(x)'],
+  // tests/functions/ holds unit tests for the PURE edge-function logic in
+  // supabase/functions/_shared/ (no Deno/npm imports there, so jest can load it).
+  testMatch: [
+    '<rootDir>/src/**/__tests__/**/*.test.ts?(x)',
+    '<rootDir>/tests/screens/**/*.test.ts?(x)',
+    '<rootDir>/tests/functions/**/*.test.ts?(x)',
+  ],
   // jest-expo's transformIgnorePatterns already whitelists expo/react-native
   // packages; keep the default.
   modulePathIgnorePatterns: ['<rootDir>/.claude/'],

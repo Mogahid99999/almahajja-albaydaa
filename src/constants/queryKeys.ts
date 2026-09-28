@@ -117,4 +117,8 @@ export const queryKeys = {
   shareContent: ['appContent', 'share'] as const,
   startHereLecture: ['appContent', 'startHere'] as const,
   adminConfig: ['admin', 'config'] as const,
+
+  // Server-side lecture compression (V23 §6.1)
+  serverTranscodeFlag: ['admin', 'serverTranscode'] as const,
+  mediaJob: (jobId: string) => ['admin', 'mediaJob', jobId] as const,
 } as const;

@@ -1,0 +1,87 @@
+# /opt/almahajja-live/docker-compose.yml — «البث المباشر» infrastructure (PLAN_LIVE_V23 §3).
+#
+# SHARED VPS: 161.97.135.4 also runs LIMS and the dafaalla.dev sites. Everything here stays
+# on our own network (almahajja_net, created by /opt/almahajja-admin), every service name is
+# project-unique (never web/api/redis — Docker DNS aliases collide), and the only host ports
+# published are the LiveKit media ports below (7881/tcp, 7882/udp). Signaling (7880) is internal and reaches
+# the internet only through our Cloudflare Tunnel (live.almahajja.app).
+#
+# Secrets live in secrets/ (livekit-keys.yaml, worker-*.env) and egress.yaml — mode 600, never in git.
+# Pinned 2026-09-28: livekit-server v1.13.7 · egress v1.14.1 · redis 7.4.11 · node 22.23.3
+name: almahajja-live
+
+services:
+  almahajja-livekit:
+    image: livekit/livekit-server:v1.13.7
+    container_name: almahajja-livekit
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+      - ./secrets/livekit-keys.yaml:/etc/livekit-keys.yaml:ro
+    ports:
+      - "7881:7881/tcp"   # ICE/TCP fallback (UDP-blocked networks)
+      - "7882:7882/udp"   # single-port UDP mux for all media
+    # P0 load test: 1 speaker + 200 listeners = 1.2–1.7 cores, ~470 MB. 1 core throttled 99 %.
+    cpus: 2.0
+    mem_limit: 1280m
+    cpu_shares: 512       # LIMS (default 1024) wins under contention
+    networks: [almahajja_net]
+    depends_on: [almahajja-lk-redis]
+
+  almahajja-lk-redis:
+    image: redis:7.4.11-alpine
+    container_name: almahajja-lk-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb"]
+    mem_limit: 96m
+    networks: [almahajja_net]
+
+  almahajja-egress:
+    image: livekit/egress:v1.14.1
+    container_name: almahajja-egress
+    restart: unless-stopped
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+    cap_add: [SYS_ADMIN]
+    # Audio-only room composite runs egress's SDK pipeline (no Chrome):
+    # P0 10-min recording = 16–29 % of a core, ~65 MB.
+    cpus: 1.0
+    mem_limit: 512m
+    cpu_shares: 512
+    networks: [almahajja_net]
+    depends_on: [almahajja-livekit, almahajja-lk-redis]
+
+  # Media worker (vps/media-worker): lecture transcodes + live recordings, staging env.
+  # Build: docker build -t almahajja-media-worker:<tag> /opt/almahajja-live/media-worker
+  almahajja-media-worker-stg:
+    image: almahajja-media-worker:${MEDIA_WORKER_TAG:?set in .env}
+    container_name: almahajja-media-worker-stg
+    restart: unless-stopped
+    env_file: ./secrets/worker-stg.env
+    volumes:
+      - ./work/stg:/tmp/media-worker     # temp input/output (originals up to 2 GB)
+    cpus: 1.0
+    mem_limit: 512m
+    cpu_shares: 256
+    networks: [almahajja_net]
+
+  # Production media worker — same image, production database + bucket (worker refuses a mismatch).
+  almahajja-media-worker:
+    image: almahajja-media-worker:${MEDIA_WORKER_TAG:?set in .env}
+    container_name: almahajja-media-worker
+    restart: unless-stopped
+    env_file: ./secrets/worker-prd.env
+    volumes:
+      - ./work/prd:/tmp/media-worker
+    cpus: 1.0
+    mem_limit: 512m
+    cpu_shares: 256
+    networks: [almahajja_net]
+
+networks:
+  almahajja_net:
+    external: true
+    name: almahajja_net

@@ -13,12 +13,23 @@
 // had (0040_storage_draft_scope.sql), so the content-type allow-list is
 // re-checked here — the one gate standing between a caller and the bucket.
 //
-// Deploy: multipart POST /v1/projects/{ref}/functions/deploy?slug=r2-upload-url
-//         (metadata verify_jwt=true) — mirrors admin-users.
+// kind `lecture_raw` (V23 §5.3): the admin's ORIGINAL file for server-side
+// compression — opaque key `incoming/<uuid>.<ext>`, ≤ 2 GB with the declared
+// size bound into the signature (ContentLength), 2 h TTL. The media worker
+// transcodes it to the normal lecture key (`_shared/lectureKey.ts`, the same
+// naming this function uses) and deletes the original.
+//
+// Deploy: `npx supabase functions deploy r2-upload-url --project-ref <ref>`
+//         (bundles ../_shared/*), or multipart POST
+//         /v1/projects/{ref}/functions/deploy?slug=r2-upload-url with the
+//         _shared files included (metadata verify_jwt=true).
 // =============================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "npm:@aws-sdk/client-s3@3";
 import { getSignedUrl } from "npm:@aws-sdk/s3-request-presigner@3";
+
+import { sanitize, uniqueLectureKey } from "../_shared/lectureKey.ts";
+import { checkRawUpload, RAW_URL_TTL_SECONDS, rawIncomingKey } from "../_shared/rawUpload.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -71,13 +82,6 @@ const s3 = new S3Client({
   },
 });
 
-const UNCLASSIFIED_FOLDER = "_unclassified";
-
-/** Path-segment-safe name — strips separators/control chars, keeps letters (incl. Arabic). */
-function sanitize(name: string): string {
-  return name.trim().replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").slice(0, 80);
-}
-
 // A ranged GetObjectCommand (1 byte) rather than HeadObjectCommand — R2
 // returned a hanging/failed response for HeadObjectCommand in practice, while
 // GetObjectCommand (already used by r2-read-url) is proven reliable here.
@@ -88,30 +92,6 @@ async function objectExists(key: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * Collision-safe `lectures/<section>/<lesson>.<ext>` key — uses the admin's
- * exact section + lecture names (CLAUDE.md: "the file name must match the one
- * designated by the admin"), only appending " (n)" if that exact name is
- * already taken. A lecture with no section yet (still in the unclassified
- * queue) lands under `lectures/_unclassified/` — classifying it later does
- * not move the object; only the DB row's section changes.
- */
-async function uniqueLectureKey(
-  folder: string | undefined,
-  displayName: string | undefined,
-  ext: string,
-): Promise<string> {
-  const section = sanitize(folder ?? "") || UNCLASSIFIED_FOLDER;
-  const base = sanitize(displayName ?? "") || "محاضرة";
-  let candidate = `lectures/${section}/${base}.${ext}`;
-  let n = 2;
-  while (await objectExists(candidate)) {
-    candidate = `lectures/${section}/${base} (${n}).${ext}`;
-    n++;
-  }
-  return candidate;
 }
 
 Deno.serve(async (req) => {
@@ -142,19 +122,24 @@ Deno.serve(async (req) => {
      * original to a wide strip, cutting tall posters).
      */
     variantOf?: string;
+    /** lecture_raw only: the original's byte length — bound into the signature. */
+    size?: number;
   };
   try {
     body = await req.json();
   } catch {
     return json({ error: "invalid json" }, 400);
   }
-  const { kind, fileName, contentType, folder, displayName, variantOf } = body;
-  if (kind !== "lecture" && kind !== "attachment" && kind !== "broadcast" && kind !== "answer") {
+  const { kind, fileName, contentType, folder, displayName, variantOf, size } = body;
+  if (
+    kind !== "lecture" && kind !== "attachment" && kind !== "broadcast" && kind !== "answer" &&
+    kind !== "lecture_raw"
+  ) {
     return json({ error: "invalid kind" }, 400);
   }
 
-  // Content uploads (lecture/attachment/broadcast) require a content manager
-  // (admin/publisher). A voice answer, by contrast, is authored by a MODERATOR
+  // Content uploads (lecture/lecture_raw/attachment/broadcast) require a content
+  // manager (admin/publisher). A voice answer, by contrast, is authored by a MODERATOR
   // — the sheikh (a moderator but not a content manager) must be able to record
   // and send it — so `answer` uploads gate on is_moderator() instead.
   if (kind === "answer") {
@@ -164,6 +149,29 @@ Deno.serve(async (req) => {
     const { data: isManager } = await callerClient.rpc("is_content_manager");
     if (!isManager) return json({ error: "forbidden" }, 403);
   }
+
+  // The admin's ORIGINAL file for server-side compression (V23 §5.3). Opaque
+  // `incoming/<uuid>.<ext>` key; the declared size is bound into the signed
+  // PutObjectCommand (ContentLength → signed `content-length` header), so R2
+  // rejects a PUT whose body differs from what was checked here.
+  if (kind === "lecture_raw") {
+    if (variantOf !== undefined) return json({ error: "invalid variant" }, 400);
+    const check = checkRawUpload({ fileName, contentType, size });
+    if (!check.ok) return json({ error: check.error }, check.error === "file too large" ? 413 : 400);
+    const rawKey = rawIncomingKey(crypto.randomUUID(), check.ext);
+    const rawUrl = await getSignedUrl(
+      s3,
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: rawKey,
+        ContentType: check.contentType,
+        ContentLength: check.size,
+      }),
+      { expiresIn: RAW_URL_TTL_SECONDS },
+    );
+    return json({ uploadUrl: rawUrl, key: rawKey, expiresIn: RAW_URL_TTL_SECONDS });
+  }
+
   if (!fileName || !contentType) {
     return json({ error: "fileName and contentType required" }, 400);
   }
@@ -194,7 +202,7 @@ Deno.serve(async (req) => {
 
   const ext = (fileName.split(".").pop() || "bin").toLowerCase();
   const key = kind === "lecture"
-    ? await uniqueLectureKey(folder, displayName, ext)
+    ? await uniqueLectureKey(folder, displayName, ext, objectExists)
     : `${KEY_PREFIX[kind]}/${Date.now()}-${sanitize(fileName.replace(/\.[^.]*$/, "")) || "file"}.${ext}`;
 
   const uploadUrl = await getSignedUrl(

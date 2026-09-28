@@ -1,0 +1,48 @@
+// Lecture object-key naming (V13), shared by the `r2-upload-url` edge function
+// and the VPS media worker (`vps/media-worker`), so a lecture transcoded on the
+// server lands at exactly the key an in-browser upload would have used.
+//
+// Pure TypeScript — no Deno/npm imports — so both runtimes can compile it.
+// Existence checks are injected: R2 must be probed with a ranged GetObject,
+// never HeadObjectCommand (it hangs/fails against R2, see r2-upload-url).
+
+export const UNCLASSIFIED_FOLDER = "_unclassified";
+export const DEFAULT_LECTURE_NAME = "محاضرة";
+
+/** Path-segment-safe name — strips separators/control chars, keeps letters (incl. Arabic). */
+export function sanitize(name: string): string {
+  return name.trim().replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").slice(0, 80);
+}
+
+/** `lectures/<section>/<lesson>.<ext>`, or `… (n).<ext>` for the n-th collision (n ≥ 2). */
+export function lectureKeyCandidate(
+  folder: string | undefined | null,
+  displayName: string | undefined | null,
+  ext: string,
+  n = 1,
+): string {
+  const section = sanitize(folder ?? "") || UNCLASSIFIED_FOLDER;
+  const base = sanitize(displayName ?? "") || DEFAULT_LECTURE_NAME;
+  return n < 2 ? `lectures/${section}/${base}.${ext}` : `lectures/${section}/${base} (${n}).${ext}`;
+}
+
+/**
+ * Collision-safe lecture key — uses the admin's exact section + lecture names,
+ * only appending " (n)" if that exact name is already taken. A lecture with no
+ * section yet (still in the unclassified queue) lands under
+ * `lectures/_unclassified/` — classifying it later does not move the object.
+ */
+export async function uniqueLectureKey(
+  folder: string | undefined | null,
+  displayName: string | undefined | null,
+  ext: string,
+  exists: (key: string) => Promise<boolean>,
+): Promise<string> {
+  let n = 1;
+  let candidate = lectureKeyCandidate(folder, displayName, ext, n);
+  while (await exists(candidate)) {
+    n = n < 2 ? 2 : n + 1;
+    candidate = lectureKeyCandidate(folder, displayName, ext, n);
+  }
+  return candidate;
+}

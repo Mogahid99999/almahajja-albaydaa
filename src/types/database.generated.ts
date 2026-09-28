@@ -758,6 +758,74 @@ export type Database = {
           },
         ]
       }
+      media_jobs: {
+        Row: {
+          attempts: number
+          created_at: string
+          created_by: string | null
+          error: string | null
+          finished_at: string | null
+          heartbeat_at: string | null
+          id: string
+          input_key: string
+          kind: Database["public"]["Enums"]["media_job_kind"]
+          lecture_id: string | null
+          live_session_id: string | null
+          not_before: string
+          output_key: string | null
+          progress: number
+          publish_on_done: boolean
+          started_at: string | null
+          status: Database["public"]["Enums"]["media_job_status"]
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          finished_at?: string | null
+          heartbeat_at?: string | null
+          id?: string
+          input_key: string
+          kind: Database["public"]["Enums"]["media_job_kind"]
+          lecture_id?: string | null
+          live_session_id?: string | null
+          not_before?: string
+          output_key?: string | null
+          progress?: number
+          publish_on_done?: boolean
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["media_job_status"]
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          finished_at?: string | null
+          heartbeat_at?: string | null
+          id?: string
+          input_key?: string
+          kind?: Database["public"]["Enums"]["media_job_kind"]
+          lecture_id?: string | null
+          live_session_id?: string | null
+          not_before?: string
+          output_key?: string | null
+          progress?: number
+          publish_on_done?: boolean
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["media_job_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_jobs_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "lectures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_prefs: {
         Row: {
           enabled: boolean
@@ -1659,7 +1727,40 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      claim_media_job: {
+        Args: {
+          p_kinds?: Database["public"]["Enums"]["media_job_kind"][]
+        }
+        Returns: {
+          attempts: number
+          created_at: string
+          created_by: string | null
+          error: string | null
+          finished_at: string | null
+          heartbeat_at: string | null
+          id: string
+          input_key: string
+          kind: Database["public"]["Enums"]["media_job_kind"]
+          lecture_id: string | null
+          live_session_id: string | null
+          not_before: string
+          output_key: string | null
+          progress: number
+          publish_on_done: boolean
+          started_at: string | null
+          status: Database["public"]["Enums"]["media_job_status"]
+        }[]
+      }
       clamp_client_day: { Args: { p_day: string }; Returns: string }
+      complete_lecture_transcode: {
+        Args: {
+          p_duration_sec: number | null
+          p_job: string
+          p_output_key: string
+          p_size_bytes: number | null
+        }
+        Returns: undefined
+      }
       contains_blocked_word: { Args: { p_text: string }; Returns: boolean }
       create_broadcast: {
         Args: {
@@ -1694,6 +1795,14 @@ export type Database = {
       dispatch_streak_reminders: { Args: never; Returns: undefined }
       dispatch_weekly_goal_nudges: { Args: never; Returns: undefined }
       encouragement_phrase: { Args: { p_key: string }; Returns: string }
+      enqueue_lecture_transcode: {
+        Args: {
+          p_input_key: string
+          p_lecture: string
+          p_publish_on_done?: boolean
+        }
+        Returns: string
+      }
       export_sequences: {
         Args: never
         Returns: {
@@ -1714,6 +1823,10 @@ export type Database = {
           row_count: number
           table_name: string
         }[]
+      }
+      fail_media_job: {
+        Args: { p_error: string; p_job: string }
+        Returns: string
       }
       fanout_to_all: {
         Args: {
@@ -2373,6 +2486,10 @@ export type Database = {
         Returns: undefined
       }
       touch_last_opened: { Args: never; Returns: undefined }
+      touch_media_job: {
+        Args: { p_job: string; p_progress: number | null }
+        Returns: boolean
+      }
       try_claim_celebration: { Args: { p_key: string }; Returns: boolean }
       try_claim_goal_congrats: { Args: { p_today?: string }; Returns: boolean }
       update_bookmark_note: {
@@ -2427,6 +2544,8 @@ export type Database = {
       backup_op_type: "backup" | "restore"
       goal_metric: "lectures" | "minutes"
       lecture_status: "draft" | "published"
+      media_job_kind: "lecture_transcode" | "live_recording"
+      media_job_status: "queued" | "running" | "done" | "failed"
       notification_type:
         | "new_lecture"
         | "new_attachment"
@@ -2597,6 +2716,8 @@ export const Constants = {
       backup_op_type: ["backup", "restore"],
       goal_metric: ["lectures", "minutes"],
       lecture_status: ["draft", "published"],
+      media_job_kind: ["lecture_transcode", "live_recording"],
+      media_job_status: ["queued", "running", "done", "failed"],
       notification_type: [
         "new_lecture",
         "new_attachment",

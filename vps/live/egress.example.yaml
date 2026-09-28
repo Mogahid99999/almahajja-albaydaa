@@ -1,0 +1,15 @@
+# Template for /opt/almahajja-live/egress.yaml (mode 600 — it holds the internal API secret).
+# Storage is NOT configured here: each StartRoomCompositeEgress request (live-control) carries
+# its own environment's R2 bucket + credentials.
+api_key: almahajja_int
+api_secret: <LIVEKIT internal secret>
+ws_url: ws://almahajja-livekit:7880
+redis:
+  address: almahajja-lk-redis:6379
+health_port: 8081
+log_level: info
+# Egress admits a job only if it believes enough CPU is free; audio-only recordings are cheap,
+# and the container is hard-capped by docker (cpus: 1.5), so admit on a small budget.
+cpu_cost:
+  room_composite_cpu_cost: 1.0
+  audio_room_composite_cpu_cost: 0.5

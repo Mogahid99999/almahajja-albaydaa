@@ -30,6 +30,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { RAW_MAX_BYTES, RawUploadAbortedError, RawUploadError } from '@/api/mediaJobs';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { AttachmentManager } from '@/components/admin/AttachmentManager';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
@@ -37,7 +38,16 @@ import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows, spacing } from '@/constants/theme';
+import type { AppLectureStatus } from '@/config';
 import { useCreateLecture, useNextLectureOrder, useSheikhs } from '@/hooks/useAdmin';
+import {
+  useCreateServerTranscodeLecture,
+  useDiscardRawUpload,
+  useMediaJob,
+  useRetryLectureTranscode,
+  useServerTranscodeFlag,
+  useUploadRawLecture,
+} from '@/hooks/useMediaJob';
 import {
   isAudioFile,
   transcodeToMp3,
@@ -56,7 +66,50 @@ type PickedAudio = {
   name: string;
   mimeType?: string | null;
   size: number | null;
+  /** Web only: the picked File itself — server mode PUTs it without buffering. */
+  blob?: Blob | null;
 };
+
+/**
+ * Server-side compression (V23 §6.1, app_config `server_transcode`): the
+ * ORIGINAL file is uploaded to `incoming/` as soon as it is picked; on save the
+ * lecture is created as a draft with no audio and the media worker compresses
+ * it. Tracks that original upload.
+ */
+type RawUploadState = {
+  state: 'idle' | 'uploading' | 'done' | 'error';
+  progress: number;
+  key: string | null;
+  error: string | null;
+};
+const RAW_IDLE: RawUploadState = { state: 'idle', progress: 0, key: null, error: null };
+
+/** The server compression job being followed after a save (server mode). */
+type ServerJobTrack = {
+  jobId: string;
+  lectureId: string;
+  inputKey: string;
+  title: string;
+  /** Where the lecture ends up once its audio is ready (for the success copy). */
+  intent: AppLectureStatus;
+  notify: boolean;
+  /**
+   * «نشر» with a section → `p_publish_on_done`: the SERVER publishes it when
+   * the job completes (complete_lecture_transcode), tab open or not.
+   */
+  publishOnDone: boolean;
+};
+
+/** The normal post-save banner copy for a saved lecture. */
+function savedMessage(status: AppLectureStatus, notify: boolean): string {
+  return status === 'published'
+    ? notify
+      ? 'تم نشر المحاضرة بنجاح وستظهر للطلاب.'
+      : 'تم نشر المحاضرة بنجاح وستظهر للطلاب دون إرسال إشعار.'
+    : status === 'unclassified'
+      ? 'تم حفظ المحاضرة في قائمة الواردة (بدون قسم). صنّفها لاحقاً لنشرها.'
+      : 'تم حفظ المحاضرة كمسودة. انشرها من شاشة المحاضرات.';
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -79,6 +132,90 @@ function FieldLabel({ children }: { children: string }) {
   );
 }
 
+/**
+ * Progress of the server-side compression of a saved lecture (V23 §6.1). The
+ * job keeps running on the server if the admin leaves — this card only follows it.
+ */
+function ServerJobCard({
+  title,
+  status,
+  progress,
+  publishOnDone,
+  retrying,
+  onRetry,
+  onDismiss,
+}: {
+  title: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  progress: number;
+  publishOnDone: boolean;
+  retrying: boolean;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
+  if (status === 'failed') {
+    return (
+      <View style={[styles.serverJobCard, styles.serverJobCardFailed]}>
+        <View style={styles.serverJobHeader}>
+          <Feather name="alert-triangle" size={16} color={colors.stateDanger} />
+          <Txt size={13.5} weight="semibold" color={colors.stateDanger} style={{ flex: 1, marginRight: 8 }}>
+            تعذّر ضغط الملف على الخادم
+          </Txt>
+          <Pressable onPress={onDismiss} accessibilityLabel="إغلاق">
+            <Feather name="x" size={14} color={colors.textMuted} />
+          </Pressable>
+        </View>
+        <Txt size={12} color={colors.textInk} style={{ marginTop: 6 }} numberOfLines={1}>
+          {title}
+        </Txt>
+        <Txt size={12} color={colors.textMuted} style={{ marginTop: 4, lineHeight: 20 }}>
+          المحاضرة محفوظة كمسودة بلا صوت. أعد المحاولة، وإن تكرّر ذلك فتأكّد من سلامة الملف، ثم احذف المسودة من شاشة المحاضرات وارفعه من جديد.
+        </Txt>
+        <Pressable
+          onPress={onRetry}
+          disabled={retrying}
+          style={({ pressed }) => [styles.retryBtn, { marginTop: 8 }, (pressed || retrying) && { opacity: 0.6 }]}
+          accessibilityRole="button"
+        >
+          <Feather name="refresh-cw" size={12} color={colors.primaryTeal} />
+          <Txt size={12} weight="semibold" color={colors.primaryTeal} style={{ marginRight: 6 }}>
+            إعادة المحاولة
+          </Txt>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+  return (
+    <View style={styles.serverJobCard}>
+      <View style={styles.serverJobHeader}>
+        <Feather name="loader" size={16} color={colors.primaryTeal} />
+        <Txt size={13.5} weight="semibold" color={colors.primaryTeal} style={{ flex: 1, marginRight: 8 }}>
+          جارٍ الضغط على الخادم
+        </Txt>
+        <Txt size={12} color={colors.textMuted} tabular>
+          {status === 'queued' ? 'في قائمة الانتظار' : `${toArabicDigits(pct)}٪`}
+        </Txt>
+      </View>
+      <Txt size={12} color={colors.textInk} style={{ marginTop: 6 }} numberOfLines={1}>
+        {title}
+      </Txt>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${Math.max(4, pct)}%` }]} />
+      </View>
+      <Txt size={11.5} color={colors.textMuted} style={{ marginTop: 8, lineHeight: 19 }}>
+        يمكنك مغادرة الصفحة، سيكتمل الضغط على الخادم.
+      </Txt>
+      {publishOnDone ? (
+        <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 2, lineHeight: 19 }}>
+          ستُنشر المحاضرة تلقائيًا بعد اكتمال الضغط على الخادم.
+        </Txt>
+      ) : null}
+    </View>
+  );
+}
+
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function UploadScreen() {
@@ -91,6 +228,28 @@ export default function UploadScreen() {
 
   const { data: sheikhs = [] } = useSheikhs();
   const createLecture = useCreateLecture();
+
+  // Server-side compression (V23 §6.1) — web only, behind app_config
+  // `server_transcode`. While off (or still loading), everything below runs the
+  // original in-browser ffmpeg.wasm path unchanged.
+  const { data: serverTranscodeOn } = useServerTranscodeFlag();
+  const serverMode = isWeb && serverTranscodeOn === true;
+  const uploadRaw = useUploadRawLecture();
+  const createServerLecture = useCreateServerTranscodeLecture();
+  const retryTranscode = useRetryLectureTranscode();
+  const discardRaw = useDiscardRawUpload();
+  // Which path the CURRENT picked file uses — fixed at pick time so a flag flip
+  // mid-form can't mix the two.
+  const [audioMode, setAudioMode] = useState<'browser' | 'server'>('browser');
+  const [raw, setRaw] = useState<RawUploadState>(RAW_IDLE);
+  const rawAbortRef = useRef<AbortController | null>(null);
+  // An original that finished uploading but hasn't been saved into a lecture yet
+  // — discarded from R2 if the admin removes/re-picks the file.
+  const unsubmittedRawKeyRef = useRef<string | null>(null);
+  const [serverJob, setServerJob] = useState<ServerJobTrack | null>(null);
+  const [serverSaveError, setServerSaveError] = useState<string | null>(null);
+  const { data: job } = useMediaJob(serverJob?.jobId ?? null);
+  const handledJobRef = useRef<string | null>(null);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -142,21 +301,30 @@ export default function UploadScreen() {
   }, [sectionId, nextOrder]);
 
   const converting = convert.state === 'converting';
-  const busy = createLecture.isPending || converting;
+  const uploadingRaw = raw.state === 'uploading';
+  const busy = createLecture.isPending || createServerLecture.isPending || converting || uploadingRaw;
   // Web only: a picked file must finish compressing before it can be saved. On
   // native there's no compression step, so nothing blocks submit but the upload
-  // itself (createLecture.isPending) — see Issue 6.
-  const audioBlocksSubmit = isWeb && audioFile != null && convert.state !== 'done';
+  // itself (createLecture.isPending) — see Issue 6. Server mode: the original
+  // must finish uploading instead.
+  const audioBlocksSubmit =
+    isWeb &&
+    audioFile != null &&
+    (audioMode === 'server' ? raw.state !== 'done' : convert.state !== 'done');
 
   const submitLabel = createLecture.isPending
     ? 'جارٍ الرفع...'
-    : converting
-      ? 'جارٍ ضغط الصوت...'
-      : !sectionId
-        ? 'حفظ في الواردة'
-        : publishStatus === 'published'
-          ? 'نشر المحاضرة'
-          : 'حفظ كمسودة';
+    : createServerLecture.isPending
+      ? 'جارٍ الحفظ...'
+      : converting
+        ? 'جارٍ ضغط الصوت...'
+        : uploadingRaw
+          ? 'جارٍ رفع الملف الأصلي...'
+          : !sectionId
+            ? 'حفظ في الواردة'
+            : publishStatus === 'published'
+              ? 'نشر المحاضرة'
+              : 'حفظ كمسودة';
 
   /** Kick off the in-browser MP3 compression; supersedes any earlier job. */
   function startConversion(picked: PickedAudio) {
@@ -196,22 +364,97 @@ export default function UploadScreen() {
     );
   }
 
+  /** Abort an in-flight original upload and discard an uploaded-but-unsaved one. */
+  function dropRaw() {
+    rawAbortRef.current?.abort();
+    rawAbortRef.current = null;
+    if (unsubmittedRawKeyRef.current) {
+      discardRaw(unsubmittedRawKeyRef.current);
+      unsubmittedRawKeyRef.current = null;
+    }
+    setRaw(RAW_IDLE);
+  }
+
+  /**
+   * Server mode: PUT the ORIGINAL file to `incoming/` right away (XHR progress,
+   * streamed from disk) while the admin fills the form; supersedes any earlier
+   * pick. No in-browser compression runs.
+   */
+  function startRawUpload(picked: PickedAudio) {
+    const job = ++jobRef.current;
+    dropRaw();
+    setConvert((prev) => {
+      if (prev.result) URL.revokeObjectURL(prev.result.uri);
+      return { state: 'idle', progress: 0, result: null, error: null };
+    });
+    const ctrl = new AbortController();
+    rawAbortRef.current = ctrl;
+    setRaw({ state: 'uploading', progress: 0, key: null, error: null });
+    uploadRaw
+      .mutateAsync({
+        file: picked.blob ?? null,
+        uri: picked.uri,
+        name: picked.name,
+        mimeType: picked.mimeType,
+        signal: ctrl.signal,
+        onProgress: (r) =>
+          setRaw((p) =>
+            jobRef.current === job && p.state === 'uploading' ? { ...p, progress: r } : p,
+          ),
+      })
+      .then(
+        ({ key }) => {
+          if (jobRef.current !== job) {
+            discardRaw(key); // superseded — drop the orphan
+            return;
+          }
+          unsubmittedRawKeyRef.current = key;
+          setRaw({ state: 'done', progress: 1, key, error: null });
+        },
+        (err) => {
+          if (jobRef.current !== job || err instanceof RawUploadAbortedError) return;
+          setRaw({
+            state: 'error',
+            progress: 0,
+            key: null,
+            error:
+              err instanceof RawUploadError ? err.message : 'تعذّر رفع الملف الأصلي. أعد المحاولة.',
+          });
+        },
+      );
+  }
+
+  // Leaving the page before saving: stop an in-flight original upload and drop
+  // an uploaded-but-unsaved one (nothing references it). A SAVED lecture's
+  // original belongs to its server job and is left alone.
+  useEffect(
+    () => () => {
+      rawAbortRef.current?.abort();
+      if (unsubmittedRawKeyRef.current) discardRaw(unsubmittedRawKeyRef.current);
+    },
+    [discardRaw],
+  );
+
   async function handlePickAudio() {
+    // Server compression is web-only + flagged; the path is fixed for this pick.
+    const server = serverMode;
     // getDocumentAsync is platform-resolved (src/lib/documentPicker): a static
     // import on web (no fragile async chunk) and a lazy require on native (so the
     // student app never resolves the native module at startup).
     const res = await getDocumentAsync({
-      type: 'audio/*',
+      // Server mode also takes an MP4 video — the worker extracts its audio track.
+      type: server ? ['audio/*', 'video/mp4'] : 'audio/*',
       copyToCacheDirectory: true,
       multiple: false,
     });
     if (res.canceled) return;
     const asset = res.assets[0];
     // Audio MIME validation — reject anything that isn't a sound file.
-    if (!isAudioFile(asset.mimeType, asset.name)) {
+    if (!isAudioFile(asset.mimeType, asset.name) && !(server && asset.mimeType === 'video/mp4')) {
       setAudioFile(null);
       setAudioDuration(null);
       jobRef.current++;
+      dropRaw();
       setConvert({
         state: 'error',
         progress: 0,
@@ -237,24 +480,47 @@ export default function UploadScreen() {
       });
       return;
     }
+    // Server mode: the original is uploaded as-is, so bound it client-side too
+    // (r2-upload-url enforces the same 2 GB in the signature).
+    if (server && asset.size != null && asset.size > RAW_MAX_BYTES) {
+      setAudioFile(null);
+      setAudioDuration(null);
+      jobRef.current++;
+      dropRaw();
+      setConvert({
+        state: 'error',
+        progress: 0,
+        result: null,
+        error: 'حجم الملف أكبر من ٢ غيغابايت. اختر ملفًا أصغر.',
+      });
+      return;
+    }
     const picked: PickedAudio = {
       uri: asset.uri,
       name: asset.name,
       mimeType: asset.mimeType,
       size: asset.size ?? null,
+      blob: asset.file ?? null,
     };
     setAudioFile(picked);
     setAudioDuration(null);
+    setAudioMode(server ? 'server' : 'browser');
     // Pull the duration from metadata so duration_sec is set on insert.
     void extractAudioDuration(asset.uri).then(setAudioDuration);
+    if (server) {
+      startRawUpload(picked);
+      return;
+    }
+    dropRaw();
     // Compress in the background while the admin fills the rest of the form —
     // web only; on native the original file is uploaded as-is (Issue 6).
     if (isWeb) startConversion(picked);
   }
 
-  /** Remove the picked audio and cancel any in-flight conversion. */
+  /** Remove the picked audio and cancel any in-flight conversion/upload. */
   function handleRemoveAudio() {
     jobRef.current++;
+    dropRaw();
     setConvert((prev) => {
       if (prev.result) URL.revokeObjectURL(prev.result.uri);
       return { state: 'idle', progress: 0, result: null, error: null };
@@ -277,7 +543,111 @@ export default function UploadScreen() {
     runSubmit();
   }
 
+  /** Clear the form after a save, ready for the next lecture. */
+  function resetForm() {
+    setTitle('');
+    setSectionId(null);
+    setOrder('');
+    // Allow the next section pick to auto-fill الترتيب again.
+    autoOrderSectionRef.current = null;
+    setSheikhId(null);
+    setPublishStatus('draft');
+    setNotifyStudents(true);
+    setAudioFile(null);
+    setAudioDuration(null);
+    jobRef.current++;
+    setConvert((prev) => {
+      if (prev.result) URL.revokeObjectURL(prev.result.uri);
+      return { state: 'idle', progress: 0, result: null, error: null };
+    });
+    // Server mode: the saved original now belongs to its job — never discard it.
+    rawAbortRef.current = null;
+    setRaw(RAW_IDLE);
+  }
+
+  /**
+   * Server mode save: create the lecture as a draft (or «واردة») with no audio
+   * and queue its compression. A «نشر» choice travels with the job
+   * (`p_publish_on_done`) — the server publishes it once the audio is ready, so
+   * a lecture is never published before its audio exists, even if the admin
+   * leaves the page.
+   */
+  function runServerSubmit() {
+    const inputKey = raw.key;
+    if (!inputKey) return;
+    const effectiveStatus: AppLectureStatus = sectionId ? publishStatus : 'unclassified';
+    const lectureTitle = title.trim();
+    const notify = notifyStudents;
+    setServerSaveError(null);
+    createServerLecture.mutate(
+      {
+        title: lectureTitle,
+        sectionId,
+        sheikhId,
+        order: order ? Number(order) : 0,
+        durationSec: audioDuration,
+        notifyOnPublish: notify,
+        publish: effectiveStatus === 'published',
+        inputKey,
+      },
+      {
+        onSuccess: ({ lectureId, jobId, publishOnDone }) => {
+          unsubmittedRawKeyRef.current = null; // owned by the job from here on
+          handledJobRef.current = null;
+          setServerJob({
+            jobId,
+            lectureId,
+            inputKey,
+            title: lectureTitle,
+            intent: effectiveStatus,
+            notify,
+            publishOnDone,
+          });
+          setSuccessMsg('');
+          setCreatedLectureId(lectureId);
+          resetForm();
+        },
+        onError: () =>
+          setServerSaveError('تعذّر حفظ المحاضرة. تحقّق من الاتصال وأعد المحاولة.'),
+        onSettled: () => setConfirmingPublish(false),
+      },
+    );
+  }
+
+  // Server job finished → the normal success state. A «نشر» lecture was
+  // published by the server itself when the job completed (p_publish_on_done).
+  useEffect(() => {
+    if (!serverJob || !job || job.id !== serverJob.jobId) return;
+    if (job.status !== 'done' || handledJobRef.current === job.id) return;
+    handledJobRef.current = job.id;
+    setSuccessMsg(
+      savedMessage(serverJob.publishOnDone ? 'published' : serverJob.intent, serverJob.notify),
+    );
+    setServerJob(null);
+  }, [job, serverJob]);
+
+  /** Re-queue a failed job — the original is kept in `incoming/` on failure. */
+  function handleRetryServerJob() {
+    if (!serverJob) return;
+    const track = serverJob;
+    setServerSaveError(null);
+    retryTranscode.mutate(
+      { lectureId: track.lectureId, inputKey: track.inputKey, publishOnDone: track.publishOnDone },
+      {
+        onSuccess: (jobId) => {
+          handledJobRef.current = null;
+          setServerJob({ ...track, jobId });
+        },
+        onError: () => setServerSaveError('تعذّرت إعادة المحاولة الآن. حاول بعد قليل.'),
+      },
+    );
+  }
+
   function runSubmit() {
+    if (audioMode === 'server' && audioFile) {
+      runServerSubmit();
+      return;
+    }
     // Web: the compressed MP3 is the only thing that goes to storage (the
     // original is never uploaded). Native: no compression — upload the picked
     // file as-is (Issue 6).
@@ -315,31 +685,9 @@ export default function UploadScreen() {
       },
       {
         onSuccess: (created) => {
-          setSuccessMsg(
-            effectiveStatus === 'published'
-              ? notifyStudents
-                ? 'تم نشر المحاضرة بنجاح وستظهر للطلاب.'
-                : 'تم نشر المحاضرة بنجاح وستظهر للطلاب دون إرسال إشعار.'
-              : effectiveStatus === 'unclassified'
-                ? 'تم حفظ المحاضرة في قائمة الواردة (بدون قسم). صنّفها لاحقاً لنشرها.'
-                : 'تم حفظ المحاضرة كمسودة. انشرها من شاشة المحاضرات.',
-          );
+          setSuccessMsg(savedMessage(effectiveStatus, notifyStudents));
           setCreatedLectureId(created.id);
-          setTitle('');
-          setSectionId(null);
-          setOrder('');
-          // Allow the next section pick to auto-fill الترتيب again.
-          autoOrderSectionRef.current = null;
-          setSheikhId(null);
-          setPublishStatus('draft');
-          setNotifyStudents(true);
-          setAudioFile(null);
-          setAudioDuration(null);
-          jobRef.current++;
-          setConvert((prev) => {
-            if (prev.result) URL.revokeObjectURL(prev.result.uri);
-            return { state: 'idle', progress: 0, result: null, error: null };
-          });
+          resetForm();
         },
         onSettled: () => setConfirmingPublish(false),
       },
@@ -352,6 +700,31 @@ export default function UploadScreen() {
     <View style={[styles.grid, narrow && styles.gridNarrow]}>
       {/* ── Left column ── */}
       <View style={styles.leftCol}>
+        {/* Server compression of the last saved lecture (server mode only) */}
+        {serverJob ? (
+          <ServerJobCard
+            title={serverJob.title}
+            status={job?.id === serverJob.jobId ? job.status : 'queued'}
+            progress={job?.id === serverJob.jobId ? job.progress : 0}
+            publishOnDone={serverJob.publishOnDone}
+            retrying={retryTranscode.isPending}
+            onRetry={handleRetryServerJob}
+            onDismiss={() => setServerJob(null)}
+          />
+        ) : null}
+
+        {serverSaveError ? (
+          <View style={styles.audioErrorBanner}>
+            <Feather name="alert-triangle" size={14} color={colors.stateDanger} />
+            <Txt size={12} color={colors.stateDanger} style={{ flex: 1, marginRight: 8 }}>
+              {serverSaveError}
+            </Txt>
+            <Pressable onPress={() => setServerSaveError(null)} accessibilityLabel="إغلاق">
+              <Feather name="x" size={14} color={colors.stateDanger} />
+            </Pressable>
+          </View>
+        ) : null}
+
         {/* Success banner */}
         {successMsg ? (
           <View style={styles.successBanner}>
@@ -384,7 +757,7 @@ export default function UploadScreen() {
           {audioFile ? (
             <View style={styles.audioRow}>
               {/* Waveform tile */}
-              <View style={[styles.waveformTile, converting && { opacity: 0.6 }]}>
+              <View style={[styles.waveformTile, (converting || uploadingRaw) && { opacity: 0.6 }]}>
                 {Array.from({ length: 12 }).map((_, i) => (
                   <View
                     key={i}
@@ -403,7 +776,54 @@ export default function UploadScreen() {
                   {audioFile.name}
                 </Txt>
 
-                {convert.state === 'converting' ? (
+                {audioMode === 'server' ? (
+                  raw.state === 'uploading' ? (
+                    <>
+                      <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
+                        {[
+                          audioFile.size != null ? arFileSize(audioFile.size) : null,
+                          `جارٍ رفع الملف الأصلي ${toArabicDigits(Math.round(raw.progress * 100))}٪`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Txt>
+                      <View style={styles.progressTrack}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            { width: `${Math.max(4, Math.round(raw.progress * 100))}%` },
+                          ]}
+                        />
+                      </View>
+                    </>
+                  ) : raw.state === 'error' ? (
+                    <>
+                      <Txt size={11} color={colors.stateDanger} style={{ marginTop: 3 }}>
+                        {raw.error ?? 'تعذّر رفع الملف الأصلي.'}
+                      </Txt>
+                      <Pressable
+                        onPress={() => startRawUpload(audioFile)}
+                        style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+                        accessibilityRole="button"
+                      >
+                        <Feather name="refresh-cw" size={12} color={colors.primaryTeal} />
+                        <Txt size={11} weight="semibold" color={colors.primaryTeal} style={{ marginRight: 6 }}>
+                          إعادة المحاولة
+                        </Txt>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
+                      {[
+                        audioFile.size != null ? arFileSize(audioFile.size) : null,
+                        audioDuration ? arDuration(audioDuration) : null,
+                        'تم رفع الملف الأصلي — يُضغط على الخادم بعد الحفظ',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Txt>
+                  )
+                ) : convert.state === 'converting' ? (
                   <>
                     <Txt size={11} color={colors.textMuted} style={{ marginTop: 3 }} tabular>
                       {[
@@ -490,7 +910,9 @@ export default function UploadScreen() {
                 </Txt>
                 <Txt size={11} color={colors.textGhost} style={{ marginTop: 3 }}>
                   {isWeb
-                    ? 'أي صيغة صوتية — يُضغط الملف تلقائيًا إلى MP3 خفيف للكلام'
+                    ? serverMode
+                      ? 'أي صيغة صوتية أو فيديو MP4 — يُرفع الملف الأصلي ويُضغط على الخادم'
+                      : 'أي صيغة صوتية — يُضغط الملف تلقائيًا إلى MP3 خفيف للكلام'
                     : 'أي صيغة صوتية — تُرفع كما هي'}
                 </Txt>
               </Pressable>
@@ -731,9 +1153,13 @@ export default function UploadScreen() {
             <Txt weight="semibold" size={13} color={colors.onTealPrimary}>
               {createLecture.isPending
                 ? 'جارٍ الرفع...'
-                : converting
-                  ? 'جارٍ ضغط الصوت...'
-                  : 'حفظ المحاضرة'}
+                : createServerLecture.isPending
+                  ? 'جارٍ الحفظ...'
+                  : converting
+                    ? 'جارٍ ضغط الصوت...'
+                    : uploadingRaw
+                      ? 'جارٍ رفع الملف الأصلي...'
+                      : 'حفظ المحاضرة'}
             </Txt>
           </Pressable>
           <Pressable
@@ -768,7 +1194,7 @@ export default function UploadScreen() {
         }
         confirmLabel="نشر"
         cancelLabel="تراجع"
-        pending={createLecture.isPending}
+        pending={createLecture.isPending || createServerLecture.isPending}
         onConfirm={runSubmit}
         onCancel={() => setConfirmingPublish(false)}
       />
@@ -1097,6 +1523,24 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   tipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  } as ViewStyle,
+
+  serverJobCard: {
+    backgroundColor: colors.bgSandRaised,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderHair,
+    padding: 12,
+  } as ViewStyle,
+
+  serverJobCardFailed: {
+    backgroundColor: 'rgba(193,58,58,0.06)',
+    borderColor: 'rgba(193,58,58,0.18)',
+  } as ViewStyle,
+
+  serverJobHeader: {
     flexDirection: 'row',
     alignItems: 'center',
   } as ViewStyle,
