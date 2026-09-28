@@ -136,7 +136,10 @@ export async function collectTableJsonl(
 
 // Rows per export_table_chunk call (migration 0128; the server caps at 5000).
 // The chunk comes back as ONE row, so PostgREST's max_rows doesn't apply.
-const EXPORT_CHUNK = 5000;
+// 2500, not the 5000 cap: measured on prod over all 436k notifications,
+// 2500-row chunks ran avg 47 ms / max 175 ms per call vs 238 / 1621 ms at
+// 5000 (string_agg cost grows faster than linearly) — far from the 8 s limit.
+const EXPORT_CHUNK = 2500;
 
 export type ExportChunk = { rows: number; next: string | null; jsonl: string };
 
@@ -159,7 +162,7 @@ async function exportTableChunk(table: string, after: string | null): Promise<Ex
 
 /**
  * Same contract as {@link collectTableJsonl} — whole table, ends only on an
- * EMPTY chunk, fails loudly on a stuck cursor — but ~5000 rows per round trip
+ * EMPTY chunk, fails loudly on a stuck cursor — but 2500 rows per round trip
  * instead of 1000. A full backup was ~10 min, dominated by ~1.5 s per call
  * over ~350 notifications pages.
  */
