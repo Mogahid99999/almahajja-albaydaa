@@ -219,6 +219,12 @@ Deno.serve(async (req) => {
   const dead: string[] = [];
   let sent = 0;
   let failed = 0;
+  // Why pushes failed, returned in the response so it lands in
+  // net._http_response (the only log we can query): HTTP status of rejected
+  // chunks, and Expo's per-ticket error codes (MessageRateExceeded, …).
+  const httpErrors: Record<string, number> = {};
+  const ticketErrors: Record<string, number> = {};
+  let errorSample: string | undefined;
   for (let i = 0; i < messages.length; i += EXPO_CHUNK) {
     const chunk = messages.slice(i, i + EXPO_CHUNK);
     try {
@@ -226,21 +232,30 @@ Deno.serve(async (req) => {
       const result = await res.json().catch(() => null);
       if (!res.ok) {
         failed += chunk.length;
+        httpErrors[res.status] = (httpErrors[res.status] ?? 0) + 1;
+        errorSample ??= JSON.stringify(result)?.slice(0, 200);
         console.log(`expo chunk failed (${res.status}):`, JSON.stringify(result)?.slice(0, 300));
         continue;
       }
-      sent += chunk.length;
       // Best-effort cleanup: drop tokens Expo reports as unregistered, so a
       // reinstalled / signed-out device stops receiving (and erroring) forever.
       const tickets = (result?.data ?? []) as Array<
         { status?: string; details?: { error?: string } }
       >;
       tickets.forEach((ticket, j) => {
-        if (ticket?.details?.error === "DeviceNotRegistered" && chunk[j]) dead.push(chunk[j].to);
+        if (ticket?.status === "error") {
+          const code = ticket.details?.error ?? "unknown";
+          ticketErrors[code] = (ticketErrors[code] ?? 0) + 1;
+          if (code === "DeviceNotRegistered" && chunk[j]) dead.push(chunk[j].to);
+        } else {
+          sent += 1;
+        }
       });
     } catch (e) {
       // One bad chunk must not abandon the rest of the batch.
       failed += chunk.length;
+      httpErrors.throw = (httpErrors.throw ?? 0) + 1;
+      errorSample ??= String(e).slice(0, 200);
       console.log("expo chunk threw (non-blocking):", e);
     }
   }
@@ -252,7 +267,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ rows: rows.length, sent, failed, pruned: dead.length }, 200);
+  return json({ rows: rows.length, sent, failed, pruned: dead.length, httpErrors, ticketErrors, errorSample }, 200);
 });
 
 /**
@@ -317,12 +332,12 @@ function json(body: unknown, status: number): Response {
 /**
  * POST one chunk to Expo, retrying a rate-limit (429) or server error (5xx) /
  * network throw with backoff (1 s, 2 s, 4 s + jitter). 0130 fans a 10k send
- * out as ~106 parallel calls of 100, which can burst past Expo's ~600
- * pushes/s per project; a 429 used to drop that chunk for good. Worst case
- * ~8 s of waiting — well inside the trigger's 60 s pg_net timeout.
+ * out in 100-id calls (paced by 0131's push queue), which can still brush
+ * Expo's ~600 pushes/s per project; a 429 used to drop that chunk for good.
+ * Worst case ~17 s of waiting — well inside the 60 s pg_net timeout.
  */
 async function postToExpo(chunk: ExpoMessage[]): Promise<Response> {
-  const delays = [1000, 2000, 4000];
+  const delays = [2000, 4000, 8000];
   for (let attempt = 0; ; attempt++) {
     try {
       const res = await fetch(EXPO_PUSH_URL, {
@@ -340,7 +355,7 @@ async function postToExpo(chunk: ExpoMessage[]): Promise<Response> {
     } catch (e) {
       if (attempt >= delays.length) throw e;
     }
-    await new Promise((r) => setTimeout(r, delays[attempt] + Math.floor(Math.random() * 500)));
+    await new Promise((r) => setTimeout(r, delays[attempt] + Math.floor(Math.random() * 1000)));
   }
 }
 
