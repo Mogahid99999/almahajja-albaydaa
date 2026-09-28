@@ -39,6 +39,7 @@ import {
   useSetQuestionHidden,
 } from '@/hooks/useQuestions';
 import { arNum, arSince } from '@/lib/format';
+import { staffErrorText } from '@/lib/errorText';
 
 type ScopeFilter = 'all' | QuestionScope;
 
@@ -94,7 +95,7 @@ function QuestionCard({
     setError('');
     revealAuthor.mutate(q.id, {
       onSuccess: (name) => setRevealedName(name ?? 'لم يترك اسماً'),
-      onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر كشف الاسم'),
+      onError: (e) => setError(staffErrorText(e, 'تعذّر كشف الاسم')),
     });
   };
 
@@ -230,7 +231,7 @@ function QuestionCard({
             onPress={() =>
               setHidden.mutate(
                 { questionId: q.id, hidden: !isHidden },
-                { onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر تغيير الحالة') },
+                { onError: (e) => setError(staffErrorText(e, 'تعذّر تغيير الحالة')) },
               )
             }
             disabled={setHidden.isPending}
@@ -248,7 +249,7 @@ function QuestionCard({
             onPress={() =>
               setAudience.mutate(
                 { questionId: q.id, audience: q.audience === 'sheikh' ? 'public' : 'sheikh' },
-                { onError: (e) => setError(e instanceof Error ? e.message : 'تعذّر تغيير الظهور') },
+                { onError: (e) => setError(staffErrorText(e, 'تعذّر تغيير الظهور')) },
               )
             }
             disabled={setAudience.isPending}

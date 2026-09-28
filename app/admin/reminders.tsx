@@ -43,6 +43,7 @@ import {
 } from '@/hooks/useBroadcasts';
 import { getDocumentAsync } from '@/lib/documentPicker';
 import { arNum } from '@/lib/format';
+import { staffErrorText } from '@/lib/errorText';
 
 /** "٤ تموز ٢٠٢٦" style short Arabic date for the list rows. */
 function shortDate(iso: string): string {
@@ -279,7 +280,7 @@ export default function RemindersScreen() {
             setNotice('حُفظ التعديل.');
             resetForm();
           },
-          onError: (err) => setError(err instanceof Error ? err.message : 'تعذّر الحفظ.'),
+          onError: (err) => setError(staffErrorText(err, 'تعذّر الحفظ.')),
         },
       );
     } else {
@@ -337,7 +338,7 @@ export default function RemindersScreen() {
         setNotice(`أُرسل التذكير إلى: ${summary}.`);
         resetForm();
       },
-      onError: (err) => setError(err instanceof Error ? err.message : 'تعذّر الإرسال.'),
+      onError: (err) => setError(staffErrorText(err, 'تعذّر الإرسال.')),
       onSettled: () => setConfirmingSend(false),
     });
   }

@@ -25,6 +25,7 @@ import {
 } from '@/hooks/useAdmin';
 import { getDocumentAsync } from '@/lib/documentPicker';
 import { arNum } from '@/lib/format';
+import { staffErrorText } from '@/lib/errorText';
 
 function SheikhRow({
   sheikh,
@@ -169,7 +170,7 @@ function SheikhAccountCard() {
           setPassword('');
         },
         onError: (err) =>
-          setError(err instanceof Error ? err.message : 'تعذّر إنشاء الحساب.'),
+          setError(staffErrorText(err, 'تعذّر إنشاء الحساب.')),
       },
     );
   }

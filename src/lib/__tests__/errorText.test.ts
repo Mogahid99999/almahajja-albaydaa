@@ -3,7 +3,7 @@
  * the two seams that keep raw English server errors off Arabic-first screens.
  */
 import { arabicAuthError } from '../authErrors';
-import { arabicOr } from '../errorText';
+import { arabicOr, staffErrorText } from '../errorText';
 
 describe('arabicOr', () => {
   const FALLBACK = 'تعذّر الاتصال';
@@ -81,5 +81,25 @@ describe('arabicAuthError', () => {
     const out = arabicAuthError(new Error('Some brand new GoTrue error'));
     expect(out).toBe('تعذّر إتمام العملية، حاول مرة أخرى.');
     expect(arabicAuthError(undefined)).toBe('تعذّر إتمام العملية، حاول مرة أخرى.');
+  });
+});
+
+describe('staffErrorText (admin screens)', () => {
+  test('a server Arabic reason is shown as-is', () => {
+    expect(staffErrorText({ message: 'غير مسموح' }, 'تعذّر الإرسال.')).toBe('غير مسموح');
+  });
+
+  test('the 0129 regression: a non-Arabic server reason is kept after the Arabic fallback, not hidden', () => {
+    // postgrest-js returns plain objects, so `instanceof Error` used to drop this entirely
+    expect(
+      staffErrorText(
+        { code: '57014', message: 'canceling statement due to statement timeout' },
+        'تعذّر الإرسال.',
+      ),
+    ).toBe('تعذّر الإرسال. (canceling statement due to statement timeout)');
+  });
+
+  test('no message at all → just the fallback', () => {
+    expect(staffErrorText(null, 'تعذّر الإرسال.')).toBe('تعذّر الإرسال.');
   });
 });

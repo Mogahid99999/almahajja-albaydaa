@@ -27,3 +27,24 @@ export function arabicOr(err: unknown, fallback: string): string {
           : '';
   return /[؀-ۿ]/.test(msg) ? msg : fallback;
 }
+
+/**
+ * Staff screens (admin web / sheikh): like {@link arabicOr}, but when the
+ * server's reason isn't Arabic, append it in parentheses after the Arabic
+ * fallback instead of dropping it — «تعذّر الإرسال.» alone hid a statement
+ * timeout for a month (0129). Students never see this; staff need the detail
+ * to report or diagnose a failure.
+ */
+export function staffErrorText(err: unknown, fallback: string): string {
+  const arabic = arabicOr(err, '');
+  if (arabic) return arabic;
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof (err as { message?: unknown } | null)?.message === 'string'
+        ? (err as { message: string }).message
+        : typeof err === 'string'
+          ? err
+          : '';
+  return raw.trim() ? `${fallback} (${raw.trim()})` : fallback;
+}
