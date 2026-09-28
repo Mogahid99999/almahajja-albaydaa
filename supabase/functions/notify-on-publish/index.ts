@@ -222,15 +222,7 @@ Deno.serve(async (req) => {
   for (let i = 0; i < messages.length; i += EXPO_CHUNK) {
     const chunk = messages.slice(i, i + EXPO_CHUNK);
     try {
-      const res = await fetch(EXPO_PUSH_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "Accept-Encoding": "gzip, deflate",
-        },
-        body: JSON.stringify(chunk),
-      });
+      const res = await postToExpo(chunk);
       const result = await res.json().catch(() => null);
       if (!res.ok) {
         failed += chunk.length;
@@ -320,6 +312,36 @@ function json(body: unknown, status: number): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/**
+ * POST one chunk to Expo, retrying a rate-limit (429) or server error (5xx) /
+ * network throw with backoff (1 s, 2 s, 4 s + jitter). 0130 fans a 10k send
+ * out as ~106 parallel calls of 100, which can burst past Expo's ~600
+ * pushes/s per project; a 429 used to drop that chunk for good. Worst case
+ * ~8 s of waiting — well inside the trigger's 60 s pg_net timeout.
+ */
+async function postToExpo(chunk: ExpoMessage[]): Promise<Response> {
+  const delays = [1000, 2000, 4000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(EXPO_PUSH_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "Accept-Encoding": "gzip, deflate",
+        },
+        body: JSON.stringify(chunk),
+      });
+      const retryable = res.status === 429 || res.status >= 500;
+      if (!retryable || attempt >= delays.length) return res;
+      await res.body?.cancel().catch(() => {});
+    } catch (e) {
+      if (attempt >= delays.length) throw e;
+    }
+    await new Promise((r) => setTimeout(r, delays[attempt] + Math.floor(Math.random() * 500)));
+  }
 }
 
 /**
