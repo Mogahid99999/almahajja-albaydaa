@@ -63,3 +63,21 @@ tar -C vps/live -cf - docker-compose.yml livekit.yaml | ssh root@161.97.135.4 't
 ssh root@161.97.135.4 'cd /opt/almahajja-live && docker compose up -d'
 ```
 Logs: `docker logs almahajja-livekit` (also `-egress`, `-media-worker-stg`).
+
+## P7 (2026-09-29): recordings survive an egress crash
+
+- Egress wipes its tmp dir (`/home/egress/tmp`) every time it starts. The dir is
+  now on the host (`recordings/egress-tmp`, owner 1001:1000, 2775), and
+  `almahajja-egress-guard` (alpine, `network_mode: none`) hard-links every
+  in-progress `EG_*/…ogg` into `recordings/egress-guard/` every 2 s — the same
+  inode keeps growing with the recording and survives the wipe. Links older than
+  24 h are dropped. Script: `egress-guard.sh`.
+- Both media workers mount `recordings/egress-guard` at `/egress-tmp`
+  (`EGRESS_TMP_DIR`) and reach LiveKit at `LIVEKIT_API_URL`; their
+  recordingGuard recovers the partial, calls live-control `resume_recording`
+  and concatenates the parts (0146).
+- Drill (staging): SIGKILL on the egress process mid-session → Docker restarted
+  it (tmp wiped) → partial recovered from the guard, recording resumed ~60 s
+  later, one 170 s lecture from 2 parts.
+- LiveKit capacity raised to 3 cores / 2 GiB (load test: 300 listeners × 4
+  speakers hit the 2-core cap).

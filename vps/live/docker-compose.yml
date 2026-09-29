@@ -23,8 +23,8 @@ services:
       - "7881:7881/tcp"   # ICE/TCP fallback (UDP-blocked networks)
       - "7882:7882/udp"   # single-port UDP mux for all media
     # P0 load test: 1 speaker + 200 listeners = 1.2–1.7 cores, ~470 MB. 1 core throttled 99 %.
-    cpus: 2.0
-    mem_limit: 1280m
+    cpus: 3.0
+    mem_limit: 2048m
     cpu_shares: 512       # LIMS (default 1024) wins under contention
     networks: [almahajja_net]
     depends_on: [almahajja-lk-redis]
@@ -47,6 +47,7 @@ services:
       - ./egress.yaml:/etc/egress.yaml:ro
       # Owner rule: a live recording is never lost — raws land on this disk first (PLAN §1.1 #12).
       - ./recordings:/recordings
+      - ./recordings/egress-tmp:/home/egress/tmp   # P7: in-progress files on the host
     cap_add: [SYS_ADMIN]
     # Audio-only room composite runs egress's SDK pipeline (no Chrome):
     # P0 10-min recording = 16–29 % of a core, ~65 MB.
@@ -55,6 +56,20 @@ services:
     cpu_shares: 512
     networks: [almahajja_net]
     depends_on: [almahajja-livekit, almahajja-lk-redis]
+
+  # P7: keeps egress partials alive across an egress restart (egress-guard.sh).
+  almahajja-egress-guard:
+    image: alpine:3.20.3
+    container_name: almahajja-egress-guard
+    restart: unless-stopped
+    network_mode: none
+    volumes:
+      - ./recordings:/rec
+      - ./egress-guard.sh:/egress-guard.sh:ro
+    command: ["sh", "/egress-guard.sh"]
+    cpus: 0.1
+    mem_limit: 32m
+    cpu_shares: 128
 
   # Media worker (vps/media-worker): lecture transcodes + live recordings, staging env.
   # Build: docker build -t almahajja-media-worker:<tag> /opt/almahajja-live/media-worker
@@ -65,8 +80,10 @@ services:
     env_file: ./secrets/worker-stg.env
     environment:
       RECORDINGS_DIR: /recordings/stg
+      LIVEKIT_API_URL: http://almahajja-livekit:7880
     volumes:
       - ./work/stg:/tmp/media-worker     # temp input/output (originals up to 2 GB)
+      - ./recordings/egress-guard:/egress-tmp   # P7: egress partials (egress-guard)
       - ./recordings/stg:/recordings/stg # this env's live raws only
     cpus: 1.0
     mem_limit: 512m
@@ -81,9 +98,11 @@ services:
     env_file: ./secrets/worker-prd.env
     environment:
       RECORDINGS_DIR: /recordings/prd
+      LIVEKIT_API_URL: http://almahajja-livekit:7880
     volumes:
       - ./work/prd:/tmp/media-worker
       - ./recordings/prd:/recordings/prd
+      - ./recordings/egress-guard:/egress-tmp   # P7: egress partials (egress-guard)
     cpus: 1.0
     mem_limit: 512m
     cpu_shares: 256
