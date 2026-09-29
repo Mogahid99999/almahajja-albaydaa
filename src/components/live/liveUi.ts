@@ -457,3 +457,110 @@ export function meterBars(level: number, bars: number): number {
   const l = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
   return Math.round(l * bars);
 }
+
+// ─── P5: share links, native intents, buddy invite (PLAN_LIVE_V23 §9, §15) ───
+
+/** D8: public share links live on go.almahajja.app (App Links / Universal Links + fallback page). */
+export const LIVE_SHARE_HOST = 'go.almahajja.app';
+
+/** «https://go.almahajja.app/live/{share_code}» (D8). */
+export function liveShareLink(shareCode: string): string {
+  return `https://${LIVE_SHARE_HOST}/live/${encodeURIComponent(shareCode.trim())}`;
+}
+
+/**
+ * §9.3 share message: «يُبث الآن: {title} · {session}، مع {sheikh}.\nاستمع في
+ * المحجّة البيضاء:\n{link}». A missing section / sheikh drops its part only.
+ */
+export function liveShareMessage(
+  s: { title: string; sectionTitle?: string | null; sheikhName?: string | null },
+  link: string,
+): string {
+  const section = s.sectionTitle?.trim() ? ` · ${s.sectionTitle.trim()}` : '';
+  const sheikh = s.sheikhName?.trim() ? `، مع ${s.sheikhName.trim()}` : '';
+  return `يُبث الآن: ${s.title.trim()}${section}${sheikh}.\nاستمع في المحجّة البيضاء:\n${link}`;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SHARE_CODE_CHARS_RE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
+/** Segments under /live that are routes, not share codes. */
+const LIVE_RESERVED = new Set(['code', 'green']);
+/**
+ * A single segment right under /live, from the App/Universal Link
+ * (https://go.almahajja.app/live/X), our scheme (riwaqalilm://live/X,
+ * riwaqalilm:///live/X) or a bare path (/live/X). Query / hash / one trailing
+ * slash are ignored.
+ */
+const LIVE_ONE_SEGMENT_RE =
+  /^(?:https?:\/\/go\.almahajja\.app\/|riwaqalilm:\/\/\/?|\/)live\/([^/?#]+)\/?(?:[?#].*)?$/i;
+
+/**
+ * expo-router `redirectSystemPath` (app/+native-intent.tsx): the public URL is
+ * /live/{code} but the app route for a code is /live/code/[code]. Maps
+ * https://go.almahajja.app/live/<code> and riwaqalilm://live/<non-uuid> to
+ * «/live/code/<code>»; everything else — /live/<uuid>, /live/green/<uuid>,
+ * /live/code/<code>, other hosts and paths — comes back unchanged. Never throws.
+ */
+export function liveSystemPath(path: string): string {
+  if (typeof path !== 'string') return path;
+  const m = LIVE_ONE_SEGMENT_RE.exec(path.trim());
+  if (!m) return path;
+  let seg: string;
+  try {
+    seg = decodeURIComponent(m[1]).trim();
+  } catch {
+    return path;
+  }
+  if (!seg || UUID_RE.test(seg) || LIVE_RESERVED.has(seg.toLowerCase())) return path;
+  const upper = seg.replace(/[\s-]/g, '').toUpperCase();
+  const code = SHARE_CODE_CHARS_RE.test(upper) ? upper : seg;
+  return `/live/code/${encodeURIComponent(code)}`;
+}
+
+/** §15 share + §9.2 buddy copy (gender follows the viewer — buddies are same-gender). */
+export const LIVE_P5_COPY = {
+  share: 'مشاركة رابط البث',
+  shareExplain: 'من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى متجر جهازه.',
+  shareAction: 'مشاركة',
+  remind: 'ذكّرني',
+  reminded: 'سنذكّرك',
+  remindCancelA11y: 'إلغاء التذكير',
+  remindFailed: 'تعذّر حفظ التذكير. حاول مرة أخرى',
+  inviteFailed: 'تعذّر إرسال الدعوة. حاول مرة أخرى',
+} as const;
+
+/** «رفيقك» / «رفيقتك». */
+export function buddyWord(g: Sex): 'رفيقك' | 'رفيقتك' {
+  return g === 'f' ? 'رفيقتك' : 'رفيقك';
+}
+
+/** Highlight for a buddy sitting in the room: «رفيقك · حسن». */
+export function buddyPresentLine(name: string, g: Sex): string {
+  return `${buddyWord(g)} · ${name}`;
+}
+
+/** «رفيقك {name} ليس في الحلقة» · «رفيقتك {name} ليست في الحلقة». */
+export function buddyAbsentLine(name: string, g: Sex): string {
+  return g === 'f' ? `رفيقتك ${name} ليست في الحلقة` : `رفيقك ${name} ليس في الحلقة`;
+}
+
+/** The invite action: «ادعُه» / «ادعيها». */
+export function inviteVerb(g: Sex): 'ادعُه' | 'ادعيها' {
+  return g === 'f' ? 'ادعيها' : 'ادعُه';
+}
+
+/** «أُرسلت الدعوة إلى {name}». */
+export function inviteSentLine(name: string): string {
+  return `أُرسلت الدعوة إلى ${name}`;
+}
+
+/** BuddyInviteSheet title / sub and the ShareSheet row that opens it. */
+export function inviteSheetTitle(g: Sex): string {
+  return g === 'f' ? 'ادعي رفيقتك إلى الحلقة' : 'ادعُ رفيقك إلى الحلقة';
+}
+
+export function inviteSheetSub(g: Sex): string {
+  return g === 'f'
+    ? 'يصل رفيقتك إشعار بدعوتك إلى هذا المجلس، مرة واحدة لكل رفيقة.'
+    : 'يصل رفيقك إشعار بدعوتك إلى هذا المجلس، مرة واحدة لكل رفيق.';
+}

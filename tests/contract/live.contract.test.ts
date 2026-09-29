@@ -610,12 +610,15 @@ describe('recording → lecture (worker contract)', () => {
     expect(row).toMatchObject({ status: 'ready', lecture_id: lecture, raw_backup_key: backup, raw_path: rawPath });
     expect((await jobRow(job)).status).toBe('done');
 
+    // The staff «ready for review» notice. Since 0142 the session's student
+    // notifications (live_start / live_reminder) carry the same liveSessionId.
     const notes = await service
       .from('notifications')
       .select('type, title')
-      .eq('data->>liveSessionId', sess);
+      .eq('data->>liveSessionId', sess)
+      .eq('type', 'content_reported');
     expect(notes.data!.length).toBeGreaterThan(0);
-    expect(notes.data!.every((n) => n.type === 'content_reported' && n.title === 'تسجيل المجلس جاهز للمراجعة')).toBe(true);
+    expect(notes.data!.every((n) => n.title === 'تسجيل المجلس جاهز للمراجعة')).toBe(true);
 
     const dup = await service.rpc('create_live_lecture', {
       p_job: job,

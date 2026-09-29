@@ -18,6 +18,11 @@
  * halaqa) and switch «استقبال طلبات الكلمة» (ManageSheet); their «مغادرة
  * الحلقة» opens EndSheet — the 5-second undo before live-control `end` runs
  * HERE (a ref timer), so it survives the sheet closing and is cancelled on unmount.
+ *
+ * P5 (§9.2/§9.3): the top bar's share icon opens ShareSheet («مشاركة رابط البث»,
+ * https://go.almahajja.app/live/{code}); for a registered listener with buddies
+ * it leads on to BuddyInviteSheet («ادعُ رفيقك إلى الحلقة»). Both sheets run
+ * their queries only while open.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -51,6 +56,7 @@ import {
   LIVE,
   LIVE_COPY,
   LIVE_P4_COPY,
+  LIVE_P5_COPY,
   NO_STAFF_NAMES,
   arClock,
   arDayLabel,
@@ -71,6 +77,7 @@ import {
   visibleName,
 } from '@/components/live/liveUi';
 import { useNow } from '@/components/live/LiveHomeCard';
+import { BuddyInviteSheet } from '@/components/live/sheets/BuddyInviteSheet';
 import { EndSheet } from '@/components/live/sheets/EndSheet';
 import { GuestSpeakSheet } from '@/components/live/sheets/GuestSpeakSheet';
 import { IdentitySheet } from '@/components/live/sheets/IdentitySheet';
@@ -78,6 +85,7 @@ import { ManageSheet, type ManageRow } from '@/components/live/sheets/ManageShee
 import { PeopleSheet } from '@/components/live/sheets/PeopleSheet';
 import { PersonSheet } from '@/components/live/sheets/PersonSheet';
 import { RequestSheet } from '@/components/live/sheets/RequestSheet';
+import { ShareSheet } from '@/components/live/sheets/ShareSheet';
 import { IconButton, Txt } from '@/components/ui';
 import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { colors, radius } from '@/constants/theme';
@@ -147,6 +155,9 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const [target, setTarget] = useState<{ kind: 'person' | 'request'; id: string } | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  // P5: «مشاركة رابط البث» → «ادعُ رفيقك إلى الحلقة».
+  const [shareOpen, setShareOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // ── Entry flow ─────────────────────────────────────────────────────────────
   const doJoin = useCallback(
@@ -383,6 +394,13 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const bad = BAD_CONNS.has(roomConn);
   const entering = roomConn === 'idle' || roomConn === 'connecting';
 
+  // P5 share / invite. The link is for a session on air; inviting needs a
+  // registered listener who is IN the room (invite_buddy_to_live checks it).
+  const canShare = !ended && status === 'live' && !!session?.shareCode;
+  const canInvite = !!user && !user.isGuest && joinedHere;
+  const viewerSex = sexOf(me?.gender ?? user?.gender);
+  const presentIdentities = useMemo(() => new Set(Object.keys(people)), [people]);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgSand }}>
       <TopBar
@@ -392,6 +410,7 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
         onPeople={() => setPeopleOpen(true)}
         showPeople={joinedHere && !ended}
         onManage={isMod && !ended ? () => setManageOpen(true) : undefined}
+        onShare={canShare ? () => setShareOpen(true) : undefined}
       />
 
       {body ?? (
@@ -610,6 +629,30 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
         }}
       />
 
+      <ShareSheet
+        visible={shareOpen && canShare}
+        onClose={() => setShareOpen(false)}
+        session={session}
+        canInvite={canInvite}
+        gender={viewerSex}
+        onInvite={() =>
+          swapSheet(
+            () => setShareOpen(false),
+            () => setInviteOpen(true),
+          )
+        }
+      />
+
+      {canInvite && id ? (
+        <BuddyInviteSheet
+          visible={inviteOpen && !ended}
+          onClose={() => setInviteOpen(false)}
+          sessionId={id}
+          gender={viewerSex}
+          presentIdentities={presentIdentities}
+        />
+      ) : null}
+
       <GuestSpeakSheet
         visible={guestGateOpen}
         onClose={() => setGuestGateOpen(false)}
@@ -633,6 +676,7 @@ function TopBar({
   onPeople,
   showPeople,
   onManage,
+  onShare,
 }: {
   conn: LiveConn;
   startedAt: string | null;
@@ -641,6 +685,8 @@ function TopBar({
   showPeople: boolean;
   /** Moderators: «إدارة المجلس». */
   onManage?: () => void;
+  /** P5: «مشاركة رابط البث» (a live session with a share code). */
+  onShare?: () => void;
 }) {
   const level = conn === 'poor' ? 1 : BAD_CONNS.has(conn) ? 0 : 4;
   return (
@@ -675,12 +721,17 @@ function TopBar({
           ) : null}
         </Pill>
       </View>
-      {showPeople ? (
+      {showPeople || onShare ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {onManage ? (
+          {onShare ? (
+            <IconButton icon="share-2" iconSize={17} onPress={onShare} accessibilityLabel={LIVE_P5_COPY.share} />
+          ) : null}
+          {showPeople && onManage ? (
             <IconButton icon="sliders" iconSize={17} onPress={onManage} accessibilityLabel={LIVE_P4_COPY.manage} />
           ) : null}
-          <IconButton icon="users" iconSize={18} onPress={onPeople} accessibilityLabel="من في الحلقة" />
+          {showPeople ? (
+            <IconButton icon="users" iconSize={18} onPress={onPeople} accessibilityLabel="من في الحلقة" />
+          ) : null}
         </View>
       ) : (
         <View style={{ width: 40 }} />

@@ -128,4 +128,7 @@ export const queryKeys = {
   liveSession: (sessionId: string) => ['live', 'session', sessionId] as const,
   liveByCode: (code: string) => ['live', 'code', code] as const,
   liveStaffParticipants: (sessionId: string) => ['live', 'staffParticipants', sessionId] as const,
+  // P5: my buddies in the room (identities) + whom I already invited to it.
+  liveBuddiesPresent: (sessionId: string) => ['live', 'buddiesPresent', sessionId] as const,
+  liveInvited: (sessionId: string) => ['live', 'invited', sessionId] as const,
 } as const;

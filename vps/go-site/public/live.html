@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>بث مباشر · المحجّة البيضاء</title>
+  <meta name="description" content="مجلس علم يُبث مباشرة في تطبيق المحجّة البيضاء. من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى متجر جهازه.">
+  <meta name="theme-color" content="#1f4a42">
+  <meta name="robots" content="noindex">
+
+  <!-- Open Graph (link previews run no JS: the message text carries the title and sheikh) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="المحجّة البيضاء">
+  <meta property="og:locale" content="ar_AR">
+  <meta property="og:title" content="بث مباشر · المحجّة البيضاء">
+  <meta property="og:description" content="مجلس علم يُبث مباشرة. من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى متجر جهازه.">
+  <meta property="og:image" content="https://go.almahajja.app/og-live.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="شعار المحجّة البيضاء">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="بث مباشر · المحجّة البيضاء">
+  <meta name="twitter:image" content="https://go.almahajja.app/og-live.png">
+
+  <link rel="icon" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/live.css">
+  <!-- Per-environment Supabase URL + anon key (generated, never committed — see README). -->
+  <script src="/config.js"></script>
+  <script src="/live.js" defer></script>
+</head>
+<body>
+  <main class="wrap">
+    <header class="brand">
+      <img src="/logo.png" alt="" width="44" height="44">
+      <span>المحجّة البيضاء</span>
+    </header>
+
+    <section class="card" aria-live="polite">
+      <p class="badge" id="badge" hidden><span class="marker" aria-hidden="true"></span><span id="badge-text"></span></p>
+      <h1 id="title">مجلس علم مباشر</h1>
+      <p class="sub" id="sub">جارٍ فتح المجلس…</p>
+      <p class="when" id="when" hidden></p>
+    </section>
+
+    <a class="btn primary" id="open" href="riwaqalilm://">لديّ التطبيق · افتح البث</a>
+
+    <div class="stores">
+      <a class="btn secondary" id="play" href="https://play.google.com/store/apps/details?id=com.riwaqalilm.app" rel="noopener">حمّل التطبيق من Google Play</a>
+      <a class="btn secondary" id="appstore" href="#" rel="noopener" hidden>حمّل التطبيق من App Store</a>
+    </div>
+
+    <p class="note" id="redirect" hidden>
+      <span>سننقلك إلى متجر جهازك بعد لحظات…</span>
+      <button type="button" id="stay">ابقَ هنا</button>
+    </p>
+
+    <p class="explain">من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى متجر جهازه.</p>
+  </main>
+  <noscript>
+    <p class="explain">افتح هذا الرابط من هاتف عليه تطبيق المحجّة البيضاء، أو حمّل التطبيق من متجر جهازك.</p>
+  </noscript>
+</body>
+</html>

@@ -13,12 +13,17 @@ import { AppState } from 'react-native';
 import {
   cancelLiveSession,
   createLiveSession,
+  getLiveBuddiesPresent,
   getLiveByCode,
+  getLiveInvitedBuddyIds,
   getLiveNow,
   getLiveParticipantsForStaff,
   getLiveSession,
+  inviteBuddyToLive,
   LIVE_OVER_STATUSES,
   normalizeShareCode,
+  setLiveReminder,
+  type LiveNow,
 } from '@/api/live';
 import { queryKeys } from '@/constants/queryKeys';
 import { notifyLiveSessionEnded, useLiveStore } from '@/stores/liveStore';
@@ -151,6 +156,90 @@ export function useCancelLiveSession() {
     onSettled: (_d, _e, id) => {
       void qc.invalidateQueries({ queryKey: queryKeys.liveNow });
       void qc.invalidateQueries({ queryKey: queryKeys.liveSession(id) });
+    },
+  });
+}
+
+// ─── P5: «ذكّرني», buddy invite (PLAN_LIVE_V23 §9, migration 0142) ────────────
+
+const BUDDIES_PRESENT_POLL_MS = 15_000;
+
+/** remindedIds with `id` added (on) or removed (off). */
+export function withReminder(ids: readonly string[], id: string, on: boolean): string[] {
+  const rest = ids.filter((x) => x !== id);
+  return on ? [...rest, id] : rest;
+}
+
+/**
+ * «ذكّرني» / cancel on a scheduled session (set_live_reminder). Optimistic: the
+ * get_live_now cache flips at once and rolls back on failure; the server's
+ * answer is refetched either way. networkMode 'always' so an offline tap fails
+ * (and rolls back) instead of sitting paused.
+ */
+export function useSetLiveReminder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sessionId, on }: { sessionId: string; on: boolean }) => setLiveReminder(sessionId, on),
+    networkMode: 'always',
+    onMutate: async ({ sessionId, on }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.liveNow });
+      const prev = qc.getQueryData<LiveNow>(queryKeys.liveNow);
+      if (prev) {
+        qc.setQueryData<LiveNow>(queryKeys.liveNow, {
+          ...prev,
+          remindedIds: withReminder(prev.remindedIds, sessionId, on),
+        });
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(queryKeys.liveNow, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.liveNow }),
+  });
+}
+
+/**
+ * «رفيقك · حسن»: my buddies in this room now (identities). Only while the
+ * invite sheet is open (`enabled`), polled every 15 s in the foreground.
+ */
+export function useLiveBuddiesPresent(sessionId: string | null | undefined, enabled: boolean) {
+  const active = useAppActive();
+  const on = enabled && !!sessionId;
+  return useQuery({
+    queryKey: queryKeys.liveBuddiesPresent(sessionId ?? ''),
+    queryFn: () => getLiveBuddiesPresent(sessionId as string),
+    enabled: on,
+    staleTime: 10_000,
+    refetchInterval: on && active ? BUDDIES_PRESENT_POLL_MS : false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Buddies I already invited to this session (disabled rows in the sheet). */
+export function useLiveInvited(sessionId: string | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.liveInvited(sessionId ?? ''),
+    queryFn: () => getLiveInvitedBuddyIds(sessionId as string),
+    enabled: enabled && !!sessionId,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * invite_buddy_to_live. Every outcome (sent / muted / already) marks the buddy
+ * invited in the cache, so the row disables at once.
+ */
+export function useInviteBuddyToLive(sessionId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (buddyId: string) => inviteBuddyToLive(sessionId as string, buddyId),
+    networkMode: 'always',
+    onSuccess: (_r, buddyId) => {
+      if (!sessionId) return;
+      qc.setQueryData<string[]>(queryKeys.liveInvited(sessionId), (old) =>
+        old?.includes(buddyId) ? old : [...(old ?? []), buddyId],
+      );
     },
   });
 }

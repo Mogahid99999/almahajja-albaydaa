@@ -1,15 +1,23 @@
 /**
  * «المجلس المباشر القادم» / «مجالس مباشرة قادمة» — scheduled sessions on Home
  * (PLAN_LIVE_V23 §1.1 item 1, prototype `DD.upcoming`): a day/time tile, the
- * title, section · sheikh, and the «ذكّرني» / «سنذكّرك» state.
+ * title, section · sheikh, and «ذكّرني» ⇄ «سنذكّرك».
+ *
+ * P5 (§9.4): «ذكّرني» sets a reminder through set_live_reminder (0142) — a push
+ * about 15 minutes before and again when it starts. Tapping «سنذكّرك» cancels.
+ * Optimistic: the row flips at once and flips back if the server refuses.
+ * Registered users only (the server refuses guests), so guests see no button.
  */
 import Feather from '@expo/vector-icons/Feather';
+import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import type { LiveSessionPublic } from '@/api/live';
 import { Card, Divider, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
-import { arClock, arDayLabel } from './liveUi';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { useSetLiveReminder } from '@/hooks/useLive';
+import { LIVE_P5_COPY, arClock, arDayLabel, rpcErrorText } from './liveUi';
 import { useNow } from './LiveHomeCard';
 
 export function LiveUpcomingCard({
@@ -19,16 +27,47 @@ export function LiveUpcomingCard({
 }: {
   sessions: readonly LiveSessionPublic[];
   remindedIds?: Iterable<string> | null;
-  /**
-   * «ذكّرني». TODO(P5): wire to the reminders mutation (§9.4) — until then the
-   * button is hidden and only an existing «سنذكّرك» state shows.
-   */
-  onRemind?: (sessionId: string) => void;
+  /** Override (tests / other hosts). Default: set_live_reminder via useSetLiveReminder. */
+  onRemind?: (sessionId: string, on: boolean) => void;
 }) {
   const now = useNow(60_000);
+  const { data: user } = useCurrentUser();
+  const setReminder = useSetLiveReminder();
+  // Tapped states not yet confirmed by `remindedIds` (the get_live_now cache).
+  const [pending, setPending] = useState<Readonly<Record<string, boolean>>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  // A fresh server answer supersedes the local taps.
+  useEffect(() => {
+    setPending({});
+  }, [remindedIds]);
+
   if (!sessions.length) return null;
   const reminded = new Set(remindedIds ?? []);
   const many = sessions.length > 1;
+  const canRemind = !!user && !user.isGuest;
+
+  const toggle = (sessionId: string, on: boolean) => {
+    setError(null);
+    setPending((p) => ({ ...p, [sessionId]: on }));
+    if (onRemind) {
+      onRemind(sessionId, on);
+      return;
+    }
+    setReminder.mutate(
+      { sessionId, on },
+      {
+        onError: (e: unknown) => {
+          setPending((p) => {
+            const next = { ...p };
+            delete next[sessionId];
+            return next;
+          });
+          setError(rpcErrorText(e, LIVE_P5_COPY.remindFailed));
+        },
+      },
+    );
+  };
 
   return (
     <Card padded={false} style={{ paddingHorizontal: 14, paddingVertical: 4 }}>
@@ -39,7 +78,7 @@ export function LiveUpcomingCard({
         </Txt>
       </View>
       {sessions.map((s) => {
-        const on = reminded.has(s.id);
+        const on = pending[s.id] ?? reminded.has(s.id);
         const sub = [s.sectionTitle, s.sheikhName].filter(Boolean).join(' · ');
         return (
           <View key={s.id}>
@@ -72,39 +111,65 @@ export function LiveUpcomingCard({
                   </Txt>
                 ) : null}
               </View>
-              {on ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Feather name="check" size={14} color={colors.primaryTeal} />
-                  <Txt size={12.5} weight="medium" color={colors.primaryTeal}>
-                    سنذكّرك
-                  </Txt>
-                </View>
-              ) : onRemind ? (
-                <Pressable
-                  onPress={() => onRemind(s.id)}
-                  accessibilityRole="button"
-                  style={({ pressed }) => ({
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 5,
-                    borderWidth: 1,
-                    borderColor: colors.borderSand2,
-                    borderRadius: radius.input,
-                    paddingVertical: 6,
-                    paddingHorizontal: 10,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
-                >
-                  <Feather name="bell" size={14} color={colors.textSlate} />
-                  <Txt size={12.5} weight="medium" color={colors.textSlate}>
-                    ذكّرني
-                  </Txt>
-                </Pressable>
+              {canRemind ? (
+                on ? (
+                  <Pressable
+                    onPress={() => toggle(s.id, false)}
+                    accessibilityRole="button"
+                    accessibilityLabel={LIVE_P5_COPY.remindCancelA11y}
+                    accessibilityState={{ selected: true }}
+                    hitSlop={8}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                      paddingVertical: 6,
+                      opacity: pressed ? 0.6 : 1,
+                    })}
+                  >
+                    <Feather name="check" size={14} color={colors.primaryTeal} />
+                    <Txt size={12.5} weight="medium" color={colors.primaryTeal}>
+                      {LIVE_P5_COPY.reminded}
+                    </Txt>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => toggle(s.id, true)}
+                    accessibilityRole="button"
+                    accessibilityLabel={LIVE_P5_COPY.remind}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                      borderWidth: 1,
+                      borderColor: colors.borderSand2,
+                      borderRadius: radius.input,
+                      paddingVertical: 6,
+                      paddingHorizontal: 10,
+                      opacity: pressed ? 0.7 : 1,
+                    })}
+                  >
+                    <Feather name="bell" size={14} color={colors.textSlate} />
+                    <Txt size={12.5} weight="medium" color={colors.textSlate}>
+                      {LIVE_P5_COPY.remind}
+                    </Txt>
+                  </Pressable>
+                )
               ) : null}
             </View>
           </View>
         );
       })}
+      {error ? (
+        <Txt
+          size={12}
+          color={colors.stateDanger}
+          style={{ paddingBottom: 10, lineHeight: 19, alignSelf: 'stretch' }}
+          accessibilityLiveRegion="polite"
+        >
+          {error}
+        </Txt>
+      ) : null}
     </Card>
   );
 }

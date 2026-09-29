@@ -27,6 +27,9 @@ export const notificationTypeLabel: Record<NotificationType, string> = {
   question_answered: 'الجواب عن سؤالك',
   content_reported: 'بلاغ جديد (لحساب الإدارة)',
   feedback_received: 'ملاحظة جديدة (لحساب الإدارة)',
+  live_start: 'بث مباشر',
+  live_reminder: 'تذكير بمجلس مباشر',
+  live_invite: 'دعوة رفيق إلى بث مباشر',
 };
 
 /** One-line explanation shown under each toggle. */
@@ -42,12 +45,15 @@ export const notificationTypeDescription: Record<NotificationType, string> = {
   daily_reminder: 'تذكير لطيف مرة كل يوم',
   streak_reminder: 'تنبيه لطيف كي لا تفقد مداومتك اليوم',
   weekly_goal: 'تذكير لطيف بهدفك الأسبوعي',
-  buddy_activity: 'عند إتمام رفيقك درساً',
+  buddy_activity: 'عند إتمام رفيقك درساً، أو دعوته لك إلى بث مباشر',
   buddy_request: 'عند دعوتك لرفقة طلب العلم أو قبول دعوتك',
   question_received: 'عند وصول سؤال جديد من طالب علم',
   question_answered: 'عند إجابة الشيخ عن سؤالك',
   content_reported: 'عند إبلاغ أحد الدارسين عن محتوى بحاجة مراجعة',
   feedback_received: 'عند وصول ملاحظة جديدة من أحد الدارسين',
+  live_start: 'عند بدء مجلس علم يُبث مباشرة',
+  live_reminder: 'قبيل بدء مجلس طلبت التذكير به، وعند بدئه',
+  live_invite: 'عند دعوة رفيقك لك إلى مجلس يُبث الآن',
 };
 
 /** Calm Feather icon per type (rhombus-framed in the row). */
@@ -69,16 +75,22 @@ export const notificationTypeIcon: Record<NotificationType, FeatherName> = {
   question_answered: 'message-circle',
   content_reported: 'flag',
   feedback_received: 'message-square',
+  live_start: 'radio',
+  live_reminder: 'bell',
+  live_invite: 'user-plus',
 };
 
 /**
  * Order the prefs toggles render in. new_quiz sits with the other content
- * pushes now that quizzes are live.
+ * pushes now that quizzes are live. Of the three «البث المباشر» types only
+ * live_start has a toggle («بث مباشر»): live_invite follows buddy_activity
+ * (server-side, 0142) and live_reminder is the student's own «ذكّرني».
  */
 export const NOTIFICATION_TYPE_ORDER: NotificationType[] = [
   'new_lecture',
   'new_attachment',
   'new_quiz',
+  'live_start',
   'beneficial_reminder',
   'resume_reminder',
   'noncompletion_gentle',
@@ -92,3 +104,13 @@ export const NOTIFICATION_TYPE_ORDER: NotificationType[] = [
   'question_answered',
   'question_received',
 ];
+
+/**
+ * buddy_activity's line, gendered (buddies are same-gender, 0015). The pref
+ * also gates «البث المباشر» buddy invites (live_invite, 0142).
+ */
+export function buddyActivityDescription(gender: string | null | undefined): string {
+  return gender === 'female'
+    ? 'عند إتمام رفيقتك درساً، أو دعوتها لك إلى بث مباشر'
+    : notificationTypeDescription.buddy_activity;
+}

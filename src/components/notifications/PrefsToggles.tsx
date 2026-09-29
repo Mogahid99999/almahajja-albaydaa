@@ -18,6 +18,7 @@ import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
 import {
   NOTIFICATION_TYPE_ORDER,
+  buddyActivityDescription,
   notificationTypeDescription,
   notificationTypeIcon,
   notificationTypeLabel,
@@ -89,8 +90,9 @@ export function PrefsToggles() {
       : NOTIFICATION_TYPE_ORDER.filter((type) => type !== 'question_received');
 
   // Buddy matching is same-gender (0015): a female user's buddy is female.
-  const buddyDesc =
-    user?.gender === 'female' ? 'عند إتمام رفيقتك درساً' : undefined;
+  // The same pref also gates «البث المباشر» buddy invites (live_invite, 0142);
+  // live_start is the «بث مباشر» row (NOTIFICATION_TYPE_ORDER).
+  const buddyDesc = buddyActivityDescription(user?.gender);
 
   return (
     <View>

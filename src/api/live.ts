@@ -484,3 +484,72 @@ export async function getLiveParticipantsForStaff(sessionId: string): Promise<Li
     };
   });
 }
+
+// ─── P5: «ذكّرني», buddy invite (PLAN_LIVE_V23 §9, migration 0142) ────────────
+// `as never`: the 0142 RPCs reach database.generated.ts only at the next regen.
+
+/** set_live_reminder (0142) — «ذكّرني» on/off (registered only). Resolves to the new state. */
+export async function setLiveReminder(sessionId: string, on: boolean): Promise<boolean> {
+  const { data, error } = await supabase.rpc(
+    'set_live_reminder' as never,
+    { p_session: sessionId, p_on: on } as never,
+  );
+  if (error) throw error;
+  return (data as unknown) === true;
+}
+
+/**
+ * invite_buddy_to_live outcome: 'sent' (notified), 'muted' (recorded, but the
+ * buddy's buddy_activity pref is off), 'already' (invited before — once per
+ * buddy per session, server-enforced). The UI treats all three as «أُرسلت».
+ */
+export type LiveInviteResult = 'sent' | 'muted' | 'already';
+
+/** invite_buddy_to_live (0142) — the inviter must be registered, in the room, and paired. */
+export async function inviteBuddyToLive(sessionId: string, buddyId: string): Promise<LiveInviteResult> {
+  const { data, error } = await supabase.rpc(
+    'invite_buddy_to_live' as never,
+    { p_session: sessionId, p_buddy: buddyId } as never,
+  );
+  if (error) throw error;
+  const r = data as unknown;
+  return r === 'muted' || r === 'already' ? r : 'sent';
+}
+
+/** One of MY buddies sitting in the room now (get_live_buddies_present, 0142). */
+export interface LiveBuddyPresent {
+  buddyId: string;
+  /** Their LiveKit identity in this session (liveStore `people` key). */
+  identity: string;
+}
+
+/**
+ * «رفيقك · حسن»: my own accepted buddies who are in this room now — never
+ * anyone else, never a sister who chose «بدون اسم». Empty for guests / before
+ * I entered the room.
+ */
+export async function getLiveBuddiesPresent(sessionId: string): Promise<LiveBuddyPresent[]> {
+  const { data, error } = await supabase.rpc(
+    'get_live_buddies_present' as never,
+    { p_session: sessionId } as never,
+  );
+  if (error) throw error;
+  const rows = Array.isArray(data) ? (data as { buddy_id?: unknown; identity?: unknown }[]) : [];
+  const out: LiveBuddyPresent[] = [];
+  for (const r of rows) {
+    const buddyId = str(r?.buddy_id);
+    const identity = str(r?.identity);
+    if (buddyId && identity) out.push({ buddyId, identity });
+  }
+  return out;
+}
+
+/** Buddies I already invited to this session (own rows only — RLS, 0136). */
+export async function getLiveInvitedBuddyIds(sessionId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('live_buddy_invites')
+    .select('to_user')
+    .eq('session_id', sessionId);
+  if (error) throw error;
+  return (data ?? []).map((r) => r.to_user).filter((x): x is string => typeof x === 'string');
+}

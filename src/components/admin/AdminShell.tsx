@@ -39,6 +39,7 @@ type NavKey =
   | 'sheikhs'
   | 'featured'
   | 'unclassified'
+  | 'live'
   | 'quizzes'
   | 'reminders'
   | 'questions'
@@ -57,7 +58,8 @@ type NavKey =
 // settings touch student data / platform config, which publishers never see.
 // `sheikh` marks the subset a شيخ sees when routed into this shell — a
 // read/teach slice (dashboard · questions · quizzes · contributions ·
-// analytics). Everything else stays admin/publisher-only.
+// analytics) plus «البث المباشر» (V23 D7: staff start a live from there, on
+// the phone). Everything else stays admin/publisher-only.
 const NAV_ITEMS: {
   key: NavKey;
   label: string;
@@ -77,6 +79,7 @@ const NAV_ITEMS: {
   { key: 'featured', label: 'المختارات', href: '/admin/featured', icon: 'bookmark' },
   { key: 'quizzes', label: 'الاختبارات', href: '/admin/quizzes', icon: 'check-square', sheikh: true },
   { key: 'unclassified', label: 'المحاضرات الواردة', href: '/admin/unclassified', icon: 'inbox' },
+  { key: 'live', label: 'البث المباشر', href: '/admin/live', icon: 'radio', sheikh: true },
   { key: 'reminders', label: 'التذكيرات النافعة', href: '/admin/reminders', icon: 'star' },
   { key: 'questions', label: 'مساحة الأسئلة', href: '/admin/questions', icon: 'help-circle', adminOnly: true },
   { key: 'contributions', label: 'مشاركات الدارسين', href: '/admin/contributions', icon: 'message-square', adminOnly: true, sheikh: true },

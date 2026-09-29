@@ -7,23 +7,39 @@
  *   useSetLectureStatus().mutate({ id, status: 'published' })
  *
  * Empty state: calm message "لا توجد محاضرات واردة".
+ *
+ * V23 P6 (PLAN_LIVE_V23 §8): live recordings arrive here too — content managers
+ * only (admin_live_inbox, 0143). They are already placed (section + automatic
+ * order), so each gets a LiveDraftCard: chip «من بث مباشر», section fixed with
+ * «تغيير», ONLY the final title + sheikh (pre-filled), the interventions list,
+ * then «نشر» (with / without notification) or «حفظ دون نشر». Recordings still
+ * being compressed show «جارٍ الضغط على الخادم» above them. `?live=<lectureId>`
+ * («فتح في الواردة» on /admin/live) puts that draft first and focuses it.
  */
 import Feather from '@expo/vector-icons/Feather';
-import React, { useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useMemo, useState } from 'react';
 import {
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
   type ViewStyle,
 } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { LiveDraftCard } from '@/components/admin/live/LiveDraftCard';
+import { isContentManager } from '@/components/admin/live/liveAdminUi';
+import { PendingRecordingCard } from '@/components/admin/live/PendingRecordingCard';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
-import { useClassifyLecture, useSetLectureStatus, useUnclassifiedLectures } from '@/hooks/useAdmin';
+import { useClassifyLecture, useSetLectureStatus, useSheikhs, useUnclassifiedLectures } from '@/hooks/useAdmin';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { useLiveInbox } from '@/hooks/useLiveAdmin';
 import { arDuration, arNum, toArabicDigits } from '@/lib/format';
 import type { UnclassifiedItem } from '@/api/types';
 
@@ -132,6 +148,26 @@ export default function UnclassifiedScreen() {
   const classifyLecture = useClassifyLecture();
   const setLectureStatus = useSetLectureStatus();
 
+  // ── Live recordings (V23 P6) — content managers only ──
+  const params = useLocalSearchParams<{ live?: string }>();
+  const focusId = typeof params.live === 'string' && params.live ? params.live : null;
+  const { data: user } = useCurrentUser();
+  const manager = isContentManager(user);
+  const liveInbox = useLiveInbox(manager);
+  const { data: sheikhs = [] } = useSheikhs();
+  const { width } = useWindowDimensions();
+  // Keyboard-first on a desktop browser: the first draft's title is focused.
+  // Never on a phone (the keyboard would cover the card).
+  const autoFocusFirst = Platform.OS === 'web' && width >= 900;
+  const liveDrafts = useMemo(() => {
+    const drafts = liveInbox.data?.drafts ?? [];
+    if (!focusId) return drafts;
+    return [...drafts].sort((a, b) => Number(b.lectureId === focusId) - Number(a.lectureId === focusId));
+  }, [liveInbox.data, focusId]);
+  const livePending = liveInbox.data?.pending ?? [];
+  const nowMs = Date.now();
+  const total = items.length + liveDrafts.length;
+
   // Track which IDs are being processed (to disable their button)
   const [processing, setProcessing] = useState<Set<string>>(new Set());
   // Classifying here always publishes immediately (no draft option in this
@@ -172,10 +208,37 @@ export default function UnclassifiedScreen() {
       <Txt size={13} color={colors.textMuted} style={styles.pageSubtitle}>
         {isLoading
           ? 'جارٍ التحميل...'
-          : items.length === 0
-          ? 'القائمة فارغة'
-          : `${arNum(items.length)} محاضرة تنتظر التصنيف والنشر`}
+          : total === 0
+          ? livePending.length > 0
+            ? 'تسجيلات البث في طريقها إلى هنا'
+            : 'القائمة فارغة'
+          : `${arNum(total)} محاضرة تنتظر المراجعة والنشر`}
       </Txt>
+
+      {liveInbox.isError ? (
+        <Txt size={12.5} color={colors.stateDanger} style={styles.liveError}>
+          تعذّر تحميل تسجيلات البث المباشر — حدّث الصفحة بعد قليل
+        </Txt>
+      ) : null}
+
+      {/* Live recordings (V23 P6): waiting for title + sheikh first (actionable),
+          then the ones still on their way */}
+      {livePending.length > 0 || liveDrafts.length > 0 ? (
+        <View style={[styles.list, styles.liveList]}>
+          {liveDrafts.map((d, i) => (
+            <LiveDraftCard
+              key={d.lectureId}
+              draft={d}
+              sheikhs={sheikhs}
+              highlighted={d.lectureId === focusId}
+              autoFocus={focusId ? d.lectureId === focusId : autoFocusFirst && i === 0}
+            />
+          ))}
+          {livePending.map((s) => (
+            <PendingRecordingCard key={s.id} session={s} nowMs={nowMs} />
+          ))}
+        </View>
+      ) : null}
 
       {/* Loading */}
       {isLoading && (
@@ -187,7 +250,7 @@ export default function UnclassifiedScreen() {
       )}
 
       {/* Empty state */}
-      {!isLoading && items.length === 0 && (
+      {!isLoading && !liveInbox.isLoading && total === 0 && livePending.length === 0 && (
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
             <Feather name="inbox" size={32} color={colors.textGhost} />
@@ -196,7 +259,7 @@ export default function UnclassifiedScreen() {
             لا توجد محاضرات واردة
           </Txt>
           <Txt size={13} color={colors.textGhost} align="center" style={{ marginTop: 6, maxWidth: 300 }}>
-            ستظهر هنا المحاضرات التي ترفعها يدوياً أو التي يرسلها البوت تلقائياً.
+            ستظهر هنا المحاضرات التي ترفعها يدوياً، وتسجيلات البث المباشر بعد ضغطها على الخادم.
           </Txt>
         </View>
       )}
@@ -249,6 +312,14 @@ const styles = StyleSheet.create({
 
   list: {
     gap: 16,
+  } as ViewStyle,
+
+  liveList: {
+    marginBottom: 16,
+  } as ViewStyle,
+
+  liveError: {
+    marginBottom: 16,
   } as ViewStyle,
 
   itemCard: {

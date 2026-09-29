@@ -1,0 +1,150 @@
+/* go.almahajja.app/live/{code} — calm teal / off-white, RTL (the app's tokens). */
+:root {
+  --bg: #f3ecdd;
+  --bg-raised: #f8f3e8;
+  --card: #fbf7ed;
+  --teal: #1f4a42;
+  --teal-deep: #16352f;
+  --on-teal: #f6f0e2;
+  --brass: #c9a463;
+  --brass-muted: #b0894f;
+  --ink: #2b2723;
+  --muted: #6b6253;
+  --faint: #897a5d;
+  --border: #e8ddc6;
+  --inset: #efe7d6;
+  --live: #b85c4a;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 28px 16px calc(32px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--teal);
+  font-family: "Amiri", serif;
+  font-weight: 700;
+  font-size: 22px;
+  margin-bottom: 6px;
+}
+.brand img { border-radius: 12px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 20px 18px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.badge.live { color: var(--teal); }
+.marker {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--brass-muted);
+  transform: rotate(45deg);
+}
+.badge.live .marker { background: var(--live); }
+
+h1 {
+  margin: 0;
+  color: var(--teal);
+  font-family: "Amiri", serif;
+  font-weight: 700;
+  font-size: 25px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sub, .when {
+  margin: 4px 0 0;
+  color: var(--faint);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.when { color: var(--muted); }
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 10px 18px;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+}
+.btn.primary { background: var(--teal); color: var(--on-teal); }
+.btn.primary:active { background: var(--teal-deep); }
+.btn.secondary { background: var(--inset); color: var(--teal); font-weight: 500; }
+
+.stores { display: flex; flex-direction: column; gap: 10px; }
+
+.note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.note button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--teal);
+  font: inherit;
+  font-weight: 600;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.explain {
+  margin: 4px 0 0;
+  color: var(--faint);
+  font-size: 13px;
+  text-align: center;
+}
+
+[hidden] { display: none !important; }

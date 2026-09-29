@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["TEAMID.com.riwaqalilm.app"],
+        "components": [
+          { "/": "/live/*", "comment": "«البث المباشر» share links → app/+native-intent.tsx → /live/code/{code}" }
+        ],
+        "appID": "TEAMID.com.riwaqalilm.app",
+        "paths": ["/live/*"]
+      }
+    ]
+  }
+}

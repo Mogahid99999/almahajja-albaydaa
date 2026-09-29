@@ -12,6 +12,7 @@
  */
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
+import type { Database } from '@/types/database';
 import { rpcWithLocalToday } from './journey';
 import * as mock from '@/mock/api';
 import {
@@ -110,7 +111,8 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
     .from('notification_prefs')
     .select('type, enabled');
   if (error) throw error;
-  const overrides = new Map((data ?? []).map((r) => [r.type, r.enabled]));
+  // Keyed by string: NotificationType may be ahead of database.generated.ts (0142).
+  const overrides = new Map<string, boolean>((data ?? []).map((r) => [r.type, r.enabled]));
   return NOTIFICATION_TYPES.reduce((acc, type) => {
     // missing row = the type's default (ON for all but daily_reminder).
     acc[type] = overrides.has(type) ? overrides.get(type)! : defaultNotificationEnabled(type);
@@ -125,11 +127,17 @@ export async function setNotificationPref(
 ): Promise<void> {
   if (USE_MOCK) return mock.setNotificationPref(type, enabled);
   const userId = await requireUserId();
+  // Cast: the live_* enum values (0142) reach database.generated.ts only at the
+  // next type regen — the column accepts them once the migration is applied.
+  const row = { user_id: userId, type: type as PrefDbType, enabled };
   const { error } = await supabase
     .from('notification_prefs')
-    .upsert({ user_id: userId, type, enabled }, { onConflict: 'user_id,type' });
+    .upsert(row, { onConflict: 'user_id,type' });
   if (error) throw error;
 }
+
+/** notification_prefs.type as database.generated.ts knows it (may lag NotificationType). */
+type PrefDbType = Database['public']['Tables']['notification_prefs']['Insert']['type'];
 
 // --- Inbox -------------------------------------------------------------------
 export type NotificationPage = {

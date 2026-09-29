@@ -460,7 +460,7 @@ async function maybeUpdateReminders(
       .from('notification_prefs')
       .select('type, enabled')
       .in('type', ['completion_praise', 'resume_series', 'weekly_goal']);
-    const overrides = new Map((prefRows ?? []).map((r) => [r.type, r.enabled]));
+    const overrides = new Map<string, boolean>((prefRows ?? []).map((r) => [r.type, r.enabled]));
     const prefOn = (type: NotificationType) =>
       overrides.has(type) ? overrides.get(type)! : defaultNotificationEnabled(type);
 

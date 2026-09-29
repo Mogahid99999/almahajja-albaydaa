@@ -11,6 +11,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.riwaqalilm.app",
       "buildNumber": "12",
+      "associatedDomains": [
+        "applinks:go.almahajja.app"
+      ],
       "entitlements": {
         "aps-environment": "production"
       },
@@ -69,6 +72,23 @@
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.FOREGROUND_SERVICE_MICROPHONE",
         "android.permission.BLUETOOTH_CONNECT"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "go.almahajja.app",
+              "pathPrefix": "/live"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "web": {

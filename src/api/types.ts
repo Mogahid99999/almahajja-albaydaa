@@ -310,7 +310,13 @@ export type NotificationType =
   | 'question_received'
   | 'question_answered'
   | 'content_reported'
-  | 'feedback_received';
+  | 'feedback_received'
+  // «البث المباشر» (V23 P5, migration 0142): a session went live (own pref),
+  // a «ذكّرني» reminder (no toggle — the student asked for it), a buddy's invite
+  // (gated by the buddy_activity pref).
+  | 'live_start'
+  | 'live_reminder'
+  | 'live_invite';
 
 /**
  * Every notification type, in a stable order. Single source of truth for the
@@ -335,6 +341,9 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'question_answered',
   'content_reported',
   'feedback_received',
+  'live_start',
+  'live_reminder',
+  'live_invite',
 ];
 
 /**
@@ -358,6 +367,8 @@ export type NotificationData = {
   positionSec?: number;
   /** An explicit route to push (e.g. weekly-goal → '/(student)/journey'). */
   route?: string;
+  /** live_* notifications (0142): the session; navigation happens via `route` ('/live/{id}'). */
+  liveSessionId?: string;
 };
 
 /** One row in the الإشعارات inbox. `read` derives from the DB's `read_at`. */
