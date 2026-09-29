@@ -22,7 +22,17 @@ const mockDisconnect = jest.fn(async () => undefined);
 const mockStopAudio = jest.fn(async () => undefined);
 const mockSetPaused = jest.fn();
 const mockMarkEnded = jest.fn();
+const mockConfigureSpeaking = jest.fn(async () => undefined);
+const mockSetMic = jest.fn(async (_on: boolean) => undefined);
+const mockReleaseMic = jest.fn(async () => undefined);
+const mockMicPermission = jest.fn(async () => undefined);
 jest.mock('@/lib/liveClient', () => ({
+  MicPermissionError: class MicPermissionError extends Error {},
+  configureSpeakingAudio: () => mockConfigureSpeaking(),
+  setMicEnabled: (on: boolean) => mockSetMic(on),
+  releaseMic: () => mockReleaseMic(),
+  requestMicPermission: () => mockMicPermission(),
+  getMicLevel: () => 0.5,
   configureListeningAudio: () => mockConfigure(),
   connectLive: (...a: unknown[]) => mockConnect(...a),
   disconnectLive: () => mockDisconnect(),
@@ -156,6 +166,7 @@ describe('join', () => {
       title: 'مباشر الآن · شرح كتاب التوحيد',
       text: 'مع الشيخ محمد',
       url: 'riwaqalilm://live/sess-1',
+      withMic: false,
     });
     expect(mockLeaveAction).not.toBeNull();
 
@@ -349,6 +360,8 @@ describe('room patches', () => {
       role: 'speaker' as const,
       hidden: false,
       hand: false,
+      handAt: null,
+      micOn: false,
       speaking: false,
       isMe: true,
     };
@@ -472,5 +485,153 @@ describe('leave', () => {
     await joining;
     expect(mockConnect).not.toHaveBeenCalled();
     expect(state()).toMatchObject({ session: null, conn: 'idle' });
+  });
+});
+
+describe('P4 speaking & moderation', () => {
+  const ME = '0123456789abcdef';
+  const person = (role: 'listener' | 'speaker' | 'host' | 'moderator', over: Record<string, unknown> = {}) => ({
+    [ME]: {
+      identity: ME,
+      name: 'عبد الله',
+      gender: 'm' as const,
+      role,
+      hidden: false,
+      hand: false,
+      handAt: null,
+      micOn: false,
+      speaking: false,
+      isMe: true,
+      ...over,
+    },
+  });
+
+  beforeEach(async () => {
+    mockFetchToken.mockResolvedValue(token());
+    connectsOk();
+    await state().join(session);
+  });
+
+  test('raising a hand goes through live-control `hand` (the server sets h) → «رفعت يدك»', async () => {
+    await state().raiseHand();
+    expect(mockLiveControl).toHaveBeenCalledWith('hand', { sessionId: 'sess-1', up: true });
+    expect(state().notice?.kind).toBe('hand_raised');
+    expect(state().handBusy).toBe(false);
+  });
+
+  test('the mic permission is asked BEFORE the hand goes up; refused → no request (the post-dialog reconnect regression)', async () => {
+    mockMicPermission.mockRejectedValueOnce(new Error('denied'));
+    await state().raiseHand();
+    expect(mockLiveControl).not.toHaveBeenCalledWith('hand', expect.anything());
+    expect(state().notice?.kind).toBe('mic_denied');
+    await state().raiseHand();
+    expect(order(mockMicPermission)).toBeLessThan(mockLiveControl.mock.invocationCallOrder.at(-1)!);
+  });
+
+  test('a closed request queue / rate limit becomes its own notice, never a throw', async () => {
+    const { LiveControlError } = jest.requireActual('@/api/live');
+    mockLiveControl.mockRejectedValueOnce(new LiveControlError('requests_closed'));
+    await state().raiseHand();
+    expect(state().notice?.kind).toBe('requests_closed');
+    mockLiveControl.mockRejectedValueOnce(new LiveControlError('rate_limited'));
+    await state().lowerHand();
+    expect(state().notice?.kind).toBe('rate_limited');
+  });
+
+  test('approved (listener → speaker from the room) → «صرت من المتحدثين…»', () => {
+    patch({ people: person('speaker') });
+    expect(state().me?.role).toBe('speaker');
+    expect(state().notice?.kind).toBe('accepted');
+  });
+
+  test('demoted by a moderator → «أعادك المشرف إلى الاستماع…»', () => {
+    patch({ people: person('speaker') });
+    patch({ people: person('listener') });
+    expect(state().notice?.kind).toBe('demoted');
+  });
+
+  test('stepping down myself drops the mic and shows no «أعادك المشرف» notice (D1)', async () => {
+    patch({ people: person('speaker') });
+    state().clearNotice();
+    await state().stepDown();
+    expect(mockReleaseMic).toHaveBeenCalled();
+    expect(mockLiveControl).toHaveBeenCalledWith('demote', { sessionId: 'sess-1', identity: ME });
+    patch({ people: person('listener') });
+    expect(state().notice).toBeNull();
+  });
+
+  test('a rejection / moderator mute from the room become notices', () => {
+    sink!.event?.({ type: 'rejected' });
+    expect(state().notice?.kind).toBe('rejected');
+    sink!.event?.({ type: 'mutedByModerator' });
+    expect(state().notice?.kind).toBe('muted');
+  });
+
+  test('opening the mic re-types the foreground service to microphone', async () => {
+    patch({ people: person('speaker') });
+    await state().setMic(true);
+    expect(mockSetMic).toHaveBeenCalledWith(true);
+    expect(mockStartFg).toHaveBeenLastCalledWith(expect.objectContaining({ withMic: true }));
+  });
+
+  test('a refused OS mic permission → «اسمح للتطبيق باستخدام الميكروفون»', async () => {
+    const { MicPermissionError } = jest.requireMock('@/lib/liveClient');
+    mockSetMic.mockRejectedValueOnce(new MicPermissionError());
+    await state().setMic(true);
+    expect(state().notice?.kind).toBe('mic_denied');
+    expect(state().micBusy).toBe(false);
+  });
+
+  test('moderation passes the target identity to live-control', async () => {
+    await state().moderate('approve', 'fedcba9876543210');
+    expect(mockLiveControl).toHaveBeenCalledWith('approve', { sessionId: 'sess-1', identity: 'fedcba9876543210' });
+  });
+
+  test('ending for everyone ends the room at once (ROOM_DELETED may lag)', async () => {
+    await state().endForAll();
+    expect(mockLiveControl).toHaveBeenCalledWith('end', { sessionId: 'sess-1' });
+    expect(mockMarkEnded).toHaveBeenCalled();
+  });
+
+  test('handing over calls host_leave then leaves the room', async () => {
+    await state().handOver('fedcba9876543210');
+    expect(mockLiveControl).toHaveBeenCalledWith('host_leave', { sessionId: 'sess-1', identity: 'fedcba9876543210' });
+    expect(state().session).toBeNull();
+  });
+});
+
+describe('P4 green room', () => {
+  const scheduled = { ...session, status: 'scheduled' as const, startedAt: null };
+
+  test('opens green, joins with the SPEAKING profile + a mic service, then opens the mic', async () => {
+    mockLiveControl.mockResolvedValueOnce({ ok: true, status: 'green' });
+    mockFetchToken.mockResolvedValue(token({ role: 'host' }));
+    connectsOk();
+    await state().openGreen(scheduled);
+    expect(mockLiveControl).toHaveBeenCalledWith('open_green', { sessionId: 'sess-1' });
+    expect(order(mockMicPermission)).toBeLessThan(order(mockStartFg));
+    expect(mockStartFg).toHaveBeenCalledWith(expect.objectContaining({ withMic: true }));
+    expect(mockConfigureSpeaking).toHaveBeenCalled();
+    expect(mockConfigure).not.toHaveBeenCalled();
+    expect(mockSetMic).toHaveBeenCalledWith(true);
+    expect(state().session?.status).toBe('green');
+  });
+
+  test('start flips the session to live', async () => {
+    mockFetchToken.mockResolvedValue(token({ role: 'host' }));
+    connectsOk();
+    await state().openGreen({ ...session, status: 'green' });
+    mockLiveControl.mockResolvedValueOnce({ ok: true, status: 'live' });
+    await state().startBroadcast();
+    expect(mockLiveControl).toHaveBeenCalledWith('start', { sessionId: 'sess-1' });
+    expect(state().session?.status).toBe('live');
+  });
+
+  test('the sheikh re-entering his own LIVE session gets his mic back without a tap', async () => {
+    mockFetchToken.mockResolvedValue(token({ role: 'host' }));
+    connectsOk();
+    await state().join(session);
+    await Promise.resolve();
+    expect(mockSetMic).toHaveBeenCalledWith(true);
   });
 });

@@ -521,6 +521,8 @@ export type HalaqaProps = {
   /** Display name for a person (staff get real names, others «طالبة» for hidden sisters). */
   nameOf: (identity: string, p: LivePerson) => string;
   onMorePress: () => void;
+  /** Moderators (P4): a tapped attendee opens their Person/Request sheet instead of the tooltip. */
+  onPersonPress?: (identity: string) => void;
   dim?: boolean;
 };
 
@@ -535,6 +537,7 @@ export function Halaqa({
   sheikhName,
   nameOf,
   onMorePress,
+  onPersonPress,
   dim = false,
 }: HalaqaProps) {
   const input = useMemo(() => buildHalaqaInput(people, counts, size, mode), [people, counts, size, mode]);
@@ -550,11 +553,11 @@ export function Halaqa({
   const [tip, setTip] = useState<Tip | null>(null);
 
   // Stable callbacks for the memoized board, reading the latest values by ref.
-  const latest = useRef({ layout, owners, people, nameOf, onMorePress });
-  latest.current = { layout, owners, people, nameOf, onMorePress };
+  const latest = useRef({ layout, owners, people, nameOf, onMorePress, onPersonPress });
+  latest.current = { layout, owners, people, nameOf, onMorePress, onPersonPress };
   const onMore = useCallback(() => latest.current.onMorePress(), []);
   const onBoardPress = useCallback((x: number, y: number) => {
-    const { layout: L, owners: O, people: P, nameOf: N } = latest.current;
+    const { layout: L, owners: O, people: P, nameOf: N, onPersonPress: onPerson } = latest.current;
     let best = -1;
     let bestD = Infinity;
     L.slots.forEach((s, i) => {
@@ -573,7 +576,10 @@ export function Halaqa({
     const owner = O[best];
     const person = owner ? P[owner] : undefined;
     const top = slot.y - slot.size / 2;
-    if (person && owner) {
+    if (person && owner && onPerson && !person.isMe) {
+      setTip(null);
+      onPerson(owner);
+    } else if (person && owner) {
       const d = describePerson(person, N(owner, person));
       setTip({ x: slot.x, y: top, title: d.title, sub: d.sub });
     } else {
@@ -691,7 +697,7 @@ export function Halaqa({
         return (
           <View key={id} pointerEvents="box-none">
             <Pressable
-              onPress={isMe ? undefined : () => showTipFor(slot, id)}
+              onPress={isMe ? undefined : onPersonPress ? () => onPersonPress(id) : () => showTipFor(slot, id)}
               disabled={isMe}
               accessibilityRole={isMe ? undefined : 'button'}
               accessibilityLabel={isMe ? 'أنت' : nameOf(id, p)}

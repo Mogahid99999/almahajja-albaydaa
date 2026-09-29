@@ -7,6 +7,7 @@
  *    `useLiveStaffParticipants` (get_live_participants) — never through LiveKit;
  *  - everyone else sees the LiveKit names: «طالبة» for a hidden sister.
  * A sister also gets her own «ظهورك في الحلقة» row to change her choice.
+ * Moderators (P4) tap a row → PersonSheet (`onSelectPerson`).
  */
 import { useMemo } from 'react';
 import { Pressable, SectionList, View } from 'react-native';
@@ -59,6 +60,7 @@ export function PeopleSheet({
   myIdentity,
   myName,
   onChangeIdentity,
+  onSelectPerson,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -70,6 +72,8 @@ export function PeopleSheet({
   myIdentity: { gender: Sex; hidden: boolean } | null;
   myName?: string | null;
   onChangeIdentity?: () => void;
+  /** Moderators (P4): a row opens that person's sheet (approve / mute / demote). */
+  onSelectPerson?: (identity: string) => void;
 }) {
   // D2: only staff ever ask for real names (the RPC refuses everyone else too).
   const staffRes: unknown = useLiveStaffParticipants(sessionId, isStaff && visible);
@@ -201,10 +205,20 @@ export function PeopleSheet({
           </View>
         )}
         renderItem={({ item, index, section }) => (
-          <View
-            style={[
+          <Pressable
+            onPress={onSelectPerson && !item.me ? () => onSelectPerson(item.id) : undefined}
+            disabled={!onSelectPerson || item.me}
+            accessibilityRole={onSelectPerson && !item.me ? 'button' : undefined}
+            style={({ pressed }) => [
               cardRowStyle(index === 0, index === section.data.length - 1),
-              { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10 },
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                opacity: pressed ? 0.8 : 1,
+              },
             ]}
           >
             {item.host ? (
@@ -221,7 +235,7 @@ export function PeopleSheet({
               </Txt>
             </View>
             {item.hand ? <HandGlyph size={16} color={colors.accentBrassMuted} /> : null}
-          </View>
+          </Pressable>
         )}
       />
     </LiveSheet>

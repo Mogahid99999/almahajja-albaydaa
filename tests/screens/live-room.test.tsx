@@ -84,6 +84,21 @@ function resetStore() {
     leave: jest.fn(() => Promise.resolve()),
     setPaused: jest.fn(),
     setPreferredIdentity: jest.fn(),
+    // P4
+    notice: null,
+    micOn: false,
+    handBusy: false,
+    micBusy: false,
+    allowRequests: true,
+    raiseHand: jest.fn(() => Promise.resolve()),
+    lowerHand: jest.fn(() => Promise.resolve()),
+    setMic: jest.fn(() => Promise.resolve()),
+    stepDown: jest.fn(() => Promise.resolve()),
+    moderate: jest.fn(() => Promise.resolve()),
+    setAllowRequests: jest.fn(() => Promise.resolve()),
+    handOver: jest.fn(() => Promise.resolve()),
+    endForAll: jest.fn(() => Promise.resolve()),
+    clearNotice: jest.fn(),
   });
 }
 
@@ -190,12 +205,124 @@ test('a guest listens, but «طلب الكلمة» asks to register first', asyn
   expect(mockRouter.push).toHaveBeenCalledWith('/register');
 });
 
-test('a registered listener: «طلب الكلمة» stays disabled until P4', async () => {
+// ─── P4: the dock's speaking controls ───────────────────────────────────────
+
+const ME = 'b'.repeat(16);
+function listenerIn(extra: Record<string, unknown> = {}, handUp = false) {
   mockUser.current = { id: 'u1', role: 'student', isGuest: false, displayName: 'أحمد', gender: 'male' };
-  Object.assign(mockState, { session: liveSession, conn: 'ok', me: { identity: 'b'.repeat(16), role: 'listener', hidden: false, gender: 'm' } });
+  Object.assign(mockState, {
+    session: liveSession,
+    conn: 'ok',
+    me: { identity: ME, role: 'listener', hidden: false, gender: 'm' },
+    people: {
+      [ME]: {
+        identity: ME, name: 'أحمد', gender: 'm', role: 'listener', hidden: false,
+        hand: handUp, handAt: handUp ? 1_790_000_000 : null, micOn: false, speaking: false, isMe: true,
+      },
+    },
+    ...extra,
+  });
+}
+
+test('a registered listener raises a hand — then «طلب الكلمة» rests 5 s (client rate limit)', async () => {
+  jest.useFakeTimers();
+  try {
+    listenerIn();
+    await render(<LiveRoomScreen />);
+    await fireEvent.press(screen.getByText('طلب الكلمة'));
+    expect(mockState.raiseHand).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('سجّل أولاً لتطلب الكلمة')).toBeNull();
+
+    await fireEvent.press(screen.getByText('طلب الكلمة')); // still resting
+    expect(mockState.raiseHand).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    await fireEvent.press(screen.getByText('طلب الكلمة'));
+    expect(mockState.raiseHand).toHaveBeenCalledTimes(2);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('with my hand up the dock says «بانتظار الإذن · إلغاء» and lowers it', async () => {
+  listenerIn({}, true);
+  await render(<LiveRoomScreen />);
+  expect(screen.queryByText('طلب الكلمة')).toBeNull();
+  await fireEvent.press(screen.getByText('بانتظار الإذن · إلغاء'));
+  expect(mockState.lowerHand).toHaveBeenCalledTimes(1);
+  expect(mockState.raiseHand).not.toHaveBeenCalled();
+});
+
+test('while a hand request is in flight «طلب الكلمة» does nothing', async () => {
+  listenerIn({ handBusy: true });
+  await render(<LiveRoomScreen />);
+  await fireEvent.press(screen.getByText('طلب الكلمة'));
+  expect(mockState.raiseHand).not.toHaveBeenCalled();
+});
+
+test('requests closed by the moderators: disabled with the §15 hint', async () => {
+  listenerIn({ allowRequests: false });
+  await render(<LiveRoomScreen />);
+  expect(screen.getByText('لا يستقبل المشرفون طلبات الكلمة الآن')).toBeTruthy();
+  await fireEvent.press(screen.getByText('طلب الكلمة'));
+  expect(mockState.raiseHand).not.toHaveBeenCalled();
+});
+
+test('a guest never reaches raiseHand — «طلب الكلمة» is still the register sheet', async () => {
+  mockUser.current = { id: 'g1', role: 'student', isGuest: true, displayName: null, gender: 'male' };
+  Object.assign(mockState, { session: liveSession, conn: 'ok', me: { identity: 'a'.repeat(16), role: 'listener', hidden: false, gender: 'm' } });
   await render(<LiveRoomScreen />);
   await fireEvent.press(screen.getByLabelText('طلب الكلمة'));
-  expect(screen.queryByText('سجّل أولاً لتطلب الكلمة')).toBeNull();
+  expect(screen.getByText('سجّل أولاً لتطلب الكلمة')).toBeTruthy();
+  expect(mockState.raiseHand).not.toHaveBeenCalled();
+});
+
+test('a speaker gets the mic toggle and a visible «العودة إلى الاستماع»', async () => {
+  listenerIn({ me: { identity: ME, role: 'speaker', hidden: false, gender: 'm' } });
+  await render(<LiveRoomScreen />);
+  expect(screen.queryByText('طلب الكلمة')).toBeNull();
+  expect(screen.getByText('الميكروفون مغلق')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('فتح الميكروفون'));
+  expect(mockState.setMic).toHaveBeenCalledWith(true);
+
+  await fireEvent.press(screen.getByText('العودة إلى الاستماع'));
+  expect(screen.getByText('العودة إلى الاستماع؟')).toBeTruthy();
+  const confirm = screen.getAllByText('العودة إلى الاستماع');
+  await fireEvent.press(confirm[confirm.length - 1]);
+  expect(mockState.stepDown).toHaveBeenCalledTimes(1);
+});
+
+test('an open mic reads «الميكروفون مفتوح» and closes; staff have no «العودة إلى الاستماع»', async () => {
+  listenerIn({ me: { identity: ME, role: 'moderator', hidden: false, gender: 'm' }, micOn: true });
+  mockUser.current = { id: 'a1', role: 'sheikh', isGuest: false, displayName: 'الشيخ', gender: 'male' };
+  await render(<LiveRoomScreen />);
+  expect(screen.getByText('الميكروفون مفتوح')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('إغلاق الميكروفون'));
+  expect(mockState.setMic).toHaveBeenCalledWith(false);
+  expect(screen.queryByText('العودة إلى الاستماع')).toBeNull();
+});
+
+test('a room notice shows its §15 copy, then clears itself after ~6 s', async () => {
+  jest.useFakeTimers();
+  try {
+    listenerIn({ notice: { kind: 'accepted', id: 1 } });
+    await render(<LiveRoomScreen />);
+    expect(
+      screen.getByText('صرت من المتحدثين. افتح الميكروفون وأغلقه متى شئت. المجلس يُسجَّل وصوتك ضمنه'),
+    ).toBeTruthy();
+    await act(async () => {
+      jest.advanceTimersByTime(5900);
+    });
+    expect(mockState.clearNotice).not.toHaveBeenCalled();
+    await act(async () => {
+      jest.advanceTimersByTime(200);
+    });
+    expect(mockState.clearNotice).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test('an ended session shows «انتهى المجلس» and never joins', async () => {

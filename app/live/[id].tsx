@@ -7,20 +7,37 @@
  * no gender: GenderPrompt, then the same flow again. Minimising (chevron /
  * swipe down) keeps the room — LiveMiniBar takes over; «مغادرة الحلقة» leaves.
  *
- * Layout (top → bottom): top bar (minimise · live clock + signal · people) ·
- * title + «يتحدث الآن…» · host-drop note · the halaqa board (fills the free
- * height) · attendance line · dock.
+ * Layout (top → bottom): top bar (minimise · live clock + signal · people
+ * [+ «إدارة المجلس» for moderators]) · title + «يتحدث الآن…» · host-drop note ·
+ * the halaqa board (fills the free height; notices + the end-undo bar float at
+ * its foot) · requests strip (moderators) · attendance line · dock.
+ *
+ * P4 (§7.6): a registered listener raises a hand from the dock; speakers and
+ * staff get the mic toggle. Moderators (host/moderator) take requests from the
+ * strip (RequestSheet), act on people (PersonSheet from «في الحلقة» or the
+ * halaqa) and switch «استقبال طلبات الكلمة» (ManageSheet); their «مغادرة
+ * الحلقة» opens EndSheet — the 5-second undo before live-control `end` runs
+ * HERE (a ref timer), so it survives the sheet closing and is cancelled on unmount.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, View, type LayoutChangeEvent } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LiveTokenError, type LiveSessionPublic } from '@/api/live';
 import { BrotherIcon } from '@/components/live/BrotherIcon';
 import { Halaqa } from '@/components/live/Halaqa';
-import { LiveDock } from '@/components/live/LiveDock';
+import { HandGlyph, LiveAvatar } from '@/components/live/LiveAvatar';
+import { LiveDock, type DockSpeak } from '@/components/live/LiveDock';
+import { LiveNoticeBar, LiveNoticePill, LiveUndoBar } from '@/components/live/LiveNoticeBar';
 import { LivePeekSheet } from '@/components/live/LivePeekSheet';
 import {
   LiveHoldNote,
@@ -30,24 +47,37 @@ import {
 } from '@/components/live/LiveStateLine';
 import { NiqabIcon } from '@/components/live/NiqabIcon';
 import {
+  END_UNDO_MS,
   LIVE,
   LIVE_COPY,
+  LIVE_P4_COPY,
   NO_STAFF_NAMES,
   arClock,
   arDayLabel,
   asList,
+  canEndForAll,
+  controlErrorText,
+  currentSpeakers,
   elapsedSec,
   isEndedStatus,
   isLiveStaff,
+  isModeratorRole,
   liveErrorCode,
+  otherModerators,
+  requestQueue,
   roleKind,
+  sexOf,
   staffNameMap,
   visibleName,
 } from '@/components/live/liveUi';
 import { useNow } from '@/components/live/LiveHomeCard';
+import { EndSheet } from '@/components/live/sheets/EndSheet';
 import { GuestSpeakSheet } from '@/components/live/sheets/GuestSpeakSheet';
 import { IdentitySheet } from '@/components/live/sheets/IdentitySheet';
+import { ManageSheet, type ManageRow } from '@/components/live/sheets/ManageSheet';
 import { PeopleSheet } from '@/components/live/sheets/PeopleSheet';
+import { PersonSheet } from '@/components/live/sheets/PersonSheet';
+import { RequestSheet } from '@/components/live/sheets/RequestSheet';
 import { IconButton, Txt } from '@/components/ui';
 import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { colors, radius } from '@/constants/theme';
@@ -60,6 +90,10 @@ import { useLiveStore, type LiveConn, type LivePerson } from '@/stores/liveStore
 const BOARD_MAX = 390;
 const BOARD_RATIO = 410 / 390;
 const BAD_CONNS: ReadonlySet<LiveConn> = new Set<LiveConn>(['failed', 'offline', 'reconnecting']);
+/** Room states in which speaking/moderation controls can reach the server. */
+const ACTIVE_CONNS: ReadonlySet<LiveConn> = new Set<LiveConn>(['ok', 'poor', 'hostdrop']);
+/** iOS can't present a Modal while another one is still dismissing. */
+const SHEET_SWAP_MS = Platform.OS === 'ios' ? 400 : 0;
 
 type Step = 'idle' | 'identity' | 'gender' | 'joining';
 
@@ -89,6 +123,17 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const leave = useLiveStore((s) => s.leave);
   const setPaused = useLiveStore((s) => s.setPaused);
   const setPreferredIdentity = useLiveStore((s) => s.setPreferredIdentity);
+  // P4
+  const micOn = useLiveStore((s) => s.micOn);
+  const handBusy = useLiveStore((s) => s.handBusy);
+  const micBusy = useLiveStore((s) => s.micBusy);
+  const allowRequests = useLiveStore((s) => s.allowRequests);
+  const raiseHand = useLiveStore((s) => s.raiseHand);
+  const lowerHand = useLiveStore((s) => s.lowerHand);
+  const setMic = useLiveStore((s) => s.setMic);
+  const stepDown = useLiveStore((s) => s.stepDown);
+  const handOver = useLiveStore((s) => s.handOver);
+  const endForAll = useLiveStore((s) => s.endForAll);
 
   const joinedHere = !!id && storeSession?.id === id;
   const session: LiveSessionPublic | null = sessionQ.data ?? (joinedHere ? storeSession : null);
@@ -98,6 +143,10 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [identityMode, setIdentityMode] = useState<'join' | 'change'>('join');
   const [guestGateOpen, setGuestGateOpen] = useState(false);
+  // P4 sheets: one attendee (person / request), «إدارة المجلس», «مغادرة الحلقة» (staff).
+  const [target, setTarget] = useState<{ kind: 'person' | 'request'; id: string } | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
 
   // ── Entry flow ─────────────────────────────────────────────────────────────
   const doJoin = useCallback(
@@ -136,6 +185,10 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const wasJoined = useRef(false);
   const closing = useRef(false);
   const exit = useCallback(() => {
+    // Once only: a hand-over leaves the store (→ the «left from elsewhere»
+    // effect) AND closes the room itself — a second collapse() would pop the
+    // screen underneath too.
+    if (closing.current) return;
     closing.current = true;
     collapse();
   }, [collapse]);
@@ -195,10 +248,112 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
     ? Math.floor(Math.max(200, Math.min(stage.w - 16, BOARD_MAX, stage.h / BOARD_RATIO)))
     : 0;
 
+  // ── P4: speaking & moderation ──────────────────────────────────────────────
+  const myRole = joinedHere ? me?.role : undefined;
+  const isMod = isModeratorRole(myRole);
+  const active = ACTIVE_CONNS.has(roomConn);
+  const mine = me && joinedHere ? people[me.identity] : undefined;
+  const requestIds = useMemo(() => (isMod ? requestQueue(people) : []), [isMod, people]);
+
+  const personName = useCallback(
+    (pid: string) => {
+      const p = people[pid];
+      if (!p) return '';
+      return roleKind(p.role) === 'host' && sheikhName ? sheikhName : nameOf(pid, p);
+    },
+    [people, sheikhName, nameOf],
+  );
+
+  // Swap one sheet for another (close first; iOS needs the first one gone).
+  const swapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swapSheet = useCallback((close: () => void, open: () => void) => {
+    close();
+    if (swapTimer.current) clearTimeout(swapTimer.current);
+    if (!SHEET_SWAP_MS) {
+      open();
+      return;
+    }
+    swapTimer.current = setTimeout(() => {
+      swapTimer.current = null;
+      open();
+    }, SHEET_SWAP_MS);
+  }, []);
+
+  // «إنهاء البث للجميع» → 5-second undo → endForAll(). The timer lives here so
+  // closing the sheet keeps it. Leaving the screen during the undo does NOT
+  // cancel: the host confirmed, so the end goes through at once (only «تراجع»
+  // cancels) — otherwise a minimised room would keep broadcasting while he
+  // believes it ended.
+  const endTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
+  useEffect(
+    () => () => {
+      if (endTimer.current) {
+        clearTimeout(endTimer.current);
+        endTimer.current = null;
+        void useLiveStore.getState().endForAll().catch(() => undefined);
+      }
+      if (swapTimer.current) clearTimeout(swapTimer.current);
+    },
+    [],
+  );
+  const startEnding = useCallback(() => {
+    if (endTimer.current) clearTimeout(endTimer.current);
+    setEndError(null);
+    setEnding(true);
+    endTimer.current = setTimeout(() => {
+      endTimer.current = null;
+      setEnding(false);
+      endForAll().catch((e: unknown) => setEndError(controlErrorText(e)));
+    }, END_UNDO_MS);
+  }, [endForAll]);
+  const undoEnding = useCallback(() => {
+    if (endTimer.current) clearTimeout(endTimer.current);
+    endTimer.current = null;
+    setEnding(false);
+  }, []);
+
+  // Guests keep the «سجّل أولاً» path (onRequest); registered people get P4 controls.
+  let speak: DockSpeak | undefined;
+  if (!user?.isGuest && joinedHere && me) {
+    speak =
+      me.role === 'listener'
+        ? {
+            kind: 'hand',
+            up: !!mine?.hand,
+            busy: handBusy,
+            closed: !allowRequests,
+            disabled: !active,
+            onRaise: () => raiseHand(),
+            onLower: () => lowerHand(),
+          }
+        : {
+            kind: 'mic',
+            on: micOn,
+            busy: micBusy,
+            disabled: !active,
+            onToggle: () => void setMic(!micOn),
+            onStepDown: me.role === 'speaker' ? () => void stepDown() : undefined,
+          };
+  }
+
   const onLeave = () => {
+    // The host and moderators choose: leave (the broadcast goes on) or end it for all.
+    if (isMod && roomConn !== 'failed') {
+      setEndOpen(true);
+      return;
+    }
     exit();
     void leave();
   };
+
+  const manageRows = (ids: readonly string[]): ManageRow[] =>
+    ids.flatMap((pid) => {
+      const p = people[pid];
+      return p ? [{ identity: pid, person: p, name: personName(pid) }] : [];
+    });
+  const targetPerson = target ? (people[target.id] ?? null) : null;
 
   // ── Non-room states ────────────────────────────────────────────────────────
   const ended = isEndedStatus(status) || roomConn === 'ended';
@@ -231,11 +386,12 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgSand }}>
       <TopBar
-        conn={roomConn}
+        conn={ended ? 'ended' : roomConn}
         startedAt={session?.startedAt ?? null}
         onMinimize={collapse}
         onPeople={() => setPeopleOpen(true)}
         showPeople={joinedHere && !ended}
+        onManage={isMod && !ended ? () => setManageOpen(true) : undefined}
       />
 
       {body ?? (
@@ -282,6 +438,7 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
                 sheikhName={sheikhName}
                 nameOf={nameOf}
                 onMorePress={() => setPeopleOpen(true)}
+                onPersonPress={isMod ? (pid) => setTarget({ kind: 'person', id: pid }) : undefined}
                 dim={bad}
               />
             ) : null}
@@ -290,7 +447,29 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
               failedSub={failedSub}
               onRetry={session ? () => doJoin(session, preferredIdentity ?? undefined) : undefined}
             />
+            {joinedHere ? (
+              <View
+                pointerEvents="box-none"
+                style={{ position: 'absolute', left: 14, right: 14, bottom: 8, gap: 8, zIndex: 4 }}
+              >
+                {ending ? <LiveUndoBar onUndo={undoEnding} /> : null}
+                {endError ? (
+                  <LiveNoticePill text={endError} icon="alert-circle" onPress={() => setEndError(null)} />
+                ) : null}
+                <LiveNoticeBar />
+              </View>
+            ) : null}
           </View>
+
+          {isMod && active && requestIds.length ? (
+            <RequestsStrip
+              ids={requestIds}
+              people={people}
+              nameOf={personName}
+              onOpen={(rid) => setTarget({ kind: 'request', id: rid })}
+              onManage={() => setManageOpen(true)}
+            />
+          ) : null}
 
           {!entering && roomConn !== 'failed' ? (
             <AttendanceLine brothers={counts.brothers} sisters={counts.sisters} />
@@ -302,6 +481,7 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
             onLeave={onLeave}
             onPeople={() => setPeopleOpen(true)}
             onRequest={user?.isGuest ? () => setGuestGateOpen(true) : undefined}
+            speak={speak}
           />
         </>
       )}
@@ -316,6 +496,15 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
           isStaff={isStaff}
           myIdentity={me ? { gender: me.gender, hidden: me.hidden } : null}
           myName={user?.displayName ?? null}
+          onSelectPerson={
+            isMod
+              ? (pid) =>
+                  swapSheet(
+                    () => setPeopleOpen(false),
+                    () => setTarget({ kind: 'person', id: pid }),
+                  )
+              : undefined
+          }
           onChangeIdentity={
             me?.gender === 'f' && !user?.isGuest
               ? () => {
@@ -326,6 +515,67 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
               : undefined
           }
         />
+      ) : null}
+
+      {joinedHere && isMod ? (
+        <>
+          <RequestSheet
+            visible={target?.kind === 'request'}
+            onClose={() => setTarget(null)}
+            identity={target?.kind === 'request' ? target.id : null}
+            person={target?.kind === 'request' ? targetPerson : null}
+            name={target?.kind === 'request' ? personName(target.id) : ''}
+          />
+          <PersonSheet
+            visible={target?.kind === 'person'}
+            onClose={() => setTarget(null)}
+            identity={target?.kind === 'person' ? target.id : null}
+            person={target?.kind === 'person' ? targetPerson : null}
+            name={target?.kind === 'person' ? personName(target.id) : ''}
+            canModerate={isMod}
+          />
+          <ManageSheet
+            visible={manageOpen}
+            onClose={() => setManageOpen(false)}
+            allowRequests={allowRequests}
+            speakers={manageRows(currentSpeakers(people))}
+            requests={manageRows(requestIds)}
+            onOpenPerson={(pid) =>
+              swapSheet(
+                () => setManageOpen(false),
+                () => setTarget({ kind: 'person', id: pid }),
+              )
+            }
+            onOpenRequest={(rid) =>
+              swapSheet(
+                () => setManageOpen(false),
+                () => setTarget({ kind: 'request', id: rid }),
+              )
+            }
+          />
+          <EndSheet
+            visible={endOpen}
+            onClose={() => setEndOpen(false)}
+            sectionTitle={session?.sectionTitle ?? null}
+            isHost={myRole === 'host'}
+            canEndAll={canEndForAll(myRole, user)}
+            moderators={otherModerators(people).map((mid) => ({ identity: mid, name: personName(mid) }))}
+            onLeave={() => {
+              setEndOpen(false);
+              exit();
+              void leave();
+            }}
+            onHandOver={async (mid) => {
+              await handOver(mid); // host_leave, then the store leaves the room
+              setEndOpen(false);
+              exit();
+            }}
+            onEnd={() => {
+              setEndOpen(false);
+              startEnding();
+            }}
+          />
+        </>
       ) : null}
 
       <IdentitySheet
@@ -382,12 +632,15 @@ function TopBar({
   onMinimize,
   onPeople,
   showPeople,
+  onManage,
 }: {
   conn: LiveConn;
   startedAt: string | null;
   onMinimize: () => void;
   onPeople: () => void;
   showPeople: boolean;
+  /** Moderators: «إدارة المجلس». */
+  onManage?: () => void;
 }) {
   const level = conn === 'poor' ? 1 : BAD_CONNS.has(conn) ? 0 : 4;
   return (
@@ -403,7 +656,7 @@ function TopBar({
     >
       <IconButton icon="chevron-down" onPress={onMinimize} accessibilityLabel="تصغير" />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        {conn === 'idle' || conn === 'connecting' ? (
+        {conn === 'ended' ? null : conn === 'idle' || conn === 'connecting' ? (
           <Pill>
             <ActivityIndicator size="small" color={colors.primaryTeal} />
             <Txt size={12} weight="medium" color={colors.textSlate}>
@@ -423,7 +676,12 @@ function TopBar({
         </Pill>
       </View>
       {showPeople ? (
-        <IconButton icon="users" iconSize={18} onPress={onPeople} accessibilityLabel="من في الحلقة" />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {onManage ? (
+            <IconButton icon="sliders" iconSize={17} onPress={onManage} accessibilityLabel={LIVE_P4_COPY.manage} />
+          ) : null}
+          <IconButton icon="users" iconSize={18} onPress={onPeople} accessibilityLabel="من في الحلقة" />
+        </View>
       ) : (
         <View style={{ width: 40 }} />
       )}
@@ -474,6 +732,86 @@ function SignalBars({ level, tint }: { level: number; tint: string }) {
         <View key={h} style={{ width: 3, height: h, borderRadius: 1, backgroundColor: i < level ? tint : LIVE.dimInk }} />
       ))}
     </View>
+  );
+}
+
+/**
+ * Moderators: raised hands, oldest first (§7.6 requests strip). The leading
+ * chip opens «إدارة المجلس»; each person chip opens RequestSheet.
+ */
+function RequestsStrip({
+  ids,
+  people,
+  nameOf,
+  onOpen,
+  onManage,
+}: {
+  ids: readonly string[];
+  people: Readonly<Record<string, LivePerson>>;
+  nameOf: (id: string) => string;
+  onOpen: (id: string) => void;
+  onManage: () => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ flexGrow: 0 }}
+      contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 8, gap: 8, alignItems: 'center' }}
+    >
+      <Pressable
+        onPress={onManage}
+        accessibilityRole="button"
+        accessibilityLabel={`${LIVE_P4_COPY.requests} · ${arNum(ids.length)}`}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          height: 36,
+          paddingHorizontal: 12,
+          borderRadius: radius.pill,
+          backgroundColor: colors.accentBrass,
+          opacity: pressed ? 0.85 : 1,
+        })}
+      >
+        <HandGlyph size={15} color={colors.primaryTealDeep} />
+        <Txt size={12.5} weight="semibold" color={colors.primaryTealDeep} tabular>
+          {`${LIVE_P4_COPY.requests} · ${arNum(ids.length)}`}
+        </Txt>
+      </Pressable>
+      {ids.map((pid) => {
+        const p = people[pid];
+        if (!p) return null;
+        const name = nameOf(pid);
+        const f = sexOf(p.gender) === 'f';
+        return (
+          <Pressable
+            key={pid}
+            onPress={() => onOpen(pid)}
+            accessibilityRole="button"
+            accessibilityLabel={`${name} · ${f ? 'تطلب الكلمة' : 'يطلب الكلمة'}`}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 7,
+              height: 36,
+              paddingStart: 4,
+              paddingEnd: 12,
+              borderRadius: radius.pill,
+              backgroundColor: colors.surfaceCard,
+              borderWidth: 1,
+              borderColor: 'rgba(176,137,79,0.35)',
+              opacity: pressed ? 0.8 : 1,
+            })}
+          >
+            <LiveAvatar gender={f ? 'f' : 'm'} size={28} />
+            <Txt size={12.5} weight="medium" numberOfLines={1} style={{ maxWidth: 130 }}>
+              {name}
+            </Txt>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 }
 

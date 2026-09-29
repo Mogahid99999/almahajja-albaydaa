@@ -44,6 +44,14 @@ export interface LivePerson {
   role: LiveRole;
   hidden: boolean;
   hand: boolean;
+  /**
+   * When the hand went up (epoch seconds, server-set by live-control `hand`) —
+   * moderators take requests oldest first. 0 for a hand from an older server
+   * that only wrote '1'; null when the hand is down.
+   */
+  handAt: number | null;
+  /** Has a published, unmuted microphone (speakers / moderators / the host). */
+  micOn: boolean;
   speaking: boolean;
   isMe: boolean;
 }
@@ -259,14 +267,25 @@ export interface ParticipantLike {
   attributes?: Readonly<Record<string, string>> | null;
 }
 
+/**
+ * The `h` attribute (server-set only — no token grants canUpdateOwnMetadata):
+ * '0'/absent = down; epoch seconds = raised at; '1' (P2 servers) = raised, time unknown.
+ */
+export function parseHand(h: string | undefined): number | null {
+  if (!h || h === '0') return null;
+  const n = Number(h);
+  return Number.isFinite(n) && n > 1 ? Math.floor(n) : 0;
+}
+
 export function toLivePerson(
   p: ParticipantLike,
-  opts: { isMe: boolean; speaking: boolean },
+  opts: { isMe: boolean; speaking: boolean; micOn?: boolean },
 ): LivePerson {
   const a = p.attributes ?? {};
   const gender: LiveGender = a.g === 'f' ? 'f' : 'm';
   const role: LiveRole = (ROLES as readonly string[]).includes(a.r ?? '') ? (a.r as LiveRole) : 'listener';
   const hidden = gender === 'f' && a.hid === '1';
+  const handAt = parseHand(a.h);
   const raw = (p.name ?? '').replace(/\s+/g, ' ').trim();
   // A hidden sister is always «طالبة», whatever `name` says (D2: the real name
   // never reaches the room).
@@ -277,7 +296,9 @@ export function toLivePerson(
     gender,
     role,
     hidden,
-    hand: a.h === '1',
+    hand: handAt != null,
+    handAt,
+    micOn: opts.micOn ?? false,
     speaking: opts.speaking,
     isMe: opts.isMe,
   };

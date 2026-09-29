@@ -375,6 +375,10 @@ function AuthGate() {
     // /sheikh, others out of both; the (auth) screens stay reachable so a guest
     // can register / sign in. A sheikh may also open the /admin staff screens.
     if (!user) return;
+    // No route resolved yet (cold start): a deep link / notification is still
+    // being applied. Redirecting now queues a replace() that would land AFTER
+    // it and swap e.g. a sheikh's live room out for /sheikh (found on device).
+    if ((segments as string[]).length === 0) return;
     if (inLive) return;
     if (isSheikh) {
       if (!inSheikh && !inAdmin) router.replace('/sheikh' as Parameters<typeof router.replace>[0]);
@@ -829,6 +833,16 @@ export default function RootLayout() {
                     renders its own Android peek-sheet (LiveRoomSheet). */}
                 <Stack.Screen
                   name="live/[id]"
+                  options={{
+                    presentation: Platform.OS === 'android' ? 'transparentModal' : 'modal',
+                    animation: Platform.OS === 'android' ? 'fade' : undefined,
+                    contentStyle:
+                      Platform.OS === 'android' ? { backgroundColor: 'transparent' } : undefined,
+                  }}
+                />
+                {/* The host's green room (V23 P4) — same presentation as the room. */}
+                <Stack.Screen
+                  name="live/green/[id]"
                   options={{
                     presentation: Platform.OS === 'android' ? 'transparentModal' : 'modal',
                     animation: Platform.OS === 'android' ? 'fade' : undefined,

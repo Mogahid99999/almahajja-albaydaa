@@ -243,3 +243,217 @@ export function staffNameMap(list: readonly unknown[]): Map<string, StaffName> {
   }
   return out;
 }
+
+// ─── P4: speaking & moderation (PLAN_LIVE_V23 §7.6, §15) ─────────────────────
+
+/** The host's green room (typed routes learn it on the next `expo start`). */
+export function liveGreenHref(id: string): Href {
+  return { pathname: '/live/green/[id]', params: { id } } as unknown as Href;
+}
+
+export const LIVE_P4_COPY = {
+  requestPending: 'بانتظار الإذن · إلغاء',
+  requestsClosed: 'لا يستقبل المشرفون طلبات الكلمة الآن',
+  micOn: 'الميكروفون مفتوح',
+  micOff: 'الميكروفون مغلق',
+  micOpenA11y: 'فتح الميكروفون',
+  micCloseA11y: 'إغلاق الميكروفون',
+  stepDown: 'العودة إلى الاستماع',
+  approve: 'السماح بالكلمة',
+  reject: 'الاعتذار',
+  mute: 'إغلاق الميكروفون',
+  allowRequests: 'استقبال طلبات الكلمة',
+  requests: 'طلبات الكلمة',
+  manage: 'إدارة المجلس',
+  leaveKeep: 'أغادر ويستمر البث',
+  endAll: 'إنهاء البث للجميع',
+  endConfirm: 'إنهاء البث للجميع؟',
+  endUndo: 'ينتهي البث خلال ثوانٍ',
+  undo: 'تراجع',
+  notifyAll: 'إشعار للجميع عند البدء',
+  startLive: 'ابدأ مجلساً مباشراً',
+  backToGreen: 'العودة إلى غرفة التجهيز',
+  greenRoom: 'غرفة التجهيز',
+  startBroadcast: 'ابدأ البث',
+  cancel: 'إلغاء',
+  guestCannotSpeak: 'الضيف يستمع فقط، ولا يمكن إعطاؤه الكلمة',
+} as const;
+
+/** One-shot room messages (liveStore `notice.kind` → §15 copy). */
+export const NOTICE_COPY = {
+  hand_raised: 'رفعت يدك. يراها المشرفون في مكانك من الحلقة',
+  accepted: 'صرت من المتحدثين. افتح الميكروفون وأغلقه متى شئت. المجلس يُسجَّل وصوتك ضمنه',
+  rejected: 'اعتذر المشرف عن إعطائك الكلمة الآن',
+  muted: 'أغلق المشرف ميكروفونك، وتستطيع فتحه متى احتجت',
+  demoted: 'أعادك المشرف إلى الاستماع. ارفع يدك من جديد إن أردت الكلمة',
+  requests_closed: 'لا يستقبل المشرفون طلبات الكلمة الآن',
+  rate_limited: 'انتظر قليلاً ثم حاول مجدداً',
+  mic_denied: 'اسمح للتطبيق باستخدام الميكروفون لتتحدث',
+  failed: 'تعذّر تنفيذ الطلب. حاول مرة أخرى',
+} as const;
+
+export type NoticeKind = keyof typeof NOTICE_COPY;
+
+export function noticeText(kind: unknown): string | null {
+  return typeof kind === 'string' && kind in NOTICE_COPY ? NOTICE_COPY[kind as NoticeKind] : null;
+}
+
+/** «طلب الكلمة» client rate limit: the button rests this long after each toggle. */
+export const HAND_COOLDOWN_MS = 5000;
+/** The «إنهاء البث للجميع» undo window (§7.6). */
+export const END_UNDO_MS = 5000;
+/** How long a room notice stays up. */
+export const NOTICE_MS = 6000;
+
+/** The room's host and moderators run it (approve/reject/mute/demote, the requests switch). */
+export function isModeratorRole(role: unknown): boolean {
+  return role === 'host' || role === 'moderator';
+}
+
+/**
+ * «إنهاء البث للجميع»: the session's host, or a content manager (admin /
+ * publisher) — liveRules authorizeLiveAction `end`.
+ */
+export function canEndForAll(
+  liveRole: unknown,
+  user: Pick<CurrentUser, 'role' | 'isGuest'> | null | undefined,
+): boolean {
+  if (liveRole === 'host') return true;
+  return !!user && !user.isGuest && (user.role === 'admin' || user.role === 'publisher');
+}
+
+/**
+ * Who may open a live from a section page: create_live_session allows
+ * is_content_manager() or is_sheikh() — admin, publisher, sheikh — the same set
+ * as {@link isLiveStaff}.
+ */
+export function canStartLive(user: Pick<CurrentUser, 'role' | 'isGuest'> | null | undefined): boolean {
+  return isLiveStaff(user);
+}
+
+type PersonLike = {
+  role?: unknown;
+  hand?: boolean | null;
+  handAt?: number | null;
+  micOn?: boolean | null;
+  isMe?: boolean | null;
+};
+
+/** Raised hands the moderators take, oldest first (`handAt`; 0/null = an old server's '1' → first). */
+export function requestQueue(people: Readonly<Record<string, PersonLike>>): string[] {
+  const out: { id: string; at: number; i: number }[] = [];
+  let i = 0;
+  for (const [id, p] of Object.entries(people)) {
+    i++;
+    if (!p || !p.hand || p.isMe || roleKind(p.role) !== 'listener') continue;
+    out.push({ id, at: typeof p.handAt === 'number' && Number.isFinite(p.handAt) ? p.handAt : 0, i });
+  }
+  out.sort((a, b) => a.at - b.at || a.i - b.i);
+  return out.map((x) => x.id);
+}
+
+/** On the floor now (speakers + moderators; not the host, not me) — ManageSheet. */
+export function currentSpeakers(people: Readonly<Record<string, PersonLike>>): string[] {
+  return Object.entries(people)
+    .filter(([, p]) => !!p && !p.isMe && (roleKind(p.role) === 'speaker' || roleKind(p.role) === 'moderator'))
+    .map(([id]) => id);
+}
+
+/** Other moderators present — who the host can hand the session to («أغادر ويستمر البث»). */
+export function otherModerators(people: Readonly<Record<string, PersonLike>>): string[] {
+  return Object.entries(people)
+    .filter(([, p]) => !!p && !p.isMe && roleKind(p.role) === 'moderator')
+    .map(([id]) => id);
+}
+
+export type ModerationAction = 'approve' | 'reject' | 'mute' | 'demote';
+
+/**
+ * What a moderator may do to one person (liveRules canTarget): approve/reject a
+ * listener's raised hand; mute a speaker or a moderator (never the host);
+ * demote a speaker only (moderators are staff — never demoted). Nothing on myself.
+ */
+export function moderationActionsFor(p: PersonLike | null | undefined): ModerationAction[] {
+  if (!p || p.isMe) return [];
+  const kind = roleKind(p.role);
+  if (kind === 'listener') return p.hand ? ['approve', 'reject'] : [];
+  if (kind === 'speaker') return p.micOn ? ['mute', 'demote'] : ['demote'];
+  if (kind === 'moderator') return p.micOn ? ['mute'] : [];
+  return [];
+}
+
+/** Action button label; «إعادته / إعادتها إلى الاستماع» follows the target's gender. */
+export function moderationLabel(action: ModerationAction, g: Sex): string {
+  switch (action) {
+    case 'approve':
+      return LIVE_P4_COPY.approve;
+    case 'reject':
+      return LIVE_P4_COPY.reject;
+    case 'mute':
+      return LIVE_P4_COPY.mute;
+    case 'demote':
+      return g === 'f' ? 'إعادتها إلى الاستماع' : 'إعادته إلى الاستماع';
+  }
+}
+
+/** «يطلب الكلمة» / «تطلب الكلمة», with how long ago the hand went up. */
+export function handLine(g: Sex, handAt: number | null | undefined, nowMs: number): string {
+  const verb = g === 'f' ? 'تطلب الكلمة' : 'يطلب الكلمة';
+  if (!handAt) return verb;
+  const min = Math.floor((nowMs / 1000 - handAt) / 60);
+  return min >= 1 ? `${verb} · منذ ${arNum(min)} دقيقة` : `${verb} · الآن`;
+}
+
+/** A live-control refusal (LiveControlError.code) → one short Arabic line. */
+export function controlErrorText(e: unknown, g: Sex = 'm'): string {
+  const code = typeof e === 'object' && e !== null ? (e as { code?: unknown }).code : undefined;
+  switch (code) {
+    case 'guest_cannot_speak':
+      return LIVE_P4_COPY.guestCannotSpeak;
+    case 'not_present':
+      return g === 'f' ? 'غادرت الحلقة' : 'غادر الحلقة';
+    case 'invalid_target':
+      return 'تغيّر الحال في الحلقة، حاول مرة أخرى';
+    case 'forbidden':
+      return 'لا تملك صلاحية هذا الإجراء';
+    case 'no_moderator_present':
+      return 'لا يوجد مشرف آخر في الحلقة الآن';
+    case 'another_live_active':
+      return 'يوجد بث مباشر قائم الآن، ولا يُفتح بثّان معاً';
+    case 'ended':
+      return LIVE_COPY.ended;
+    case 'invalid_state':
+    case 'not_open':
+      return 'لا يمكن ذلك في حال المجلس الآن';
+    case 'network':
+      return 'تعذّر الاتصال. تحقّق من الشبكة ثم حاول مرة أخرى';
+    case 'banned':
+      return 'لا يمكنك دخول هذا المجلس';
+    case 'no_track':
+      return g === 'f' ? 'ميكروفونها مغلق أصلاً' : 'ميكروفونه مغلق أصلاً';
+    case 'requests_closed':
+      return NOTICE_COPY.requests_closed;
+    case 'rate_limited':
+      return NOTICE_COPY.rate_limited;
+    default:
+      return NOTICE_COPY.failed;
+  }
+}
+
+/** The server's own Arabic message when it has one (create_live_session / cancel), else `fallback`. */
+export function rpcErrorText(e: unknown, fallback: string): string {
+  const msg = typeof e === 'object' && e !== null ? (e as { message?: unknown }).message : undefined;
+  return typeof msg === 'string' && /[؀-ۿ]/.test(msg) ? msg.trim() : fallback;
+}
+
+/** create_live_session title rule (3–200 chars, trimmed). */
+export function isValidLiveTitle(title: string): boolean {
+  const t = title.trim();
+  return t.length >= 3 && t.length <= 200;
+}
+
+/** Green-room meter: how many of `bars` segments a 0..1 level lights. */
+export function meterBars(level: number, bars: number): number {
+  const l = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
+  return Math.round(l * bars);
+}

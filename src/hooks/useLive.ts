@@ -6,11 +6,13 @@
  * Polling only while the app is in the foreground (TanStack's focus manager has
  * no AppState signal on React Native, so it is driven explicitly here).
  */
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import {
+  cancelLiveSession,
+  createLiveSession,
   getLiveByCode,
   getLiveNow,
   getLiveParticipantsForStaff,
@@ -127,5 +129,28 @@ export function useLiveStaffParticipants(sessionId: string | null | undefined, e
     gcTime: STAFF_PARTICIPANTS_GC_MS,
     refetchInterval: on && active ? STAFF_PARTICIPANTS_POLL_MS : false,
     refetchIntervalInBackground: false,
+  });
+}
+
+/** Section page «ابدأ مجلساً مباشراً» → green room. Resolves to the new session id. */
+export function useCreateLiveSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: createLiveSession,
+    networkMode: 'always',
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.liveNow }),
+  });
+}
+
+/** Green room «إلغاء» (scheduled/green only). */
+export function useCancelLiveSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: cancelLiveSession,
+    networkMode: 'always',
+    onSettled: (_d, _e, id) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.liveNow });
+      void qc.invalidateQueries({ queryKey: queryKeys.liveSession(id) });
+    },
   });
 }

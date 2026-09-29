@@ -17,6 +17,7 @@ import {
   initialConnState,
   MAX_CONNECT_ATTEMPTS,
   sameIds,
+  parseHand,
   toLivePerson,
   withSpeaking,
   type ConnEvent,
@@ -272,9 +273,21 @@ describe('people', () => {
       role: 'speaker',
       hidden: false,
       hand: true,
+      handAt: 0,
+      micOn: false,
       speaking: true,
       isMe: false,
     });
+  });
+
+  test('h carries the raise time (server-set epoch seconds); 0 / absent = down', () => {
+    expect(parseHand('1767225600')).toBe(1767225600);
+    expect(parseHand('1')).toBe(0); // a P2 server's plain «raised»
+    expect(parseHand('0')).toBeNull();
+    expect(parseHand(undefined)).toBeNull();
+    expect(parseHand('')).toBeNull();
+    const p = toLivePerson({ identity: 'd5', attributes: { h: '1767225600' } }, { isMe: false, speaking: false, micOn: true });
+    expect(p).toMatchObject({ hand: true, handAt: 1767225600, micOn: true });
   });
 
   test('a hidden sister is always «طالبة», whatever name the room carries (D2)', () => {
@@ -306,6 +319,8 @@ describe('people', () => {
     role,
     hidden: false,
     hand: false,
+    handAt: null,
+    micOn: false,
     speaking: false,
     isMe: false,
   });

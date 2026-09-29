@@ -20,6 +20,11 @@
  *     as soon as the lecture exists and its R2 backup is recorded (publish state
  *     irrelevant); no backup ⇒ never due; a failed job keeps the raw and staff
  *     can retry.
+ *   - V23 P4 (0141 + the live-control edge function — needs it DEPLOYED to
+ *     staging): live_participants.hand_at exists (service role only); guests
+ *     listen only (owner 2026-09-28) — a guest raising a hand is 403
+ *     guest_cannot_speak; a student may not moderate (approve → 403 forbidden);
+ *     a hand needs a joined participant (409 not_present).
  *
  * Fixtures (all «تجربة», all deleted in afterAll): one root section, the live
  * sessions in it, their lectures / jobs / participants, the staff notices those
@@ -130,6 +135,23 @@ async function claimMine(jobId: string): Promise<Record<string, any>> {
     );
   }
   return (res.data as any[])[0];
+}
+
+/** POST a staging edge function as this client's user → HTTP status + JSON body. */
+async function callFunction(
+  c: SupabaseClient,
+  fn: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: Record<string, any> | null }> {
+  const { data } = await c.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error(`${fn}: the client has no session`);
+  const res = await fetch(`${url}/functions/v1/${fn}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, apikey: anonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json().catch(() => null) };
 }
 
 async function addParticipant(sessionId: string, userId: string, gender: 'm' | 'f', role: string, hidden = false) {
@@ -355,6 +377,50 @@ describe('service-role only RPCs', () => {
       expect(error).not.toBeNull();
       expect(data).toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------
+// V23 P4 — needs 0141 applied and the P4 live-control deployed to staging.
+describe('P4 speaking & moderation: server-side refusals (live-control)', () => {
+  const someIdentity = '0123456789abcdef';
+
+  test('0141: live_participants.hand_at exists and stays service-role only', async () => {
+    const svc = await service.from('live_participants').select('hand_at').limit(1);
+    expect(svc.error).toBeNull();
+    for (const c of [student, guest]) {
+      const r = await c.from('live_participants').select('hand_at').limit(1);
+      expect(r.error).not.toBeNull();
+    }
+  });
+
+  test('guests listen only (owner 2026-09-28): a guest raising a hand → 403 guest_cannot_speak', async () => {
+    const r = await callFunction(guest, 'live-control', { action: 'hand', sessionId: scheduledSess, up: true });
+    expect(r.status).toBe(403);
+    expect(r.body).toMatchObject({ error: 'guest_cannot_speak' });
+  });
+
+  test('a student cannot moderate: approve → 403 forbidden (guests too)', async () => {
+    for (const c of [student, guest]) {
+      const r = await callFunction(c, 'live-control', {
+        action: 'approve',
+        sessionId: scheduledSess,
+        identity: someIdentity,
+      });
+      expect(r.status).toBe(403);
+      expect(r.body).toMatchObject({ error: 'forbidden' });
+    }
+  });
+
+  test('a hand needs a joined participant; `up` is required', async () => {
+    // The student never called live-token for this session → no live_participants row.
+    const r = await callFunction(student, 'live-control', { action: 'hand', sessionId: scheduledSess, up: true });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ error: 'not_present' });
+
+    const bad = await callFunction(student, 'live-control', { action: 'hand', sessionId: scheduledSess });
+    expect(bad.status).toBe(400);
+    expect(bad.body).toMatchObject({ error: 'bad_request' });
   });
 });
 

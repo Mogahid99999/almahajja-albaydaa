@@ -6,7 +6,8 @@
 // the functions; everything that decides WHO gets WHAT lives here.
 //
 // Schema: migrations 0134 live_sessions · 0135 live_participants (+
-// live_moderation_log, live_identity) · 0138 set_live_session_status.
+// live_moderation_log, live_identity) · 0138 set_live_session_status ·
+// 0141 live_participants.hand_at (P4 hand rate limit).
 // The participant identity is computed IN SQL (live_identity: salted sha256,
 // the salt never leaves the DB) — this module only validates its shape.
 //
@@ -23,6 +24,14 @@
 //      with the service-role key (also on room_finished); logged `auto_end`.
 //   A live recording must never be lost: egress writes to the VPS disk
 //   (/recordings/<env>/…); the media worker backs it up to R2 and compresses.
+//   Guests LISTEN only (owner 2026-09-28): a guest never raises a hand, is
+//   never approved, never gets a speaker token — enforced here, not in the UI.
+//
+// P4: participant attributes (g/r/h/hid) and the LiveKit name are SERVER-ONLY.
+// No token or permission carries canUpdateOwnMetadata/canUpdateMetadata:
+// LiveKit lets a participant holding it set ANY attribute and its own name
+// (a listener could claim r=host, or rename himself). The hand goes through
+// live-control `hand`; an identity change re-joins with a new token.
 
 export type LiveRole = "listener" | "speaker" | "host" | "moderator";
 export type LiveStatus =
@@ -53,14 +62,16 @@ export type LiveGrants = {
 /**
  * §5.1 grants table. `speaker` = a listener a moderator approved; a
  * reconnecting speaker's new token keeps the mic (live_participants.role
- * persists it). Nobody is roomAdmin — admin actions go through live-control.
- * Publishing is limited to the microphone by the functions (audio only).
+ * persists it; only an explicit `leave` or a demote clears it). Nobody is
+ * roomAdmin — admin actions go through live-control. Publishing is limited to
+ * the microphone by the functions (audio only). canUpdateOwnMetadata is false
+ * for EVERY role (P4 — attributes and name are server-only, see the header).
  */
 export const LIVE_GRANTS: Readonly<Record<LiveRole, LiveGrants>> = {
-  listener: { canSubscribe: true, canPublish: false, canPublishData: false, canUpdateOwnMetadata: true, roomAdmin: false },
-  speaker: { canSubscribe: true, canPublish: true, canPublishData: false, canUpdateOwnMetadata: true, roomAdmin: false },
-  host: { canSubscribe: true, canPublish: true, canPublishData: true, canUpdateOwnMetadata: true, roomAdmin: false },
-  moderator: { canSubscribe: true, canPublish: true, canPublishData: true, canUpdateOwnMetadata: true, roomAdmin: false },
+  listener: { canSubscribe: true, canPublish: false, canPublishData: false, canUpdateOwnMetadata: false, roomAdmin: false },
+  speaker: { canSubscribe: true, canPublish: true, canPublishData: false, canUpdateOwnMetadata: false, roomAdmin: false },
+  host: { canSubscribe: true, canPublish: true, canPublishData: true, canUpdateOwnMetadata: false, roomAdmin: false },
+  moderator: { canSubscribe: true, canPublish: true, canPublishData: true, canUpdateOwnMetadata: false, roomAdmin: false },
 };
 
 /** Access-token lifetime (§5.1: 2 h). */
@@ -70,18 +81,25 @@ export const TOKEN_TTL = "2h";
  * Permission set for UpdateParticipant when a moderator approves (true) or
  * demotes (false) a speaker. LiveKit replaces the WHOLE permission, so every
  * field is spelled out; the function adds canPublishSources = [MICROPHONE].
+ * canUpdateMetadata stays false (P4: attributes/name are server-only).
  */
 export function speakerPermission(canPublish: boolean) {
   return {
     canSubscribe: true,
     canPublish,
     canPublishData: false,
-    canUpdateMetadata: true,
+    canUpdateMetadata: false,
     hidden: false,
   };
 }
 
-/** The caller's role in THIS session. */
+/**
+ * The caller's role in THIS session. A stored `speaker` (approved earlier)
+ * survives a re-join after a network drop — a blip must not silently demote
+ * him; an explicit `leave` / a demote is what resets the stored role. A guest
+ * is always a listener (guests listen only — also covers a guest approved by a
+ * P2 server before the rule was enforced).
+ */
 export function liveRoleFor(input: {
   userId: string;
   appRole: string | null | undefined;
@@ -90,8 +108,9 @@ export function liveRoleFor(input: {
   /** live_participants.role from an earlier join (keeps an approved speaker a speaker). */
   storedRole?: string | null;
 }): LiveRole {
-  if (!input.isGuest && input.hostUserId && input.userId === input.hostUserId) return "host";
-  if (!input.isGuest && isStaffRole(input.appRole)) return "moderator";
+  if (input.isGuest) return "listener";
+  if (input.hostUserId && input.userId === input.hostUserId) return "host";
+  if (isStaffRole(input.appRole)) return "moderator";
   if (input.storedRole === "speaker") return "speaker";
   return "listener";
 }
@@ -171,7 +190,11 @@ export function realDisplayName(profileName: string | null | undefined): string 
   return name || null;
 }
 
-/** LiveKit participant attributes (§5.1): g gender · r role · h hand · hid hidden. */
+/**
+ * LiveKit participant attributes (§5.1): g gender · r role · h hand · hid hidden.
+ * Server-set only (no grant lets a participant write them). A fresh token
+ * starts with the hand down.
+ */
 export function participantAttributes(input: {
   gender: LiveGender;
   role: LiveRole;
@@ -271,6 +294,7 @@ export const LIVE_ACTIONS = [
   "set_allow_requests",
   "host_leave",
   "leave",
+  "hand",
   "auto_end",
 ] as const;
 export type LiveAction = (typeof LIVE_ACTIONS)[number];
@@ -283,7 +307,7 @@ export function isLiveAction(x: unknown): x is LiveAction {
   return typeof x === "string" && (LIVE_ACTIONS as readonly string[]).includes(x);
 }
 
-/** Actions that act on another participant (`identity` required). */
+/** Actions that act on another participant (`identity` required). `hand` acts on the caller himself. */
 export const TARGETED_ACTIONS: readonly LiveAction[] = ["approve", "reject", "mute", "demote"];
 
 export type LiveActor =
@@ -303,8 +327,21 @@ export type Verdict<C extends string> = { ok: true } | { ok: false; code: C };
 const OK = { ok: true } as const;
 
 /**
- * Action → who may perform it (§5.2 «staff only except leave»; D1).
+ * Owner rule (2026-09-28): guests LISTEN only — register to speak. A guest
+ * never raises a hand and is never approved (the approve target is read fresh
+ * from auth.users.is_anonymous). Its own code so the client can invite the
+ * guest to register instead of showing a generic refusal.
+ */
+export function canSpeak(who: { isGuest: boolean }): Verdict<"guest_cannot_speak"> {
+  return who.isGuest ? { ok: false, code: "guest_cannot_speak" } : OK;
+}
+
+/**
+ * Action → who may perform it (§5.2 «staff only except leave/hand»; D1).
  *  - leave: anyone in the session.
+ *  - hand: anyone registered, on HIMSELF; a guest may only lower
+ *    (`up: false`) — raising is `guest_cannot_speak`. Whether his live role
+ *    may raise is canTarget('hand', …, { up }).
  *  - demote: moderators, or a speaker stepping HIMSELF down (D1).
  *  - approve / reject / mute / set_allow_requests: moderators (admin/sheikh/publisher).
  *  - open_green / start / end: the host, or a content manager (admin/publisher —
@@ -317,11 +354,12 @@ const OK = { ok: true } as const;
 export function authorizeLiveAction(
   action: LiveAction,
   actor: LiveActor,
-  opts: { targetIsSelf?: boolean } = {},
-): Verdict<"forbidden"> {
+  opts: { targetIsSelf?: boolean; /** hand: raise (true) / lower (false); missing = raise. */ up?: boolean } = {},
+): Verdict<"forbidden" | "guest_cannot_speak"> {
   const forbidden = { ok: false, code: "forbidden" } as const;
   if (actor.kind === "system") return action === "auto_end" ? OK : forbidden;
   if (action === "auto_end") return forbidden;
+  if (action === "hand") return opts.up === false ? OK : canSpeak(actor);
   if (actor.isGuest) {
     return action === "leave" || (action === "demote" && opts.targetIsSelf && actor.liveRole === "speaker")
       ? OK
@@ -352,15 +390,19 @@ export function authorizeLiveAction(
 
 /**
  * Session-independent first gate (before any lookup): a student or guest can
- * only ever `leave` or step down (`demote` himself) — the host of a session is
- * always staff (create_live_session / host_leave). No user may `auto_end`.
+ * only ever `leave`, step down (`demote` himself) or toggle his own `hand` —
+ * the host of a session is always staff (create_live_session / host_leave).
+ * No user may `auto_end`. A guest raising a hand is refused here already
+ * (guest_cannot_speak); lowering stays allowed (idempotent).
  */
 export function preauthorizeLiveAction(
   action: LiveAction,
   caller: { appRole: string | null | undefined; isGuest: boolean },
-): Verdict<"forbidden"> {
+  opts: { /** hand: raise (true) / lower (false); missing = raise. */ up?: boolean } = {},
+): Verdict<"forbidden" | "guest_cannot_speak"> {
   const forbidden = { ok: false, code: "forbidden" } as const;
   if (action === "auto_end") return forbidden;
+  if (action === "hand") return opts.up === false ? OK : canSpeak(caller);
   if (!caller.isGuest && isStaffRole(caller.appRole)) return OK;
   return action === "leave" || action === "demote" ? OK : forbidden;
 }
@@ -368,11 +410,19 @@ export function preauthorizeLiveAction(
 /**
  * Who an action may be aimed at: approve/reject a listener; mute a speaker or
  * moderator (never the host); demote a speaker only (staff aren't demoted);
- * hand the host role to a moderator.
+ * hand the host role to a moderator. `hand` is aimed at the caller himself:
+ * only a listener raises (a speaker already has the word; staff never ask);
+ * anyone may lower (idempotent).
  */
-export function canTarget(action: LiveAction, targetRole: string | null | undefined): Verdict<"invalid_target"> {
+export function canTarget(
+  action: LiveAction,
+  targetRole: string | null | undefined,
+  opts: { /** hand: raise (true) / lower (false); missing = raise. */ up?: boolean } = {},
+): Verdict<"invalid_target"> {
   const bad = { ok: false, code: "invalid_target" } as const;
   switch (action) {
+    case "hand":
+      return opts.up === false || targetRole === "listener" ? OK : bad;
     case "approve":
     case "reject":
       return targetRole === "listener" ? OK : bad;
@@ -396,7 +446,7 @@ export type Transition = { ok: true; next: LiveStatus } | { ok: false; code: "in
  *   start       green → live
  *   end         live → ended · scheduled/green → cancelled
  *   set_allow_requests  scheduled/green/live, unchanged
- *   approve/reject/mute/demote/host_leave  live only, unchanged
+ *   approve/reject/mute/demote/host_leave/hand  live only, unchanged
  *   leave       any, unchanged
  *   auto_end    live → ended · green → cancelled · anything else unchanged
  *               (idempotent: the worker may retry, or both host_absent and
@@ -421,6 +471,7 @@ export function statusAfter(action: LiveAction, status: string): Transition {
     case "mute":
     case "demote":
     case "host_leave":
+    case "hand":
       return status === "live" ? same() : bad;
     case "leave":
       return same();
@@ -433,18 +484,64 @@ export function statusAfter(action: LiveAction, status: string): Transition {
 
 /**
  * live_moderation_log.action (0135 check list) for an action, or null when it
- * isn't logged (`leave`). A speaker demoting himself is `step_down`; ending a
- * session that never went live is `cancel`; the worker's end is `auto_end`.
+ * isn't logged (`leave`, `hand` — a participant's own request isn't a
+ * moderation act; its last toggle is live_participants.hand_at). A speaker
+ * demoting himself is `step_down`; ending a session that never went live is
+ * `cancel`; the worker's end is `auto_end`.
  */
 export function auditAction(
   action: LiveAction,
   ctx: { targetIsSelf?: boolean; next?: LiveStatus } = {},
 ): string | null {
-  if (action === "leave") return null;
+  if (action === "leave" || action === "hand") return null;
   if (action === "auto_end") return "auto_end";
   if (action === "end") return ctx.next === "cancelled" ? "cancel" : "end";
   if (action === "demote" && ctx.targetIsSelf) return "step_down";
   return action;
+}
+
+// ─── Hand «طلب الكلمة» (P4) ────────────────────────────────────────────────────
+
+/** §10: at most one hand toggle per 5 s per participant (server-side, 0141 hand_at). */
+export const HAND_RATE_LIMIT_MS = 5_000;
+
+/**
+ * Was the participant's last toggle (live_participants.hand_at, ms) less than
+ * the window ago? null/unknown = never toggled = free.
+ */
+export function handRateLimited(
+  lastMs: number | null | undefined,
+  nowMs: number,
+  windowMs = HAND_RATE_LIMIT_MS,
+): boolean {
+  return lastMs != null && Number.isFinite(lastMs) && nowMs - lastMs < windowMs;
+}
+
+/**
+ * The session-level checks of a hand toggle, after authorizeLiveAction /
+ * canTarget / statusAfter: raising needs «استقبال طلبات الكلمة» on
+ * (requests_closed) and the rate limit (rate_limited). Lowering is always
+ * allowed — never trap a hand up (it still records hand_at, so a raise right
+ * after a lower waits the window).
+ */
+export function handVerdict(input: {
+  up: boolean;
+  allowRequests: boolean;
+  lastToggleMs: number | null | undefined;
+  nowMs: number;
+}): Verdict<"requests_closed" | "rate_limited"> {
+  if (!input.up) return OK;
+  if (!input.allowRequests) return { ok: false, code: "requests_closed" };
+  if (handRateLimited(input.lastToggleMs, input.nowMs)) return { ok: false, code: "rate_limited" };
+  return OK;
+}
+
+/**
+ * The `h` attribute value: raised → the raise time in epoch SECONDS (always
+ * > 1, so the client's parseHand orders requests oldest first); lowered → '0'.
+ */
+export function handAttribute(up: boolean, nowMs: number): string {
+  return up ? String(Math.floor(nowMs / 1000)) : "0";
 }
 
 /** D4: minutes of host absence before the worker ends the session. */
@@ -499,9 +596,9 @@ export const REJECTED_MESSAGE = JSON.stringify({ t: "rejected" });
 
 export type LiveErrorCode =
   | "bad_request" | "unauthorized" | "forbidden" | "banned" | "not_found" | "not_visible"
-  | "gender_required" | "not_open" | "ended" | "invalid_state" | "invalid_target"
+  | "guest_cannot_speak" | "gender_required" | "not_open" | "ended" | "invalid_state" | "invalid_target"
   | "another_live_active" | "not_present" | "no_track" | "no_moderator_present"
-  | "livekit_error" | "server_error";
+  | "requests_closed" | "rate_limited" | "livekit_error" | "server_error";
 
 export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   bad_request: 400,
@@ -509,6 +606,8 @@ export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   forbidden: 403,
   banned: 403,
   not_visible: 403,
+  /** Guests listen only (owner 2026-09-28): a guest raising a hand, or being approved. */
+  guest_cannot_speak: 403,
   not_found: 404,
   gender_required: 409,
   not_open: 409,
@@ -519,6 +618,10 @@ export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   not_present: 409,
   no_track: 409,
   no_moderator_present: 409,
+  /** hand up while «استقبال طلبات الكلمة» is off. */
+  requests_closed: 409,
+  /** hand toggled again within HAND_RATE_LIMIT_MS. */
+  rate_limited: 429,
   livekit_error: 502,
   server_error: 500,
 };
@@ -558,6 +661,8 @@ export type LiveControlRequest = {
   allow: boolean | null;
   /** auto_end. */
   reason: AutoEndReason | null;
+  /** hand: raise (true) / lower (false). */
+  up: boolean | null;
 };
 
 export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveControlRequest } | { ok: false; error: string } {
@@ -578,15 +683,20 @@ export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveC
     return { ok: false, error: "invalid reason" };
   }
   if (b.action === "auto_end" && reason === null) return { ok: false, error: "reason required" };
+  const up = b.up ?? null;
+  if (up !== null && typeof up !== "boolean") return { ok: false, error: "invalid up" };
+  if (b.action === "hand" && up === null) return { ok: false, error: "up required" };
   return {
     ok: true,
     value: {
       action: b.action,
       sessionId: b.sessionId,
-      identity: identity as string | null,
+      // `hand` acts on the caller himself — an identity in the body is ignored.
+      identity: b.action === "hand" ? null : identity as string | null,
       trackSid: trackSid as string | null,
       allow: typeof allow === "boolean" ? allow : null,
       reason: reason as AutoEndReason | null,
+      up: typeof up === "boolean" ? up : null,
     },
   };
 }

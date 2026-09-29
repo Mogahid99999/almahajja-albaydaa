@@ -6,8 +6,13 @@ import {
   auditAction,
   authorizeLiveAction,
   canJoin,
+  canSpeak,
   canTarget,
   envFromRoomPrefix,
+  HAND_RATE_LIMIT_MS,
+  handAttribute,
+  handRateLimited,
+  handVerdict,
   hostAbsenceExpired,
   isBanned,
   isEnvRoom,
@@ -50,12 +55,12 @@ const user = (over: Partial<Extract<LiveActor, { kind: 'user' }>> = {}): LiveAct
 });
 
 describe('§5.1 grants table', () => {
-  test('listeners only subscribe and set their own hand/name; nobody is roomAdmin', () => {
+  test('listeners only subscribe; nobody is roomAdmin', () => {
     expect(LIVE_GRANTS.listener).toEqual({
       canSubscribe: true,
       canPublish: false,
       canPublishData: false,
-      canUpdateOwnMetadata: true,
+      canUpdateOwnMetadata: false,
       roomAdmin: false,
     });
     for (const role of ['host', 'moderator'] as const) {
@@ -63,7 +68,7 @@ describe('§5.1 grants table', () => {
         canSubscribe: true,
         canPublish: true,
         canPublishData: true,
-        canUpdateOwnMetadata: true,
+        canUpdateOwnMetadata: false,
         roomAdmin: false,
       });
     }
@@ -76,10 +81,23 @@ describe('§5.1 grants table', () => {
       canSubscribe: true,
       canPublish: true,
       canPublishData: false,
-      canUpdateMetadata: true,
+      canUpdateMetadata: false,
       hidden: false,
     });
     expect(speakerPermission(false)).toMatchObject({ canSubscribe: true, canPublish: false });
+  });
+
+  test('the P4 attribute-spoofing regression: no token or permission lets a participant write attributes or his name', () => {
+    // LiveKit lets a holder of canUpdateOwnMetadata / canUpdateMetadata set ANY
+    // attribute and his own name — a listener could claim r=host (the client
+    // seats the sheikh by attribute r) or rename himself.
+    for (const role of ['listener', 'speaker', 'host', 'moderator'] as const) {
+      expect(LIVE_GRANTS[role].canUpdateOwnMetadata).toBe(false);
+      expect(LIVE_GRANTS[role].roomAdmin).toBe(false);
+    }
+    for (const canPublish of [true, false]) {
+      expect(speakerPermission(canPublish).canUpdateMetadata).toBe(false);
+    }
   });
 });
 
@@ -90,13 +108,26 @@ describe('role in the session', () => {
     for (const r of ['admin', 'publisher', 'sheikh']) {
       expect(liveRoleFor({ ...base, appRole: r })).toBe('moderator');
     }
-    expect(liveRoleFor({ ...base, appRole: 'student', storedRole: 'speaker' })).toBe('speaker');
     expect(liveRoleFor({ ...base, appRole: 'student' })).toBe('listener');
-    expect(liveRoleFor({ ...base, appRole: null, isGuest: true, storedRole: 'speaker' })).toBe('speaker');
+  });
+
+  test('a speaker re-joining after a network drop keeps the mic (new token from the stored role)', () => {
+    // live-token reads live_participants.role; only an explicit leave/demote resets it.
+    const role = liveRoleFor({ userId: USER, appRole: 'student', isGuest: false, hostUserId: HOST, storedRole: 'speaker' });
+    expect(role).toBe('speaker');
+    expect(LIVE_GRANTS[role].canPublish).toBe(true);
+    expect(participantAttributes({ gender: 'm', role, hiddenName: false })).toMatchObject({ r: 'speaker', h: '0' });
   });
 
   test('a guest is never staff, whatever the profile says', () => {
     expect(liveRoleFor({ userId: HOST, appRole: 'admin', isGuest: true, hostUserId: HOST })).toBe('listener');
+  });
+
+  test('guests listen only (owner 2026-09-28): a stored speaker role never gives a guest the mic', () => {
+    // e.g. a guest approved by a P2 server, before the rule was enforced.
+    expect(liveRoleFor({ userId: USER, appRole: null, isGuest: true, hostUserId: HOST, storedRole: 'speaker' })).toBe(
+      'listener',
+    );
   });
 
   test('green admits host/moderators only; live admits everyone; over is over', () => {
@@ -167,26 +198,36 @@ describe('names and privacy (decision 3, D2 as changed 2026-09-28)', () => {
 });
 
 describe('§5.2 action → permission (D1)', () => {
-  test('students and guests may only leave (or a speaker step himself down)', () => {
+  test('students and guests may only leave, toggle their own hand (or a speaker step himself down)', () => {
     for (const action of LIVE_ACTIONS) {
+      if (action === 'hand') continue; // below
       const expected = action === 'leave' ? { ok: true } : { ok: false, code: 'forbidden' };
       expect(authorizeLiveAction(action, user())).toEqual(expected);
       expect(authorizeLiveAction(action, user({ isGuest: true, appRole: null }))).toEqual(expected);
     }
+    expect(authorizeLiveAction('hand', user(), { up: true })).toEqual({ ok: true });
+    expect(authorizeLiveAction('hand', user({ isGuest: true, appRole: null }), { up: true })).toEqual({
+      ok: false,
+      code: 'guest_cannot_speak',
+    });
     expect(authorizeLiveAction('demote', user({ liveRole: 'speaker' }), { targetIsSelf: true })).toEqual({ ok: true });
     expect(authorizeLiveAction('demote', user({ isGuest: true, liveRole: 'speaker' }), { targetIsSelf: true })).toEqual({
       ok: true,
     });
   });
 
-  test('first gate: students/guests are refused everything but leave/step-down before any lookup', () => {
+  test('first gate: students/guests are refused everything but leave/step-down/own hand before any lookup', () => {
     for (const action of LIVE_ACTIONS) {
-      const ok = action === 'leave' || action === 'demote';
-      expect(preauthorizeLiveAction(action, { appRole: 'student', isGuest: false }).ok).toBe(ok);
-      expect(preauthorizeLiveAction(action, { appRole: null, isGuest: true }).ok).toBe(ok);
-      expect(preauthorizeLiveAction(action, { appRole: 'admin', isGuest: true }).ok).toBe(ok);
-      expect(preauthorizeLiveAction(action, { appRole: 'sheikh', isGuest: false }).ok).toBe(action !== 'auto_end');
+      const ok = action === 'leave' || action === 'demote' || action === 'hand';
+      const lower = { up: false };
+      expect(preauthorizeLiveAction(action, { appRole: 'student', isGuest: false }, lower).ok).toBe(ok);
+      expect(preauthorizeLiveAction(action, { appRole: null, isGuest: true }, lower).ok).toBe(ok);
+      expect(preauthorizeLiveAction(action, { appRole: 'admin', isGuest: true }, lower).ok).toBe(ok);
+      expect(preauthorizeLiveAction(action, { appRole: 'sheikh', isGuest: false }, lower).ok).toBe(action !== 'auto_end');
     }
+    // Everything else is refused as `forbidden` — only a guest's raise has its own code.
+    expect(preauthorizeLiveAction('approve', { appRole: 'student', isGuest: false })).toEqual({ ok: false, code: 'forbidden' });
+    expect(preauthorizeLiveAction('approve', { appRole: null, isGuest: true })).toEqual({ ok: false, code: 'forbidden' });
   });
 
   test('D1: a speaker cannot demote ANOTHER speaker; moderators can', () => {
@@ -255,8 +296,95 @@ describe('§5.2 action → permission (D1)', () => {
       }
     }
     expect(auditAction('leave')).toBeNull();
+    expect(auditAction('hand')).toBeNull(); // not in the 0135 check list — a request isn't a moderation act
     expect(auditAction('demote', { targetIsSelf: true })).toBe('step_down');
     expect(auditAction('end', { next: 'cancelled' })).toBe('cancel');
+  });
+});
+
+describe('P4 hand «طلب الكلمة» and guests (owner 2026-09-28: guests listen only)', () => {
+  test('guests listen only (owner 2026-09-28): a guest raising his hand is guest_cannot_speak, before any lookup', () => {
+    for (const appRole of [null, 'student', 'admin']) {
+      expect(preauthorizeLiveAction('hand', { appRole, isGuest: true }, { up: true })).toEqual({
+        ok: false,
+        code: 'guest_cannot_speak',
+      });
+      expect(authorizeLiveAction('hand', user({ appRole, isGuest: true }), { up: true })).toEqual({
+        ok: false,
+        code: 'guest_cannot_speak',
+      });
+    }
+    // A missing `up` is treated as a raise (strict).
+    expect(preauthorizeLiveAction('hand', { appRole: null, isGuest: true })).toEqual({ ok: false, code: 'guest_cannot_speak' });
+    expect(authorizeLiveAction('hand', user({ isGuest: true }))).toEqual({ ok: false, code: 'guest_cannot_speak' });
+    expect(LIVE_ERROR_STATUS.guest_cannot_speak).toBe(403);
+  });
+
+  test('a registered listener may raise; lowering is allowed for anyone (idempotent)', () => {
+    expect(preauthorizeLiveAction('hand', { appRole: 'student', isGuest: false }, { up: true })).toEqual({ ok: true });
+    expect(authorizeLiveAction('hand', user(), { up: true })).toEqual({ ok: true });
+    expect(canTarget('hand', 'listener', { up: true })).toEqual({ ok: true });
+    for (const [appRole, isGuest] of [['student', false], [null, true], ['sheikh', false]] as const) {
+      expect(preauthorizeLiveAction('hand', { appRole, isGuest }, { up: false })).toEqual({ ok: true });
+      expect(authorizeLiveAction('hand', user({ appRole, isGuest }), { up: false })).toEqual({ ok: true });
+    }
+    for (const role of ['listener', 'speaker', 'host', 'moderator']) {
+      expect(canTarget('hand', role, { up: false })).toEqual({ ok: true });
+    }
+    // The service role (media worker) never touches hands.
+    expect(authorizeLiveAction('hand', { kind: 'system' }, { up: false })).toEqual({ ok: false, code: 'forbidden' });
+  });
+
+  test('only a listener raises: a speaker (or staff) up:true is invalid_target', () => {
+    for (const role of ['speaker', 'host', 'moderator', null]) {
+      expect(canTarget('hand', role, { up: true })).toEqual({ ok: false, code: 'invalid_target' });
+    }
+    expect(canTarget('hand', 'speaker')).toEqual({ ok: false, code: 'invalid_target' }); // missing up = raise
+  });
+
+  test('live sessions only', () => {
+    expect(statusAfter('hand', 'live')).toEqual({ ok: true, next: 'live' });
+    for (const s of ['scheduled', 'green', 'ended', 'processing', 'cancelled']) {
+      expect(statusAfter('hand', s)).toEqual({ ok: false, code: 'invalid_state' });
+    }
+  });
+
+  test('rate limit edges: 4999 ms limited, 5000 ms free, never toggled free', () => {
+    const now = Date.parse('2026-09-29T10:00:05Z');
+    expect(HAND_RATE_LIMIT_MS).toBe(5000);
+    expect(handRateLimited(now - 4999, now)).toBe(true);
+    expect(handRateLimited(now - 5000, now)).toBe(false);
+    expect(handRateLimited(now - 60_000, now)).toBe(false);
+    expect(handRateLimited(null, now)).toBe(false);
+    expect(handRateLimited(undefined, now)).toBe(false);
+    expect(handRateLimited(Number.NaN, now)).toBe(false); // unparsable hand_at
+    expect(LIVE_ERROR_STATUS.rate_limited).toBe(429);
+  });
+
+  test('raising needs «استقبال طلبات الكلمة» and the rate limit; lowering is never refused', () => {
+    const now = Date.parse('2026-09-29T10:00:05Z');
+    const base = { up: true, allowRequests: true, lastToggleMs: null, nowMs: now };
+    expect(handVerdict(base)).toEqual({ ok: true });
+    expect(handVerdict({ ...base, allowRequests: false })).toEqual({ ok: false, code: 'requests_closed' });
+    expect(handVerdict({ ...base, lastToggleMs: now - 4999 })).toEqual({ ok: false, code: 'rate_limited' });
+    expect(handVerdict({ ...base, lastToggleMs: now - 5000 })).toEqual({ ok: true });
+    // requests closed wins over the rate limit (the more useful message)
+    expect(handVerdict({ ...base, allowRequests: false, lastToggleMs: now - 1 })).toEqual({ ok: false, code: 'requests_closed' });
+    // A hand is never trapped up: lowering ignores both.
+    expect(handVerdict({ ...base, up: false, allowRequests: false, lastToggleMs: now - 1 })).toEqual({ ok: true });
+    expect(LIVE_ERROR_STATUS.requests_closed).toBe(409);
+  });
+
+  test('h = raise time in epoch seconds (> 1, parseHand orders by it) / "0" down', () => {
+    const now = Date.parse('2026-09-29T10:00:05.987Z');
+    expect(handAttribute(true, now)).toBe(String(Math.floor(now / 1000)));
+    expect(Number(handAttribute(true, now))).toBeGreaterThan(1);
+    expect(handAttribute(false, now)).toBe('0');
+  });
+
+  test('approve refuses a guest target (read fresh from auth.users.is_anonymous)', () => {
+    expect(canSpeak({ isGuest: true })).toEqual({ ok: false, code: 'guest_cannot_speak' });
+    expect(canSpeak({ isGuest: false })).toEqual({ ok: true });
   });
 });
 
@@ -269,6 +397,7 @@ describe('status transitions (same graph as set_live_session_status, 0138)', () 
     ['end', 'green', 'cancelled'],
     ['end', 'scheduled', 'cancelled'],
     ['approve', 'live', 'live'],
+    ['hand', 'live', 'live'],
     ['set_allow_requests', 'scheduled', 'scheduled'],
     ['leave', 'ended', 'ended'],
     ['auto_end', 'live', 'ended'],
@@ -288,6 +417,7 @@ describe('status transitions (same graph as set_live_session_status, 0138)', () 
     ['end', 'ended'],
     ['open_green', 'live'],
     ['approve', 'green'],
+    ['hand', 'green'],
     ['mute', 'ended'],
     ['set_allow_requests', 'ended'],
   ] as [LiveAction, string][])('%s from %s is refused', (action, from) => {
@@ -300,6 +430,10 @@ describe('status transitions (same graph as set_live_session_status, 0138)', () 
     expect(LIVE_ERROR_STATUS.another_live_active).toBe(409);
     expect(LIVE_ERROR_STATUS.gender_required).toBe(409);
     expect(LIVE_ERROR_STATUS.banned).toBe(403);
+  });
+
+  test('P4 error codes: guest_cannot_speak 403 · requests_closed 409 · rate_limited 429', () => {
+    expect(LIVE_ERROR_STATUS).toMatchObject({ guest_cannot_speak: 403, requests_closed: 409, rate_limited: 429 });
   });
 });
 
@@ -374,6 +508,7 @@ describe('request parsing', () => {
         trackSid: null,
         allow: null,
         reason: null,
+        up: null,
       },
     });
     expect(parseLiveControlRequest({ action: 'auto_end', sessionId: SESSION, reason: 'host_absent' })).toMatchObject({
@@ -399,5 +534,27 @@ describe('request parsing', () => {
     });
     expect(parseLiveControlRequest({ action: 'mute', sessionId: SESSION, identity: '0123456789abcdef', trackSid: 'x' }).ok).toBe(false);
     expect(parseLiveControlRequest({ action: 'end', sessionId: SESSION }).ok).toBe(true);
+  });
+
+  test('live-control hand: `up` is a required boolean; the caller acts on himself', () => {
+    expect(parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: true })).toEqual({
+      ok: true,
+      value: { action: 'hand', sessionId: SESSION, identity: null, trackSid: null, allow: null, reason: null, up: true },
+    });
+    expect(parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: false })).toMatchObject({
+      ok: true,
+      value: { up: false },
+    });
+    expect(parseLiveControlRequest({ action: 'hand', sessionId: SESSION })).toEqual({ ok: false, error: 'up required' });
+    expect(parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: 'true' })).toEqual({
+      ok: false,
+      error: 'invalid up',
+    });
+    expect(parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: 1 }).ok).toBe(false);
+    // Someone else's identity in the body is ignored — never "lower another's hand".
+    expect(
+      parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: false, identity: '0123456789abcdef' }),
+    ).toMatchObject({ ok: true, value: { identity: null } });
+    expect(parseLiveControlRequest({ action: 'hand', sessionId: 'nope', up: true }).ok).toBe(false);
   });
 });

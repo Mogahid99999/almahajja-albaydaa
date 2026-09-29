@@ -21,7 +21,17 @@
 //     everyone — stays «طالبة» for a hidden sister; guests are «ضيف»/«ضيفة».
 //  6. green room: rooms are NOT auto-created on our LiveKit (auto_create:false),
 //     so CreateRoom (idempotent) before the host/moderators join
-//  7. AccessToken (2 h) with the §5.1 grants; publishing = microphone only
+//  7. AccessToken (2 h) with the §5.1 grants; publishing = microphone only.
+//     P4: canUpdateOwnMetadata is false for every role — attributes (g/r/h/hid)
+//     and the name are server-only (a participant holding that grant could set
+//     r=host or rename himself); the hand goes through live-control `hand`, and
+//     a sister's identity change is a new call here (new token, same identity).
+//
+// Re-join (network drop → new call here): the role comes from the stored
+// live_participants.role, so an approved SPEAKER keeps canPublish + r=speaker;
+// the webhook's participant_left never touches role (0138 live_room_event) —
+// only an explicit live-control `leave` or a demote does. The new token's hand
+// starts down (h=0). A guest is always a listener (guests listen only).
 //
 // Pure rules: ../_shared/liveRules.ts (tests/functions/liveRules.test.ts).
 // =============================================================================
@@ -121,7 +131,7 @@ Deno.serve(async (req) => {
       .maybeSingle(),
   ]);
 
-  const role = liveRoleFor({
+  let role = liveRoleFor({
     userId,
     appRole: profile?.role,
     isGuest,
@@ -152,21 +162,55 @@ Deno.serve(async (req) => {
 
   // 5. Participant row.
   const hidden = resolveHiddenName(gender, identityChoice, stored?.hidden_name);
-  const name = participantDisplayName({ isGuest, gender, hiddenName: hidden, role, displayName: profile?.display_name });
-  const { error: upErr } = await admin.from("live_participants").upsert(
-    {
-      session_id: sessionId,
-      user_id: userId,
-      identity,
-      gender,
-      hidden_name: hidden,
-      display_name: realDisplayName(profile?.display_name),
-      role,
-      left_at: null,
-    },
-    { onConflict: "session_id,user_id" },
-  );
+  const row = {
+    session_id: sessionId,
+    user_id: userId,
+    identity,
+    gender,
+    hidden_name: hidden,
+    display_name: realDisplayName(profile?.display_name),
+    role,
+    left_at: null,
+  };
+  let upErr: { message: string } | null = null;
+  if (!stored) {
+    ({ error: upErr } = await admin.from("live_participants").upsert(row, { onConflict: "session_id,user_id" }));
+  } else {
+    // A re-join must never undo a demote/approve that lands between the read
+    // above and this write: write the role only if it is still the one read,
+    // else re-derive it from the fresh row.
+    const { data: hit, error } = await admin
+      .from("live_participants")
+      .update(row)
+      .eq("session_id", sessionId)
+      .eq("user_id", userId)
+      .eq("role", stored.role)
+      .select("user_id");
+    upErr = error;
+    if (!error && !hit?.length) {
+      const { data: fresh, error: freshErr } = await admin
+        .from("live_participants")
+        .select("role")
+        .eq("session_id", sessionId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (freshErr) return fail("server_error", freshErr.message);
+      role = liveRoleFor({
+        userId,
+        appRole: profile?.role,
+        isGuest,
+        hostUserId: session.host_user_id,
+        storedRole: fresh?.role,
+      });
+      ({ error: upErr } = await admin
+        .from("live_participants")
+        .update({ ...row, role })
+        .eq("session_id", sessionId)
+        .eq("user_id", userId));
+    }
+  }
   if (upErr) return fail("server_error", upErr.message);
+  const name = participantDisplayName({ isGuest, gender, hiddenName: hidden, role, displayName: profile?.display_name });
 
   // 6. The green room must exist before the host joins (auto_create: false).
   if (session.status === "green") {

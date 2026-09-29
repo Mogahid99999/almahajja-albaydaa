@@ -283,6 +283,30 @@ export function mapLiveTokenErrorCode(serverCode: string | null | undefined, htt
 /** Edge-function call bound (functions are unbounded in supabase.ts). */
 const LIVE_TOKEN_TIMEOUT_MS = 20_000;
 const LIVE_CONTROL_TIMEOUT_MS = 20_000;
+/**
+ * Hard deadline on the WHOLE invoke. `timeout` only bounds the fetch; before it
+ * supabase-js awaits the auth session (GoTrue's lock), which can wait with no
+ * bound after the app was backgrounded (e.g. behind the OS mic-permission
+ * dialog) — a join / re-join loop awaiting that would hang silently forever.
+ */
+const INVOKE_DEADLINE_EXTRA_MS = 5_000;
+
+/** Rejects with `onTimeout()` if `p` hasn't settled within `ms`. */
+export function withDeadline<T>(p: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(onTimeout()), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
 
 /** The `{ error }` code + HTTP status of a failed functions.invoke, or a transport failure. */
 async function readFunctionError(
@@ -314,10 +338,14 @@ export async function fetchLiveToken(
 ): Promise<LiveToken> {
   let result: { data: unknown; error: unknown };
   try {
-    result = await supabase.functions.invoke('live-token', {
-      body: identityChoice ? { sessionId, identityChoice } : { sessionId },
-      timeout: LIVE_TOKEN_TIMEOUT_MS,
-    });
+    result = await withDeadline(
+      supabase.functions.invoke('live-token', {
+        body: identityChoice ? { sessionId, identityChoice } : { sessionId },
+        timeout: LIVE_TOKEN_TIMEOUT_MS,
+      }),
+      LIVE_TOKEN_TIMEOUT_MS + INVOKE_DEADLINE_EXTRA_MS,
+      () => new LiveTokenError('network'),
+    );
   } catch {
     throw new LiveTokenError('network');
   }
@@ -374,10 +402,14 @@ export async function liveControl(
 ): Promise<{ ok: boolean; status?: LiveStatus }> {
   let result: { data: unknown; error: unknown };
   try {
-    result = await supabase.functions.invoke('live-control', {
-      body: { ...body, action },
-      timeout: LIVE_CONTROL_TIMEOUT_MS,
-    });
+    result = await withDeadline(
+      supabase.functions.invoke('live-control', {
+        body: { ...body, action },
+        timeout: LIVE_CONTROL_TIMEOUT_MS,
+      }),
+      LIVE_CONTROL_TIMEOUT_MS + INVOKE_DEADLINE_EXTRA_MS,
+      () => new LiveControlError('network'),
+    );
   } catch {
     throw new LiveControlError('network');
   }
@@ -387,6 +419,37 @@ export async function liveControl(
   }
   const d = (result.data ?? {}) as { ok?: unknown; status?: unknown };
   return { ok: d.ok === true, status: isLiveStatus(d.status) ? d.status : undefined };
+}
+
+// ─── Hosting (P4) ──────────────────────────────────────────────────────────────
+
+/**
+ * create_live_session (0138) — sheikh / admin / publisher, from the section page
+ * (the recording lands in that section). Starts now: the caller goes straight
+ * to the green room. Server errors (D3 «بث آخر قائم», title length…) come back
+ * as the Postgres error with an Arabic message.
+ */
+export async function createLiveSession(input: {
+  sectionId: string;
+  title: string;
+  /** «إشعار للجميع عند البدء». */
+  notify?: boolean;
+  allowRequests?: boolean;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('create_live_session', {
+    p_section: input.sectionId,
+    p_title: input.title,
+    p_notify: input.notify ?? true,
+    p_allow_requests: input.allowRequests ?? true,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+/** cancel_live_session (0138) — a scheduled or green session only (a live one ends through live-control). */
+export async function cancelLiveSession(sessionId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_live_session', { p_session: sessionId });
+  if (error) throw error;
 }
 
 // ─── Staff (D2) ────────────────────────────────────────────────────────────────

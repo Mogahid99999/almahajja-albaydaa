@@ -1,14 +1,22 @@
 // =============================================================================
 // live-control — the server side of every live-session state or permission
 // change (PLAN_LIVE_V23 §5.2). verify_jwt=true. Every action needs a USER JWT
-// and is staff only, except `leave` (anyone) and a speaker stepping himself
-// down (D1) — except `auto_end`, which ONLY the service-role key may call (the
-// media worker: D4 host absent 10 min, or LiveKit room_finished).
+// and is staff only, except `leave` (anyone), `hand` (a registered user on
+// himself) and a speaker stepping himself down (D1) — except `auto_end`, which
+// ONLY the service-role key may call (the media worker: D4 host absent 10 min,
+// or LiveKit room_finished).
+//
+// P4: participant attributes (g/r/h/hid) and names are SERVER-ONLY — no token
+// or permission grants canUpdateOwnMetadata/canUpdateMetadata, so every
+// attribute change (hand included) happens here. Guests LISTEN only (owner
+// 2026-09-28): a guest raising a hand, or a guest target of `approve`, is
+// 403 guest_cannot_speak (is_anonymous read fresh from auth.users).
 //
 // Secrets: LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET /
 // LIVEKIT_ROOM_PREFIX ('stg_' | 'prd_') + the default SUPABASE_* ones.
 //
-// Input { action, sessionId, identity?, trackSid?, allow?, reason? }
+// Input { action, sessionId, identity?, trackSid?, allow?, reason?, up? }
+// Output { ok: true, status, ...action result } · error { error: code, detail? }
 //   open_green          scheduled → green; CreateRoom (auto_create is off)
 //   start               green → live; CreateRoom + audio-only RoomComposite
 //                       egress to the VPS DISK (owner rule: a recording is
@@ -23,14 +31,29 @@
 //   auto_end            service role only, { sessionId, reason:
 //                       'host_absent' | 'room_finished' }: same as end for a
 //                       live/green session; a no-op (200) for one already over.
-//   approve             listener → speaker: canPublish (mic only), r=speaker
+//   approve             listener → speaker: canPublish (mic only), r=speaker,
+//                       h=0. A guest target → 403 guest_cannot_speak.
 //   reject              h=0 + data message {t:'rejected'} to that participant
 //   mute                MutePublishedTrack(mic) — the speaker keeps permission
 //                       and may reopen (decision 6)
-//   demote              speaker → listener (moderators; or himself — step_down)
+//   demote              speaker → listener (moderators; or himself — step_down).
+//                       If he is out of the room (network drop) the DB role
+//                       still changes, so his re-join token is a listener's.
 //   set_allow_requests  «استقبال طلبات الكلمة» → session row + room metadata
 //   host_leave          the host hands the session to a moderator present
-//   leave               marks left_at (an explicit leave drops speaker status)
+//   leave               marks left_at (an explicit leave drops speaker status;
+//                       a network drop does NOT — live-token keeps a stored
+//                       speaker a speaker on re-join)
+//   hand                { sessionId, up: boolean } — the CALLER's own hand
+//                       (identity ignored), live sessions only. up:true: a
+//                       listener only (else 409 invalid_target), guests 403
+//                       guest_cannot_speak, «استقبال طلبات الكلمة» off 409
+//                       requests_closed, ≤ 1 toggle / 5 s (0141 hand_at, 429
+//                       rate_limited). up:false: anyone, idempotent, never
+//                       rate-limited (also fine when he already left the
+//                       room). Sets h = raise time in epoch seconds / '0';
+//                       → { ok, status, hand: boolean, handAt: seconds | null }.
+//                       Not in live_moderation_log.
 //
 // Every lifecycle transition goes through set_live_session_status (0138,
 // service role: D3 guard, timestamps, fan-outs). Every moderation action is
@@ -53,8 +76,12 @@ import {
 import {
   auditAction,
   authorizeLiveAction,
+  canSpeak,
   canTarget,
   envFromRoomPrefix,
+  HAND_RATE_LIMIT_MS,
+  handAttribute,
+  handVerdict,
   isBanned,
   isEnvRoom,
   jwtRoleClaim,
@@ -164,7 +191,7 @@ async function handle(req: Request): Promise<Response> {
     isGuest = u.is_anonymous === true;
     const { data: profile } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
     appRole = profile?.role ?? null;
-    const pre = preauthorizeLiveAction(r.action, { appRole, isGuest });
+    const pre = preauthorizeLiveAction(r.action, { appRole, isGuest }, { up: r.up ?? undefined });
     if (!pre.ok) return fail(pre.code);
   }
 
@@ -181,6 +208,8 @@ async function handle(req: Request): Promise<Response> {
   const callerPart = userId ? await participantBy(admin, session.id, "user_id", userId) : null;
   const target = r.identity ? await participantBy(admin, session.id, "identity", r.identity) : null;
   if (TARGETED_ACTIONS.includes(r.action) && !target) return fail("not_present");
+  // `hand` acts on the caller: he must have joined (live-token wrote his row).
+  if (r.action === "hand" && !callerPart) return fail("not_present");
   const targetIsSelf = !!target && !!userId && target.user_id === userId;
 
   const actor: LiveActor = system
@@ -192,10 +221,14 @@ async function handle(req: Request): Promise<Response> {
       isHost: !!userId && userId === session.host_user_id,
       liveRole: callerPart?.role ?? null,
     };
-  const authz = authorizeLiveAction(r.action, actor, { targetIsSelf });
+  const authz = authorizeLiveAction(r.action, actor, { targetIsSelf, up: r.up ?? undefined });
   if (!authz.ok) return fail(authz.code);
   if (target && r.action !== "leave") {
     const t = canTarget(r.action, target.role);
+    if (!t.ok) return fail(t.code);
+  }
+  if (r.action === "hand") {
+    const t = canTarget("hand", callerPart!.role, { up: r.up === true });
     if (!t.ok) return fail(t.code);
   }
   const transition = statusAfter(r.action, session.status);
@@ -270,6 +303,12 @@ async function handle(req: Request): Promise<Response> {
     }
 
     case "approve": {
+      // Guests listen only (owner 2026-09-28). Read fresh: the row can't tell,
+      // and a guest who registers since keeps the same user id.
+      const { data: targetUser, error: tuErr } = await admin.auth.admin.getUserById(target!.user_id);
+      if (tuErr || !targetUser?.user) return fail("server_error", tuErr?.message ?? "target user not found");
+      const speak = canSpeak({ isGuest: (targetUser.user as { is_anonymous?: boolean }).is_anonymous === true });
+      if (!speak.ok) return fail(speak.code);
       await lk(() => rooms.updateParticipant(room, target!.identity, {
         permission: { ...speakerPermission(true), canPublishSources: [TrackSource.MICROPHONE] },
         attributes: { r: "speaker", h: "0" },
@@ -306,8 +345,10 @@ async function handle(req: Request): Promise<Response> {
           attributes: { r: "listener", h: "0" },
         }));
       } catch (e) {
-        // A speaker stepping down after dropping out of the room: the DB still changes.
-        if (!(targetIsSelf && e instanceof LiveFail && e.code === "not_present")) throw e;
+        // Out of the room (network drop, or stepping down after dropping out):
+        // the DB role still changes, so his re-join token (live-token reads
+        // live_participants.role) is a listener's — a demote must stick.
+        if (!(e instanceof LiveFail && e.code === "not_present")) throw e;
       }
       await setRole(admin, session.id, target!.identity, "listener");
       break;
@@ -375,6 +416,78 @@ async function handle(req: Request): Promise<Response> {
           .eq("user_id", callerPart.user_id);
         if (error) return fail("server_error", error.message);
       }
+      break;
+    }
+
+    case "hand": {
+      // The caller's own hand (authz: guests can't raise; canTarget: listeners only raise).
+      const up = r.up === true;
+      const me = callerPart!;
+      const nowMs = Date.now();
+      const nowIso = new Date(nowMs).toISOString();
+      // hand_at (0141) is only ever read/written here — the other actions don't
+      // depend on the column.
+      let prevHandAt: string | null = null;
+      if (up) {
+        const { data: row, error } = await admin
+          .from("live_participants")
+          .select("hand_at")
+          .eq("session_id", session.id)
+          .eq("user_id", me.user_id)
+          .maybeSingle<{ hand_at: string | null }>();
+        if (error) return fail("server_error", error.message);
+        prevHandAt = row?.hand_at ?? null;
+      }
+      const v = handVerdict({
+        up,
+        allowRequests: session.allow_requests,
+        lastToggleMs: prevHandAt ? Date.parse(prevHandAt) : null,
+        nowMs,
+      });
+      if (!v.ok) return fail(v.code);
+
+      if (up) {
+        // Claim the rate-limit slot atomically: a concurrent raise re-evaluates
+        // this WHERE against the row we just updated, and loses.
+        const cutoff = new Date(nowMs - HAND_RATE_LIMIT_MS).toISOString();
+        const { data: claimed, error } = await admin
+          .from("live_participants")
+          .update({ hand_at: nowIso })
+          .eq("session_id", session.id)
+          .eq("user_id", me.user_id)
+          .or(`hand_at.is.null,hand_at.lte."${cutoff}"`)
+          .select("user_id");
+        if (error) return fail("server_error", error.message);
+        if (!claimed?.length) return fail("rate_limited");
+      }
+
+      const h = handAttribute(up, nowMs);
+      try {
+        await lk(() => rooms.updateParticipant(room, me.identity, { attributes: { h } }));
+      } catch (e) {
+        if (up) {
+          // The hand never went up — give the slot back so he can retry at once.
+          const { error: rbErr } = await admin
+            .from("live_participants")
+            .update({ hand_at: prevHandAt })
+            .eq("session_id", session.id)
+            .eq("user_id", me.user_id)
+            .eq("hand_at", nowIso);
+          if (rbErr) console.error(`live-control hand rollback: ${rbErr.message}`);
+          throw e;
+        }
+        // Lowering after he left the room: nothing is up (a new token starts at h=0).
+        if (!(e instanceof LiveFail && e.code === "not_present")) throw e;
+      }
+      if (!up) {
+        const { error } = await admin
+          .from("live_participants")
+          .update({ hand_at: nowIso })
+          .eq("session_id", session.id)
+          .eq("user_id", me.user_id);
+        if (error) return fail("server_error", error.message);
+      }
+      result = { hand: up, handAt: up ? Number(h) : null };
       break;
     }
   }
