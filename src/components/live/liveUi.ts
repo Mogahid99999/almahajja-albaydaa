@@ -128,6 +128,7 @@ export type LiveErrorCode =
   | 'banned'
   | 'forbidden'
   | 'not_found'
+  | 'live_disabled'
   | 'network'
   | 'unknown';
 
@@ -137,6 +138,7 @@ const ERROR_CODES: readonly LiveErrorCode[] = [
   'banned',
   'forbidden',
   'not_found',
+  'live_disabled',
   'network',
   'unknown',
 ];

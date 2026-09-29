@@ -76,6 +76,8 @@ export interface LiveAdminOverview {
   scheduled: LiveAdminSession[];
   recent: LiveAdminSession[];
   isManager: boolean;
+  /** app_config.live_enabled (0145); null from a server without the flag. */
+  liveEnabled: 'off' | 'staff' | 'all' | null;
 }
 
 export interface LiveInboxDraft {
@@ -208,6 +210,7 @@ export function mapLiveAdminOverview(data: unknown): LiveAdminOverview {
     scheduled: list(j.scheduled, mapLiveAdminSession),
     recent: list(j.recent, mapLiveAdminSession),
     isManager: j.is_manager === true,
+    liveEnabled: j.live_enabled === 'off' || j.live_enabled === 'staff' || j.live_enabled === 'all' ? j.live_enabled : null,
   };
 }
 

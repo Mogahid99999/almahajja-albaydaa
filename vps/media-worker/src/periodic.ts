@@ -10,6 +10,8 @@ export interface PeriodicOptions<S> {
   everyMs: number;
   /** Stats → log fields (counts only — never paths or secrets). */
   fields: (stats: S) => LogFields;
+  /** true → no `.done` line for this run (a frequent task with nothing to report). */
+  quiet?: (stats: S) => boolean;
   log?: Logger;
 }
 
@@ -38,7 +40,10 @@ export class PeriodicTask<S> {
     if (this.running || this.abort.signal.aborted) return this.running ?? Promise.resolve();
     const started = Date.now();
     this.running = this.task(this.abort.signal)
-      .then((s) => this.log('info', `${this.opts.name}.done`, { ...this.opts.fields(s), ms: Date.now() - started }))
+      .then((s) => {
+        if (this.opts.quiet?.(s)) return;
+        this.log('info', `${this.opts.name}.done`, { ...this.opts.fields(s), ms: Date.now() - started });
+      })
       .catch((err: unknown) => this.log('error', `${this.opts.name}.error`, { error: errorMessage(err, 200) }))
       .finally(() => {
         this.running = null;

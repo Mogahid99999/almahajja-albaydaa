@@ -10,7 +10,8 @@ import {
 import { AbortedError } from './errors.js';
 
 export interface TranscodeOptions {
-  input: string;
+  /** One file, or the parts of a live recording in order (concatenated, see buildTranscodeArgs). */
+  input: string | readonly string[];
   output: string;
   loudnorm: boolean;
   /** Probed input duration (seconds) used to turn out_time into a fraction. */

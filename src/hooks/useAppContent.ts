@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getAboutContent, getAppConfigForAdmin, getQnaNotice, getShareContent, getStartHereLecture, getSupportContact, setAppConfig } from '@/api/appContent';
+import {
+  getAboutContent,
+  getAppConfigForAdmin,
+  getQnaNotice,
+  getShareContent,
+  getStartHereLecture,
+  getSupportContact,
+  LIVE_ENABLED_KEY,
+  setAppConfig,
+} from '@/api/appContent';
 import { queryKeys } from '@/constants/queryKeys';
 
 /** Student-facing About content (falls back to the original copy). Rarely edited. */
@@ -63,11 +72,13 @@ export function useSetAppConfig() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { key: string; value: string }) => setAppConfig(vars.key, vars.value),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.adminConfig });
       qc.invalidateQueries({ queryKey: queryKeys.aboutContent });
       qc.invalidateQueries({ queryKey: queryKeys.supportContact });
       qc.invalidateQueries({ queryKey: queryKeys.shareContent });
+      // The live rollout flag gates get_live_now server-side (0145).
+      if (vars.key === LIVE_ENABLED_KEY) qc.invalidateQueries({ queryKey: queryKeys.liveNow });
     },
   });
 }

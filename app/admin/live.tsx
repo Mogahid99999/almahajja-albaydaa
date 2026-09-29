@@ -133,14 +133,32 @@ export default function AdminLiveScreen() {
       </Txt>
 
       <View style={{ maxWidth: 860 }}>
-        <StartLiveCard
-          canStart={canHost(user)}
-          activeTitle={activeTitle}
-          onCreated={(id) => {
-            refresh();
-            router.push(liveGreenHref(id));
-          }}
-        />
+        {overview.data?.liveEnabled === 'off' ? (
+          <Card>
+            <Txt weight="semibold" size={15} style={{ marginBottom: 4 }}>
+              البث المباشر متوقف حالياً
+            </Txt>
+            <Txt size={13} color={colors.textMuted} style={{ lineHeight: 21 }}>
+              يفعّله المدير من «الإعدادات»: للمشرفين أولاً، ثم للجميع.
+            </Txt>
+          </Card>
+        ) : (
+          <>
+            {overview.data?.liveEnabled === 'staff' ? (
+              <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 8 }}>
+                مفعّل للمشرفين فقط — لا يراه الطلاب ولا يصلهم إشعار بعد.
+              </Txt>
+            ) : null}
+            <StartLiveCard
+              canStart={canHost(user)}
+              activeTitle={activeTitle}
+              onCreated={(id) => {
+                refresh();
+                router.push(liveGreenHref(id));
+              }}
+            />
+          </>
+        )}
 
         {overview.isLoading ? (
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>

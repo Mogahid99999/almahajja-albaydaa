@@ -42,6 +42,16 @@ GetObject); the R2 backup `live-raw/<basename>` is kept forever (never deleted b
 - SIGTERM → ffmpeg is killed, the job is left `running` for re-claim (> 2 min stale heartbeat).
 - Watchdog: a job running > 3 h is aborted and failed (the heartbeat would otherwise keep
   a wedged job alive forever). R2 sockets idle > 120 s and PostgREST calls > 30 s error out.
+- **live_recording in parts** (0146 `live_recording_parts`, one row per egress): when a
+  session has parts, every part with a file (`complete` / `recovered`, seq order) is read
+  in place and joined by ffmpeg's `concat` filter (a crashed egress's partial `.ogg` has no
+  EOS page — ffmpeg decodes it to its last complete page; a part ffprobe cannot even open
+  is skipped only when ≤ 256 KB, otherwise ffmpeg gets it and fails loudly). EACH part is
+  backed up to `live-raw/<its basename>` and stamped (`mark_live_part_backed_up`) before
+  `create_live_lecture` (which records the first part's key on the session); each local
+  raw is then released on its own verified backup (`mark_live_part_raw_deleted`, which
+  stamps the session with the last part). A job never runs while a part is still
+  `recording`/`dead`. One part = the single-input ffmpeg call exactly as before.
 - While a LiveKit egress is recording for this env, only `live_recording` jobs are claimed
   (`{p_kinds:['live_recording']}`); lecture transcodes wait (max 3 h per egress). Otherwise
   `{}` = all kinds.
@@ -57,6 +67,26 @@ GetObject); the R2 backup `live-raw/<basename>` is kept forever (never deleted b
   R2 backup exists with exactly the local file's size; then `mark_live_raw_deleted`.
   Anything else is kept and logged. If the local file is already gone but the backup
   exists, the row is just stamped. Paths outside `RECORDINGS_DIR` are refused.
+  Sessions with parts are listed part by part (`live_part_raws_due_for_deletion()`, only
+  once EVERY part of the session has its backup recorded) and stamped per part.
+- **Recording guard** (0146; every 20 s, and 3–15 s after a relevant webhook; logs only
+  runs that did something): an egress that dies mid-session must not lose the rest of the
+  session nor its partial file. For every `recording` part of `live_recording_watch()`:
+  dead = `egress_ended` FAILED/ABORTED, LiveKit ListEgress FAILED/ABORTED or unknown
+  (> 2 min old), session ended ≥ 10 min ago, or (live) its recorder participant (identity
+  = egress id) has been missing from the room / the room gone for ≥ 15 s — only once it was
+  seen listed, and only while the tmp file is quiet ≥ 45 s — or, without LiveKit evidence,
+  a tmp file idle ≥ 10 min. A recorder still in the room is never killed by silence.
+  ListEgress COMPLETE = a lost clean-end webhook → replayed (`enqueue_live_recording`).
+  Dead → `register_live_recording_part(dead)` → if still live, live-control
+  `resume_recording` (new egress, same settings; 60 s backoff, stops after 3 `lost` parts
+  in a row, cap 50) → recover: the egress's own output in `RECORDINGS_DIR`, else its
+  partial in `EGRESS_TMP_DIR/<EG_id>/` (only `<own-env room>-….ogg`; copied as
+  `<name>-recovered[-n].ogg`, fsynced, verified unchanged + same size, then the source
+  removed), else one unreferenced final file of that room when unambiguous → `recovered`;
+  nothing → `lost` (the RPC then fails the session with an Arabic error on the admin page
+  + staff inbox notice). An `ended` session still without a job 10 min after its end and
+  with nothing open → `settle_live_recording` (never silently `ended`).
 
 ## HTTP (internal)
 
@@ -95,6 +125,9 @@ GetObject); the R2 backup `live-raw/<basename>` is kept forever (never deleted b
 | `PORT` | default `8080` |
 | `LIVE_LOUDNORM` | `0` (default) / `1` — `loudnorm=I=-18:TP=-2` on live recordings only |
 | `TMP_DIR` | default `/tmp/media-worker` |
+| `EGRESS_TMP_DIR` | default `/egress-tmp`: the egress container's `/home/egress/tmp` (in-progress files of BOTH envs), mounted read-write; only files named after this env's rooms are ever touched. Missing → logged (`egress_tmp.unavailable`), partials cannot be recovered |
+| `LIVEKIT_API_URL` | optional, internal (e.g. `http://almahajja-livekit:7880`): ListEgress / ListParticipants / ListRooms for the recording guard. Unset → webhooks + tmp-file checks only (slower detection) |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | optional pair for `LIVEKIT_API_URL`; default = the webhook pair (`almahajja_int`, internal only) |
 
 Startup validates everything and exits 1 listing the variable **names** that are wrong,
 and exits 1 when `RECORDINGS_DIR` is not a readable directory.
@@ -134,3 +167,7 @@ Runs as the non-root `node` user (uid 1000); logs one line per event/job to stdo
   uploaded MP3 is left in R2 (deleting it is unsafe when the commit's response was merely
   lost); the retry uses the next free ` (n)` name.
 - A SIGTERM during an in-flight Supabase call waits for it (≤ 30 s) before exiting.
+- Recording guard: the audio between an egress crash and the new egress (≈ 40–80 s with the
+  LiveKit API, up to ~10 min without it) is not recorded; a `recovered` copy superseded by
+  a late clean end stays on disk unreferenced (logged). Staff download
+  (`GET /recordings/:sessionId`) serves the session's FIRST part only.

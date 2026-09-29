@@ -118,8 +118,10 @@ export function LiveHomeCard({
         </View>
       </View>
 
-      {/* «{count} في الحلقة» · «الشيخ يتحدث» · «استمع» / «العودة إلى الحلقة» */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 }}>
+      {/* «{count} في الحلقة» · «الشيخ يتحدث» · «استمع» / «العودة إلى الحلقة».
+          Wraps: on a 360 dp phone «العودة إلى الحلقة» + both stats don't fit one
+          line and the button was pushed past the card's edge (P7 device check). */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 10, marginTop: 16 }}>
         {count != null && count > 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Feather name="users" size={14} color={colors.onTealSecondary} />
@@ -139,6 +141,7 @@ export function LiveHomeCard({
         <View
           style={{
             marginStart: 'auto',
+            flexShrink: 0,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 6,

@@ -10,6 +10,11 @@
 //
 // Steps (§5.1):
 //  1. caller + ban (auth.users.banned_until, fresh via the admin API) → 403
+//  1b. P7 rollout flag app_config.live_enabled ('off' | 'staff' | 'all'; a
+//     missing row = 'off'), read with the service client BEFORE anything about
+//     the session: not on for this caller → 403 live_disabled. 'staff' admits
+//     admin/publisher/sheikh only; guests and students need 'all'
+//     (liveEnabledFor — same rule as SQL live_enabled_for_caller, 0145).
 //  2. session: `green` admits host/moderators only, `live` everyone (409 else)
 //  3. profile gender → 'm'/'f'; missing → 409 gender_required (client shows
 //     GenderPrompt, then retries); a non-staff viewer must also pass the
@@ -45,6 +50,7 @@ import {
   isLiveIdentity,
   LIVE_ERROR_STATUS,
   LIVE_GRANTS,
+  liveEnabledFor,
   liveGender,
   liveRoleFor,
   livekitWsUrl,
@@ -111,6 +117,15 @@ Deno.serve(async (req) => {
   if (isBanned(u.banned_until, Date.now())) return fail("banned");
   const isGuest = u.is_anonymous === true;
 
+  // 1b. P7 rollout flag + the caller's app role (profile read here, once).
+  const [{ data: flag, error: flagErr }, { data: profile, error: profileErr }] = await Promise.all([
+    admin.from("app_config").select("value").eq("key", "live_enabled").maybeSingle(),
+    admin.from("profiles").select("role, gender, display_name").eq("id", userId).maybeSingle(),
+  ]);
+  if (flagErr) return fail("server_error", flagErr.message);
+  if (profileErr) return fail("server_error", profileErr.message);
+  if (!liveEnabledFor(flag?.value, profile?.role, isGuest)) return fail("live_disabled");
+
   // 2. Session + who the caller is in it.
   const { data: session, error: sessionErr } = await admin
     .from("live_sessions")
@@ -121,15 +136,12 @@ Deno.serve(async (req) => {
   if (!session) return fail("not_found");
   if (!isEnvRoom(session.room_name, ROOM_PREFIX)) return fail("server_error", "room of another environment");
 
-  const [{ data: profile }, { data: stored }] = await Promise.all([
-    admin.from("profiles").select("role, gender, display_name").eq("id", userId).maybeSingle(),
-    admin
-      .from("live_participants")
-      .select("role, hidden_name")
-      .eq("session_id", sessionId)
-      .eq("user_id", userId)
-      .maybeSingle(),
-  ]);
+  const { data: stored } = await admin
+    .from("live_participants")
+    .select("role, hidden_name")
+    .eq("session_id", sessionId)
+    .eq("user_id", userId)
+    .maybeSingle();
 
   let role = liveRoleFor({
     userId,

@@ -13,6 +13,16 @@
 //   R2, delete the local raw + mark_live_raw_deleted. Any doubt → keep it and
 //   log `raw.keep reason=…` (rawRetention.ts retries). A delete/mark failure
 //   never fails the job. The R2 backup is kept forever.
+// live_recording in PARTS (0146 live_recording_parts — one per egress; an
+//   egress that crashed mid-session left a partial file the recording guard
+//   recovered, and a new egress took over): every part with a file, in seq
+//   order, is read in place and concatenated by ffmpeg (a partial part has no
+//   EOS page; a part too damaged to even open is skipped with a warning when it
+//   is small — it is still backed up and kept). EACH part is backed up to
+//   `live-raw/<its basename>` and stamped (mark_live_part_backed_up) before
+//   create_live_lecture (which records the first part's key on the session); the
+//   local raws are then released part by part (mark_live_part_raw_deleted). A
+//   pre-0146 session has no parts: its single raw is job.input_key, as before.
 //
 // Any error → fail_media_job (the RPC decides retry vs terminal failure and
 // notifies staff; 'ignored' if the job was no longer running). Inputs are never
@@ -38,6 +48,12 @@ export const RAW_BACKUP_PREFIX = 'live-raw/';
 /** Only admin-upload originals are ever deleted by the worker. */
 export const DELETABLE_INPUT_PREFIX = 'incoming/';
 export const MAX_ERROR_LENGTH = 500;
+/**
+ * A recording part ffprobe cannot even open is left out of the lecture only
+ * when it is this small (a few seconds: the egress died right after starting);
+ * a bigger unreadable part fails the job loudly instead (raws kept).
+ */
+export const MAX_SKIPPABLE_PART_BYTES = 256 * 1024;
 
 export interface JobRunnerDeps {
   db: JobDb;
@@ -64,7 +80,9 @@ export type JobOutcome =
       durationSec: number | null;
       sizeBytes: number;
       rawBackupKey?: string;
-      /** live only: the local raw was verified-backed-up and deleted by this run. */
+      /** live only: every part's backup key (one entry for a single raw). */
+      rawBackupKeys?: string[];
+      /** live only: the local raw(s) were verified-backed-up and deleted by this run. */
       localRawDeleted?: boolean;
     }
   | { status: FailOutcome; error: string }
@@ -78,28 +96,31 @@ function inputExt(key: string): string {
 }
 
 type LocalRaw = { path: string; size: number; name: string };
+/** One local raw of a live job: `seq` null = the pre-0146 single raw (job.input_key). */
+type RawPart = LocalRaw & { seq: number | null; backupKey: string };
 
 /**
- * After create_live_lecture: delete the local raw only when the R2 backup has
+ * After create_live_lecture: delete a local raw only when its R2 backup has
  * exactly its size and the MP3 is in R2. Never throws — the job already succeeded.
  */
 async function releaseLocalRaw(
   deps: JobRunnerDeps,
   job: MediaJob,
-  raw: LocalRaw,
-  backupKey: string,
+  raw: RawPart,
   mp3Key: string,
   log: Logger,
 ): Promise<boolean> {
+  const seq = raw.seq ?? undefined;
   const keep = (reason: string, extra: Record<string, string | number> = {}) => {
-    log('warn', 'raw.keep', { id: job.id, session: job.live_session_id ?? undefined, reason, ...extra });
+    log('warn', 'raw.keep', { id: job.id, session: job.live_session_id ?? undefined, seq, reason, ...extra });
     return false;
   };
+  const session = job.live_session_id;
   try {
-    if (!job.live_session_id) return keep('no_session');
+    if (!session) return keep('no_session');
     const now = await deps.recordings.check(raw.path);
     if (typeof now === 'string') return keep(`local_${now}`);
-    const backupSize = await deps.storage.objectSize(backupKey);
+    const backupSize = await deps.storage.objectSize(raw.backupKey);
     if (backupSize === null) return keep('backup_missing');
     if (backupSize !== now.size) return keep('backup_size_mismatch', { local_bytes: now.size, backup_bytes: backupSize });
     if (!(await deps.storage.exists(mp3Key))) return keep('mp3_missing');
@@ -108,13 +129,42 @@ async function releaseLocalRaw(
     return keep('error', { error: errorMessage(err, 200) });
   }
   try {
-    await deps.db.markLiveRawDeleted(job.live_session_id);
-    log('info', 'raw.deleted', { id: job.id, session: job.live_session_id, bytes: raw.size, backup: backupKey });
+    if (raw.seq === null) await deps.db.markLiveRawDeleted(session);
+    else await deps.db.markLivePartRawDeleted(session, raw.seq);
+    log('info', 'raw.deleted', { id: job.id, session, seq, bytes: raw.size, backup: raw.backupKey });
   } catch (err) {
     // File is gone, backup verified; the sweep stamps it (local missing + backup present).
-    log('error', 'raw.mark_failed', { id: job.id, session: job.live_session_id, error: errorMessage(err, 200) });
+    log('error', 'raw.mark_failed', { id: job.id, session, seq, error: errorMessage(err, 200) });
   }
   return true;
+}
+
+/**
+ * The live job's local raws, in audio order: the session's parts with a file
+ * (0146), or — no parts (pre-0146 session) — job.input_key. Every path must be
+ * a regular file inside RECORDINGS_DIR; nothing is ever read from elsewhere.
+ */
+async function liveRaws(deps: JobRunnerDeps, job: MediaJob, log: Logger): Promise<RawPart[]> {
+  const parts = job.live_session_id ? await deps.db.liveRecordingParts(job.live_session_id) : [];
+  const toPart = (r: LocalRaw, seq: number | null): RawPart => ({ ...r, seq, backupKey: `${RAW_BACKUP_PREFIX}${r.name}` });
+  if (parts.length === 0) {
+    const r = await deps.recordings.check(job.input_key);
+    if (typeof r === 'string') throw new Error(`live raw is not usable (${r}); it is left untouched`);
+    return [toPart(r, null)];
+  }
+  const open = parts.find((p) => p.status === 'recording' || p.status === 'dead');
+  if (open) throw new Error(`recording part ${open.seq} is still ${open.status}; nothing is processed yet`);
+  const lost = parts.filter((p) => p.status === 'lost').map((p) => p.seq);
+  if (lost.length) log('warn', 'job.parts_lost', { id: job.id, session: job.live_session_id ?? undefined, seqs: lost.join(',') });
+  const out: RawPart[] = [];
+  for (const p of parts) {
+    if (!p.rawPath || (p.status !== 'complete' && p.status !== 'recovered')) continue;
+    const r = await deps.recordings.check(p.rawPath);
+    if (typeof r === 'string') throw new Error(`live raw part ${p.seq} is not usable (${r}); it is left untouched`);
+    out.push(toPart(r, p.seq));
+  }
+  if (!out.length) throw new Error('no recording part has a file; nothing to process');
+  return out;
 }
 
 export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: AbortSignal): Promise<JobOutcome> {
@@ -159,28 +209,50 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
     reporter.start();
 
     // 1. input: live raws are read IN PLACE; upload originals are downloaded.
-    let inputPath: string;
-    let raw: { path: string; size: number; name: string } | null = null;
+    let inputPaths: string[];
+    let raws: RawPart[] = [];
     if (isLive) {
-      const r = await deps.recordings.check(job.input_key);
-      if (typeof r === 'string') throw new Error(`live raw is not usable (${r}); it is left untouched`);
-      raw = r;
-      inputPath = r.path;
+      raws = await liveRaws(deps, job, log);
+      inputPaths = raws.map((r) => r.path);
     } else {
-      inputPath = join(workDir, `input${inputExt(job.input_key)}`);
+      const inputPath = join(workDir, `input${inputExt(job.input_key)}`);
       await deps.storage.downloadToFile(job.input_key, inputPath, {
         signal,
         onFraction: (f) => reporter.report(phaseProgress('download', f)),
       });
+      inputPaths = [inputPath];
     }
     reporter.report(phaseProgress('download', 1));
     if (signal.aborted) throw new AbortedError();
 
-    // 2. duration + transcode
-    const inputDuration = await deps.media.probeDuration(inputPath, signal);
+    // 2. duration + transcode (several parts: probed one by one, concatenated)
+    let inputDuration: number | null;
+    if (inputPaths.length === 1) {
+      inputDuration = await deps.media.probeDuration(inputPaths[0] as string, signal);
+    } else {
+      const usable: string[] = [];
+      const durations: Array<number | null> = [];
+      for (const r of raws) {
+        const d = await deps.media.probeDuration(r.path, signal);
+        if (signal.aborted) throw new AbortedError();
+        if (d === null && r.size <= MAX_SKIPPABLE_PART_BYTES) {
+          // Could not even be opened (e.g. the egress died seconds after starting):
+          // nothing decodable to lose. Still backed up and kept below.
+          log('warn', 'job.part_skipped', { id: job.id, seq: r.seq ?? undefined, bytes: r.size, reason: 'unreadable' });
+          continue;
+        }
+        usable.push(r.path);
+        durations.push(d);
+      }
+      if (!usable.length) throw new Error('no recording part could be read by ffprobe; the raws are kept');
+      inputPaths = usable;
+      inputDuration = durations.every((d) => d !== null)
+        ? (durations as number[]).reduce((a, b) => a + b, 0)
+        : null;
+    }
     if (signal.aborted) throw new AbortedError();
     await deps.media.transcode({
-      input: inputPath,
+      input: inputPaths.length === 1 ? (inputPaths[0] as string) : inputPaths,
       output: outputPath,
       loudnorm: isLive && deps.liveLoudnorm,
       durationSec: inputDuration,
@@ -208,24 +280,28 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
     });
     uncommittedKey = outputKey;
 
-    // 4. live only: back the raw up to R2 before the lecture is created.
-    let rawBackupKey: string | undefined;
+    // 4. live only: back EVERY raw up to R2 before the lecture is created.
     let localRawDeleted = false;
-    if (raw) {
-      rawBackupKey = `${RAW_BACKUP_PREFIX}${raw.name}`;
-      const existing = await deps.storage.objectSize(rawBackupKey);
+    const totalRawBytes = raws.reduce((a, r) => a + r.size, 0);
+    let doneRawBytes = 0;
+    for (const raw of raws) {
+      const existing = await deps.storage.objectSize(raw.backupKey);
       if (existing === raw.size) {
-        log('info', 'job.raw_backup_present', { id: job.id, key: rawBackupKey, bytes: raw.size });
+        log('info', 'job.raw_backup_present', { id: job.id, key: raw.backupKey, bytes: raw.size });
       } else {
         if (signal.aborted) throw new AbortedError();
-        const uploaded = await deps.storage.uploadFile(rawBackupKey, raw.path, RAW_CONTENT_TYPE, {
+        const base = doneRawBytes;
+        const uploaded = await deps.storage.uploadFile(raw.backupKey, raw.path, RAW_CONTENT_TYPE, {
           signal,
-          onFraction: (f) => reporter.report(phaseProgress('upload', 0.5 + f * 0.5)),
+          onFraction: (f) =>
+            reporter.report(phaseProgress('upload', 0.5 + (0.5 * (base + f * raw.size)) / Math.max(1, totalRawBytes))),
         });
         if (uploaded !== raw.size) throw new Error(`raw backup size mismatch (${uploaded} ≠ ${raw.size} bytes)`);
-        log('info', 'job.raw_backup_uploaded', { id: job.id, key: rawBackupKey, bytes: raw.size, replaced: existing !== null });
+        log('info', 'job.raw_backup_uploaded', { id: job.id, key: raw.backupKey, bytes: raw.size, replaced: existing !== null });
       }
+      doneRawBytes += raw.size;
     }
+    const rawBackupKey = raws[0]?.backupKey;
 
     // 5. commit. Stop the reporter first so a late progress write can't race
     //    the RPC's progress=1; never commit a job that is no longer ours. (A
@@ -245,10 +321,18 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
         }
       }
     } else {
+      // Parts: every backup is recorded before the lecture exists (the part-level
+      // retention only ever deletes a raw whose backup is recorded).
+      for (const raw of raws) {
+        if (raw.seq !== null) await deps.db.markLivePartBackedUp(job.live_session_id as string, raw.seq, raw.backupKey);
+      }
       const lectureId = await deps.db.createLiveLecture(job.id, outputKey, durationSec, sizeBytes, rawBackupKey as string);
       uncommittedKey = null;
-      log('info', 'job.live_lecture_created', { id: job.id, lecture: lectureId });
-      localRawDeleted = await releaseLocalRaw(deps, job, raw as LocalRaw, rawBackupKey as string, outputKey, log);
+      log('info', 'job.live_lecture_created', { id: job.id, lecture: lectureId, parts: raws.length });
+      localRawDeleted = true;
+      for (const raw of raws) {
+        if (!(await releaseLocalRaw(deps, job, raw, outputKey, log))) localRawDeleted = false;
+      }
     }
 
     log('info', 'job.done', {
@@ -264,7 +348,7 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
       outputKey,
       durationSec,
       sizeBytes,
-      ...(rawBackupKey ? { rawBackupKey, localRawDeleted } : {}),
+      ...(rawBackupKey ? { rawBackupKey, rawBackupKeys: raws.map((r) => r.backupKey), localRawDeleted } : {}),
     };
   } catch (err) {
     await reporter.stop();

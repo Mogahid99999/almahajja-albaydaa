@@ -62,7 +62,7 @@ describe('lecture_transcode', () => {
     expect(db.calls.lastIndexOf('progress')).toBeLessThan(db.calls.indexOf('complete'));
     // speech profile, no loudnorm for uploads
     expect(media.transcodes[0]).toMatchObject({ loudnorm: false, durationSec: 30 });
-    expect(media.transcodes[0]!.input.endsWith('.m4a')).toBe(true);
+    expect((media.transcodes[0]!.input as string).endsWith('.m4a')).toBe(true);
     await tmpIsEmpty();
   });
 
@@ -431,6 +431,145 @@ describe('live_recording (P2: local raw, never lost)', () => {
     media = new FakeMedia('fail');
     await runJob(liveJob(), deps());
     expect((await stat(rawPath)).size).toBe(before);
+  });
+});
+
+describe('live_recording in parts (0146: an egress crashed mid-session, a new one took over)', () => {
+  const P1 = 'stg_abc123-2026-09-29T093000-recovered.ogg'; // partial, no EOS page
+  const P2 = 'stg_abc123-2026-09-29T094200.ogg';
+  const B1 = Buffer.from('OggS-part-1-partial');
+  const B2 = Buffer.from('OggS-part-2-complete-file');
+  let p1: string;
+  let p2: string;
+  const part = (seq: number, status: 'complete' | 'recovered' | 'lost' | 'dead' | 'recording', rawPath: string | null) => ({
+    seq,
+    egressId: `EG_${seq}x`,
+    status,
+    rawPath,
+    rawBackupKey: null,
+    rawDeletedAt: null,
+    startedAt: null,
+  });
+  const liveJob = () =>
+    makeJob({ kind: 'live_recording', lecture_id: null, input_key: p1, live_session_id: 'sess-1' });
+
+  beforeEach(async () => {
+    p1 = join(recDir, P1);
+    p2 = join(recDir, P2);
+    await writeFile(p1, B1);
+    await writeFile(p2, B2);
+  });
+
+  it('concatenates every part in seq order, backs up EACH, stamps them, then releases every raw', async () => {
+    db.parts.set('sess-1', [part(1, 'recovered', p1), part(2, 'lost', null), part(3, 'complete', p2)]);
+    const events: string[] = [];
+    const out = await runJob(liveJob(), deps({ log: (_l, e) => void events.push(e) }));
+
+    expect(out).toMatchObject({
+      status: 'done',
+      rawBackupKey: `live-raw/${P1}`,
+      rawBackupKeys: [`live-raw/${P1}`, `live-raw/${P2}`],
+      localRawDeleted: true,
+      durationSec: 30,
+    });
+    // ONE ffmpeg run over both files, in order (the lost part has nothing to add)
+    expect(media.transcodes).toHaveLength(1);
+    const input = media.transcodes[0]!.input as string[];
+    expect(input.map((p) => p.split(/[\\/]/).pop())).toEqual([P1, P2]);
+    expect(media.transcodes[0]!.durationSec).toBe(60); // 30 + 30 probed per part
+    expect(events).toContain('job.parts_lost');
+    // both raws backed up byte-for-byte
+    expect(storage.objects.get(`live-raw/${P1}`)).toEqual(B1);
+    expect(storage.objects.get(`live-raw/${P2}`)).toEqual(B2);
+    expect(db.partBackups).toEqual([
+      { session: 'sess-1', seq: 1, key: `live-raw/${P1}` },
+      { session: 'sess-1', seq: 3, key: `live-raw/${P2}` },
+    ]);
+    // every backup recorded BEFORE the lecture exists; the session keeps the first key
+    expect(db.calls.lastIndexOf('mark_part_backed_up')).toBeLessThan(db.calls.indexOf('create_live_lecture'));
+    expect(db.liveCreated[0]!.backup).toBe(`live-raw/${P1}`);
+    // released part by part (the SQL stamps the session with the last one)
+    expect(db.partRawsDeleted).toEqual([
+      { session: 'sess-1', seq: 1 },
+      { session: 'sess-1', seq: 3 },
+    ]);
+    expect(db.markedRawDeleted).toEqual([]);
+    expect(await readdir(recDir)).toEqual([]);
+    await tmpIsEmpty();
+  });
+
+  it('one part (the normal single-egress path) → the single-input ffmpeg call, as before', async () => {
+    db.parts.set('sess-1', [part(1, 'complete', p2)]);
+    const out = await runJob(liveJob(), deps());
+    expect(out).toMatchObject({ status: 'done', rawBackupKey: `live-raw/${P2}`, localRawDeleted: true });
+    expect(typeof media.transcodes[0]!.input).toBe('string');
+    expect(db.partBackups).toEqual([{ session: 'sess-1', seq: 1, key: `live-raw/${P2}` }]);
+    expect(db.partRawsDeleted).toEqual([{ session: 'sess-1', seq: 1 }]);
+  });
+
+  it('a small part ffprobe cannot open is left out of the MP3 but still backed up and kept on R2', async () => {
+    db.parts.set('sess-1', [part(1, 'recovered', p1), part(2, 'complete', p2)]);
+    media.probes.set(P1, null);
+    const events: string[] = [];
+    const out = await runJob(liveJob(), deps({ log: (_l, e) => void events.push(e) }));
+    expect(out.status).toBe('done');
+    expect(events).toContain('job.part_skipped');
+    expect(media.transcodes[0]!.input).toMatch(new RegExp(`${P2.replace(/\./g, '\\.')}$`));
+    expect(storage.objects.get(`live-raw/${P1}`)).toEqual(B1);
+  });
+
+  it('a BIG unreadable part is not skipped silently — ffmpeg gets it (and fails loudly if it must)', async () => {
+    await writeFile(p1, Buffer.alloc(300 * 1024, 1));
+    db.parts.set('sess-1', [part(1, 'recovered', p1), part(2, 'complete', p2)]);
+    media.probes.set(P1, null);
+    await runJob(liveJob(), deps());
+    expect((media.transcodes[0]!.input as string[]).length).toBe(2);
+    expect(media.transcodes[0]!.durationSec).toBeNull();
+  });
+
+  it('never processes while a part is still open, or when no part has a file; raws untouched', async () => {
+    db.parts.set('sess-1', [part(1, 'recovered', p1), part(2, 'dead', null)]);
+    let out = await runJob(liveJob(), deps());
+    expect(out.status).toBe('retry');
+    expect(db.failed[0]!.error).toContain('recording part 2 is still dead');
+
+    db.failed = [];
+    db.parts.set('sess-1', [part(1, 'lost', null)]);
+    out = await runJob(liveJob(), deps());
+    expect(db.failed[0]!.error).toContain('no recording part has a file');
+    expect(storage.uploads).toEqual([]);
+    expect(media.transcodes).toEqual([]);
+    expect(await readFile(p1)).toEqual(B1);
+  });
+
+  it('a part missing on disk fails the job (nothing uploaded, other raws kept)', async () => {
+    db.parts.set('sess-1', [part(1, 'recovered', join(recDir, 'gone.ogg')), part(2, 'complete', p2)]);
+    const out = await runJob(liveJob(), deps());
+    expect(out.status).toBe('retry');
+    expect(db.failed[0]!.error).toContain('live raw part 1 is not usable (missing)');
+    expect(storage.uploads).toEqual([]);
+    expect(await readFile(p2)).toEqual(B2);
+  });
+
+  it('a part outside RECORDINGS_DIR (other env) is refused before anything is read', async () => {
+    const foreign = join(outsideDir, 'prd_x-2026.ogg');
+    await writeFile(foreign, 'prd raw');
+    db.parts.set('sess-1', [part(1, 'complete', foreign)]);
+    const out = await runJob(liveJob(), deps());
+    expect(db.failed[0]!.error).toContain('(outside)');
+    expect(out.status).toBe('retry');
+    expect(media.transcodes).toEqual([]);
+  });
+
+  it('a backup that does not verify keeps THAT raw (and the job still succeeds)', async () => {
+    db.parts.set('sess-1', [part(1, 'recovered', p1), part(2, 'complete', p2)]);
+    const orig = storage.objectSize.bind(storage);
+    let checks = 0;
+    storage.objectSize = async (k) => (k === `live-raw/${P2}` && checks++ > 0 ? 1 : orig(k));
+    const out = await runJob(liveJob(), deps());
+    expect(out).toMatchObject({ status: 'done', localRawDeleted: false });
+    expect(db.partRawsDeleted).toEqual([{ session: 'sess-1', seq: 1 }]);
+    expect(await readFile(p2)).toEqual(B2);
   });
 });
 

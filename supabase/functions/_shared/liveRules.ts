@@ -24,6 +24,9 @@
 //      with the service-role key (also on room_finished); logged `auto_end`.
 //   A live recording must never be lost: egress writes to the VPS disk
 //   (/recordings/<env>/…); the media worker backs it up to R2 and compresses.
+//   If an egress dies mid-session (0146 live_recording_parts) the worker
+//   recovers its partial file and calls live-control `resume_recording`
+//   (service role only, logged `resume_recording`) — a new egress, same settings.
 //   Guests LISTEN only (owner 2026-09-28): a guest never raises a hand, is
 //   never approved, never gets a speaker token — enforced here, not in the UI.
 //
@@ -47,6 +50,32 @@ export function isStaffRole(role: string | null | undefined): boolean {
 /** Content manager (is_content_manager()): admin or publisher. */
 export function isContentManagerRole(role: string | null | undefined): boolean {
   return role === "admin" || role === "publisher";
+}
+
+// ─── P7 rollout flag (app_config.live_enabled, migration 0145) ───────────────
+
+/** 'off' → nobody · 'staff' → admin/publisher/sheikh rehearse · 'all' → everyone. */
+export type LiveEnabledLevel = "off" | "staff" | "all";
+
+/**
+ * The stored app_config value → the level, like SQL live_enabled_level():
+ * trimmed + lower-cased; a missing row / unknown value is 'off' (fail closed).
+ */
+export function parseLiveEnabledLevel(value: unknown): LiveEnabledLevel {
+  const v = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return v === "all" || v === "staff" ? v : "off";
+}
+
+/**
+ * May this caller get a live-token at all (SQL live_enabled_for_caller())?
+ * 'all' → everyone (guests too); 'staff' → registered admin/publisher/sheikh
+ * only; 'off' / missing / unknown → nobody.
+ */
+export function liveEnabledFor(level: unknown, appRole: string | null | undefined, isGuest = false): boolean {
+  const lvl = parseLiveEnabledLevel(level);
+  if (lvl === "all") return true;
+  if (lvl === "staff") return !isGuest && isStaffRole(appRole);
+  return false;
 }
 
 // ─── Tokens (§5.1) ───────────────────────────────────────────────────────────
@@ -296,12 +325,28 @@ export const LIVE_ACTIONS = [
   "leave",
   "hand",
   "auto_end",
+  "resume_recording",
 ] as const;
 export type LiveAction = (typeof LIVE_ACTIONS)[number];
+
+/**
+ * Actions ONLY the service role (the media worker) may call — and the only
+ * ones it may call: `auto_end` (D4) and `resume_recording` (0146: a new egress
+ * after the previous one died mid-session). Every other action needs a user JWT.
+ */
+export const SYSTEM_ACTIONS: readonly LiveAction[] = ["auto_end", "resume_recording"];
+
+export function isSystemAction(action: LiveAction): boolean {
+  return SYSTEM_ACTIONS.includes(action);
+}
 
 /** Why the media worker ends a session (auto_end body). */
 export const AUTO_END_REASONS = ["host_absent", "room_finished"] as const;
 export type AutoEndReason = (typeof AUTO_END_REASONS)[number];
+
+/** Why the worker resumes the recording (resume_recording body, optional; audit detail). */
+export const RESUME_REASONS = ["egress_failed", "egress_ended"] as const;
+export type ResumeReason = (typeof RESUME_REASONS)[number];
 
 export function isLiveAction(x: unknown): x is LiveAction {
   return typeof x === "string" && (LIVE_ACTIONS as readonly string[]).includes(x);
@@ -311,7 +356,7 @@ export function isLiveAction(x: unknown): x is LiveAction {
 export const TARGETED_ACTIONS: readonly LiveAction[] = ["approve", "reject", "mute", "demote"];
 
 export type LiveActor =
-  /** The service role — the media worker (auto_end only). */
+  /** The service role — the media worker (auto_end / resume_recording only). */
   | { kind: "system" }
   | {
     kind: "user";
@@ -347,9 +392,10 @@ export function canSpeak(who: { isGuest: boolean }): Verdict<"guest_cannot_speak
  *  - open_green / start / end: the host, or a content manager (admin/publisher —
  *    the same people cancel_live_session trusts).
  *  - host_leave: the host (hands the session to a moderator present).
- *  - auto_end: ONLY the system (service-role key — the media worker: D4 host
- *    absent, room_finished). The system can do nothing else: every other
- *    action needs a user JWT.
+ *  - auto_end / resume_recording: ONLY the system (service-role key — the
+ *    media worker: D4 host absent / room_finished; an egress that died while
+ *    the session is live). The system can do nothing else: every other action
+ *    needs a user JWT.
  */
 export function authorizeLiveAction(
   action: LiveAction,
@@ -357,8 +403,8 @@ export function authorizeLiveAction(
   opts: { targetIsSelf?: boolean; /** hand: raise (true) / lower (false); missing = raise. */ up?: boolean } = {},
 ): Verdict<"forbidden" | "guest_cannot_speak"> {
   const forbidden = { ok: false, code: "forbidden" } as const;
-  if (actor.kind === "system") return action === "auto_end" ? OK : forbidden;
-  if (action === "auto_end") return forbidden;
+  if (actor.kind === "system") return isSystemAction(action) ? OK : forbidden;
+  if (isSystemAction(action)) return forbidden;
   if (action === "hand") return opts.up === false ? OK : canSpeak(actor);
   if (actor.isGuest) {
     return action === "leave" || (action === "demote" && opts.targetIsSelf && actor.liveRole === "speaker")
@@ -392,7 +438,7 @@ export function authorizeLiveAction(
  * Session-independent first gate (before any lookup): a student or guest can
  * only ever `leave`, step down (`demote` himself) or toggle his own `hand` —
  * the host of a session is always staff (create_live_session / host_leave).
- * No user may `auto_end`. A guest raising a hand is refused here already
+ * No user may `auto_end` or `resume_recording`. A guest raising a hand is refused here already
  * (guest_cannot_speak); lowering stays allowed (idempotent).
  */
 export function preauthorizeLiveAction(
@@ -401,7 +447,7 @@ export function preauthorizeLiveAction(
   opts: { /** hand: raise (true) / lower (false); missing = raise. */ up?: boolean } = {},
 ): Verdict<"forbidden" | "guest_cannot_speak"> {
   const forbidden = { ok: false, code: "forbidden" } as const;
-  if (action === "auto_end") return forbidden;
+  if (isSystemAction(action)) return forbidden;
   if (action === "hand") return opts.up === false ? OK : canSpeak(caller);
   if (!caller.isGuest && isStaffRole(caller.appRole)) return OK;
   return action === "leave" || action === "demote" ? OK : forbidden;
@@ -451,6 +497,7 @@ export type Transition = { ok: true; next: LiveStatus } | { ok: false; code: "in
  *   auto_end    live → ended · green → cancelled · anything else unchanged
  *               (idempotent: the worker may retry, or both host_absent and
  *               room_finished may fire)
+ *   resume_recording  live only, unchanged (a new egress for a live session)
  */
 export function statusAfter(action: LiveAction, status: string): Transition {
   const bad = { ok: false, code: "invalid_state" } as const;
@@ -479,6 +526,8 @@ export function statusAfter(action: LiveAction, status: string): Transition {
       if (status === "live") return { ok: true, next: "ended" };
       if (status === "green") return { ok: true, next: "cancelled" };
       return same();
+    case "resume_recording":
+      return status === "live" ? same() : bad;
   }
 }
 
@@ -487,14 +536,15 @@ export function statusAfter(action: LiveAction, status: string): Transition {
  * isn't logged (`leave`, `hand` — a participant's own request isn't a
  * moderation act; its last toggle is live_participants.hand_at). A speaker
  * demoting himself is `step_down`; ending a session that never went live is
- * `cancel`; the worker's end is `auto_end`.
+ * `cancel`; the worker's end is `auto_end`; its new egress after a crash is
+ * `resume_recording` (0146 adds it to the check list).
  */
 export function auditAction(
   action: LiveAction,
   ctx: { targetIsSelf?: boolean; next?: LiveStatus } = {},
 ): string | null {
   if (action === "leave" || action === "hand") return null;
-  if (action === "auto_end") return "auto_end";
+  if (action === "auto_end" || action === "resume_recording") return action;
   if (action === "end") return ctx.next === "cancelled" ? "cancel" : "end";
   if (action === "demote" && ctx.targetIsSelf) return "step_down";
   return action;
@@ -596,6 +646,7 @@ export const REJECTED_MESSAGE = JSON.stringify({ t: "rejected" });
 
 export type LiveErrorCode =
   | "bad_request" | "unauthorized" | "forbidden" | "banned" | "not_found" | "not_visible"
+  | "live_disabled"
   | "guest_cannot_speak" | "gender_required" | "not_open" | "ended" | "invalid_state" | "invalid_target"
   | "another_live_active" | "not_present" | "no_track" | "no_moderator_present"
   | "requests_closed" | "rate_limited" | "livekit_error" | "server_error";
@@ -606,6 +657,8 @@ export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   forbidden: 403,
   banned: 403,
   not_visible: 403,
+  /** P7 app_config.live_enabled is not on for this caller (liveEnabledFor). */
+  live_disabled: 403,
   /** Guests listen only (owner 2026-09-28): a guest raising a hand, or being approved. */
   guest_cannot_speak: 403,
   not_found: 404,
@@ -625,6 +678,20 @@ export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   livekit_error: 502,
   server_error: 500,
 };
+
+/**
+ * Map an add_live_recording_part (0146) error to our code: the session is no
+ * longer live / another egress already records / part cap → 409 invalid_state
+ * (the worker reads it as "nothing to resume").
+ */
+export function recordingPartRpcErrorCode(message: string | null | undefined): LiveErrorCode {
+  const m = message ?? "";
+  if (m.includes("not found")) return "not_found";
+  if (m.includes("is not live") || m.includes("already running") || m.includes("too many recording parts")) {
+    return "invalid_state";
+  }
+  return "server_error";
+}
 
 /** Map a set_live_session_status (0138) error message to our code. */
 export function statusRpcErrorCode(message: string | null | undefined): LiveErrorCode {
@@ -659,8 +726,8 @@ export type LiveControlRequest = {
   trackSid: string | null;
   /** set_allow_requests. */
   allow: boolean | null;
-  /** auto_end. */
-  reason: AutoEndReason | null;
+  /** auto_end (required) · resume_recording (optional, audit detail). */
+  reason: AutoEndReason | ResumeReason | null;
   /** hand: raise (true) / lower (false). */
   up: boolean | null;
 };
@@ -679,7 +746,8 @@ export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveC
   const allow = b.allow ?? null;
   if (b.action === "set_allow_requests" && typeof allow !== "boolean") return { ok: false, error: "allow required" };
   const reason = b.reason ?? null;
-  if (reason !== null && !(AUTO_END_REASONS as readonly unknown[]).includes(reason)) {
+  const reasons: readonly unknown[] = b.action === "resume_recording" ? RESUME_REASONS : AUTO_END_REASONS;
+  if (reason !== null && !reasons.includes(reason)) {
     return { ok: false, error: "invalid reason" };
   }
   if (b.action === "auto_end" && reason === null) return { ok: false, error: "reason required" };
@@ -695,7 +763,7 @@ export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveC
       identity: b.action === "hand" ? null : identity as string | null,
       trackSid: trackSid as string | null,
       allow: typeof allow === "boolean" ? allow : null,
-      reason: reason as AutoEndReason | null,
+      reason: reason as AutoEndReason | ResumeReason | null,
       up: typeof up === "boolean" ? up : null,
     },
   };

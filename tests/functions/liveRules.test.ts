@@ -23,10 +23,12 @@ import {
   LIVE_GRANTS,
   type LiveAction,
   type LiveActor,
+  liveEnabledFor,
   liveGender,
   liveRoleFor,
   livekitWsUrl,
   parseLiveControlRequest,
+  parseLiveEnabledLevel,
   parseLiveTokenRequest,
   participantAttributes,
   preauthorizeLiveAction,
@@ -34,11 +36,14 @@ import {
   realDisplayName,
   RECORDING_AUDIO,
   recordingFilepath,
+  recordingPartRpcErrorCode,
   resolveHiddenName,
+  RESUME_REASONS,
   safeEqual,
   speakerPermission,
   statusAfter,
   statusRpcErrorCode,
+  SYSTEM_ACTIONS,
 } from '../../supabase/functions/_shared/liveRules';
 
 const SESSION = '3f2b8c1e-9a4d-4c7e-8b1a-2d5e6f708192';
@@ -223,7 +228,7 @@ describe('§5.2 action → permission (D1)', () => {
       expect(preauthorizeLiveAction(action, { appRole: 'student', isGuest: false }, lower).ok).toBe(ok);
       expect(preauthorizeLiveAction(action, { appRole: null, isGuest: true }, lower).ok).toBe(ok);
       expect(preauthorizeLiveAction(action, { appRole: 'admin', isGuest: true }, lower).ok).toBe(ok);
-      expect(preauthorizeLiveAction(action, { appRole: 'sheikh', isGuest: false }, lower).ok).toBe(action !== 'auto_end');
+      expect(preauthorizeLiveAction(action, { appRole: 'sheikh', isGuest: false }, lower).ok).toBe(!SYSTEM_ACTIONS.includes(action));
     }
     // Everything else is refused as `forbidden` — only a guest's raise has its own code.
     expect(preauthorizeLiveAction('approve', { appRole: 'student', isGuest: false })).toEqual({ ok: false, code: 'forbidden' });
@@ -257,9 +262,10 @@ describe('§5.2 action → permission (D1)', () => {
     expect(authorizeLiveAction('host_leave', user({ appRole: 'admin' }))).toEqual({ ok: false, code: 'forbidden' });
   });
 
-  test('auto_end is the service role\'s ONLY action, and nobody else\'s (D4)', () => {
+  test('auto_end / resume_recording are the service role\'s ONLY actions, and nobody else\'s (D4, 0146)', () => {
+    expect([...SYSTEM_ACTIONS].sort()).toEqual(['auto_end', 'resume_recording']);
     for (const action of LIVE_ACTIONS) {
-      expect(authorizeLiveAction(action, { kind: 'system' }).ok).toBe(action === 'auto_end');
+      expect(authorizeLiveAction(action, { kind: 'system' }).ok).toBe(SYSTEM_ACTIONS.includes(action));
     }
     for (const appRole of ['admin', 'publisher', 'sheikh', 'student']) {
       expect(authorizeLiveAction('auto_end', user({ appRole, isHost: true }))).toEqual({ ok: false, code: 'forbidden' });
@@ -284,10 +290,10 @@ describe('§5.2 action → permission (D1)', () => {
     expect(canTarget('host_leave', 'speaker').ok).toBe(false);
   });
 
-  test('audit names match the 0135 live_moderation_log check list', () => {
+  test('audit names match the live_moderation_log check list (0135, + resume_recording in 0146)', () => {
     const allowed = [
       'open_green', 'start', 'end', 'cancel', 'approve', 'reject', 'mute', 'demote',
-      'step_down', 'set_allow_requests', 'host_leave', 'auto_end',
+      'step_down', 'set_allow_requests', 'host_leave', 'auto_end', 'resume_recording',
     ];
     for (const action of LIVE_ACTIONS) {
       for (const ctx of [{}, { targetIsSelf: true }, { next: 'cancelled' as const }]) {
@@ -385,6 +391,63 @@ describe('P4 hand «طلب الكلمة» and guests (owner 2026-09-28: guests l
   test('approve refuses a guest target (read fresh from auth.users.is_anonymous)', () => {
     expect(canSpeak({ isGuest: true })).toEqual({ ok: false, code: 'guest_cannot_speak' });
     expect(canSpeak({ isGuest: false })).toEqual({ ok: true });
+  });
+});
+
+describe('resume_recording (0146: a new egress after one died mid-session) — service role only', () => {
+  test('only the service role may call it; no user — not an admin, not the host — ever', () => {
+    expect(authorizeLiveAction('resume_recording', { kind: 'system' })).toEqual({ ok: true });
+    for (const appRole of ['admin', 'publisher', 'sheikh', 'student', null]) {
+      for (const isHost of [true, false]) {
+        expect(authorizeLiveAction('resume_recording', user({ appRole, isHost, liveRole: isHost ? 'host' : 'moderator' }))).toEqual({
+          ok: false,
+          code: 'forbidden',
+        });
+      }
+      // refused at the first gate, before any lookup
+      expect(preauthorizeLiveAction('resume_recording', { appRole, isGuest: false })).toEqual({ ok: false, code: 'forbidden' });
+      expect(preauthorizeLiveAction('resume_recording', { appRole, isGuest: true })).toEqual({ ok: false, code: 'forbidden' });
+    }
+    // and the service role still cannot do anything else
+    for (const action of ['start', 'end', 'approve', 'demote', 'hand', 'open_green'] as LiveAction[]) {
+      expect(authorizeLiveAction(action, { kind: 'system' })).toEqual({ ok: false, code: 'forbidden' });
+    }
+  });
+
+  test('live sessions only; the status stays live', () => {
+    expect(statusAfter('resume_recording', 'live')).toEqual({ ok: true, next: 'live' });
+    for (const from of ['scheduled', 'green', 'ended', 'processing', 'ready', 'failed', 'cancelled']) {
+      expect(statusAfter('resume_recording', from)).toEqual({ ok: false, code: 'invalid_state' });
+    }
+  });
+
+  test('audited as resume_recording', () => {
+    expect(auditAction('resume_recording', { next: 'live' })).toBe('resume_recording');
+  });
+
+  test('request: reason optional, from RESUME_REASONS only (and never an auto_end reason)', () => {
+    expect(parseLiveControlRequest({ action: 'resume_recording', sessionId: SESSION })).toMatchObject({
+      ok: true,
+      value: { action: 'resume_recording', sessionId: SESSION, reason: null },
+    });
+    for (const reason of RESUME_REASONS) {
+      expect(parseLiveControlRequest({ action: 'resume_recording', sessionId: SESSION, reason })).toMatchObject({
+        ok: true,
+        value: { reason },
+      });
+    }
+    expect(parseLiveControlRequest({ action: 'resume_recording', sessionId: SESSION, reason: 'host_absent' }).ok).toBe(false);
+    expect(parseLiveControlRequest({ action: 'auto_end', sessionId: SESSION, reason: 'egress_failed' }).ok).toBe(false);
+    expect(parseLiveControlRequest({ action: 'resume_recording', sessionId: 'nope' }).ok).toBe(false);
+  });
+
+  test('add_live_recording_part errors map to 409 / 404 (the worker reads 409 as "nothing to resume")', () => {
+    expect(recordingPartRpcErrorCode('live session is not live (status ended)')).toBe('invalid_state');
+    expect(recordingPartRpcErrorCode('a recording is already running for this live session')).toBe('invalid_state');
+    expect(recordingPartRpcErrorCode('too many recording parts for this live session')).toBe('invalid_state');
+    expect(recordingPartRpcErrorCode('live session not found')).toBe('not_found');
+    expect(recordingPartRpcErrorCode('invalid egress id')).toBe('server_error');
+    expect(LIVE_ERROR_STATUS.invalid_state).toBe(409);
   });
 });
 
@@ -556,5 +619,55 @@ describe('request parsing', () => {
       parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: false, identity: '0123456789abcdef' }),
     ).toMatchObject({ ok: true, value: { identity: null } });
     expect(parseLiveControlRequest({ action: 'hand', sessionId: 'nope', up: true }).ok).toBe(false);
+  });
+});
+
+// P7 — app_config.live_enabled (migration 0145): ship dark, then staff, then all.
+describe('P7 rollout flag: liveEnabledFor (same rule as SQL live_enabled_for_caller)', () => {
+  test('levels parse like live_enabled_level(): trimmed, case-insensitive', () => {
+    expect(parseLiveEnabledLevel('all')).toBe('all');
+    expect(parseLiveEnabledLevel('staff')).toBe('staff');
+    expect(parseLiveEnabledLevel('off')).toBe('off');
+    expect(parseLiveEnabledLevel('  ALL ')).toBe('all');
+    expect(parseLiveEnabledLevel('Staff')).toBe('staff');
+  });
+
+  test.each([undefined, null, '', 'true', 'on', 'yes', 'everyone', 'staff-only', 1, true, {}])(
+    'a missing / unknown value (%p) is off — for everyone, staff included',
+    (value) => {
+      expect(parseLiveEnabledLevel(value)).toBe('off');
+      for (const role of ['admin', 'publisher', 'sheikh', 'student', null]) {
+        expect(liveEnabledFor(value, role)).toBe(false);
+      }
+    },
+  );
+
+  test("'off' refuses everyone", () => {
+    for (const role of ['admin', 'publisher', 'sheikh', 'student', undefined]) {
+      expect(liveEnabledFor('off', role)).toBe(false);
+    }
+  });
+
+  test("'staff' admits admin / publisher / sheikh only — never students or guests", () => {
+    expect(liveEnabledFor('staff', 'admin')).toBe(true);
+    expect(liveEnabledFor('staff', 'publisher')).toBe(true);
+    expect(liveEnabledFor('staff', 'sheikh')).toBe(true);
+    expect(liveEnabledFor('staff', 'student')).toBe(false);
+    expect(liveEnabledFor('staff', null)).toBe(false);
+    expect(liveEnabledFor('staff', undefined)).toBe(false);
+    expect(liveEnabledFor('staff', 'student', true)).toBe(false);
+    // An anonymous session is a guest whatever its profile says.
+    expect(liveEnabledFor('staff', 'admin', true)).toBe(false);
+  });
+
+  test("'all' admits everyone, guests included", () => {
+    for (const role of ['admin', 'publisher', 'sheikh', 'student', null]) {
+      expect(liveEnabledFor('all', role)).toBe(true);
+    }
+    expect(liveEnabledFor('all', 'student', true)).toBe(true);
+  });
+
+  test('live-token refuses with 403 live_disabled', () => {
+    expect(LIVE_ERROR_STATUS.live_disabled).toBe(403);
   });
 });

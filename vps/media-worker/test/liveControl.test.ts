@@ -25,9 +25,40 @@ describe('createLiveControl (auto_end via the live-control edge function)', () =
   });
 });
 
+describe('createLiveControl — resume_recording (0146)', () => {
+  const lcWith = (res: Response) => {
+    const fetchMock = vi.fn(async () => res);
+    return { fetchMock, lc: createLiveControl('https://ref.supabase.co', 'SR-KEY', fetchMock as unknown as typeof fetch) };
+  };
+
+  it('POSTs {action:resume_recording, sessionId, reason} with the service-role bearer → resumed', async () => {
+    const { fetchMock, lc } = lcWith(new Response('{"ok":true,"status":"live","egressId":"EG_new2","seq":2}', { status: 200 }));
+    expect(await lc.resumeRecording('sess-1', 'egress_failed')).toEqual({ status: 'resumed', egressId: 'EG_new2', seq: 2 });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer SR-KEY' });
+    expect(JSON.parse(String(init.body))).toEqual({ action: 'resume_recording', sessionId: 'sess-1', reason: 'egress_failed' });
+  });
+
+  it('409 / 404 → refused (nothing to resume), never thrown', async () => {
+    for (const status of [409, 404]) {
+      const { lc } = lcWith(new Response('{"error":"invalid_state","detail":"room_gone"}', { status }));
+      expect(await lc.resumeRecording('sess-1', 'egress_ended')).toMatchObject({ status: 'refused', httpStatus: status });
+    }
+  });
+
+  it('5xx / 403 → throws with the status (never the key)', async () => {
+    for (const status of [502, 403]) {
+      const { lc } = lcWith(new Response('{"error":"livekit_error"}', { status }));
+      const err = await lc.resumeRecording('sess-1', 'egress_failed').catch((e: Error) => e);
+      expect(String(err)).toContain(`HTTP ${status}`);
+      expect(String(err)).not.toContain('SR-KEY');
+    }
+  });
+});
+
 describe('HostAbsenceWatch', () => {
   let calls: Array<[string, string]>;
-  let control: LiveControl;
+  let control: Pick<LiveControl, 'autoEnd'>;
   let watch: HostAbsenceWatch;
   const live = { sessionId: 's1', status: 'live', isHost: true, hostPresent: false };
 

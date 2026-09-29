@@ -217,6 +217,8 @@ export type LiveTokenErrorCode =
   | 'not_open'
   | 'banned'
   | 'forbidden'
+  /** P7 app_config.live_enabled is not on for this caller (403 from live-token). */
+  | 'live_disabled'
   | 'not_found'
   | 'network'
   | 'unknown';
@@ -226,6 +228,7 @@ const TOKEN_ERROR_TEXT: Record<LiveTokenErrorCode, string> = {
   not_open: 'المجلس غير متاح الآن.',
   banned: 'لا يمكنك الدخول إلى الحلقة.',
   forbidden: 'لا يمكنك الدخول إلى هذه الحلقة.',
+  live_disabled: 'البث المباشر غير متاح بعد.',
   not_found: 'لم نجد هذا المجلس.',
   network: 'تعذّر الدخول إلى الحلقة',
   unknown: 'تعذّر الدخول إلى الحلقة',
@@ -269,6 +272,8 @@ export function mapLiveTokenErrorCode(serverCode: string | null | undefined, htt
     case 'not_visible':
     case 'unauthorized':
       return 'forbidden';
+    case 'live_disabled':
+      return 'live_disabled';
     case 'not_found':
       return 'not_found';
     default:

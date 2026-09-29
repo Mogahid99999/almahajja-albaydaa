@@ -5,15 +5,27 @@
  * set_app_config: the «عن المنصة» paragraphs, the Telegram live-broadcast
  * intro/link, and (with a loud caution) the V4 update gate. Saving one field at
  * a time keeps each write independent.
+ *
+ * V23 P7: the in-app «البث المباشر» rollout flag (app_config.live_enabled —
+ * «متوقف» / «للمشرفين فقط» / «للجميع», migration 0145). One tap saves it through
+ * the same set_app_config; «للجميع» asks first (every student and guest sees it
+ * and gets the «بدأ البث المباشر» push). The server enforces it (get_live_now,
+ * create_live_session, live-token …) — this screen only sets it.
  */
 import Feather from '@expo/vector-icons/Feather';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
-import { ABOUT_FALLBACK } from '@/api/appContent';
+import {
+  ABOUT_FALLBACK,
+  LIVE_ENABLED_KEY,
+  parseLiveEnabledLevel,
+  type LiveEnabledLevel,
+} from '@/api/appContent';
 import { useAdminConfig, useSetAppConfig } from '@/hooks/useAppContent';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
 
@@ -90,6 +102,71 @@ const RELEASE_FIELDS: FieldDef[] = [
   { key: 'latest_released_at', label: 'تاريخ إصدار آخر تحديث (YYYY-MM-DD)', placeholder: '2026-07-06' },
 ];
 
+const LIVE_LEVELS: { level: LiveEnabledLevel; label: string; hint: string }[] = [
+  {
+    level: 'off',
+    label: 'متوقف',
+    hint: 'لا يظهر البث المباشر لأحد، ولا يمكن فتح مجلس جديد.',
+  },
+  {
+    level: 'staff',
+    label: 'للمشرفين فقط',
+    hint: 'للتجربة: يراه المشرفون والناشرون والمشايخ وحدهم، ولا يصل الطلاب منه شيء ولا إشعار.',
+  },
+  {
+    level: 'all',
+    label: 'للجميع',
+    hint: 'يظهر لجميع الطلاب والزوار، ويصلهم إشعار عند بدء كل مجلس.',
+  },
+];
+
+/** «البث المباشر» rollout: three calm choices, one tap saves («للجميع» asks first). */
+function LiveRolloutControl({
+  value,
+  disabled,
+  onChoose,
+}: {
+  value: LiveEnabledLevel;
+  disabled: boolean;
+  onChoose: (level: LiveEnabledLevel) => void;
+}) {
+  return (
+    <View accessibilityRole="radiogroup" style={{ gap: 10 }}>
+      {LIVE_LEVELS.map((opt) => {
+        const selected = opt.level === value;
+        return (
+          <Pressable
+            key={opt.level}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: selected, disabled }}
+            onPress={() => {
+              if (!selected) onChoose(opt.level);
+            }}
+            disabled={disabled}
+            style={({ pressed }) => [
+              styles.levelRow,
+              selected && styles.levelRowOn,
+              (pressed || (disabled && !selected)) && { opacity: 0.7 },
+            ]}
+          >
+            <View style={[styles.radio, selected && styles.radioOn]}>
+              {selected && <View style={styles.radioDot} />}
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt weight="semibold" size={14} color={selected ? colors.primaryTeal : colors.textInk}>
+                {opt.label}
+              </Txt>
+              <Txt size={12} color={colors.textMuted} style={{ lineHeight: 20 }}>
+                {opt.hint}
+              </Txt>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function ConfigField({
   def,
   value,
@@ -137,6 +214,9 @@ export default function AdminSettings() {
   const save = useSetAppConfig();
   const [form, setForm] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [liveLevel, setLiveLevel] = useState<LiveEnabledLevel>('off');
+  const [confirmAll, setConfirmAll] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
 
   // Seed the form once config arrives (fallbacks fill empty keys).
   useEffect(() => {
@@ -155,6 +235,7 @@ export default function AdminSettings() {
     const next: Record<string, string> = {};
     for (const f of all) next[f.key] = config[f.key] ?? f.fallback ?? '';
     setForm(next);
+    setLiveLevel(parseLiveEnabledLevel(config[LIVE_ENABLED_KEY]));
   }, [config]);
 
   const flash = (msg: string) => {
@@ -170,6 +251,31 @@ export default function AdminSettings() {
         onError: (e) => Alert.alert('تعذّر الحفظ', (e as Error).message),
       },
     );
+  };
+
+  const saveLiveLevel = (level: LiveEnabledLevel) => {
+    const previous = liveLevel;
+    setLiveError(null);
+    setLiveLevel(level);
+    save.mutate(
+      { key: LIVE_ENABLED_KEY, value: level },
+      {
+        onSuccess: () => {
+          setConfirmAll(false);
+          flash('تم الحفظ');
+        },
+        onError: () => {
+          setConfirmAll(false);
+          setLiveLevel(previous);
+          setLiveError('تعذّر حفظ إعداد البث المباشر، أعد المحاولة.');
+        },
+      },
+    );
+  };
+
+  const chooseLiveLevel = (level: LiveEnabledLevel) => {
+    if (level === 'all') setConfirmAll(true);
+    else saveLiveLevel(level);
   };
 
   const renderFields = (defs: FieldDef[]) =>
@@ -201,6 +307,36 @@ export default function AdminSettings() {
           </Txt>
         </View>
       )}
+
+      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
+        البث المباشر
+      </Txt>
+      <Txt size={12} color={colors.textMuted} style={{ marginBottom: 12 }}>
+        من يرى «البث المباشر» في التطبيق. يسري التغيير دون تحديث للتطبيق.
+      </Txt>
+      <Card style={{ gap: 12 }}>
+        <LiveRolloutControl
+          value={liveLevel}
+          disabled={!config || save.isPending}
+          onChoose={chooseLiveLevel}
+        />
+        {liveError && (
+          <Txt size={12} color={colors.stateDanger}>
+            {liveError}
+          </Txt>
+        )}
+      </Card>
+      <ConfirmDialog
+        visible={confirmAll}
+        title="إتاحة البث المباشر للجميع؟"
+        message="سيظهر البث المباشر لجميع الطلاب والزوار، ويصلهم إشعار عند بدء كل مجلس."
+        confirmLabel="إتاحة للجميع"
+        cancelLabel="إلغاء"
+        destructive={false}
+        pending={save.isPending}
+        onConfirm={() => saveLiveLevel('all')}
+        onCancel={() => setConfirmAll(false)}
+      />
 
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
         عن المنصة
@@ -305,6 +441,44 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     minHeight: 44,
   } as TextStyle,
+
+  levelRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 12,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.borderSand,
+    backgroundColor: colors.surfaceWhite,
+  } as ViewStyle,
+
+  levelRowOn: {
+    borderColor: colors.primaryTeal,
+    backgroundColor: 'rgba(31,74,66,0.06)',
+  } as ViewStyle,
+
+  radio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: colors.borderSand2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  } as ViewStyle,
+
+  radioOn: {
+    borderColor: colors.primaryTeal,
+  } as ViewStyle,
+
+  radioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primaryTeal,
+  } as ViewStyle,
 
   inputMultiline: {
     minHeight: 96,

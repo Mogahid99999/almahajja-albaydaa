@@ -10,7 +10,12 @@
 // only for EGRESS_COMPLETE / EGRESS_LIMIT_REACHED (a partial recording is still
 // a lesson) + an `.ogg` output that exists as a regular file inside
 // RECORDINGS_DIR (symlink / `..` escapes refused). Manifests (`.json`) are
-// ignored; FAILED / ABORTED are logged only. The raw is never deleted here.
+// ignored. The raw is never deleted here.
+// 0146: an egress_ended that yields no recording (FAILED / ABORTED / no .ogg)
+// is handed to the recording guard (recordingGuard.ts): it recovers the
+// partial file from the egress tmp dir and, if the session is still live,
+// resumes the recording with a new egress. A clean end while the session is
+// still live (RPC → null) also pokes the guard (resume).
 //
 // Room lifecycle events go to `live_room_event(...)`; its result feeds the D4
 // host-absence watch (hostWatch.ts).
@@ -46,6 +51,12 @@ export interface RoomEventSink {
   onRoomEvent(event: string, result: RoomEventResult | null): Promise<void> | void;
 }
 
+/** The recording guard's webhook hooks (0146). */
+export interface RecordingSink {
+  egressFailed(egressId: string, rawPath: string | null): void;
+  trigger(delayMs?: number): void;
+}
+
 export interface WebhookDeps {
   verifier: WebhookVerifier;
   env: WorkerEnv;
@@ -53,6 +64,7 @@ export interface WebhookDeps {
   db: Pick<JobDb, 'enqueueLiveRecording' | 'liveRoomEvent'>;
   recordings: Pick<RecordingsDir, 'check'>;
   hostWatch?: RoomEventSink;
+  guard?: RecordingSink;
   kick: () => void;
   log?: Logger;
 }
@@ -71,6 +83,9 @@ export const ROOM_EVENTS = new Set([
   'track_published',
   'track_unpublished',
 ]);
+
+/** Delay before the guard looks at a session whose egress ended cleanly while it was still live. */
+export const RESUME_AFTER_CLEAN_END_MS = 15_000;
 
 // livekit.EgressStatus
 const EGRESS_STARTING = 0;
@@ -170,6 +185,8 @@ async function egressEnded(
       reason: !statusOk ? 'status' : 'no .ogg output',
       error: ev.egressInfo?.error ? errorMessage(ev.egressInfo.error, 200) : undefined,
     });
+    // Recover what this egress wrote so far; resume if the session is still live.
+    deps.guard?.egressFailed(egressId, rawPath);
     deps.kick();
     return ok();
   }
@@ -193,6 +210,9 @@ async function egressEnded(
       status: statusName(status),
       job: jobId ?? 'deferred_until_end',
     });
+    // Session still live (or another part still open): the guard resumes the recording if needed.
+    // Not at once: a staff `end` stops the egress BEFORE it flips the session to ended.
+    if (jobId === null) deps.guard?.trigger(RESUME_AFTER_CLEAN_END_MS);
   } catch (err) {
     log('error', 'lk.enqueue_failed', { room, egress: egressId, error: errorMessage(err, 200) });
     deps.kick();

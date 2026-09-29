@@ -31,6 +31,16 @@
 //   auto_end            service role only, { sessionId, reason:
 //                       'host_absent' | 'room_finished' }: same as end for a
 //                       live/green session; a no-op (200) for one already over.
+//   resume_recording    service role only (0146), { sessionId, reason?:
+//                       'egress_failed' | 'egress_ended' }: the session's egress
+//                       died while it is still live (the worker has already
+//                       marked that part dead/recovered/lost) → a NEW
+//                       RoomComposite egress with exactly the `start` settings,
+//                       registered by add_live_recording_part (next seq, becomes
+//                       live_sessions.egress_id so `end` stops it). 409
+//                       invalid_state when the session is not live, a part is
+//                       still `recording`, or the room is gone (never recreated
+//                       just to record silence). → { ok, status, egressId, seq }.
 //   approve             listener → speaker: canPublish (mic only), r=speaker,
 //                       h=0. A guest target → 403 guest_cannot_speak.
 //   reject              h=0 + data message {t:'rejected'} to that participant
@@ -84,6 +94,7 @@ import {
   handVerdict,
   isBanned,
   isEnvRoom,
+  isSystemAction,
   jwtRoleClaim,
   LIVE_ERROR_STATUS,
   type LiveActor,
@@ -93,6 +104,7 @@ import {
   preauthorizeLiveAction,
   RECORDING_AUDIO,
   recordingFilepath,
+  recordingPartRpcErrorCode,
   REJECTED_MESSAGE,
   ROOM_DEPARTURE_TIMEOUT_S,
   ROOM_EMPTY_TIMEOUT_S,
@@ -171,8 +183,8 @@ async function handle(req: Request): Promise<Response> {
 
   // ── Who is calling ──────────────────────────────────────────────────────────
   const system = await isServiceRole(bearer);
-  // auto_end is the service role's ONLY action, and only the service role's.
-  if (system !== (r.action === "auto_end")) return fail("forbidden");
+  // auto_end / resume_recording are the service role's ONLY actions, and only the service role's.
+  if (system !== isSystemAction(r.action)) return fail("forbidden");
   let userId: string | null = null;
   let appRole: string | null = null;
   let isGuest = false;
@@ -252,27 +264,7 @@ async function handle(req: Request): Promise<Response> {
     case "start": {
       if (!RECORDING_ENV) return fail("server_error", "LIVEKIT_ROOM_PREFIX must be stg_ or prd_");
       await ensureRoom(room, session.allow_requests);
-      // Local file on the VPS (no s3 block): nothing can lose the recording
-      // between egress and R2 — the worker uploads it and keeps it until done.
-      const info = await lk(() => egress.startRoomCompositeEgress(
-        room,
-        {
-          file: new EncodedFileOutput({
-            fileType: EncodedFileType.OGG,
-            filepath: recordingFilepath(RECORDING_ENV),
-            disableManifest: true,
-          }),
-        },
-        {
-          audioOnly: true,
-          // `advanced` options: Opus 64 kbps, 48 kHz (speech; OGG is Opus-only).
-          encodingOptions: new EncodingOptions({
-            audioCodec: AudioCodec.OPUS,
-            audioBitrate: RECORDING_AUDIO.bitrateKbps,
-            audioFrequency: RECORDING_AUDIO.frequencyHz,
-          }),
-        },
-      ));
+      const info = await startRecordingEgress(room, RECORDING_ENV);
       try {
         // → live: started_at, egress_id (+ whatever notifications the RPC does).
         await setStatus(admin, session.id, "live", info.egressId);
@@ -299,6 +291,40 @@ async function handle(req: Request): Promise<Response> {
         await setStatus(admin, session.id, "cancelled");
       }
       if (r.action === "auto_end") result = { reason: r.reason };
+      break;
+    }
+
+    case "resume_recording": {
+      if (!RECORDING_ENV) return fail("server_error", "LIVEKIT_ROOM_PREFIX must be stg_ or prd_");
+      // The dead part must be settled first (the worker marks it); one egress at a time.
+      const { data: last, error: lastErr } = await admin
+        .from("live_recording_parts")
+        .select("seq, status")
+        .eq("session_id", session.id)
+        .order("seq", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ seq: number; status: string }>();
+      if (lastErr) return fail("server_error", lastErr.message);
+      if (last?.status === "recording") return fail("invalid_state", "recording_active");
+      // Never recreate a room that is gone just to record silence into it.
+      const existing = await lk(() => rooms.listRooms([room]));
+      if (!existing.some((x) => x.name === room)) return fail("invalid_state", "room_gone");
+
+      const info = await startRecordingEgress(room, RECORDING_ENV);
+      let seq: number;
+      try {
+        const { data, error } = await admin.rpc("add_live_recording_part", {
+          p_session: session.id,
+          p_egress_id: info.egressId,
+        });
+        if (error) throw new LiveFail(recordingPartRpcErrorCode(error.message), error.message);
+        seq = Number(data);
+      } catch (e) {
+        // Ended meanwhile / another resume won: don't leave a stray egress running.
+        await egress.stopEgress(info.egressId).catch(() => undefined);
+        throw e;
+      }
+      result = { egressId: info.egressId, seq };
       break;
     }
 
@@ -504,6 +530,8 @@ async function handle(req: Request): Promise<Response> {
         ? { allow: r.allow }
         : r.action === "auto_end"
         ? { reason: r.reason, from: session.status }
+        : r.action === "resume_recording"
+        ? { reason: r.reason, previous_egress: session.egress_id, ...result }
         : {},
     });
     if (error) console.error(`live-control audit: ${error.message}`);
@@ -563,6 +591,34 @@ async function setRole(admin: SupabaseClient, sessionId: string, identity: strin
     .eq("session_id", sessionId)
     .eq("identity", identity);
   if (error) throw new LiveFail("server_error", error.message);
+}
+
+/**
+ * The session recording (`start`, and `resume_recording` after a crash — the
+ * SAME settings): audio-only RoomComposite to a local file on the VPS (no s3
+ * block: nothing can lose the recording between egress and R2 — the worker
+ * uploads it and keeps it until done), /recordings/<env>/{room_name}-{time}.ogg,
+ * no manifest, Opus 64 kbps / 48 kHz (`advanced` options; OGG is Opus-only).
+ */
+function startRecordingEgress(room: string, env: "stg" | "prd") {
+  return lk(() => egress.startRoomCompositeEgress(
+    room,
+    {
+      file: new EncodedFileOutput({
+        fileType: EncodedFileType.OGG,
+        filepath: recordingFilepath(env),
+        disableManifest: true,
+      }),
+    },
+    {
+      audioOnly: true,
+      encodingOptions: new EncodingOptions({
+        audioCodec: AudioCodec.OPUS,
+        audioBitrate: RECORDING_AUDIO.bitrateKbps,
+        audioFrequency: RECORDING_AUDIO.frequencyHz,
+      }),
+    },
+  ));
 }
 
 /** CreateRoom is idempotent; our server has auto_create off, so every join needs it first. */

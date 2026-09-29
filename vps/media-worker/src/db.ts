@@ -1,6 +1,9 @@
 // Supabase (service role) access — the worker's only view of Postgres.
 // Contract: media_jobs migrations (0133_media_jobs_refine: p_kinds claim filter,
-// touch_media_job, fail → 'ignored') + P2 live RPCs (see below).
+// touch_media_job, fail → 'ignored') + P2 live RPCs (see below) + 0146 recording
+// parts (live_recording_parts, register_live_recording_part, live_recording_watch,
+// settle_live_recording, mark_live_part_backed_up / _raw_deleted,
+// live_part_raws_due_for_deletion).
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
@@ -70,6 +73,41 @@ export interface StaffIdentity {
   role: string | null;
 }
 
+/** live_recording_parts.status (0146). */
+export type PartStatus = 'recording' | 'dead' | 'complete' | 'recovered' | 'lost';
+/** What the worker may register (0146 register_live_recording_part). */
+export type RegisterPartStatus = Exclude<PartStatus, 'recording'>;
+
+/** One egress of a live session (0146 live_recording_parts), seq order = audio order. */
+export interface LiveRecordingPart {
+  seq: number;
+  egressId: string;
+  status: PartStatus;
+  rawPath: string | null;
+  rawBackupKey: string | null;
+  rawDeletedAt: string | null;
+  startedAt: string | null;
+}
+
+/** One row of `live_recording_watch()` (0146): a live session, or an ended one still without its job. */
+export interface LiveRecordingWatch {
+  sessionId: string;
+  roomName: string;
+  status: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  hasJob: boolean;
+  parts: Array<Pick<LiveRecordingPart, 'seq' | 'egressId' | 'status' | 'rawPath' | 'startedAt'>>;
+}
+
+/** One row of `live_part_raws_due_for_deletion()` (0146). */
+export interface LivePartRawDue {
+  sessionId: string;
+  seq: number;
+  rawPath: string;
+  rawBackupKey: string | null;
+}
+
 /** 'ignored' = the job was no longer running (someone else finished/cancelled it). */
 export type FailOutcome = 'retry' | 'failed' | 'ignored';
 
@@ -111,6 +149,36 @@ export interface JobDb {
   staffForToken(jwt: string): Promise<StaffIdentity | null>;
   /** Status of every job whose input_key is one of `keys` (keys with no job are absent). */
   inputKeyJobStatuses(keys: string[]): Promise<Map<string, MediaJobStatus[]>>;
+
+  // ---- 0146 recording parts (egress crash recovery) ----
+  /** The session's parts in seq order; [] for a pre-0146 session (single raw = job.input_key). */
+  liveRecordingParts(sessionId: string): Promise<LiveRecordingPart[]>;
+  liveRecordingWatch(): Promise<LiveRecordingWatch[]>;
+  /** register_live_recording_part → the session's job id, or null while it must wait. */
+  registerLiveRecordingPart(
+    roomName: string,
+    egressId: string,
+    rawPath: string | null,
+    status: RegisterPartStatus,
+    bytes: number | null,
+  ): Promise<string | null>;
+  /** settle_live_recording: queue the job or fail the session loudly (never stuck `ended`). */
+  settleLiveRecording(sessionId: string): Promise<string | null>;
+  markLivePartBackedUp(sessionId: string, seq: number, backupKey: string): Promise<void>;
+  markLivePartRawDeleted(sessionId: string, seq: number): Promise<void>;
+  livePartRawsDueForDeletion(): Promise<LivePartRawDue[]>;
+}
+
+const PART_STATUSES = new Set<PartStatus>(['recording', 'dead', 'complete', 'recovered', 'lost']);
+
+function partStatus(v: unknown): PartStatus {
+  if (typeof v === 'string' && PART_STATUSES.has(v as PartStatus)) return v as PartStatus;
+  throw new Error(`unexpected recording part status ${JSON.stringify(v)}`);
+}
+
+/** PostgREST "relation does not exist" — 0146 not applied yet (→ the pre-0146 single-raw path). */
+function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === 'PGRST205' || error?.code === '42P01';
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -307,6 +375,109 @@ export function createSupabaseDb(url: string, serviceRoleKey: string): JobDb {
         }
         if (rows.length < PAGE) return found;
       }
+    },
+
+    async liveRecordingParts(sessionId) {
+      const { data, error } = await sb
+        .from('live_recording_parts')
+        .select('seq, egress_id, status, raw_path, raw_backup_key, raw_deleted_at, started_at')
+        .eq('session_id', sessionId)
+        .order('seq');
+      if (error) {
+        if (isMissingRelation(error)) return [];
+        fail('live_recording_parts lookup', error);
+      }
+      const rows = (data ?? []) as Array<{
+        seq: number;
+        egress_id: string;
+        status: string;
+        raw_path: string | null;
+        raw_backup_key: string | null;
+        raw_deleted_at: string | null;
+        started_at: string | null;
+      }>;
+      return rows.map((r) => ({
+        seq: Number(r.seq),
+        egressId: r.egress_id,
+        status: partStatus(r.status),
+        rawPath: r.raw_path ?? null,
+        rawBackupKey: r.raw_backup_key ?? null,
+        rawDeletedAt: r.raw_deleted_at ?? null,
+        startedAt: r.started_at ?? null,
+      }));
+    },
+
+    async liveRecordingWatch() {
+      const { data, error } = await sb.rpc('live_recording_watch');
+      if (error) fail('live_recording_watch', error);
+      const rows = (data ?? []) as Array<{
+        session_id: string;
+        room_name: string;
+        status: string;
+        started_at: string | null;
+        ended_at: string | null;
+        has_job: boolean;
+        parts: Array<{ seq: number; egress_id: string; status: string; raw_path: string | null; started_at: string | null }> | null;
+      }>;
+      return rows.map((r) => ({
+        sessionId: r.session_id,
+        roomName: r.room_name,
+        status: String(r.status),
+        startedAt: r.started_at ?? null,
+        endedAt: r.ended_at ?? null,
+        hasJob: r.has_job === true,
+        parts: (r.parts ?? []).map((p) => ({
+          seq: Number(p.seq),
+          egressId: p.egress_id,
+          status: partStatus(p.status),
+          rawPath: p.raw_path ?? null,
+          startedAt: p.started_at ?? null,
+        })),
+      }));
+    },
+
+    async registerLiveRecordingPart(roomName, egressId, rawPath, status, bytes) {
+      const { data, error } = await sb.rpc('register_live_recording_part', {
+        p_room_name: roomName,
+        p_egress_id: egressId,
+        p_raw_path: rawPath,
+        p_status: status,
+        p_bytes: bytes,
+      });
+      if (error) fail('register_live_recording_part', error);
+      return data ? String(data) : null;
+    },
+
+    async settleLiveRecording(sessionId) {
+      const { data, error } = await sb.rpc('settle_live_recording', { p_session: sessionId });
+      if (error) fail('settle_live_recording', error);
+      return data ? String(data) : null;
+    },
+
+    async markLivePartBackedUp(sessionId, seq, backupKey) {
+      const { error } = await sb.rpc('mark_live_part_backed_up', {
+        p_session: sessionId,
+        p_seq: seq,
+        p_backup_key: backupKey,
+      });
+      if (error) fail('mark_live_part_backed_up', error);
+    },
+
+    async markLivePartRawDeleted(sessionId, seq) {
+      const { error } = await sb.rpc('mark_live_part_raw_deleted', { p_session: sessionId, p_seq: seq });
+      if (error) fail('mark_live_part_raw_deleted', error);
+    },
+
+    async livePartRawsDueForDeletion() {
+      const { data, error } = await sb.rpc('live_part_raws_due_for_deletion');
+      if (error) fail('live_part_raws_due_for_deletion', error);
+      const rows = (data ?? []) as Array<{ session_id: string; seq: number; raw_path: string; raw_backup_key: string | null }>;
+      return rows.map((r) => ({
+        sessionId: r.session_id,
+        seq: Number(r.seq),
+        rawPath: r.raw_path,
+        rawBackupKey: r.raw_backup_key ?? null,
+      }));
     },
   };
 }

@@ -60,6 +60,43 @@ describe('loadConfig', () => {
     expect(msg).not.toMatch(/SECRET-VALUE|prod"/);
   });
 
+  it('0146: egress tmp dir (default /egress-tmp) and the optional LiveKit API (defaults to the webhook pair)', () => {
+    expect(loadConfig(valid)).toMatchObject({
+      egressTmpDir: '/egress-tmp',
+      livekitApiUrl: null,
+      livekitApiKey: 'APIkey',
+      livekitApiSecret: 'LK-SECRET-VALUE',
+    });
+    expect(
+      loadConfig({
+        ...valid,
+        EGRESS_TMP_DIR: '/mnt/egress/',
+        LIVEKIT_API_URL: 'http://almahajja-livekit:7880/',
+        LIVEKIT_API_KEY: 'k2',
+        LIVEKIT_API_SECRET: 's2',
+      }),
+    ).toMatchObject({
+      egressTmpDir: '/mnt/egress',
+      livekitApiUrl: 'http://almahajja-livekit:7880',
+      livekitApiKey: 'k2',
+      livekitApiSecret: 's2',
+    });
+    const problemsFor = (v: Record<string, string>) => {
+      try {
+        loadConfig({ ...valid, ...v });
+      } catch (e) {
+        return (e as Error).message;
+      }
+      return '';
+    };
+    expect(problemsFor({ EGRESS_TMP_DIR: 'egress-tmp' })).toContain('EGRESS_TMP_DIR must be an absolute path');
+    expect(problemsFor({ EGRESS_TMP_DIR: '/x/../y' })).toContain('EGRESS_TMP_DIR must be an absolute path');
+    expect(problemsFor({ EGRESS_TMP_DIR: '/recordings/stg/tmp' })).toContain('EGRESS_TMP_DIR must not be inside RECORDINGS_DIR');
+    expect(problemsFor({ LIVEKIT_API_URL: 'livekit:7880' })).toContain('LIVEKIT_API_URL must be an http(s) URL');
+    expect(problemsFor({ LIVEKIT_API_KEY: 'k' })).toContain('LIVEKIT_API_KEY and LIVEKIT_API_SECRET go together');
+    expect(problemsFor({ LIVEKIT_API_SECRET: 'NEVER-ECHO-ME' })).not.toContain('NEVER-ECHO-ME');
+  });
+
   it('refuses a database or bucket from the other environment (the sweep would delete its originals)', () => {
     expect(() => loadConfig({ ...valid, R2_BUCKET: 'almahajja-media' })).toThrow('R2_BUCKET is not the stg bucket');
     expect(() => loadConfig({ ...valid, SUPABASE_URL: 'https://prpyxnxgkpspjoxvcaro.supabase.co' })).toThrow(

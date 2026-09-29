@@ -4,19 +4,46 @@
  * The speech profile used for every lecture since V13 (was in-browser
  * ffmpeg.wasm): mono 22.05 kHz VBR MP3 at LAME quality 9. `loudnorm` is only
  * applied to live recordings when LIVE_LOUDNORM=1 (A/B decision pending, §6).
+ *
+ * Several inputs (a live recording in parts, 0146 — one per egress, a crashed
+ * egress's partial .ogg has no EOS page) are joined with the `concat` FILTER:
+ * each part is decoded on its own up to its last complete Ogg page, so a
+ * truncated part neither stops ffmpeg nor shifts the next part's timestamps
+ * (the concat demuxer would trust the container durations instead). One input
+ * → exactly the V13 argument list.
  */
-export function buildTranscodeArgs(opts: { input: string; output: string; loudnorm?: boolean }): string[] {
+export const LOUDNORM_FILTER = 'loudnorm=I=-18:TP=-2';
+
+export function buildTranscodeArgs(opts: {
+  input: string | readonly string[];
+  output: string;
+  loudnorm?: boolean;
+}): string[] {
+  const inputs = typeof opts.input === 'string' ? [opts.input] : [...opts.input];
+  if (inputs.length === 0) throw new Error('buildTranscodeArgs: no input');
+  const encode = ['-vn', '-codec:a', 'libmp3lame', '-q:a', '9', '-ac', '1', '-ar', '22050'];
+  if (inputs.length === 1) {
+    return [
+      '-hide_banner',
+      '-nostats',
+      '-y',
+      '-i', inputs[0] as string,
+      ...encode,
+      ...(opts.loudnorm ? ['-af', LOUDNORM_FILTER] : []),
+      '-progress', 'pipe:1',
+      opts.output,
+    ];
+  }
+  const pads = inputs.map((_, i) => `[${i}:a:0]`).join('');
+  const graph = `${pads}concat=n=${inputs.length}:v=0:a=1${opts.loudnorm ? `,${LOUDNORM_FILTER}` : ''}[aout]`;
   return [
     '-hide_banner',
     '-nostats',
     '-y',
-    '-i', opts.input,
-    '-vn',
-    '-codec:a', 'libmp3lame',
-    '-q:a', '9',
-    '-ac', '1',
-    '-ar', '22050',
-    ...(opts.loudnorm ? ['-af', 'loudnorm=I=-18:TP=-2'] : []),
+    ...inputs.flatMap((p) => ['-i', p]),
+    '-filter_complex', graph,
+    '-map', '[aout]',
+    ...encode,
     '-progress', 'pipe:1',
     opts.output,
   ];

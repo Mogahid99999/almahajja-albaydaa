@@ -6,11 +6,15 @@ import type {
   JobDb,
   LectureNaming,
   LiveNaming,
+  LivePartRawDue,
   LiveRawDue,
+  LiveRecordingPart,
+  LiveRecordingWatch,
   LiveSessionRaw,
   MediaJob,
   MediaJobKind,
   MediaJobStatus,
+  RegisterPartStatus,
   RoomEventResult,
   StaffIdentity,
 } from '../src/db.js';
@@ -122,8 +126,14 @@ export class FakeMedia implements MediaTools {
     this.entered = new Promise((r) => (this.markEntered = r));
   }
 
-  async probeDuration(): Promise<number | null> {
-    return this.duration;
+  /** Per-file probe results by basename (else `duration`). */
+  probes = new Map<string, number | null>();
+  probed: string[] = [];
+
+  async probeDuration(path: string): Promise<number | null> {
+    const name = path.split(/[\\/]/).pop() ?? '';
+    this.probed.push(name);
+    return this.probes.has(name) ? (this.probes.get(name) ?? null) : this.duration;
   }
 
   async transcode(t: TranscodeOptions): Promise<void> {
@@ -176,6 +186,29 @@ export class FakeDb implements JobDb {
   completeError: Error | null = null;
   enqueueError: Error | null = null;
   naming: LectureNaming = { lectureId: 'lec-1', title: 'الدرس الأول', sectionTitle: 'كتاب التوحيد' };
+  // ---- 0146 recording parts ----
+  /** live_recording_parts per session (liveRecordingParts). */
+  parts = new Map<string, LiveRecordingPart[]>();
+  /** live_recording_watch() rows; register/enqueue update the matching part like the RPCs do. */
+  watch: LiveRecordingWatch[] = [];
+  watchError: Error | null = null;
+  registered: Array<{ room: string; egress: string; raw: string | null; status: RegisterPartStatus; bytes: number | null }> = [];
+  registerResult: string | null = null;
+  registerError: Error | null = null;
+  /** When set, registerError is thrown only for this status. */
+  registerErrorStatus: RegisterPartStatus | null = null;
+  settled: string[] = [];
+  settleResult: string | null = 'job-failed-1';
+  partBackups: Array<{ session: string; seq: number; key: string }> = [];
+  partBackupError: Error | null = null;
+  partRawsDeleted: Array<{ session: string; seq: number }> = [];
+  partRawsDue: LivePartRawDue[] = [];
+  partRawsDueError: Error | null = null;
+
+  private watchPart(room: string, egress: string) {
+    const row = this.watch.find((w) => w.roomName === room);
+    return { row, part: row?.parts.find((p) => p.egressId === egress) };
+  }
 
   async claimJob(kinds?: MediaJobKind[] | null) {
     this.calls.push('claim');
@@ -247,6 +280,49 @@ export class FakeDb implements JobDb {
     this.calls.push('enqueue_live_recording');
     if (this.enqueueError) throw this.enqueueError;
     this.enqueued.push({ room, egress, raw });
+    const { part } = this.watchPart(room, egress);
+    if (part) Object.assign(part, { status: 'complete', rawPath: raw });
     return this.enqueueResult;
+  }
+  async liveRecordingParts(sessionId: string) {
+    this.calls.push('live_recording_parts');
+    return (this.parts.get(sessionId) ?? []).map((p) => ({ ...p }));
+  }
+  async liveRecordingWatch() {
+    if (this.watchError) throw this.watchError;
+    return this.watch.map((w) => ({ ...w, parts: w.parts.map((p) => ({ ...p })) }));
+  }
+  async registerLiveRecordingPart(
+    room: string,
+    egress: string,
+    raw: string | null,
+    status: RegisterPartStatus,
+    bytes: number | null,
+  ) {
+    this.calls.push(`register_part:${status}`);
+    if (this.registerError && (!this.registerErrorStatus || this.registerErrorStatus === status)) throw this.registerError;
+    this.registered.push({ room, egress, raw, status, bytes });
+    const { row, part } = this.watchPart(room, egress);
+    if (part) Object.assign(part, { status, rawPath: raw });
+    else row?.parts.push({ seq: row.parts.length + 1, egressId: egress, status, rawPath: raw, startedAt: null });
+    return this.registerResult;
+  }
+  async settleLiveRecording(sessionId: string) {
+    this.settled.push(sessionId);
+    return this.settleResult;
+  }
+  async markLivePartBackedUp(session: string, seq: number, key: string) {
+    this.calls.push('mark_part_backed_up');
+    if (this.partBackupError) throw this.partBackupError;
+    this.partBackups.push({ session, seq, key });
+  }
+  async markLivePartRawDeleted(session: string, seq: number) {
+    this.calls.push('mark_part_raw_deleted');
+    if (this.markError) throw this.markError;
+    this.partRawsDeleted.push({ session, seq });
+  }
+  async livePartRawsDueForDeletion() {
+    if (this.partRawsDueError) throw this.partRawsDueError;
+    return this.partRawsDue;
   }
 }

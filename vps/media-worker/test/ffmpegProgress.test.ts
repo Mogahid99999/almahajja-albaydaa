@@ -86,6 +86,32 @@ describe('buildTranscodeArgs', () => {
   });
 });
 
+describe('buildTranscodeArgs — live recording parts (0146)', () => {
+  it('several parts → concat FILTER (each partial decoded to its last complete page), in order', () => {
+    expect(buildTranscodeArgs({ input: ['/r/a.ogg', '/r/b.ogg', '/r/c.ogg'], output: '/t/out.mp3' })).toEqual([
+      '-hide_banner', '-nostats', '-y',
+      '-i', '/r/a.ogg', '-i', '/r/b.ogg', '-i', '/r/c.ogg',
+      '-filter_complex', '[0:a:0][1:a:0][2:a:0]concat=n=3:v=0:a=1[aout]',
+      '-map', '[aout]',
+      '-vn', '-codec:a', 'libmp3lame', '-q:a', '9', '-ac', '1', '-ar', '22050',
+      '-progress', 'pipe:1', '/t/out.mp3',
+    ]);
+  });
+
+  it('loudnorm goes inside the graph (after the concat), never a second -af', () => {
+    const args = buildTranscodeArgs({ input: ['a.ogg', 'b.ogg'], output: 'o.mp3', loudnorm: true });
+    expect(args[args.indexOf('-filter_complex') + 1]).toBe('[0:a:0][1:a:0]concat=n=2:v=0:a=1,loudnorm=I=-18:TP=-2[aout]');
+    expect(args).not.toContain('-af');
+  });
+
+  it('a one-element list is exactly the single-input profile; an empty list is refused', () => {
+    expect(buildTranscodeArgs({ input: ['/t/in.ogg'], output: 'o.mp3', loudnorm: true })).toEqual(
+      buildTranscodeArgs({ input: '/t/in.ogg', output: 'o.mp3', loudnorm: true }),
+    );
+    expect(() => buildTranscodeArgs({ input: [], output: 'o.mp3' })).toThrow('no input');
+  });
+});
+
 describe('phaseProgress', () => {
   it('maps each phase into its own slice and never reaches 1', () => {
     expect(phaseProgress('download', 0)).toBe(0);

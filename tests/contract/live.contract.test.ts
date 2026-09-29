@@ -25,6 +25,14 @@
  *     listen only (owner 2026-09-28) — a guest raising a hand is 403
  *     guest_cannot_speak; a student may not moderate (approve → 403 forbidden);
  *     a hand needs a joined participant (409 not_present).
+ *   - V23 P7 rollout flag app_config.live_enabled (0145 + the live-token edge
+ *     function — needs BOTH on staging): the suite runs at 'all' (set through
+ *     the admin's set_app_config, the previous value restored in afterAll) and
+ *     steps down to 'staff' / 'off' for the gate cases: 'staff' → students and
+ *     guests get an empty get_live_now and 403 live_disabled from live-token,
+ *     staff pass; get_live_by_code is null (anon included) unless 'all'; 'off'
+ *     refuses create_live_session even to staff; unknown value = 'off'; a
+ *     'staff' session going live pushes nobody (run_live_start_fanout).
  *
  * Fixtures (all «تجربة», all deleted in afterAll): one root section, the live
  * sessions in it, their lectures / jobs / participants, the staff notices those
@@ -64,6 +72,14 @@ let sheikh: SupabaseClient;
 let studentId = '';
 let sisterId = '';
 let adminId = '';
+/** app_config.live_enabled before the suite (restored in afterAll); undefined = not read. */
+let prevLiveEnabled: string | null | undefined;
+
+/** P7: flip the rollout flag the way the admin screen does (set_app_config, admin only). */
+async function setLiveEnabled(level: 'off' | 'staff' | 'all') {
+  const { error } = await admin.rpc('set_app_config', { p_key: 'live_enabled', p_value: level });
+  if (error) throw error;
+}
 
 async function signIn(email: string, password: string): Promise<SupabaseClient> {
   const c = newClient();
@@ -199,6 +215,12 @@ beforeAll(async () => {
   sheikh = await signIn('sheikh@gmail.com', STAFF_PASSWORD);
   adminId = (await admin.auth.getUser()).data.user!.id;
 
+  // P7 (0145): run with live on for everyone; the gate cases step it down.
+  const flag = await service.from('app_config').select('value').eq('key', 'live_enabled').maybeSingle();
+  if (flag.error) throw flag.error;
+  prevLiveEnabled = flag.data?.value ?? null;
+  await setLiveEnabled('all');
+
   const { data: sec, error: sErr } = await service
     .from('sections')
     .insert({ title: `تجربة قسم البث ${ts}`, visibility: 'all' })
@@ -222,6 +244,14 @@ afterAll(async () => {
     await service.from('sections').delete().eq('id', sectionId);
   }
   for (const id of userIds) await service.auth.admin.deleteUser(id);
+  // P7: put the rollout flag back the way the suite found it.
+  if (prevLiveEnabled === null) {
+    await service.from('app_config').delete().eq('key', 'live_enabled');
+  } else if (prevLiveEnabled !== undefined) {
+    await service
+      .from('app_config')
+      .upsert({ key: 'live_enabled', value: prevLiveEnabled, updated_at: new Date().toISOString() });
+  }
   await Promise.all(
     [guest, student, sister, admin, publisher, sheikh].filter(Boolean).map((c) => c.auth.signOut()),
   );
@@ -352,6 +382,127 @@ describe('read model + RLS', () => {
     expect(error).toBeNull();
     expect(data).toMatchObject({ restricted: false, status: 'scheduled', title: 'تجربة مجلس مجدول' });
     expect((await anon.rpc('get_live_by_code', { p_code: '0OIL11' })).data).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------------
+// V23 P7 — needs 0145 applied and the P7 live-token deployed to staging.
+describe('P7 rollout flag: app_config.live_enabled (0145 + live-token)', () => {
+  const EMPTY_NOW = { live: null, upcoming: [], green: null };
+
+  afterAll(async () => {
+    await setLiveEnabled('all');
+  });
+
+  test("'staff': students and guests get no live at all from get_live_now; staff still do", async () => {
+    await setLiveEnabled('staff');
+    for (const c of [student, sister, guest]) {
+      const { data, error } = await c.rpc('get_live_now');
+      expect(error).toBeNull();
+      expect(data).toEqual(EMPTY_NOW);
+    }
+    const a = await admin.rpc('get_live_now');
+    expect(a.error).toBeNull();
+    expect((a.data as any).upcoming.map((u: any) => u.id)).toContain(scheduledSess);
+    expect((a.data as any).green?.id).toBe(greenSess);
+    for (const c of [publisher, sheikh]) {
+      const { data, error } = await c.rpc('get_live_now');
+      expect(error).toBeNull();
+      expect((data as any).upcoming.map((u: any) => u.id)).toContain(scheduledSess);
+    }
+  });
+
+  test("'staff': get_live_by_code is null for everyone — share links wait for 'all'", async () => {
+    await setLiveEnabled('staff');
+    const code = (await sessionRow(scheduledSess)).share_code as string;
+    for (const c of [anon, guest, student, admin]) {
+      const { data, error } = await c.rpc('get_live_by_code', { p_code: code });
+      expect(error).toBeNull();
+      expect(data).toBeNull();
+    }
+  });
+
+  test("'staff': live-token refuses students and guests with 403 live_disabled; staff pass the gate", async () => {
+    await setLiveEnabled('staff');
+    for (const c of [student, guest]) {
+      const r = await callFunction(c, 'live-token', { sessionId: scheduledSess });
+      expect(r.status).toBe(403);
+      expect(r.body).toEqual({ error: 'live_disabled' });
+    }
+    // Past the flag, a scheduled session is simply not open yet — so this never
+    // touches LiveKit (no room, no token).
+    for (const c of [admin, sheikh]) {
+      const r = await callFunction(c, 'live-token', { sessionId: scheduledSess });
+      expect(r.status).toBe(409);
+      expect(r.body).toMatchObject({ error: 'not_open' });
+    }
+  });
+
+  test("'staff': staff may still schedule; 'off' refuses even staff «البث المباشر غير مفعّل بعد»", async () => {
+    await setLiveEnabled('staff');
+    const ok = await sheikh.rpc('create_live_session', {
+      p_section: sectionId,
+      p_title: 'تجربة مجلس المشرفين',
+      p_scheduled_at: future(150),
+    });
+    expect(ok.error).toBeNull();
+    sessionIds.push(ok.data as string);
+    expect((await sheikh.rpc('cancel_live_session', { p_session: ok.data })).error).toBeNull();
+
+    await setLiveEnabled('off');
+    for (const c of [admin, publisher, sheikh]) {
+      const { data, error } = await c.rpc('create_live_session', {
+        p_section: sectionId,
+        p_title: 'تجربة مجلس متوقف',
+        p_scheduled_at: future(160),
+      });
+      expect(data).toBeNull();
+      expect(error!.message).toContain('البث المباشر غير مفعّل بعد');
+      expect(error!.code).toBe('42501');
+    }
+    // The role check comes first: a student still hears «غير مصرح».
+    const denied = await student.rpc('create_live_session', { p_section: sectionId, p_title: 'تجربة مجلس' });
+    expect(denied.error!.message).toContain('غير مصرح');
+
+    // 'off' hides it from staff too, and live-token turns them away.
+    expect((await admin.rpc('get_live_now')).data).toEqual(EMPTY_NOW);
+    const r = await callFunction(admin, 'live-token', { sessionId: scheduledSess });
+    expect(r.status).toBe(403);
+    expect(r.body).toEqual({ error: 'live_disabled' });
+  });
+
+  test('an unknown stored value is off; the helpers are authenticated-only', async () => {
+    const up = await service
+      .from('app_config')
+      .upsert({ key: 'live_enabled', value: 'yes', updated_at: new Date().toISOString() });
+    expect(up.error).toBeNull();
+    expect((await admin.rpc('live_enabled_level')).data).toBe('off');
+    expect((await admin.rpc('live_enabled_for_caller')).data).toBe(false);
+    expect((await admin.rpc('get_live_now')).data).toEqual(EMPTY_NOW);
+
+    await setLiveEnabled('staff');
+    expect((await admin.rpc('live_enabled_level')).data).toBe('staff');
+    expect((await sheikh.rpc('live_enabled_for_caller')).data).toBe(true);
+    expect((await student.rpc('live_enabled_for_caller')).data).toBe(false);
+    expect((await guest.rpc('live_enabled_for_caller')).data).toBe(false);
+    for (const fn of ['live_enabled_level', 'live_enabled_for_caller']) {
+      const { data, error } = await anon.rpc(fn);
+      expect(error).not.toBeNull();
+      expect(data).toBeNull();
+    }
+    // The staff screen can show the level.
+    expect((await admin.rpc('admin_live_overview')).data).toMatchObject({ live_enabled: 'staff' });
+  });
+
+  test("'all' opens it again: the anon share page and a student's upcoming card", async () => {
+    await setLiveEnabled('all');
+    const code = (await sessionRow(scheduledSess)).share_code as string;
+    const { data, error } = await anon.rpc('get_live_by_code', { p_code: code });
+    expect(error).toBeNull();
+    expect(data).toMatchObject({ restricted: false, status: 'scheduled', title: 'تجربة مجلس مجدول' });
+    const now = await student.rpc('get_live_now');
+    expect((now.data as any).upcoming.map((u: any) => u.id)).toContain(scheduledSess);
+    expect((await student.rpc('live_enabled_for_caller')).data).toBe(true);
   });
 });
 
@@ -654,35 +805,33 @@ describe('recording → lecture (worker contract)', () => {
     expect(pub.error).toBeNull();
   });
 
-  test('owner rule (0139): a ready session with an R2 backup is due at once; no backup ⇒ not due', async () => {
+  test('owner rule (0139, per part since 0146): a local raw is due only once its part has an R2 backup', async () => {
     const backup = `live-raw/${room}-tajriba.ogg`;
     const dueRow = async () =>
-      ((await service.rpc('live_raws_due_for_deletion')).data as any[]).find((r) => r.session_id === sess);
+      ((await service.rpc('live_part_raws_due_for_deletion')).data as any[]).find((r) => r.session_id === sess);
 
+    // The worker records each part's R2 backup; until then nothing may be deleted.
+    const bk = await service.rpc('mark_live_part_backed_up', { p_session: sess, p_seq: 1, p_backup_key: backup });
+    expect(bk.error).toBeNull();
     // Published right now (previous test) — due immediately, no 7-day wait.
     expect((await sessionRow(sess)).lecture_published_at).toBeTruthy();
-    expect(await dueRow()).toEqual({ session_id: sess, raw_path: rawPath, raw_backup_key: backup });
+    expect(await dueRow()).toEqual({ session_id: sess, seq: 1, raw_path: rawPath, raw_backup_key: backup });
 
-    // Publish state is irrelevant: still due as a draft (the publish clock is
-    // still tracked by 0137 and cleared on unpublish).
+    // Publish state is irrelevant: still due as a draft.
     await admin.from('lectures').update({ status: 'draft' }).eq('id', lecture);
-    expect((await sessionRow(sess)).lecture_published_at).toBeNull();
     expect(await dueRow()).toBeTruthy();
 
-    // No R2 backup ⇒ not due (and it may not be marked deleted).
-    await service.from('live_sessions').update({ raw_backup_key: null }).eq('id', sess);
-    expect(await dueRow()).toBeUndefined();
-    const refused = await service.rpc('mark_live_raw_deleted', { p_session: sess });
-    expect(refused.error).not.toBeNull();
-    await service.from('live_sessions').update({ raw_backup_key: backup }).eq('id', sess);
+    // A bad backup key is refused (the raw would be deleted with no copy).
+    const bad = await service.rpc('mark_live_part_backed_up', { p_session: sess, p_seq: 1, p_backup_key: 'elsewhere/x.ogg' });
+    expect(bad.error).not.toBeNull();
 
     // The worker deleted the local raw → marked → no longer due; the R2 key stays.
-    const mark = await service.rpc('mark_live_raw_deleted', { p_session: sess });
+    const mark = await service.rpc('mark_live_part_raw_deleted', { p_session: sess, p_seq: 1 });
     expect(mark.error).toBeNull();
-    const row = await sessionRow(sess);
-    expect(row.raw_deleted_at).toBeTruthy();
-    expect(row.raw_backup_key).toBe(backup);
     expect(await dueRow()).toBeUndefined();
+    // The session-level list (pre-0146 sessions only) never lists a session that has parts.
+    const legacy = (await service.rpc('live_raws_due_for_deletion')).data as any[];
+    expect(legacy.find((r) => r.session_id === sess)).toBeUndefined();
   });
 });
 
@@ -700,13 +849,13 @@ describe('failed recording: raw kept, staff retry', () => {
     expect(error).toBeNull();
     sess = data as string;
     sessionIds.push(sess);
-    await service.rpc('set_live_session_status', { p_session: sess, p_status: 'live', p_egress_id: 'EG2' });
+    await service.rpc('set_live_session_status', { p_session: sess, p_status: 'live', p_egress_id: 'EG_tajriba2' });
     await service.rpc('set_live_session_status', { p_session: sess, p_status: 'ended' });
     const room = (await sessionRow(sess)).room_name as string;
 
     const { data: jid, error: jErr } = await service.rpc('enqueue_live_recording', {
       p_room_name: room,
-      p_egress_id: 'EG2',
+      p_egress_id: 'EG_tajriba2',
       p_raw_path: `/recordings/${room.slice(0, 3)}/${room}-tajriba.ogg`,
     });
     expect(jErr).toBeNull();
@@ -748,5 +897,46 @@ describe('failed recording: raw kept, staff retry', () => {
 
     const again = await publisher.rpc('retry_live_recording', { p_session: sess });
     expect(again.error!.message).toContain('تجري معالجة التسجيل الآن');
+  });
+});
+
+// ---------------------------------------------------------------------------------
+// V23 P7 — last, once the single green/live slot (D3) is free again.
+describe("P7: a 'staff' rehearsal pushes no student (run_live_start_fanout, 0145)", () => {
+  test("going live at 'staff' queues the fan-out, which sends nothing", async () => {
+    await setLiveEnabled('staff');
+    const { data, error } = await admin.rpc('create_live_session', {
+      p_section: sectionId,
+      p_title: 'تجربة بروفة المشرفين', // p_notify defaults to true
+    });
+    expect(error).toBeNull();
+    const sess = data as string;
+    sessionIds.push(sess);
+    try {
+      const live = await service.rpc('set_live_session_status', {
+        p_session: sess,
+        p_status: 'live',
+        p_egress_id: 'EG_p7',
+      });
+      expect(live.error).toBeNull();
+      const queued = await service.from('fanout_queue').select('id').eq('kind', 'live_start').eq('ref_id', sess);
+      expect(queued.error).toBeNull();
+      expect(queued.data!.length).toBe(1);
+
+      // Whether the pg_cron worker got to it already or not: at 'staff' it is a no-op.
+      const run = await service.rpc('run_live_start_fanout', { p_session: sess });
+      expect(run.error).toBeNull();
+      const notes = await service
+        .from('notifications')
+        .select('id')
+        .eq('type', 'live_start')
+        .eq('data->>liveSessionId', sess);
+      expect(notes.error).toBeNull();
+      expect(notes.data).toEqual([]);
+    } finally {
+      // Ended before the flag goes back up, so a late worker pass sends nothing either.
+      await service.rpc('set_live_session_status', { p_session: sess, p_status: 'ended' });
+      await setLiveEnabled('all');
+    }
   });
 });

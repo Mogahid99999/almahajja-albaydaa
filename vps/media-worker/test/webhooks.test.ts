@@ -12,7 +12,7 @@ import { HostAbsenceWatch } from '../src/hostWatch.js';
 import type { LiveControl } from '../src/liveControl.js';
 import { RecordingsDir } from '../src/recordings.js';
 import { createHttpServer } from '../src/server.js';
-import { handleWebhook, type WebhookDeps } from '../src/webhooks.js';
+import { handleWebhook, RESUME_AFTER_CLEAN_END_MS, type WebhookDeps } from '../src/webhooks.js';
 import { FakeDb } from './fakes.js';
 
 const KEY = 'almahajja_int';
@@ -207,6 +207,32 @@ describe('egress_ended → enqueue_live_recording (local raw)', () => {
     expect(db.enqueued).toEqual([]);
   });
 
+  it.each(['EGRESS_FAILED', 'EGRESS_ABORTED'])('0146: %s → handed to the recording guard (recover + resume)', async (status) => {
+    const failed: Array<[string, string | null]> = [];
+    deps.guard = { egressFailed: (id, raw) => void failed.push([id, raw]), trigger: () => undefined };
+    const p = await raw('stg_room1-partial.ogg');
+    const body = egressEvent('egress_ended', 'stg_room1', { egressId: 'EG_dead', status, fileResults: [{ filename: p }] });
+    expect((await handleWebhook(deps, body, await sign(body))).status).toBe(200);
+    expect(failed).toEqual([['EG_dead', p]]);
+    expect(db.enqueued).toEqual([]);
+  });
+
+  it('0146: a clean end while the session is still live pokes the guard (delayed resume); a normal end does not', async () => {
+    const triggers: Array<number | undefined> = [];
+    deps.guard = { egressFailed: () => undefined, trigger: (ms) => void triggers.push(ms) };
+    const p = await raw('stg_room1-a.ogg');
+    const body = egressEvent('egress_ended', 'stg_room1', { status: 'EGRESS_COMPLETE', fileResults: [{ filename: p }] });
+
+    db.enqueueResult = 'job-live-1'; // session already ended → job queued
+    await handleWebhook(deps, body, await sign(body));
+    expect(triggers).toEqual([]);
+
+    db.enqueueResult = null; // still live
+    await handleWebhook(deps, body, await sign(body));
+    expect(triggers).toEqual([RESUME_AFTER_CLEAN_END_MS]);
+    expect(RESUME_AFTER_CLEAN_END_MS).toBeGreaterThanOrEqual(10_000);
+  });
+
   it('enqueue RPC failure → 500 so LiveKit can retry', async () => {
     db.enqueueError = new Error('enqueue_live_recording failed: 404');
     const p = await raw('stg_room1-x.ogg');
@@ -248,7 +274,7 @@ describe('room lifecycle → live_room_event', () => {
 });
 
 describe('D4 host absence (webhooks + HostAbsenceWatch)', () => {
-  let control: LiveControl & { calls: Array<[string, string]> };
+  let control: Pick<LiveControl, 'autoEnd'> & { calls: Array<[string, string]> };
   let watch: HostAbsenceWatch;
   const result = (over: Partial<RoomEventResult>): RoomEventResult => ({
     sessionId: 'sess-1',

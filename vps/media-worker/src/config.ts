@@ -22,6 +22,17 @@ export interface Config {
   tmpDir: string;
   /** This env's local live raws (`/recordings/<env>`), mounted from the VPS. */
   recordingsDir: string;
+  /**
+   * The egress container's IN-PROGRESS files (`/home/egress/tmp`, mounted
+   * read-write): `<EG_id>/<room>-<time>.ogg`. Shared by BOTH envs — the worker
+   * only ever touches files named after one of its own env's rooms.
+   */
+  egressTmpDir: string;
+  /** LiveKit server API (internal URL) for ListEgress / ListParticipants; null = webhooks + file checks only. */
+  livekitApiUrl: string | null;
+  /** API pair for livekitApiUrl (defaults to the webhook pair — `almahajja_int`, internal only). */
+  livekitApiKey: string;
+  livekitApiSecret: string;
 }
 
 export class ConfigError extends Error {
@@ -85,6 +96,22 @@ export function loadConfig(
       problems.push('RECORDINGS_DIR must be this env\'s folder (/recordings/<WORKER_ENV>)');
     }
   }
+  const egressTmpDir = (get('EGRESS_TMP_DIR') || '/egress-tmp').replace(/\/+$/, '');
+  if (!egressTmpDir.startsWith('/') || egressTmpDir.split('/').includes('..')) {
+    problems.push('EGRESS_TMP_DIR must be an absolute path without ".."');
+  } else if (
+    recordingsDir &&
+    (egressTmpDir === recordingsDir.replace(/\/+$/, '') || egressTmpDir.startsWith(`${recordingsDir.replace(/\/+$/, '')}/`))
+  ) {
+    problems.push('EGRESS_TMP_DIR must not be inside RECORDINGS_DIR');
+  }
+  const livekitApiUrl = get('LIVEKIT_API_URL');
+  if (livekitApiUrl && !isHttpUrl(livekitApiUrl, false)) {
+    problems.push('LIVEKIT_API_URL must be an http(s) URL');
+  }
+  if (!!get('LIVEKIT_API_KEY') !== !!get('LIVEKIT_API_SECRET')) {
+    problems.push('LIVEKIT_API_KEY and LIVEKIT_API_SECRET go together');
+  }
   if (get('R2_ENDPOINT') && !isHttpUrl(get('R2_ENDPOINT'), true)) {
     problems.push('R2_ENDPOINT must be an https URL');
   }
@@ -129,5 +156,9 @@ export function loadConfig(
     liveLoudnorm: rawLoudnorm === '1',
     tmpDir: get('TMP_DIR') || defaultTmpDir,
     recordingsDir: recordingsDir.replace(/\/+$/, ''),
+    egressTmpDir,
+    livekitApiUrl: livekitApiUrl ? livekitApiUrl.replace(/\/+$/, '') : null,
+    livekitApiKey: get('LIVEKIT_API_KEY') || get('LIVEKIT_WEBHOOK_KEY'),
+    livekitApiSecret: get('LIVEKIT_API_SECRET') || get('LIVEKIT_WEBHOOK_SECRET'),
   };
 }

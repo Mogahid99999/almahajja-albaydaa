@@ -160,6 +160,45 @@ describe('sweepLiveRaws', () => {
   });
 });
 
+describe('sweepLiveRaws — recording parts (0146)', () => {
+  it('each part is deleted only against its own verified backup and stamped with mark_live_part_raw_deleted', async () => {
+    const a = await localRaw('stg_r-1-recovered.ogg');
+    const b = await localRaw('stg_r-2.ogg');
+    storage.objects.set('live-raw/stg_r-1-recovered.ogg', Buffer.from(RAW));
+    storage.objects.set('live-raw/stg_r-2.ogg', Buffer.from('short')); // size mismatch → keep
+    db.partRawsDue = [
+      { sessionId: 's1', seq: 1, rawPath: a, rawBackupKey: 'live-raw/stg_r-1-recovered.ogg' },
+      { sessionId: 's1', seq: 2, rawPath: b, rawBackupKey: 'live-raw/stg_r-2.ogg' },
+    ];
+    const stats = await sweep();
+    expect(stats).toMatchObject({ due: 2, deleted: 1, kept: 1, errors: 0 });
+    expect(db.partRawsDeleted).toEqual([{ session: 's1', seq: 1 }]);
+    expect(db.markedRawDeleted).toEqual([]);
+    expect(await exists(a)).toBe(false);
+    expect(await exists(b)).toBe(true);
+  });
+
+  it('a failing parts RPC (e.g. 0146 not applied yet) never blocks the session-level rows', async () => {
+    const p = await localRaw('stg_a-1.ogg');
+    storage.objects.set('live-raw/stg_a-1.ogg', Buffer.from(RAW));
+    db.rawsDue = [{ sessionId: 's1', rawPath: p, rawBackupKey: 'live-raw/stg_a-1.ogg' }];
+    db.partRawsDueError = new Error('live_part_raws_due_for_deletion failed [PGRST202]');
+    const stats = await sweep();
+    expect(stats).toMatchObject({ due: 1, deleted: 1, errors: 1 });
+    expect(db.markedRawDeleted).toEqual(['s1']);
+    expect(events).toContain('raw_retention.parts_error');
+  });
+
+  it('a part path outside RECORDINGS_DIR is refused, never touched', async () => {
+    const prd = join(root, 'recordings', 'prd', 'prd_x-1.ogg');
+    await writeFile(prd, RAW);
+    db.partRawsDue = [{ sessionId: 's1', seq: 1, rawPath: prd, rawBackupKey: 'live-raw/prd_x-1.ogg' }];
+    storage.objects.set('live-raw/prd_x-1.ogg', Buffer.from(RAW));
+    expect(await sweep()).toMatchObject({ refused: 1, deleted: 0 });
+    expect(await exists(prd)).toBe(true);
+  });
+});
+
 describe('RawRetention schedule', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

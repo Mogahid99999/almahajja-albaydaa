@@ -168,6 +168,20 @@ export async function getStartHereLecture(): Promise<{ id: string; title: string
 /** All config keys the admin Settings screen edits (About + Telegram + V4 gate). */
 export type AppConfigMap = Record<string, string>;
 
+/**
+ * «البث المباشر» rollout flag (V23 P7, migration 0145). Read server-side only
+ * (get_live_now / create_live_session / live-token …); the admin screen just
+ * shows and sets it through set_app_config.
+ */
+export const LIVE_ENABLED_KEY = 'live_enabled';
+export type LiveEnabledLevel = 'off' | 'staff' | 'all';
+
+/** Stored value → level, like SQL live_enabled_level(): missing / unknown = 'off'. */
+export function parseLiveEnabledLevel(value: string | null | undefined): LiveEnabledLevel {
+  const v = (value ?? '').trim().toLowerCase();
+  return v === 'all' || v === 'staff' ? v : 'off';
+}
+
 const SETTINGS_KEYS = [
   ...ABOUT_KEYS,
   ...SUPPORT_KEYS,
@@ -179,6 +193,8 @@ const SETTINGS_KEYS = [
   'latest_app_version',
   'latest_released_at',
   'admin_notify_email',
+  // V23 P7 rollout flag: 'off' | 'staff' | 'all' (missing row = 'off', 0145).
+  LIVE_ENABLED_KEY,
 ];
 
 export async function getAppConfigForAdmin(): Promise<AppConfigMap> {

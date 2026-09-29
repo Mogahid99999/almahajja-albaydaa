@@ -21,7 +21,7 @@ export class HostAbsenceWatch {
   private stopped = false;
 
   constructor(
-    private readonly control: LiveControl,
+    private readonly control: Pick<LiveControl, 'autoEnd'>,
     private readonly opts: { graceMs?: number; log?: Logger } = {},
   ) {
     this.log = opts.log ?? silentLogger;
