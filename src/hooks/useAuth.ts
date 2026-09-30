@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { hashKey, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Platform } from 'react-native';
 
 import {
@@ -23,9 +23,38 @@ import { stop as stopPlayback } from '@/lib/audioController';
 import { cancelAllLocalNotifications } from '@/lib/notifications';
 import { clearOutbox } from '@/lib/outbox';
 import { queryClient } from '@/lib/queryClient';
-import { useLiveStore } from '@/stores/liveStore';
+import { followAuthUser, useLiveStore } from '@/stores/liveStore';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 import { useTourStore } from '@/stores/tourStore';
+
+/**
+ * «الحلقة» follows the signed-in user. Every change of the cached currentUser
+ * — sign-in (a guest in the majlis logging into the sheikh's account), a
+ * session recovered after a loss, the persisted cache restoring at boot — is
+ * reported to the live store, which re-joins the room as the new user when it
+ * was joined under another id (see followAuthUser: same id = register's
+ * in-place upgrade → nothing; sign-out has already left). Observed on the
+ * shared cache rather than in each mutation so every path that sets the user
+ * is covered, including the hydrated boot user a later join is compared with.
+ */
+const CURRENT_USER_HASH = hashKey(queryKeys.currentUser);
+
+function reportUserToLive(): void {
+  const id = queryClient.getQueryData<CurrentUser | null>(queryKeys.currentUser)?.id;
+  if (!id) return; // cleared mid-switch / sign-out: nothing to follow
+  try {
+    void followAuthUser(id).catch(() => undefined);
+  } catch {
+    // Never let the live room break a cache update.
+  }
+}
+
+reportUserToLive();
+queryClient.getQueryCache().subscribe((event) => {
+  if ((event.type === 'added' || event.type === 'updated') && event.query.queryHash === CURRENT_USER_HASH) {
+    reportUserToLive();
+  }
+});
 
 /**
  * Shared cleanup for BOTH sign-out and account deletion: whatever the

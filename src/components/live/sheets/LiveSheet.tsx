@@ -5,7 +5,7 @@
  * rounded top, header = title + sub on the RTL start, close «×» on the end.
  */
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import { KeyboardAvoidingView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton, SheetModal, Txt } from '@/components/ui';
@@ -20,6 +20,7 @@ export function LiveSheet({
   children,
   maxHeightRatio,
   heightRatio,
+  avoidKeyboard = false,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -35,10 +36,19 @@ export function LiveSheet({
    * keyboard; a fixed one keeps the field high on the screen.
    */
   heightRatio?: number;
+  /**
+   * A text field at the BOTTOM of the panel (the comments composer): the app
+   * is edge-to-edge, so the keyboard overlays the modal. The panel sits in a
+   * full-screen, bottom-anchored KeyboardAvoidingView (SheetModal's keyboard
+   * pattern, as FeedbackSheet): `padding` lifts it above the keyboard and a
+   * percentage height shrinks with the space left. A KeyboardAvoidingView
+   * INSIDE the panel measured itself against the panel, not the screen, and
+   * left the field under the keyboard (owner 2026-09-30).
+   */
+  avoidKeyboard?: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  return (
-    <SheetModal visible={visible} onClose={onClose} backdropAccessibilityLabel="إغلاق">
+  const panel = (
       <View
         style={{
           backgroundColor: colors.bgSandRaised,
@@ -74,6 +84,20 @@ export function LiveSheet({
         </View>
         {children}
       </View>
+  );
+  return (
+    <SheetModal visible={visible} onClose={onClose} backdropAccessibilityLabel="إغلاق">
+      {avoidKeyboard ? (
+        <KeyboardAvoidingView
+          style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]}
+          behavior="padding"
+          pointerEvents="box-none"
+        >
+          {panel}
+        </KeyboardAvoidingView>
+      ) : (
+        panel
+      )}
     </SheetModal>
   );
 }

@@ -579,7 +579,8 @@ const styles = StyleSheet.create({
 });
 
 /** The live mini-bar (same as the student app's) while this device is in a live. */
-function ShellLiveMiniBar() {
+/** Exported for /sheikh, which borrows SidebarDrawer but not the whole shell. */
+export function ShellLiveMiniBar() {
   const inLive = useLiveStore((s) => s.session !== null);
   return inLive ? <LiveMiniBar /> : null;
 }

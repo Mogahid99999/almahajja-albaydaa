@@ -11,7 +11,9 @@
  *  - leave disconnects, releases the audio session, unsubscribes the
  *    «مغادرة» action BEFORE stopping the service, clears the store and never
  *    resumes the lecture;
- *  - a sister's identity choice is remembered (preferredIdentity).
+ *  - a sister's identity choice is remembered (preferredIdentity);
+ *  - the room follows the signed-in user (followAuthUser): a sign-in while in
+ *    a live re-joins the same session as the new user, once.
  */
 import type { LiveSessionPublic, LiveToken } from '@/api/live';
 import type { LiveRoomPatch, LiveSink } from '@/lib/liveClient';
@@ -77,7 +79,13 @@ jest.mock('../../../modules/live-foreground', () => ({
 }));
 
 import { LiveTokenError } from '@/api/live';
-import { notifyLiveSessionEnded, onLiveComments, TOKEN_RETRY_DELAYS_MS, useLiveStore } from '@/stores/liveStore';
+import {
+  followAuthUser,
+  notifyLiveSessionEnded,
+  onLiveComments,
+  TOKEN_RETRY_DELAYS_MS,
+  useLiveStore,
+} from '@/stores/liveStore';
 
 // Registered once when liveStore loads (read now: clearMocks wipes calls per test).
 const beforeLecturePlay = (
@@ -665,5 +673,91 @@ describe('P4 green room', () => {
     await state().join(session);
     await Promise.resolve();
     expect(mockSetMic).toHaveBeenCalledWith(true);
+  });
+});
+
+// Device report 2026-09-30: a guest in the majlis (minimised to the mini-bar)
+// signed in as the sheikh; the room stayed on the guest identity — «طلب
+// التحدث» and «أنت» as a listener. useAuth reports each signed-in user id here.
+describe('sign-in while in a live re-joins as the new user', () => {
+  const GUEST = '0000000000guest1';
+  const SHEIKH = '000000000sheikh1';
+  const tokenCall = (n: number) => mockFetchToken.mock.invocationCallOrder[n];
+
+  async function joinedAsGuest() {
+    await followAuthUser('user-guest');
+    mockFetchToken.mockResolvedValueOnce(token({ identity: GUEST }));
+    connectsOk();
+    await state().join(session);
+    expect(state().me?.identity).toBe(GUEST);
+  }
+
+  test('user A joined → auth user becomes B → the old room is dropped and the SAME session re-joined as B', async () => {
+    await joinedAsGuest();
+    mockFetchToken.mockResolvedValueOnce(token({ identity: SHEIKH, role: 'host', name: 'الشيخ محمد' }));
+
+    await followAuthUser('user-sheikh');
+
+    // The guest's connection is gone before B's token is asked for…
+    expect(mockDisconnect).toHaveBeenCalled();
+    expect(mockStopFg).toHaveBeenCalled();
+    expect(order(mockDisconnect)).toBeLessThan(tokenCall(1));
+    // …then the same session, with B's token and a new room connection.
+    expect(mockFetchToken).toHaveBeenCalledTimes(2);
+    expect(mockFetchToken).toHaveBeenLastCalledWith('sess-1', undefined);
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+    expect(state()).toMatchObject({ session, conn: 'ok', me: { identity: SHEIKH, role: 'host' } });
+    // The host of this live gets his mic back, as on any re-entry.
+    expect(mockSetMic).toHaveBeenCalledWith(true);
+    // No live-control `leave`: the JWT is already B's — it could only close B's own row.
+    expect(mockLiveControl).not.toHaveBeenCalledWith('leave', expect.anything());
+  });
+
+  test('the same user id again (register upgrades the guest in place) → nothing', async () => {
+    await joinedAsGuest();
+    await followAuthUser('user-guest');
+    expect(mockDisconnect).not.toHaveBeenCalled();
+    expect(mockFetchToken).toHaveBeenCalledTimes(1);
+    expect(state()).toMatchObject({ conn: 'ok', me: { identity: GUEST } });
+  });
+
+  test('sign-out → leave only: the restored guest reported afterwards is not re-joined', async () => {
+    await joinedAsGuest();
+    await state().leave(); // useSignOut leaves BEFORE the session switches
+    await followAuthUser('user-other-guest');
+    expect(mockLiveControl.mock.calls.filter(([action]) => action === 'leave')).toHaveLength(1);
+    expect(mockFetchToken).toHaveBeenCalledTimes(1);
+    expect(state()).toMatchObject({ session: null, conn: 'idle' });
+  });
+
+  test('with no live, a sign-in touches nothing', async () => {
+    await followAuthUser('user-guest');
+    await followAuthUser('user-sheikh');
+    expect(mockFetchToken).not.toHaveBeenCalled();
+    expect(mockDisconnect).not.toHaveBeenCalled();
+  });
+
+  test('repeated reports of the new user re-join once (no loop)', async () => {
+    await joinedAsGuest();
+    mockFetchToken.mockResolvedValue(token({ identity: SHEIKH }));
+    await Promise.all([followAuthUser('user-b'), followAuthUser('user-b')]);
+    await followAuthUser('user-b');
+    expect(mockFetchToken).toHaveBeenCalledTimes(2);
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+  });
+
+  test('a refused re-join (gender_required) ends like any join refusal, never thrown', async () => {
+    await joinedAsGuest();
+    mockFetchToken.mockRejectedValueOnce(new LiveTokenError('gender_required'));
+    await expect(followAuthUser('user-b')).resolves.toBeUndefined();
+    expect(state()).toMatchObject({ session: null, conn: 'idle', lastError: 'gender_required' });
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+  });
+
+  test('a banned new account → the room shows the refusal (failed + code)', async () => {
+    await joinedAsGuest();
+    mockFetchToken.mockRejectedValueOnce(new LiveTokenError('banned'));
+    await followAuthUser('user-b');
+    expect(state()).toMatchObject({ session, conn: 'failed', lastError: 'banned' });
   });
 });

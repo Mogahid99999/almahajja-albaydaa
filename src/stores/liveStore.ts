@@ -18,6 +18,10 @@
  *
  * Persisted: `preferredIdentity` only (a sister's «باسمي» / «بدون اسم», per device).
  * Staff real names (D2) never come through here — useLiveStaffParticipants.
+ *
+ * The room follows the signed-in user: useAuth reports every change of the
+ * current user id (followAuthUser), and a room joined under another auth user
+ * is re-joined as the new one.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
@@ -217,6 +221,10 @@ let noticeSeq = 0;
 /** Until when a speaker→listener change is my own step-down (no «أعادك المشرف» notice). */
 let steppingDownUntil = 0;
 let steppingDown = false;
+/** The signed-in auth user as last reported by useAuth (followAuthUser); null before the first report. */
+let authUserId: string | null = null;
+/** The auth user the current room connection was made for: set as a join starts, cleared by leave(). */
+let joinedAs: string | null = null;
 
 const getState = () => useLiveStore.getState();
 const setState = (p: Partial<LiveState>) => useLiveStore.setState(p);
@@ -402,6 +410,8 @@ async function startJoin(
 ): Promise<void> {
   const speaking = opts?.speaking === true;
   const my = ++joinGen;
+  // Synchronously, before any await: followAuthUser compares against it.
+  joinedAs = authUserId;
   const prev = getState();
   // A real entry (not a sister's «باسمي» ⇄ «بدون اسم» re-join of the same room)
   // greets with the du'a once connected. Not in the host's green room.
@@ -520,6 +530,7 @@ export const useLiveStore = create<LiveState>()(
       leave: async () => {
         const { session, me } = get();
         joinGen++;
+        joinedAs = null;
         set(runtimeReset());
         await releaseResources();
         if (session && me) sendLeave(session.id);
@@ -713,6 +724,32 @@ export const useLiveStore = create<LiveState>()(
 onBeforeLecturePlay(() => {
   if (getState().session) void getState().leave();
 });
+
+/**
+ * The signed-in user is now `userId` (useAuth reports every change of the
+ * current user). A room joined under ANOTHER auth user must not stay on that
+ * identity — a guest in the majlis who signed in as the sheikh still showed
+ * «طلب التحدث» and «أنت» as a listener (device report 2026-09-30). It drops the
+ * old connection and re-joins the SAME session with a token for the new user
+ * (host / moderator / listener, whatever live-token now says) — without the
+ * intermediate `session: null` of leave(), which would close an open room
+ * screen and flash the mini-bar, and without live-control `leave`: the JWT is
+ * already the new user's, so it could only close HIS row; the old identity's
+ * row is closed by LiveKit's participant_left on disconnect (0138
+ * live_room_event). A refused re-join (gender_required, banned, not_open…)
+ * lands in the store like any join failure; never thrown.
+ *
+ * No-op for the same user (register links the guest in place — same id), with
+ * no room, or once already re-joining for this user (joinedAs is updated
+ * synchronously, so repeated reports act once). Sign-out never gets here with
+ * a room: it leaves before the session switches.
+ */
+export async function followAuthUser(userId: string): Promise<void> {
+  authUserId = userId;
+  const { session, conn } = getState();
+  if (!session || !IN_ROOM.has(conn) || joinedAs === null || joinedAs === userId) return;
+  await startJoin(session).catch(() => undefined);
+}
 
 /** Green-room meter: my microphone's current level 0..1 (poll ≈ 6×/s; 0 when no mic). */
 export function getLiveMicLevel(): number {

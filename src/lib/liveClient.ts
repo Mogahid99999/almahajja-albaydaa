@@ -156,6 +156,35 @@ export function initLiveKit(): void {
 
 let androidAudioActive = false;
 
+/** Polls until `done` (a few ms apart), at most ~1 s. */
+async function waitUntil(done: () => Promise<boolean>, ms = 1000): Promise<void> {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (await done().catch(() => false)) return;
+    await delay(25);
+  }
+}
+
+/**
+ * AudioSwitchManager.stop() only POSTS its teardown to the main thread, and
+ * start() is a no-op while the old AudioSwitch still exists — so stop() then
+ * start() in a row ended with NO session at all: the mode stayed NORMAL and
+ * the loudspeaker was never selected, so a voice-call playout track played
+ * from the earpiece (owner 2026-09-30, an approved listener: «الصوت يصبح واطي
+ * جداً… كأنه بمكالمة»; dumpsys: no setMode / setSpeakerphoneOn from the app,
+ * USAGE_MEDIA focus abandoned ~1.4 s after each join). Each step waits until it
+ * has landed: no devices listed = torn down; devices listed = started.
+ */
+async function stopAndroidSession(rn: Sdk["rn"]): Promise<void> {
+  await rn.AudioSession.stopAudioSession();
+  await waitUntil(async () => (await rn.AudioSession.getAudioOutputs()).length === 0);
+}
+
+async function startAndroidSession(rn: Sdk["rn"]): Promise<void> {
+  await rn.AudioSession.startAudioSession();
+  await waitUntil(async () => (await rn.AudioSession.getAudioOutputs()).length > 0);
+}
+
 /**
  * LISTENING audio session, before connecting: Android = the `media` preset
  * (STREAM_MUSIC, usage media, mode normal, focus gain — media volume keys,
@@ -172,8 +201,8 @@ export async function configureListeningAudio(): Promise<void> {
     },
   });
   if (Platform.OS === "android") {
-    if (androidAudioActive) await rn.AudioSession.stopAudioSession();
-    await rn.AudioSession.startAudioSession();
+    if (androidAudioActive) await stopAndroidSession(rn);
+    await startAndroidSession(rn);
     androidAudioActive = true;
     androidProfile = "listening";
   }
@@ -194,7 +223,7 @@ async function applyAndroidProfile(
   profile: "listening" | "speaking",
 ): Promise<void> {
   const { rn } = ensureLiveKit();
-  if (androidAudioActive) await rn.AudioSession.stopAudioSession();
+  if (androidAudioActive) await stopAndroidSession(rn);
   await rn.AudioSession.configureAudio({
     android: {
       preferredOutputList: ["bluetooth", "headset", "speaker"],
@@ -204,7 +233,7 @@ async function applyAndroidProfile(
           : rn.AndroidAudioTypePresets.media,
     },
   });
-  await rn.AudioSession.startAudioSession();
+  await startAndroidSession(rn);
   androidAudioActive = true;
   androidProfile = profile;
   // Before a connect there is no room yet: the first track starts right.
@@ -284,7 +313,8 @@ export async function stopLiveAudio(): Promise<void> {
   androidAudioActive = false;
   androidProfile = "listening";
   try {
-    await ensureLiveKit().rn.AudioSession.stopAudioSession();
+    // Settled: a re-join starts the next session right after this.
+    await stopAndroidSession(ensureLiveKit().rn);
   } catch {
     /* already released */
   }

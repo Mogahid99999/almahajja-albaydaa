@@ -24,7 +24,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   Pressable,
   TextInput,
   View,
@@ -170,8 +169,8 @@ export function CommentsSheet({
   const busyFor = (id: string) => (action.isPending && action.variables?.id === id ? action.variables.type : null);
 
   return (
-    <LiveSheet visible={visible} onClose={onClose} title={COPY.title} sub={COPY.sub} heightRatio={0.82}>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+    <LiveSheet visible={visible} onClose={onClose} title={COPY.title} sub={COPY.sub} heightRatio={0.82} avoidKeyboard>
+      <View style={{ flex: 1 }}>
         <FlatList
           ref={listRef}
           data={comments as LiveComment[]}
@@ -284,7 +283,7 @@ export function CommentsSheet({
             }, 60);
           }}
         />
-      </KeyboardAvoidingView>
+      </View>
     </LiveSheet>
   );
 }

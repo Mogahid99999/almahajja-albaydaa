@@ -13,6 +13,7 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -22,13 +23,14 @@ import {
 } from 'react-native';
 
 import type { InboxQuestion, QuestionCategory, QuestionScope } from '@/api/questions';
-import { SidebarDrawer } from '@/components/admin/AdminShell';
+import { ShellLiveMiniBar, SidebarDrawer } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ModeratorAnswerComposer } from '@/components/questions/ModeratorAnswerComposer';
 import { AnswerThread } from '@/components/questions/AnswerThread';
 import { Card, Divider, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignOut } from '@/hooks/useAuth';
+import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { useNotificationPrefs, useSetNotificationPref } from '@/hooks/useNotifications';
 import { useDeleteQuestion, useQuestionInbox } from '@/hooks/useQuestions';
 import { arNum, arSince } from '@/lib/format';
@@ -55,10 +57,14 @@ function FilterChip({
         pressed && !active && { opacity: 0.7 },
       ]}
     >
+      {/* simple: Android's highQuality breaking mis-measures a fit-content
+          Arabic label and drops its last word («تمت الإجابة» → «تمت»,
+          «كل التصنيفات» → «كل» on R5CX10P3BPL after a sign-in). */}
       <Txt
         size={12.5}
         weight={active ? 'semibold' : 'medium'}
         color={active ? colors.onTealPrimary : colors.textSlate}
+        textBreakStrategy="simple"
       >
         {label}
       </Txt>
@@ -202,6 +208,8 @@ export default function SheikhInboxScreen() {
     status,
     category: category === 'all' ? undefined : category,
   });
+  // Room for the live mini-bar while a live is minimised (0 otherwise).
+  const miniPad = useMiniPlayerPad();
 
   return (
     // KeyboardAvoidingView + `padding` (same fix as ملاحظاتي's note editor):
@@ -212,7 +220,7 @@ export default function SheikhInboxScreen() {
     // Screen's own ScrollView auto-scrolls the focused input into whatever
     // room this frees up.
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-      <Screen bottomPad={40}>
+      <Screen bottomPad={40 + miniPad}>
         {/* ── Header ── */}
         <View style={styles.header}>
           {/* Same `menu` hamburger, same start (right) placement, and same
@@ -372,6 +380,10 @@ export default function SheikhInboxScreen() {
           onClose={() => setDrawerOpen(false)}
         />
       </Screen>
+      {/* A sheikh who minimised his live room lands here: without the live
+          mini-bar he had no way back into the room (AdminShell has it; this
+          page only borrows the drawer). Phone only. */}
+      {Platform.OS !== 'web' ? <ShellLiveMiniBar /> : null}
     </KeyboardAvoidingView>
   );
 }

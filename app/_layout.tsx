@@ -66,6 +66,7 @@ import { recordAppOpen } from '@/lib/notificationState';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
 import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
 import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
+import { useLiveStore } from '@/stores/liveStore';
 import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { AchievementCelebration } from '@/components/celebration/AchievementCelebration';
 import { NOTIF_TEST_MODE } from '@/config';
@@ -573,8 +574,11 @@ function NotificationsBootstrap() {
       void addForegroundSeconds(elapsedSec);
     };
     const maybePrompt = () => {
+      // Never over a live majlis (it popped up over the halaqa on the device,
+      // 2026-09-30); the next return to the app asks again.
+      if (useLiveStore.getState().session) return;
       void shouldShowRatingPrompt().then((show) => {
-        if (show) setRatingPromptVisible(true);
+        if (show && !useLiveStore.getState().session) setRatingPromptVisible(true);
       });
     };
     maybePrompt();
