@@ -3,11 +3,11 @@
     "apps": [],
     "details": [
       {
-        "appIDs": ["TEAMID.com.riwaqalilm.app"],
+        "appIDs": ["74Q74GU5ND.com.riwaqalilm.app"],
         "components": [
           { "/": "/live/*", "comment": "«البث المباشر» share links → app/+native-intent.tsx → /live/code/{code}" }
         ],
-        "appID": "TEAMID.com.riwaqalilm.app",
+        "appID": "74Q74GU5ND.com.riwaqalilm.app",
         "paths": ["/live/*"]
       }
     ]

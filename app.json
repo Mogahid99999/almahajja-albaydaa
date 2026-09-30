@@ -10,10 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.riwaqalilm.app",
-      "buildNumber": "12",
-      "associatedDomains": [
-        "applinks:go.almahajja.app"
-      ],
+      "buildNumber": "14",
       "entitlements": {
         "aps-environment": "production"
       },
@@ -64,7 +61,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 12,
+      "versionCode": 13,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
