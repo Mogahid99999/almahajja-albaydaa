@@ -24,7 +24,11 @@ import {
   sessionState,
   startedAgo,
 } from './liveAdminUi';
+import { LiveCommentsList } from './LiveCommentsList';
 import { ActionButton, InlineNote, JobProgress, StatePill } from './parts';
+
+/** Sessions that went on air — they may have «التعليقات والأسئلة» (0147). */
+const HAD_COMMENTS = new Set(['live', 'ended', 'processing', 'ready', 'failed']);
 
 export interface LiveSessionCardProps {
   session: LiveAdminSession;
@@ -209,6 +213,8 @@ export function LiveSessionCard({
       ) : null}
 
       <InlineNote text={note?.text ?? null} tone={note?.tone ?? 'danger'} />
+
+      {HAD_COMMENTS.has(s.status) ? <LiveCommentsList sessionId={s.id} /> : null}
     </Card>
   );
 }

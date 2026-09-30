@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { cancelLiveSession } from '@/api/live';
+import { getAdminLiveComments } from '@/api/liveComments';
 import {
   downloadRawRecording,
   getLiveAdminOverview,
@@ -95,6 +96,22 @@ export function useLiveInterventions(sessionId: string | null | undefined) {
     queryFn: () => getLiveInterventions(sessionId as string),
     enabled: !!sessionId,
     staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  });
+}
+
+/**
+ * «التعليقات والأسئلة» of a session, kept after the majlis (admin_live_comments,
+ * 0147): every comment incl. deleted ones, oldest first. Loaded when a card's
+ * list is opened (queryKeys.liveAdminComments sits under liveAdminKeys.all, so
+ * the screen's refresh reloads it too).
+ */
+export function useAdminLiveComments(sessionId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.liveAdminComments(sessionId ?? ''),
+    queryFn: () => getAdminLiveComments(sessionId as string),
+    enabled: enabled && !!sessionId,
+    staleTime: 30_000,
     gcTime: 5 * 60_000,
   });
 }

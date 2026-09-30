@@ -573,3 +573,118 @@ export function inviteSheetSub(g: Sex): string {
     ? 'يصل رفيقتك إشعار بدعوتك إلى هذا المجلس، مرة واحدة لكل رفيقة.'
     : 'يصل رفيقك إشعار بدعوتك إلى هذا المجلس، مرة واحدة لكل رفيق.';
 }
+
+// ─── «التعليقات والأسئلة أثناء البث» (migration 0147) ─────────────────────────
+
+/** What everyone sees for a brother who wrote «بدون اسم» (a sister: {@link HIDDEN_SISTER_NAME}). */
+export const NAMELESS_BROTHER_NAME = 'طالب';
+
+export const LIVE_COMMENTS_COPY = {
+  entry: 'التعليقات',
+  title: 'التعليقات والأسئلة',
+  sub: 'يراها جميع الحاضرين في المجلس',
+  empty: 'لا تعليقات بعد. اكتب تعليقاً أو اطرح سؤالاً.',
+  emptyStaff: 'لا تعليقات بعد',
+  loadFailed: 'تعذّر تحميل التعليقات',
+  retry: 'إعادة المحاولة',
+  // One box for both (owner 2026-09-30: no «تعليق» / «سؤال» choice in the UI).
+  placeholder: 'اكتب تعليقاً أو سؤالاً',
+  send: 'إرسال',
+  anonymous: 'بدون اسم',
+  hiddenSister: 'تظهر تعليقاتك وأسئلتك بدون اسم («طالبة»)، كما دخلتِ الحلقة.',
+  sendNamed: 'أرسل باسمي',
+  sendAnonymous: 'أرسل بدون اسم',
+  cancel: 'إلغاء',
+  delete: 'حذف',
+  block: 'منع من التعليق',
+  blockConfirm: 'يُمنع صاحب هذا التعليق من التعليق في هذا المجلس، ويُحذف تعليقه. لا يظهر لأحد من هو.',
+  blockDo: 'منع',
+  back: 'تراجع',
+  you: 'أنت',
+  guestLine: 'متابعة التعليقات متاحة لك، أما التعليق والسؤال فللمسجّلين.',
+  guestAction: 'أضف تعليقاً أو سؤالاً',
+  guestTitle: 'سجّل أولاً لتعلّق أو تسأل',
+  guestBody: 'الاستماع إلى المجلس ومتابعة التعليقات متاحان لك كما هما، أما التعليق والسؤال فللمسجّلين فقط.',
+  notLive: 'التعليق متاح أثناء البث المباشر',
+  rateLimited: 'انتظر قليلاً ثم أرسل',
+  blockedWords: 'في النص كلمات غير مناسبة، عدّله ثم أرسل',
+  blocked: 'لا يمكنك التعليق في هذا المجلس',
+  sendFailed: 'تعذّر الإرسال. حاول مرة أخرى',
+} as const;
+
+/** The author line of a comment: the name, or «طالب» / «طالبة» for «بدون اسم». */
+export function commentAuthorLabel(c: { name: string | null; gender: unknown }): string {
+  if (c.name && c.name.trim()) return c.name;
+  return sexOf(c.gender) === 'f' ? HIDDEN_SISTER_NAME : NAMELESS_BROTHER_NAME;
+}
+
+/** A named sister, before sending. */
+export function namedCommentWarning(): string {
+  return 'سيظهر ما تكتبينه باسمك لجميع الحاضرين في المجلس.';
+}
+
+/** A brother's name line under the composer. */
+export function commentNameLine(anonymous: boolean, name: string | null | undefined): string {
+  if (anonymous) return `يظهر «${NAMELESS_BROTHER_NAME}» بدلاً من اسمك`;
+  return name?.trim() ? `يظهر باسمك: ${name.trim()}` : 'يظهر باسمك';
+}
+
+/** Near the 300-character limit: «المتبقي ٢٠» / «أطول من الحد بـ٥»; null while far from it. */
+export function commentRemainingLine(length: number, max: number): string | null {
+  const left = max - length;
+  if (left > 50) return null;
+  return left >= 0 ? `المتبقي ${arNum(left)}` : `أطول من الحد بـ${arNum(-left)}`;
+}
+
+/** The staff badge: «٣», capped at «+٩٩». */
+export function commentsBadge(n: number): string {
+  return n > 99 ? `+${arNum(99)}` : arNum(n);
+}
+
+/**
+ * Delete any comment, «منع من التعليق»: the room's host and
+ * moderators (staff present join as moderators), or a content manager
+ * (admin / publisher) — live-control's canModerateComments.
+ */
+export function canModerateComments(
+  liveRole: unknown,
+  user: Pick<CurrentUser, 'role' | 'isGuest'> | null | undefined,
+): boolean {
+  if (isModeratorRole(liveRole)) return true;
+  return !!user && !user.isGuest && (user.role === 'admin' || user.role === 'publisher');
+}
+
+/**
+ * A comment write refused by live-control (LiveControlError.code) → one calm
+ * Arabic line. `action`: 'send' (the composer) or 'act' (delete / answered / block).
+ */
+export function commentErrorText(e: unknown, action: 'send' | 'act' = 'send'): string {
+  const code = typeof e === 'object' && e !== null ? (e as { code?: unknown }).code : undefined;
+  switch (code) {
+    case 'rate_limited':
+      return LIVE_COMMENTS_COPY.rateLimited;
+    case 'blocked_words':
+      return LIVE_COMMENTS_COPY.blockedWords;
+    case 'blocked':
+      return LIVE_COMMENTS_COPY.blocked;
+    case 'not_live':
+      return LIVE_COMMENTS_COPY.notLive;
+    case 'guest_cannot_comment':
+      return 'التعليق والسؤال للمسجّلين فقط';
+    case 'too_long':
+      return 'النص أطول من ٣٠٠ حرف، اختصره ثم أرسل';
+    case 'empty':
+      return 'اكتب شيئاً أولاً';
+    case 'not_present':
+      return 'لا يمكن الإرسال وأنت خارج الحلقة';
+    case 'not_found':
+      return 'لم يعد هذا التعليق موجوداً';
+    case 'invalid_target':
+      return 'لا يمكن ذلك على تعليقك';
+    case 'unknown':
+    case undefined:
+      return action === 'send' ? LIVE_COMMENTS_COPY.sendFailed : NOTICE_COPY.failed;
+    default:
+      return controlErrorText(e);
+  }
+}

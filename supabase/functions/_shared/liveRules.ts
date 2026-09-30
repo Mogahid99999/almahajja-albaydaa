@@ -649,7 +649,9 @@ export type LiveErrorCode =
   | "live_disabled"
   | "guest_cannot_speak" | "gender_required" | "not_open" | "ended" | "invalid_state" | "invalid_target"
   | "another_live_active" | "not_present" | "no_track" | "no_moderator_present"
-  | "requests_closed" | "rate_limited" | "livekit_error" | "server_error";
+  | "requests_closed" | "rate_limited" | "livekit_error" | "server_error"
+  // comments (0147)
+  | "guest_cannot_comment" | "not_live" | "blocked" | "blocked_words" | "too_long" | "empty";
 
 export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   bad_request: 400,
@@ -673,10 +675,22 @@ export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   no_moderator_present: 409,
   /** hand up while «استقبال طلبات التحدث» is off. */
   requests_closed: 409,
-  /** hand toggled again within HAND_RATE_LIMIT_MS. */
+  /** hand toggled again within HAND_RATE_LIMIT_MS · a comment within COMMENT_RATE_LIMIT_MS (0147). */
   rate_limited: 429,
   livekit_error: 502,
   server_error: 500,
+  /** Comments (0147): guests read, they don't write («سجّل أولاً»). */
+  guest_cannot_comment: 403,
+  /** Comments are written while the session is `live` only (green included → refused). */
+  not_live: 409,
+  /** A moderator blocked this author from commenting in this session. */
+  blocked: 403,
+  /** contains_blocked_word (0052). */
+  blocked_words: 400,
+  /** More than COMMENT_MAX_CHARS characters (after trimming). */
+  too_long: 400,
+  /** Nothing but whitespace. */
+  empty: 400,
 };
 
 /**
@@ -767,4 +781,236 @@ export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveC
       up: typeof up === "boolean" ? up : null,
     },
   };
+}
+
+// ─── Comments «التعليقات والأسئلة أثناء البث» (migration 0147) ────────────────
+//
+// Owner decisions (final, 2026-09-30): everyone in the room sees the list;
+// guests can't write (guest_cannot_comment); a brother posts named or «بدون
+// اسم»; a sister who joined hidden is ALWAYS nameless (SQL forces it); «بدون
+// اسم» is hidden from everyone incl. sheikh/admins — no read, no broadcast and
+// no response ever carries a user id or a nameless author's name. SQL
+// (live_post_comment & co.) is the authority; these rules only refuse early.
+//
+// Separate from LIVE_ACTIONS on purpose: live-control routes a comment action
+// to its own handler before parseLiveControlRequest (different body fields).
+
+export const COMMENT_ACTIONS = ["comment", "comment_delete", "comment_answered", "comment_block"] as const;
+export type CommentAction = (typeof COMMENT_ACTIONS)[number];
+
+export function isCommentAction(x: unknown): x is CommentAction {
+  return typeof x === "string" && (COMMENT_ACTIONS as readonly string[]).includes(x);
+}
+
+export const COMMENT_KINDS = ["comment", "question"] as const;
+export type CommentKind = (typeof COMMENT_KINDS)[number];
+
+/** live_comments.body check (0147): 1–300 characters after trimming. */
+export const COMMENT_MAX_CHARS = 300;
+/** live_post_comment (0147): one comment per 10 s per user per session. */
+export const COMMENT_RATE_LIMIT_MS = 10_000;
+/** LiveKit data topic of the comment stream (JSON: {t:'add',c} | {t:'del',id} | {t:'ans',id,answered}). */
+export const COMMENTS_TOPIC = "comments";
+
+export type LiveCommentRequest =
+  | { action: "comment"; sessionId: string; kind: CommentKind; text: string; anonymous: boolean }
+  | { action: "comment_delete" | "comment_block"; sessionId: string; commentId: string }
+  | { action: "comment_answered"; sessionId: string; commentId: string; answered: boolean };
+
+/**
+ * The body of a comment action. The text itself is only type-checked here
+ * (empty / too_long have their own codes — commentTextVerdict).
+ */
+export function parseLiveCommentRequest(
+  body: unknown,
+): { ok: true; value: LiveCommentRequest } | { ok: false; error: string } {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (!isCommentAction(b.action)) return { ok: false, error: "invalid action" };
+  if (typeof b.sessionId !== "string" || !UUID_RE.test(b.sessionId)) return { ok: false, error: "sessionId required" };
+  const sessionId = b.sessionId;
+  if (b.action === "comment") {
+    if (typeof b.kind !== "string" || !(COMMENT_KINDS as readonly string[]).includes(b.kind)) {
+      return { ok: false, error: "invalid kind" };
+    }
+    if (typeof b.text !== "string") return { ok: false, error: "text required" };
+    if (typeof b.anonymous !== "boolean") return { ok: false, error: "anonymous required" };
+    return {
+      ok: true,
+      value: { action: "comment", sessionId, kind: b.kind as CommentKind, text: b.text, anonymous: b.anonymous },
+    };
+  }
+  if (typeof b.commentId !== "string" || !UUID_RE.test(b.commentId)) return { ok: false, error: "commentId required" };
+  const commentId = b.commentId;
+  if (b.action === "comment_answered") {
+    if (typeof b.answered !== "boolean") return { ok: false, error: "answered required" };
+    return { ok: true, value: { action: "comment_answered", sessionId, commentId, answered: b.answered } };
+  }
+  return { ok: true, value: { action: b.action, sessionId, commentId } };
+}
+
+/** Characters as Postgres counts them (code points, not UTF-16 units — an emoji is one). */
+export function commentLength(text: string): number {
+  return Array.from(text.trim()).length;
+}
+
+/** Same rule as the live_comments.body check: 1–300 characters after trimming. */
+export function commentTextVerdict(text: string): Verdict<"empty" | "too_long"> {
+  const n = commentLength(text);
+  if (n === 0) return { ok: false, code: "empty" };
+  if (n > COMMENT_MAX_CHARS) return { ok: false, code: "too_long" };
+  return OK;
+}
+
+/**
+ * May this caller moderate the comments of a session (0147
+ * live_comment_is_moderator)? Its host, its moderators (staff who joined get
+ * live role `moderator`), or any content manager (admin/publisher) — never a guest.
+ */
+export function canModerateComments(actor: {
+  appRole: string | null | undefined;
+  isGuest: boolean;
+  isHost: boolean;
+  liveRole: string | null | undefined;
+}): boolean {
+  if (actor.isGuest) return false;
+  return actor.isHost || actor.liveRole === "host" || actor.liveRole === "moderator" ||
+    isContentManagerRole(actor.appRole);
+}
+
+/**
+ * First gate, before any lookup: a guest may write nothing (a comment is
+ * guest_cannot_comment — the UI invites him to register); delete is for any
+ * registered user (author vs moderator is SQL's call); answered / block need
+ * a staff role (the host and a session's moderators are always staff).
+ */
+export function preauthorizeCommentAction(
+  action: CommentAction,
+  caller: { appRole: string | null | undefined; isGuest: boolean },
+): Verdict<"forbidden" | "guest_cannot_comment"> {
+  if (caller.isGuest) return action === "comment" ? { ok: false, code: "guest_cannot_comment" } : { ok: false, code: "forbidden" };
+  if (action === "comment" || action === "comment_delete") return OK;
+  return isStaffRole(caller.appRole) ? OK : { ok: false, code: "forbidden" };
+}
+
+/**
+ * Per-session gate. The service role (media worker) has no comment action.
+ *  - comment: registered + joined (live_participants row, else not_present).
+ *  - comment_delete: any registered user; SQL allows only the author or a moderator.
+ *  - comment_answered / comment_block: canModerateComments.
+ */
+export function authorizeCommentAction(
+  action: CommentAction,
+  actor: LiveActor,
+): Verdict<"forbidden" | "guest_cannot_comment" | "not_present"> {
+  const forbidden = { ok: false, code: "forbidden" } as const;
+  if (actor.kind === "system") return forbidden;
+  switch (action) {
+    case "comment":
+      if (actor.isGuest) return { ok: false, code: "guest_cannot_comment" };
+      return actor.liveRole ? OK : { ok: false, code: "not_present" };
+    case "comment_delete":
+      return actor.isGuest ? forbidden : OK;
+    case "comment_answered":
+    case "comment_block":
+      return canModerateComments(actor) ? OK : forbidden;
+  }
+}
+
+/**
+ * Writing needs a `live` session (green → not_live: the room is only the
+ * host's green room). Delete / answered / block work in any status — staff may
+ * clean up the list after the majlis too.
+ */
+export function commentStatusVerdict(action: CommentAction, status: string): Verdict<"not_live"> {
+  if (action === "comment" && status !== "live") return { ok: false, code: "not_live" };
+  return OK;
+}
+
+/** Broadcast to the room only while it can exist (green / live); the DB row is the truth either way. */
+export function shouldBroadcastComments(status: string): boolean {
+  return status === "green" || status === "live";
+}
+
+const COMMENT_RPC_CODES: readonly LiveErrorCode[] = [
+  "not_found", "not_live", "guest_cannot_comment", "not_present", "blocked", "empty", "too_long",
+  "blocked_words", "rate_limited", "forbidden", "invalid_target", "bad_request",
+];
+
+/** A 0147 refusal ('live_comment:<code>') → our code; anything else is a server error. */
+export function commentRpcErrorCode(message: string | null | undefined): LiveErrorCode {
+  const m = /live_comment:([a-z_]+)/.exec(message ?? "");
+  const code = m?.[1] as LiveErrorCode | undefined;
+  return code && COMMENT_RPC_CODES.includes(code) ? code : "server_error";
+}
+
+/**
+ * live_moderation_log.action for a comment action (0147 check list), or null:
+ * writing is not moderation, nor is an author deleting his own comment
+ * (live_delete_comment says who deleted: by = 'author' | 'moderator').
+ */
+export function commentAuditAction(action: CommentAction, ctx: { by?: string | null } = {}): string | null {
+  switch (action) {
+    case "comment":
+      return null;
+    case "comment_delete":
+      return ctx.by === "moderator" ? "comment_delete" : null;
+    case "comment_answered":
+    case "comment_block":
+      return action;
+  }
+}
+
+/** The public comment shape (0147 live_comment_json) — what the room receives. */
+export type PublicLiveComment = {
+  id: string;
+  kind: CommentKind;
+  text: string;
+  /** null = «بدون اسم». */
+  name: string | null;
+  gender: LiveGender;
+  answered: boolean;
+  at: string;
+};
+
+/**
+ * Whitelist a comment from SQL down to the public fields — defence in depth:
+ * whatever the RPC returns, only these ever reach the room (never `mine`,
+ * never an id of a person). null when malformed.
+ */
+export function toPublicComment(raw: unknown): PublicLiveComment | null {
+  const r = (raw ?? null) as Record<string, unknown> | null;
+  if (!r || typeof r !== "object") return null;
+  if (typeof r.id !== "string" || !r.id) return null;
+  if (r.kind !== "comment" && r.kind !== "question") return null;
+  if (typeof r.text !== "string" || !r.text) return null;
+  if (r.name !== null && typeof r.name !== "string") return null;
+  if (r.gender !== "m" && r.gender !== "f") return null;
+  if (typeof r.answered !== "boolean") return null;
+  if (typeof r.at !== "string" || !r.at) return null;
+  return {
+    id: r.id,
+    kind: r.kind,
+    text: r.text,
+    name: typeof r.name === "string" && r.name ? r.name : null,
+    gender: r.gender,
+    answered: r.answered,
+    at: r.at,
+  };
+}
+
+export type CommentsMessage =
+  | { t: "add"; c: PublicLiveComment }
+  | { t: "del"; id: string }
+  | { t: "ans"; id: string; answered: boolean };
+
+/** The data message body on topic COMMENTS_TOPIC (UTF-8 JSON). */
+export function commentsMessage(msg: CommentsMessage): string {
+  switch (msg.t) {
+    case "add":
+      return JSON.stringify({ t: "add", c: msg.c });
+    case "del":
+      return JSON.stringify({ t: "del", id: msg.id });
+    case "ans":
+      return JSON.stringify({ t: "ans", id: msg.id, answered: msg.answered });
+  }
 }

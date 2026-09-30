@@ -398,13 +398,49 @@ export class LiveControlError extends Error {
 }
 
 /**
+ * live-control actions (liveRules.ts LIVE_ACTIONS + COMMENT_ACTIONS). The
+ * worker-only `auto_end` / `resume_recording` are not listed: the app never
+ * calls them. `liveControl` still takes any string.
+ */
+export type LiveControlAction =
+  | 'open_green'
+  | 'start'
+  | 'end'
+  | 'approve'
+  | 'reject'
+  | 'mute'
+  | 'demote'
+  | 'set_allow_requests'
+  | 'host_leave'
+  | 'leave'
+  | 'hand'
+  // «التعليقات والأسئلة أثناء البث» (0147) — src/api/liveComments.ts
+  | 'comment'
+  | 'comment_delete'
+  | 'comment_answered'
+  | 'comment_block';
+
+/**
  * Call live-control: `{ action, ...body }` — body carries `sessionId` and the
  * action's fields (identity, trackSid, allow). P3 only uses `leave`.
  */
 export async function liveControl(
-  action: string,
+  action: LiveControlAction | (string & {}),
   body: Record<string, unknown>,
 ): Promise<{ ok: boolean; status?: LiveStatus }> {
+  const d = (await invokeLiveControl(action, body)) as { ok?: unknown; status?: unknown };
+  return { ok: d.ok === true, status: isLiveStatus(d.status) ? d.status : undefined };
+}
+
+/**
+ * live-control's whole JSON response (e.g. `comment` → `{ ok, status, comment }`).
+ * Every refusal / failure is a {@link LiveControlError} carrying the server's
+ * code (liveRules.ts LiveErrorCode) or 'network'.
+ */
+export async function invokeLiveControl(
+  action: LiveControlAction | (string & {}),
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   let result: { data: unknown; error: unknown };
   try {
     result = await withDeadline(
@@ -422,8 +458,8 @@ export async function liveControl(
     const f = await readFunctionError(result.error);
     throw new LiveControlError(f.transport ? 'network' : (f.code ?? 'unknown'));
   }
-  const d = (result.data ?? {}) as { ok?: unknown; status?: unknown };
-  return { ok: d.ok === true, status: isLiveStatus(d.status) ? d.status : undefined };
+  const d = result.data;
+  return d && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>) : {};
 }
 
 // ─── Hosting (P4) ──────────────────────────────────────────────────────────────

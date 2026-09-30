@@ -28,6 +28,11 @@
  * https://go.almahajja.app/live/{code}); for a registered listener with buddies
  * it leads on to BuddyInviteSheet («ادعُ رفيقك إلى الحلقة»). Both sheets run
  * their queries only while open.
+ *
+ * «التعليقات والأسئلة» (0147): a «التعليقات» pill beside the attendance line
+ * opens CommentsSheet — everyone present reads the list live; registered
+ * listeners write (a guest is asked to register); the host / moderators /
+ * staff see a count of new ones on the pill.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -59,6 +64,7 @@ import { NiqabIcon } from '@/components/live/NiqabIcon';
 import {
   END_UNDO_MS,
   LIVE,
+  LIVE_COMMENTS_COPY,
   LIVE_COPY,
   LIVE_P4_COPY,
   LIVE_P5_COPY,
@@ -67,6 +73,8 @@ import {
   arDayLabel,
   asList,
   canEndForAll,
+  canModerateComments,
+  commentsBadge,
   controlErrorText,
   currentSpeakers,
   elapsedSec,
@@ -83,6 +91,7 @@ import {
 } from '@/components/live/liveUi';
 import { useNow } from '@/components/live/LiveHomeCard';
 import { BuddyInviteSheet } from '@/components/live/sheets/BuddyInviteSheet';
+import { CommentsSheet, type CommentsWriteState } from '@/components/live/sheets/CommentsSheet';
 import { EndSheet } from '@/components/live/sheets/EndSheet';
 import { GuestSpeakSheet } from '@/components/live/sheets/GuestSpeakSheet';
 import { IdentitySheet } from '@/components/live/sheets/IdentitySheet';
@@ -96,6 +105,7 @@ import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { colors, radius } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useLiveSession, useLiveStaffParticipants } from '@/hooks/useLive';
+import { useLiveComments } from '@/hooks/useLiveComments';
 import { arDuration, arNum } from '@/lib/format';
 import { useLiveStore, type LiveConn, type LivePerson } from '@/stores/liveStore';
 
@@ -165,6 +175,9 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   // P5: «مشاركة رابط البث» → «ادعُ رفيقك إلى الحلقة».
   const [shareOpen, setShareOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // «التعليقات والأسئلة» (0147) + a guest's «سجّل أولاً» for writing.
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [guestCommentOpen, setGuestCommentOpen] = useState(false);
 
   // ── Entry flow ─────────────────────────────────────────────────────────────
   const doJoin = useCallback(
@@ -272,6 +285,23 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const active = ACTIVE_CONNS.has(roomConn);
   const mine = me && joinedHere ? people[me.identity] : undefined;
   const requestIds = useMemo(() => (isMod ? requestQueue(people) : []), [isMod, people]);
+
+  // «التعليقات والأسئلة» (0147): read on (re)connect, then kept live by the
+  // room's data messages. The host, moderators and staff see how many are new.
+  const comments = useLiveComments(joinedHere ? id : null, {
+    enabled: joinedHere && !!me && active,
+    open: commentsOpen,
+  });
+  const commentsStaff = isMod || isStaff;
+  const canModerateCmts = joinedHere && canModerateComments(myRole, user);
+  const onAir = status === 'live' || (joinedHere && storeSession?.status === 'live');
+  const commentsWrite: CommentsWriteState = user?.isGuest
+    ? 'guest'
+    : !onAir
+      ? 'not_live'
+      : !active
+        ? 'offline'
+        : 'ok';
 
   const personName = useCallback(
     (pid: string) => {
@@ -521,7 +551,23 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
           ) : null}
 
           {!entering && roomConn !== 'failed' ? (
-            <AttendanceLine brothers={counts.brothers} sisters={counts.sisters} />
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: joinedHere ? 'space-between' : 'center',
+                paddingHorizontal: 16,
+                gap: 8,
+              }}
+            >
+              <AttendanceLine brothers={counts.brothers} sisters={counts.sisters} />
+              {joinedHere ? (
+                <CommentsPill
+                  badge={commentsStaff ? comments.unseen : 0}
+                  onPress={() => setCommentsOpen(true)}
+                />
+              ) : null}
+            </View>
           ) : null}
 
           <LiveDock
@@ -562,6 +608,28 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
                   setStep('identity');
                 }
               : undefined
+          }
+        />
+      ) : null}
+
+      {id && joinedHere ? (
+        <CommentsSheet
+          visible={commentsOpen && !ended}
+          onClose={() => setCommentsOpen(false)}
+          sessionId={id}
+          comments={comments.comments}
+          isLoading={comments.isLoading}
+          isError={comments.isError}
+          onRetry={() => void comments.refetch()}
+          writeState={commentsWrite}
+          me={me ? { gender: me.gender, hidden: me.hidden } : null}
+          myName={user?.displayName ?? null}
+          canModerate={canModerateCmts}
+          onGuestGate={() =>
+            swapSheet(
+              () => setCommentsOpen(false),
+              () => setGuestCommentOpen(true),
+            )
           }
         />
       ) : null}
@@ -693,7 +761,70 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
           router.push('/register');
         }}
       />
+
+      <GuestSpeakSheet
+        visible={guestCommentOpen}
+        title={LIVE_COMMENTS_COPY.guestTitle}
+        body={LIVE_COMMENTS_COPY.guestBody}
+        onClose={() => setGuestCommentOpen(false)}
+        onRegister={() => {
+          setGuestCommentOpen(false);
+          collapse();
+          router.push('/register');
+        }}
+      />
     </View>
+  );
+}
+
+/**
+ * «التعليقات» — opens the comments sheet. The host, moderators and staff see a
+ * small count of comments that arrived since they last opened it.
+ */
+function CommentsPill({ badge, onPress }: { badge: number; onPress: () => void }) {
+  const a11y =
+    badge > 0 ? `${LIVE_COMMENTS_COPY.title} · ${commentsBadge(badge)} جديدة` : LIVE_COMMENTS_COPY.title;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+      hitSlop={4}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        height: 34,
+        paddingHorizontal: 12,
+        borderRadius: radius.pill,
+        backgroundColor: colors.surfaceCard,
+        borderWidth: 1,
+        borderColor: colors.borderSand,
+        opacity: pressed ? 0.8 : 1,
+      })}
+    >
+      <Feather name="message-circle" size={15} color={colors.primaryTeal} />
+      <Txt size={12.5} weight="medium" color={colors.textSlate}>
+        {LIVE_COMMENTS_COPY.entry}
+      </Txt>
+      {badge > 0 ? (
+        <View
+          style={{
+            minWidth: 20,
+            height: 20,
+            paddingHorizontal: 5,
+            borderRadius: 10,
+            backgroundColor: colors.accentBrass,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Txt size={11} weight="semibold" color={colors.primaryTealDeep} tabular centerGlyph>
+            {commentsBadge(badge)}
+          </Txt>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 

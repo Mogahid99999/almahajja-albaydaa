@@ -32,6 +32,7 @@ import {
   type LiveToken,
   type LiveTokenErrorCode,
 } from "@/api/live";
+import type { LiveCommentsMessage } from "@/api/liveComments";
 import {
   onBeforeLecturePlay,
   stop as stopLecture,
@@ -220,6 +221,34 @@ let steppingDown = false;
 const getState = () => useLiveStore.getState();
 const setState = (p: Partial<LiveState>) => useLiveStore.setState(p);
 
+/** «التعليقات والأسئلة» (0147): the room's comment updates, for useLiveComments. */
+export type LiveCommentsListener = (sessionId: string, msg: LiveCommentsMessage) => void;
+const commentsListeners = new Set<LiveCommentsListener>();
+
+/**
+ * Subscribe to the comment stream of the room I'm in (LiveKit topic
+ * "comments", already parsed). Not kept in the store: the list lives in the
+ * TanStack cache (src/hooks/useLiveComments.ts). Returns the unsubscribe.
+ */
+export function onLiveComments(listener: LiveCommentsListener): () => void {
+  commentsListeners.add(listener);
+  return () => {
+    commentsListeners.delete(listener);
+  };
+}
+
+function emitComments(msg: LiveCommentsMessage) {
+  const sessionId = getState().session?.id;
+  if (!sessionId) return;
+  for (const l of Array.from(commentsListeners)) {
+    try {
+      l(sessionId, msg);
+    } catch {
+      /* one listener's failure never stops the room */
+    }
+  }
+}
+
 /** Foreground service → room → audio session. Idempotent. */
 async function releaseResources(): Promise<void> {
   // Unsubscribe the «مغادرة» action first, then stop the service.
@@ -352,6 +381,7 @@ function makeSink(gen: number): LiveSink {
       if (e.type === "rejected") notify("rejected");
       else if (e.type === "mutedByModerator") notify("muted");
       else if (e.type === "publishRevoked") setForegroundMic(false);
+      else if (e.type === "comments") emitComments(e.msg);
     },
   };
 }

@@ -77,7 +77,7 @@ jest.mock('../../../modules/live-foreground', () => ({
 }));
 
 import { LiveTokenError } from '@/api/live';
-import { notifyLiveSessionEnded, TOKEN_RETRY_DELAYS_MS, useLiveStore } from '@/stores/liveStore';
+import { notifyLiveSessionEnded, onLiveComments, TOKEN_RETRY_DELAYS_MS, useLiveStore } from '@/stores/liveStore';
 
 // Registered once when liveStore loads (read now: clearMocks wipes calls per test).
 const beforeLecturePlay = (
@@ -585,6 +585,18 @@ describe('P4 speaking & moderation', () => {
     expect(state().notice?.kind).toBe('rejected');
     sink!.event?.({ type: 'mutedByModerator' });
     expect(state().notice?.kind).toBe('muted');
+  });
+
+  test('«التعليقات» data messages reach the subscribers with the session id — not a notice', () => {
+    const got: unknown[] = [];
+    const off = onLiveComments((sessionId, msg) => got.push([sessionId, msg]));
+    const notice = state().notice;
+    sink!.event?.({ type: 'comments', msg: { t: 'del', id: 'c1' } });
+    expect(got).toEqual([['sess-1', { t: 'del', id: 'c1' }]]);
+    expect(state().notice).toBe(notice);
+    off();
+    sink!.event?.({ type: 'comments', msg: { t: 'del', id: 'c2' } });
+    expect(got).toHaveLength(1);
   });
 
   test('opening the mic re-types the foreground service to microphone', async () => {

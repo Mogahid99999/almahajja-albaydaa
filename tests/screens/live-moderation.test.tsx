@@ -40,6 +40,12 @@ jest.mock('@/hooks/useLive', () => ({
   useLiveSession: () => ({ data: mockSession.current, isLoading: false }),
   useLiveStaffParticipants: () => ({ data: mockStaff }),
 }));
+// «التعليقات والأسئلة» has its own screen test (live-comments) — an empty list here.
+jest.mock('@/hooks/useLiveComments', () => ({
+  useLiveComments: () => ({ comments: [], isLoading: false, isError: false, refetch: jest.fn(), unseen: 0 }),
+  usePostLiveComment: () => ({ mutate: jest.fn(), isPending: false }),
+  useLiveCommentAction: () => ({ mutate: jest.fn(), isPending: false, variables: undefined }),
+}));
 
 const mockState: Record<string, unknown> = {};
 jest.mock('@/stores/liveStore', () => {

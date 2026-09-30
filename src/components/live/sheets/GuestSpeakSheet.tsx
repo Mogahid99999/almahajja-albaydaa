@@ -2,6 +2,7 @@
  * A guest taps «طلب التحدث» (owner rule, 2026-09-28): guests listen like
  * everyone else, but asking to speak needs an account — say so calmly and offer
  * «تسجيل». The room keeps playing (the caller minimises it to the mini-bar).
+ * The same sheet asks a guest to register before commenting (`title` / `body`).
  */
 import { Pressable, View } from 'react-native';
 
@@ -13,15 +14,19 @@ export function GuestSpeakSheet({
   visible,
   onClose,
   onRegister,
+  title = 'سجّل أولاً لتطلب التحدث',
+  body = 'الاستماع إلى المجلس متاح لك كما هو، أما طلب التحدث فللمسجّلين فقط.',
 }: {
   visible: boolean;
   onClose: () => void;
   onRegister: () => void;
+  title?: string;
+  body?: string;
 }) {
   return (
-    <LiveSheet visible={visible} onClose={onClose} title="سجّل أولاً لتطلب التحدث">
+    <LiveSheet visible={visible} onClose={onClose} title={title}>
       <Txt size={13.5} color={colors.textSlate} style={{ lineHeight: 24 }}>
-        الاستماع إلى المجلس متاح لك كما هو، أما طلب التحدث فللمسجّلين فقط.
+        {body}
       </Txt>
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
         <Pressable

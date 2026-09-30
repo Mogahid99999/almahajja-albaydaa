@@ -65,6 +65,33 @@
 //                       → { ok, status, hand: boolean, handAt: seconds | null }.
 //                       Not in live_moderation_log.
 //
+// Comments «التعليقات والأسئلة أثناء البث» (0147 — SQL is the authority; the
+// rows live in live_comments, service role only). Broadcast to the room on the
+// LiveKit data topic "comments" (RELIABLE, UTF-8 JSON); a failed broadcast never
+// fails the request (the DB row is the truth, clients refetch on join).
+//   comment             { sessionId, kind: 'comment'|'question', text,
+//                       anonymous: boolean } → { ok, status, comment: <public +
+//                       mine:true> }; broadcast {t:'add', c:<public>}. A
+//                       registered participant of a LIVE session: 403
+//                       guest_cannot_comment · 409 not_live (green too) · 409
+//                       not_present · 403 blocked · 400 empty / too_long (> 300)
+//                       / blocked_words · 429 rate_limited (1 per 10 s). A sister
+//                       who joined hidden is always nameless (SQL).
+//   comment_delete      { sessionId, commentId } — its author, or the session's
+//                       host / moderators / a content manager → soft delete →
+//                       { ok, status, id }; broadcast {t:'del', id}. 403 forbidden
+//                       · 404 not_found. Idempotent.
+//   comment_answered    { sessionId, commentId, answered } — host / moderators /
+//                       content managers → { ok, status, id, answered };
+//                       broadcast {t:'ans', id, answered}.
+//   comment_block       { sessionId, commentId } — host / moderators / content
+//                       managers: the author may not comment again in this
+//                       session + that comment is deleted → { ok, status, id };
+//                       broadcast {t:'del', id}. Never says who it was; 409
+//                       invalid_target on one's own comment.
+//   Staff actions are logged (comment_delete by a moderator, comment_answered,
+//   comment_block) with target_identity NULL and only the comment id in detail.
+//
 // Every lifecycle transition goes through set_live_session_status (0138,
 // service role: D3 guard, timestamps, fan-outs). Every moderation action is
 // appended to live_moderation_log (0135).
@@ -85,10 +112,23 @@ import {
 
 import {
   auditAction,
+  authorizeCommentAction,
   authorizeLiveAction,
   canSpeak,
   canTarget,
+  commentAuditAction,
+  commentRpcErrorCode,
+  COMMENTS_TOPIC,
+  commentsMessage,
+  type CommentsMessage,
+  commentStatusVerdict,
+  commentTextVerdict,
   envFromRoomPrefix,
+  isCommentAction,
+  parseLiveCommentRequest,
+  preauthorizeCommentAction,
+  shouldBroadcastComments,
+  toPublicComment,
   HAND_RATE_LIMIT_MS,
   handAttribute,
   handVerdict,
@@ -168,12 +208,17 @@ async function handle(req: Request): Promise<Response> {
   if (!authHeader) return fail("unauthorized");
   const bearer = authHeader.replace(/^Bearer\s+/i, "");
 
-  let parsed;
+  let body: unknown;
   try {
-    parsed = parseLiveControlRequest(await req.json());
+    body = await req.json();
   } catch {
     return fail("bad_request", "invalid json");
   }
+  // Comments (0147) have their own body fields and handler.
+  if (isCommentAction((body as { action?: unknown } | null)?.action)) {
+    return await handleComment(authHeader, bearer, body);
+  }
+  const parsed = parseLiveControlRequest(body);
   if (!parsed.ok) return fail("bad_request", parsed.error);
   const r = parsed.value;
 
@@ -189,20 +234,9 @@ async function handle(req: Request): Promise<Response> {
   let appRole: string | null = null;
   let isGuest = false;
   if (!system) {
-    const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data: caller, error: callerErr } = await callerClient.auth.getUser();
-    if (callerErr || !caller?.user) return fail("unauthorized");
-    userId = caller.user.id;
-    const { data: authUser } = await admin.auth.admin.getUserById(userId);
-    if (!authUser?.user) return fail("unauthorized");
-    const u = authUser.user as { banned_until?: string | null; is_anonymous?: boolean };
-    if (isBanned(u.banned_until, Date.now())) return fail("banned");
-    isGuest = u.is_anonymous === true;
-    const { data: profile } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
-    appRole = profile?.role ?? null;
+    const caller = await resolveUser(admin, authHeader);
+    if (caller instanceof Response) return caller;
+    ({ userId, appRole, isGuest } = caller);
     const pre = preauthorizeLiveAction(r.action, { appRole, isGuest }, { up: r.up ?? undefined });
     if (!pre.ok) return fail(pre.code);
   }
@@ -538,6 +572,179 @@ async function handle(req: Request): Promise<Response> {
   }
 
   return json({ ok: true, status: transition.next, ...result });
+}
+
+type Caller = { userId: string; appRole: string | null; isGuest: boolean };
+
+/** The user behind a JWT: 401 unknown, 403 banned; guest = is_anonymous read fresh from auth.users. */
+async function resolveUser(admin: SupabaseClient, authHeader: string): Promise<Caller | Response> {
+  const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: caller, error: callerErr } = await callerClient.auth.getUser();
+  if (callerErr || !caller?.user) return fail("unauthorized");
+  const userId = caller.user.id;
+  const { data: authUser } = await admin.auth.admin.getUserById(userId);
+  if (!authUser?.user) return fail("unauthorized");
+  const u = authUser.user as { banned_until?: string | null; is_anonymous?: boolean };
+  if (isBanned(u.banned_until, Date.now())) return fail("banned");
+  const { data: profile } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
+  return { userId, appRole: profile?.role ?? null, isGuest: u.is_anonymous === true };
+}
+
+/**
+ * Comment actions (0147). The SQL functions are the authority (status, guest,
+ * presence, block list, blocked words, length, rate limit, the hidden-sister
+ * rule, author-or-moderator); the rules here only refuse early. No response,
+ * broadcast or log entry ever carries a user id or a nameless author's name.
+ */
+async function handleComment(authHeader: string, bearer: string, body: unknown): Promise<Response> {
+  const parsed = parseLiveCommentRequest(body);
+  if (!parsed.ok) return fail("bad_request", parsed.error);
+  const r = parsed.value;
+  // The media worker (service role) has no comment action.
+  if (await isServiceRole(bearer)) return fail("forbidden");
+
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const caller = await resolveUser(admin, authHeader);
+  if (caller instanceof Response) return caller;
+  const { userId, appRole, isGuest } = caller;
+  const pre = preauthorizeCommentAction(r.action, { appRole, isGuest });
+  if (!pre.ok) return fail(pre.code);
+
+  const { data: session, error: sErr } = await admin
+    .from("live_sessions")
+    .select("id, status, room_name, host_user_id")
+    .eq("id", r.sessionId)
+    .maybeSingle<Pick<Session, "id" | "status" | "room_name" | "host_user_id">>();
+  if (sErr) return fail("server_error", sErr.message);
+  if (!session) return fail("not_found");
+  if (!isEnvRoom(session.room_name, ROOM_PREFIX)) return fail("server_error", "room of another environment");
+
+  const st = commentStatusVerdict(r.action, session.status);
+  if (!st.ok) return fail(st.code);
+  const callerPart = await participantBy(admin, session.id, "user_id", userId);
+  const authz = authorizeCommentAction(r.action, {
+    kind: "user",
+    appRole,
+    isGuest,
+    isHost: userId === session.host_user_id,
+    liveRole: callerPart?.role ?? null,
+  });
+  if (!authz.ok) return fail(authz.code);
+
+  let message: CommentsMessage;
+  let result: Record<string, unknown>;
+  let logged: string | null = null;
+  let detail: Record<string, unknown> = {};
+
+  switch (r.action) {
+    case "comment": {
+      const t = commentTextVerdict(r.text);
+      if (!t.ok) return fail(t.code);
+      const { data, error } = await admin.rpc("live_post_comment", {
+        p_session: session.id,
+        p_user: userId,
+        p_kind: r.kind,
+        p_body: r.text,
+        p_anonymous: r.anonymous,
+      });
+      if (error) return failCommentRpc(error.message);
+      const c = toPublicComment(data);
+      if (!c) return fail("server_error", "malformed comment row");
+      message = { t: "add", c };
+      result = { comment: { ...c, mine: true } };
+      break;
+    }
+
+    case "comment_delete": {
+      const { data, error } = await admin.rpc("live_delete_comment", {
+        p_session: session.id,
+        p_comment: r.commentId,
+        p_actor: userId,
+      });
+      if (error) return failCommentRpc(error.message);
+      message = { t: "del", id: r.commentId };
+      result = { id: r.commentId };
+      logged = commentAuditAction("comment_delete", { by: (data as { by?: string } | null)?.by });
+      detail = { comment_id: r.commentId };
+      break;
+    }
+
+    case "comment_answered": {
+      const { error } = await admin.rpc("live_answer_comment", {
+        p_session: session.id,
+        p_comment: r.commentId,
+        p_actor: userId,
+        p_answered: r.answered,
+      });
+      if (error) return failCommentRpc(error.message);
+      message = { t: "ans", id: r.commentId, answered: r.answered };
+      result = { id: r.commentId, answered: r.answered };
+      logged = commentAuditAction("comment_answered");
+      detail = { comment_id: r.commentId, answered: r.answered };
+      break;
+    }
+
+    case "comment_block": {
+      const { error } = await admin.rpc("live_block_comment_author", {
+        p_session: session.id,
+        p_comment: r.commentId,
+        p_actor: userId,
+      });
+      if (error) return failCommentRpc(error.message);
+      message = { t: "del", id: r.commentId };
+      result = { id: r.commentId };
+      logged = commentAuditAction("comment_block");
+      detail = { comment_id: r.commentId };
+      break;
+    }
+  }
+
+  // Best-effort: the DB row is the truth; clients refetch get_live_comments on join.
+  if (shouldBroadcastComments(session.status)) await broadcastComments(session.room_name, message);
+
+  // Audit (best-effort) — never the author: no target_identity, only the comment id.
+  if (logged) {
+    const { error } = await admin.from("live_moderation_log").insert({
+      session_id: session.id,
+      actor_user_id: userId,
+      target_identity: null,
+      action: logged,
+      detail,
+    });
+    if (error) console.error(`live-control audit: ${error.message}`);
+  }
+
+  return json({ ok: true, status: session.status, ...result });
+}
+
+/** A 0147 refusal ('live_comment:<code>') → { error: code }; anything else is a 500. */
+function failCommentRpc(message: string): Response {
+  const code = commentRpcErrorCode(message);
+  return code === "server_error" ? fail(code, message) : fail(code);
+}
+
+const COMMENTS_BROADCAST_TIMEOUT_MS = 4_000;
+
+/** One data message to the whole room on topic "comments" — never fails the request, never waits > 4 s. */
+async function broadcastComments(room: string, msg: CommentsMessage): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const sent = rooms
+    .sendData(room, encoder.encode(commentsMessage(msg)), DataPacket_Kind.RELIABLE, { topic: COMMENTS_TOPIC })
+    .then(() => true, (e) => {
+      logLk("sendData(comments)", e);
+      return false;
+    });
+  const timedOut = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), COMMENTS_BROADCAST_TIMEOUT_MS);
+  });
+  const ok = await Promise.race([sent, timedOut]);
+  if (timer) clearTimeout(timer);
+  if (!ok) console.error(`live-control comments broadcast (${msg.t}) not delivered`);
 }
 
 /**

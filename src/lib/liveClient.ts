@@ -35,6 +35,11 @@ import type * as LKRN from "@livekit/react-native";
 import type * as LK from "livekit-client";
 
 import {
+  LIVE_COMMENTS_TOPIC,
+  parseCommentsMessage,
+  type LiveCommentsMessage,
+} from "@/api/liveComments";
+import {
   classifyDisconnect,
   connReducer,
   countPeople,
@@ -307,7 +312,9 @@ export type LiveClientEvent =
   /** My mic was muted by a moderator (MutePublishedTrack), not by me. */
   | { type: "mutedByModerator" }
   /** My publish permission was revoked (demoted) — the mic is already dropped. */
-  | { type: "publishRevoked" };
+  | { type: "publishRevoked" }
+  /** A comments update from live-control (data message, topic "comments", 0147). */
+  | { type: "comments"; msg: LiveCommentsMessage };
 
 export interface LiveSink {
   patch(p: LiveRoomPatch): void;
@@ -628,13 +635,21 @@ function createRoom(r: Run): LK.Room {
       E.DataReceived,
       (
         payload: Uint8Array,
-        _p?: LK.RemoteParticipant,
+        sender?: LK.RemoteParticipant,
         _k?: LK.DataPacket_Kind,
         topic?: string,
       ) => {
-        if (!current() || topic !== "control") return;
-        if (parseControlMessage(payload) === "rejected")
-          r.sink.event?.({ type: "rejected" });
+        if (!current()) return;
+        if (topic === "control") {
+          if (parseControlMessage(payload) === "rejected")
+            r.sink.event?.({ type: "rejected" });
+        } else if (topic === LIVE_COMMENTS_TOPIC && !sender) {
+          // Only the server (live-control, no sender): hosts/moderators may
+          // publish data too, and must not be able to forge a comment.
+          // «التعليقات والأسئلة» (0147): live-control broadcasts add/del/ans to the room.
+          const msg = parseCommentsMessage(payload);
+          if (msg) r.sink.event?.({ type: "comments", msg });
+        }
       },
     )
     .on(

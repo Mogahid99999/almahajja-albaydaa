@@ -4,11 +4,27 @@
  */
 import {
   auditAction,
+  authorizeCommentAction,
   authorizeLiveAction,
   canJoin,
+  canModerateComments,
   canSpeak,
   canTarget,
+  COMMENT_ACTIONS,
+  COMMENT_MAX_CHARS,
+  commentAuditAction,
+  commentLength,
+  commentRpcErrorCode,
+  COMMENTS_TOPIC,
+  commentsMessage,
+  commentStatusVerdict,
+  commentTextVerdict,
   envFromRoomPrefix,
+  isCommentAction,
+  parseLiveCommentRequest,
+  preauthorizeCommentAction,
+  shouldBroadcastComments,
+  toPublicComment,
   HAND_RATE_LIMIT_MS,
   handAttribute,
   handRateLimited,
@@ -669,5 +685,198 @@ describe('P7 rollout flag: liveEnabledFor (same rule as SQL live_enabled_for_cal
 
   test('live-token refuses with 403 live_disabled', () => {
     expect(LIVE_ERROR_STATUS.live_disabled).toBe(403);
+  });
+});
+
+// «التعليقات والأسئلة أثناء البث» — migration 0147 + live-control comment actions.
+describe('comments (0147): who may write, delete, answer, block', () => {
+  const COMMENT = 'c1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+
+  test('comment actions are their own set — never in LIVE_ACTIONS, never the service role\'s', () => {
+    expect([...COMMENT_ACTIONS]).toEqual(['comment', 'comment_delete', 'comment_answered', 'comment_block']);
+    for (const a of COMMENT_ACTIONS) {
+      expect(isCommentAction(a)).toBe(true);
+      expect((LIVE_ACTIONS as readonly string[]).includes(a)).toBe(false);
+      expect(authorizeCommentAction(a, { kind: 'system' })).toEqual({ ok: false, code: 'forbidden' });
+    }
+    expect(isCommentAction('leave')).toBe(false);
+    expect(isCommentAction(undefined)).toBe(false);
+  });
+
+  test('guests read but never write (owner 2026-09-30): comment → guest_cannot_comment, before any lookup', () => {
+    for (const appRole of [null, 'student', 'admin']) {
+      expect(preauthorizeCommentAction('comment', { appRole, isGuest: true })).toEqual({
+        ok: false,
+        code: 'guest_cannot_comment',
+      });
+      expect(authorizeCommentAction('comment', user({ appRole, isGuest: true }))).toEqual({
+        ok: false,
+        code: 'guest_cannot_comment',
+      });
+      for (const a of ['comment_delete', 'comment_answered', 'comment_block'] as const) {
+        expect(preauthorizeCommentAction(a, { appRole, isGuest: true })).toEqual({ ok: false, code: 'forbidden' });
+        expect(authorizeCommentAction(a, user({ appRole, isGuest: true, isHost: true, liveRole: 'host' }))).toEqual({
+          ok: false,
+          code: 'forbidden',
+        });
+      }
+    }
+    expect(LIVE_ERROR_STATUS.guest_cannot_comment).toBe(403);
+  });
+
+  test('a registered participant writes; not joined → not_present', () => {
+    expect(preauthorizeCommentAction('comment', { appRole: 'student', isGuest: false })).toEqual({ ok: true });
+    expect(authorizeCommentAction('comment', user())).toEqual({ ok: true });
+    expect(authorizeCommentAction('comment', user({ liveRole: null }))).toEqual({ ok: false, code: 'not_present' });
+    // Staff comment like anyone else — but only from inside the room.
+    expect(authorizeCommentAction('comment', user({ appRole: 'admin', liveRole: null }))).toEqual({
+      ok: false,
+      code: 'not_present',
+    });
+    expect(LIVE_ERROR_STATUS.not_present).toBe(409);
+  });
+
+  test('delete: any registered user passes the gates (author-or-moderator is SQL\'s call)', () => {
+    expect(preauthorizeCommentAction('comment_delete', { appRole: 'student', isGuest: false })).toEqual({ ok: true });
+    expect(authorizeCommentAction('comment_delete', user({ liveRole: null }))).toEqual({ ok: true });
+  });
+
+  test('answered / block: the host, the session\'s moderators, or a content manager — nobody else', () => {
+    for (const a of ['comment_answered', 'comment_block'] as const) {
+      // students (even an approved speaker) are refused at the first gate
+      expect(preauthorizeCommentAction(a, { appRole: 'student', isGuest: false })).toEqual({ ok: false, code: 'forbidden' });
+      expect(authorizeCommentAction(a, user({ liveRole: 'speaker' }))).toEqual({ ok: false, code: 'forbidden' });
+      // the host (by row or by live role), a moderator who joined
+      expect(authorizeCommentAction(a, user({ appRole: 'sheikh', isHost: true, liveRole: null }))).toEqual({ ok: true });
+      expect(authorizeCommentAction(a, user({ appRole: 'sheikh', liveRole: 'host' }))).toEqual({ ok: true });
+      expect(authorizeCommentAction(a, user({ appRole: 'sheikh', liveRole: 'moderator' }))).toEqual({ ok: true });
+      // a sheikh who is not in this session cannot; content managers always can
+      expect(authorizeCommentAction(a, user({ appRole: 'sheikh', liveRole: null }))).toEqual({ ok: false, code: 'forbidden' });
+      for (const appRole of ['admin', 'publisher']) {
+        expect(preauthorizeCommentAction(a, { appRole, isGuest: false })).toEqual({ ok: true });
+        expect(authorizeCommentAction(a, user({ appRole, liveRole: null }))).toEqual({ ok: true });
+      }
+    }
+    expect(canModerateComments({ appRole: 'admin', isGuest: true, isHost: true, liveRole: 'host' })).toBe(false);
+  });
+
+  test('writing needs a LIVE session (green → not_live); moderation works in any status', () => {
+    expect(commentStatusVerdict('comment', 'live')).toEqual({ ok: true });
+    for (const s of ['scheduled', 'green', 'ended', 'processing', 'ready', 'failed', 'cancelled']) {
+      expect(commentStatusVerdict('comment', s)).toEqual({ ok: false, code: 'not_live' });
+    }
+    for (const a of ['comment_delete', 'comment_answered', 'comment_block'] as const) {
+      for (const s of ['green', 'live', 'ended', 'ready']) expect(commentStatusVerdict(a, s)).toEqual({ ok: true });
+    }
+    expect(LIVE_ERROR_STATUS.not_live).toBe(409);
+    // the room only exists while green / live — no LiveKit call otherwise
+    expect(shouldBroadcastComments('live')).toBe(true);
+    expect(shouldBroadcastComments('green')).toBe(true);
+    expect(shouldBroadcastComments('ended')).toBe(false);
+  });
+
+  test('text: 1–300 characters after trimming, counted like Postgres (code points)', () => {
+    expect(COMMENT_MAX_CHARS).toBe(300);
+    expect(commentTextVerdict('   \n ')).toEqual({ ok: false, code: 'empty' });
+    expect(commentTextVerdict('ما حكم صلاة الوتر؟')).toEqual({ ok: true });
+    expect(commentTextVerdict(`  ${'ب'.repeat(300)}  `)).toEqual({ ok: true });
+    expect(commentTextVerdict('ب'.repeat(301))).toEqual({ ok: false, code: 'too_long' });
+    // 300 emoji are 600 UTF-16 units but 300 characters for the DB check.
+    expect(commentLength('🌙'.repeat(300))).toBe(300);
+    expect(commentTextVerdict('🌙'.repeat(300))).toEqual({ ok: true });
+    expect(LIVE_ERROR_STATUS).toMatchObject({ empty: 400, too_long: 400, blocked_words: 400, blocked: 403, rate_limited: 429 });
+  });
+
+  test('SQL refusals (live_comment:<code>) map to their codes; anything else is a server error', () => {
+    for (const code of [
+      'not_found', 'not_live', 'guest_cannot_comment', 'not_present', 'blocked', 'empty', 'too_long',
+      'blocked_words', 'rate_limited', 'forbidden', 'invalid_target', 'bad_request',
+    ]) {
+      expect(commentRpcErrorCode(`live_comment:${code}`)).toBe(code);
+    }
+    expect(commentRpcErrorCode('live_comment:drop_table')).toBe('server_error');
+    expect(commentRpcErrorCode('permission denied for function live_post_comment')).toBe('server_error');
+    expect(commentRpcErrorCode(null)).toBe('server_error');
+  });
+
+  test('audit: staff acts only — an author deleting his own comment and writing are not moderation', () => {
+    expect(commentAuditAction('comment')).toBeNull();
+    expect(commentAuditAction('comment_delete', { by: 'author' })).toBeNull();
+    expect(commentAuditAction('comment_delete', { by: 'moderator' })).toBe('comment_delete');
+    expect(commentAuditAction('comment_answered')).toBe('comment_answered');
+    expect(commentAuditAction('comment_block')).toBe('comment_block');
+  });
+
+  test('request parsing', () => {
+    expect(parseLiveCommentRequest({ action: 'comment', sessionId: SESSION, kind: 'question', text: 'سؤال', anonymous: true })).toEqual({
+      ok: true,
+      value: { action: 'comment', sessionId: SESSION, kind: 'question', text: 'سؤال', anonymous: true },
+    });
+    expect(parseLiveCommentRequest({ action: 'comment', sessionId: SESSION, kind: 'note', text: 'x', anonymous: false })).toEqual({
+      ok: false,
+      error: 'invalid kind',
+    });
+    expect(parseLiveCommentRequest({ action: 'comment', sessionId: SESSION, kind: 'comment', anonymous: false })).toEqual({
+      ok: false,
+      error: 'text required',
+    });
+    // «بدون اسم» must be an explicit choice.
+    expect(parseLiveCommentRequest({ action: 'comment', sessionId: SESSION, kind: 'comment', text: 'x' })).toEqual({
+      ok: false,
+      error: 'anonymous required',
+    });
+    expect(parseLiveCommentRequest({ action: 'comment', sessionId: 'nope', kind: 'comment', text: 'x', anonymous: false }).ok).toBe(false);
+    expect(parseLiveCommentRequest({ action: 'comment_delete', sessionId: SESSION, commentId: COMMENT })).toEqual({
+      ok: true,
+      value: { action: 'comment_delete', sessionId: SESSION, commentId: COMMENT },
+    });
+    expect(parseLiveCommentRequest({ action: 'comment_block', sessionId: SESSION, commentId: 'x' })).toEqual({
+      ok: false,
+      error: 'commentId required',
+    });
+    expect(parseLiveCommentRequest({ action: 'comment_answered', sessionId: SESSION, commentId: COMMENT, answered: true })).toEqual({
+      ok: true,
+      value: { action: 'comment_answered', sessionId: SESSION, commentId: COMMENT, answered: true },
+    });
+    expect(parseLiveCommentRequest({ action: 'comment_answered', sessionId: SESSION, commentId: COMMENT })).toEqual({
+      ok: false,
+      error: 'answered required',
+    });
+    expect(parseLiveCommentRequest({ action: 'leave', sessionId: SESSION }).ok).toBe(false);
+  });
+
+  test('broadcast: only the public fields, UTF-8 JSON on topic "comments" — never mine / a user id', () => {
+    expect(COMMENTS_TOPIC).toBe('comments');
+    const row = {
+      id: COMMENT,
+      kind: 'question',
+      text: 'ما حكم الصلاة؟',
+      name: null,
+      gender: 'f',
+      answered: false,
+      at: '2026-09-30T18:00:00.123+00:00',
+      mine: true,
+      user_id: USER,
+    };
+    const c = toPublicComment(row)!;
+    expect(c).toEqual({
+      id: COMMENT,
+      kind: 'question',
+      text: 'ما حكم الصلاة؟',
+      name: null,
+      gender: 'f',
+      answered: false,
+      at: '2026-09-30T18:00:00.123+00:00',
+    });
+    const add = commentsMessage({ t: 'add', c });
+    expect(JSON.parse(add)).toEqual({ t: 'add', c });
+    expect(add).not.toContain(USER);
+    expect(add).not.toContain('mine');
+    expect(JSON.parse(commentsMessage({ t: 'del', id: COMMENT }))).toEqual({ t: 'del', id: COMMENT });
+    expect(JSON.parse(commentsMessage({ t: 'ans', id: COMMENT, answered: true }))).toEqual({ t: 'ans', id: COMMENT, answered: true });
+    // malformed rows are not broadcast
+    expect(toPublicComment({ ...row, gender: 'x' })).toBeNull();
+    expect(toPublicComment({ ...row, name: 5 })).toBeNull();
+    expect(toPublicComment(null)).toBeNull();
   });
 });

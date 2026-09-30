@@ -30,6 +30,7 @@ import { useSaveLiveLecture } from '@/hooks/useLiveAdmin';
 import { useSectionsFlat } from '@/hooks/useSections';
 import { arDateTime, arDuration, arNum } from '@/lib/format';
 import { InterventionsList } from './InterventionsList';
+import { LiveCommentsList } from './LiveCommentsList';
 import { ADMIN_LIVE_COPY, isValidFinalTitle, peakLine } from './liveAdminUi';
 import { ActionButton, InlineNote, LiveSourceChip } from './parts';
 import { SheikhSelect } from './SheikhSelect';
@@ -277,6 +278,7 @@ export function LiveDraftCard({
       </View>
 
       <InterventionsList sessionId={draft.sessionId} />
+      <LiveCommentsList sessionId={draft.sessionId} />
 
       {/* Publish */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 }}>

@@ -131,4 +131,9 @@ export const queryKeys = {
   // P5: my buddies in the room (identities) + whom I already invited to it.
   liveBuddiesPresent: (sessionId: string) => ['live', 'buddiesPresent', sessionId] as const,
   liveInvited: (sessionId: string) => ['live', 'invited', sessionId] as const,
+  // «التعليقات والأسئلة أثناء البث» (0147): the room's list (get_live_comments),
+  // and the staff list incl. deleted ones (admin_live_comments) — under
+  // ['live', 'admin', …] with the other staff live reads (useLiveAdmin liveAdminKeys.all).
+  liveComments: (sessionId: string) => ['live', 'comments', sessionId] as const,
+  liveAdminComments: (sessionId: string) => ['live', 'admin', 'comments', sessionId] as const,
 } as const;

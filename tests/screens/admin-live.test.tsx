@@ -18,6 +18,8 @@
  *    offers it to its host / a content manager, on the phone AND the web; it
  *    asks first (naming the section), then live-control `end`; a refusal stays
  *    on the card in Arabic.
+ *  - «التعليقات والأسئلة» (0147) stay with a majlis that went on air: one line
+ *    per card, read only when opened, deleted ones marked «حُذف».
  */
 import { Platform } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
@@ -94,6 +96,9 @@ const mockLive = {
   download: mk(),
   end: mk(),
   refresh: jest.fn(),
+  /** admin_live_comments per session (0147); the ids it was asked for. */
+  comments: [] as unknown[],
+  commentsAsked: [] as string[],
 };
 jest.mock('@/components/admin/live/useEndLiveSession', () => ({
   useEndLiveSession: () => mockLive.end,
@@ -110,6 +115,10 @@ jest.mock('@/hooks/useLiveAdmin', () => ({
   useRetryLiveRecording: () => mockLive.retry,
   useDownloadRawRecording: () => mockLive.download,
   useRefreshLiveAdmin: () => mockLive.refresh,
+  useAdminLiveComments: (id: string) => {
+    mockLive.commentsAsked.push(id);
+    return { data: mockLive.comments, isLoading: false, isError: false };
+  },
 }));
 
 import AdminLiveScreen from '../../app/admin/live';
@@ -201,6 +210,8 @@ beforeEach(() => {
   mockLive.download = mk();
   mockLive.end = mk();
   mockLive.refresh = jest.fn();
+  mockLive.comments = [];
+  mockLive.commentsAsked = [];
   mockLive.overview = {
     active: [liveNow],
     scheduled: [scheduled],
@@ -236,6 +247,30 @@ test('D7 on the phone: section → CreateLiveSheet → the new green room', asyn
   await fireEvent.press(screen.getByText('ورقة الإنشاء sec-1 كتاب التوحيد'));
   expect(mockLive.refresh).toHaveBeenCalled();
   expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/live/green/[id]', params: { id: 'new-session' } });
+});
+
+test('«التعليقات والأسئلة» stay with the majlis: loaded when opened, deleted ones marked, nameless stays nameless', async () => {
+  mockLive.overview = { active: [], scheduled: [scheduled], recent: [ready], isManager: true };
+  mockLive.comments = [
+    { id: 'c1', kind: 'comment', text: 'بارك الله فيكم', name: 'خالد', gender: 'm', answered: false, at: '2026-09-29T15:10:00.000Z' },
+    { id: 'c2', kind: 'question', text: 'ما حكم المسألة؟', name: null, gender: 'f', answered: true, at: '2026-09-29T15:12:00.000Z' },
+    { id: 'c3', kind: 'comment', text: 'كلام محذوف', name: null, gender: 'm', answered: false, at: '2026-09-29T15:13:00.000Z', deleted: true },
+  ];
+  await render(<AdminLiveScreen />);
+  // Only the session that went on air has the list — and nothing is read until it is opened.
+  expect(screen.getAllByText('التعليقات والأسئلة')).toHaveLength(1);
+  expect(mockLive.commentsAsked).toHaveLength(0);
+
+  await fireEvent.press(screen.getByText('التعليقات والأسئلة'));
+  expect(mockLive.commentsAsked).toContain('s-ready');
+  expect(screen.getByText('التعليقات والأسئلة (٣)')).toBeTruthy();
+  expect(screen.getByText('بارك الله فيكم')).toBeTruthy();
+  expect(screen.getByText('طالبة')).toBeTruthy();
+  expect(screen.getByText('طالب')).toBeTruthy();
+  // No «سؤال» / «تمت الإجابة» marks in the UI (owner 2026-09-30).
+  expect(screen.queryByText(/تمت الإجابة/)).toBeNull();
+  expect(screen.getByText(/حُذف/)).toBeTruthy();
+  expect(screen.getByText('كلام محذوف')).toBeTruthy();
 });
 
 test('D3: while a session holds the slot, the start card says so up front', async () => {
