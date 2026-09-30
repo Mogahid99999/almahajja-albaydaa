@@ -28,6 +28,8 @@ export const ADMIN_LIVE_COPY = {
   openGreen: 'فتح غرفة التجهيز',
   inGreen: 'في غرفة التجهيز',
   cancel: 'إلغاء المجلس',
+  endLive: 'إنهاء البث للجميع',
+  ending: 'جارٍ إنهاء البث…',
   retry: 'إعادة المعالجة',
   openInbox: 'فتح في الواردة',
   download: 'تنزيل التسجيل الأصلي',
@@ -160,6 +162,21 @@ export function canCancel(s: LiveAdminSession, manager: boolean): boolean {
   return (s.status === 'scheduled' || s.status === 'green') && (manager || s.isMine);
 }
 
+/**
+ * «إنهاء البث للجميع» on a LIVE session: its host, or a content manager (admin /
+ * publisher) — liveRules authorizeLiveAction `end`. A green room is closed with
+ * «إلغاء المجلس» instead ({@link canCancel}).
+ */
+export function canEndLive(s: LiveAdminSession, manager: boolean): boolean {
+  return s.status === 'live' && (manager || s.isMine);
+}
+
+/** The end confirmation: where the recording goes. */
+export function endLiveMessage(s: Pick<LiveAdminSession, 'title' | 'sectionTitle'>): string {
+  const where = s.sectionTitle ? `قسم ${s.sectionTitle}` : 'قسم المجلس';
+  return `ينتهي «${s.title}» عند جميع الحاضرين، ويُحفظ التسجيل في ${where}.`;
+}
+
 /** «بدأ منذ ساعة و١٢ دقيقة» — a friendlier elapsed line than liveUi's minutes-only one. */
 export function startedAgo(startedAt: string | null, nowMs: number): string | null {
   if (!startedAt) return null;
@@ -203,7 +220,7 @@ export function interventionLine(i: LiveIntervention): string {
   const stints = i.stints.map(stintLine).filter((x): x is string => !!x);
   if (stints.length) parts.push(`عند ${stints.join(' · ')}`);
   if (i.spokeSeconds > 0) parts.push(`${i.gender === 'f' ? 'تحدّثت' : 'تحدّث'} ${arDuration(i.spokeSeconds)}`);
-  else if (!stints.length) parts.push(i.gender === 'f' ? 'أُعطيت الكلمة' : 'أُعطي الكلمة');
+  else if (!stints.length) parts.push(i.gender === 'f' ? 'سُمح لها بالتحدث' : 'سُمح له بالتحدث');
   if (i.role === 'moderator') parts.push(i.gender === 'f' ? 'مشرفة' : 'مشرف');
   return parts.join(' · ');
 }

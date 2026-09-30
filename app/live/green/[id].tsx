@@ -212,7 +212,9 @@ function GreenRoom({ collapse }: { collapse: () => void }) {
         }}
       >
         <IconButton icon="chevron-down" onPress={collapse} accessibilityLabel="خروج من غرفة التجهيز" />
-        <Txt size={13} weight="semibold" color={colors.textSlate}>
+        {/* flex:1 + centred: a width-less Arabic label in this row is measured
+            short on Android and loses its last word («غرفة» — device check). */}
+        <Txt size={13} weight="semibold" color={colors.textSlate} style={{ flex: 1, textAlign: 'center' }}>
           {LIVE_P4_COPY.greenRoom}
         </Txt>
         <View style={{ width: 40 }} />

@@ -550,7 +550,7 @@ export function auditAction(
   return action;
 }
 
-// ─── Hand «طلب الكلمة» (P4) ────────────────────────────────────────────────────
+// ─── Hand «طلب التحدث» (P4) ────────────────────────────────────────────────────
 
 /** §10: at most one hand toggle per 5 s per participant (server-side, 0141 hand_at). */
 export const HAND_RATE_LIMIT_MS = 5_000;
@@ -569,7 +569,7 @@ export function handRateLimited(
 
 /**
  * The session-level checks of a hand toggle, after authorizeLiveAction /
- * canTarget / statusAfter: raising needs «استقبال طلبات الكلمة» on
+ * canTarget / statusAfter: raising needs «استقبال طلبات التحدث» on
  * (requests_closed) and the rate limit (rate_limited). Lowering is always
  * allowed — never trap a hand up (it still records hand_at, so a raise right
  * after a lower waits the window).
@@ -634,7 +634,7 @@ export function recordingFilepath(env: "stg" | "prd"): string {
  */
 export const RECORDING_AUDIO = { bitrateKbps: 64, frequencyHz: 48000 } as const;
 
-/** Room metadata clients read for «استقبال طلبات الكلمة». */
+/** Room metadata clients read for «استقبال طلبات التحدث». */
 export function roomMetadata(allowRequests: boolean): string {
   return JSON.stringify({ allowRequests });
 }
@@ -671,7 +671,7 @@ export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   not_present: 409,
   no_track: 409,
   no_moderator_present: 409,
-  /** hand up while «استقبال طلبات الكلمة» is off. */
+  /** hand up while «استقبال طلبات التحدث» is off. */
   requests_closed: 409,
   /** hand toggled again within HAND_RATE_LIMIT_MS. */
   rate_limited: 429,

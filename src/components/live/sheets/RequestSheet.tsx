@@ -1,7 +1,7 @@
 /**
  * A raised hand, for the moderators (PLAN_LIVE_V23 §7.6): who asks (the REAL
  * name for staff — D2, resolved by the room), since when, and
- * «السماح بالكلمة» (approve) / «الاعتذار» (reject). A refusal from
+ * «السماح بالتحدث» (approve) / «الاعتذار» (reject). A refusal from
  * live-control shows as one short Arabic line (a guest: «الضيف يستمع فقط…»).
  */
 import { useEffect } from 'react';
@@ -74,8 +74,8 @@ export function RequestSheet({
               ? 'غادرت الحلقة'
               : 'غادر الحلقة'
             : g === 'f'
-              ? 'لم تعد تطلب الكلمة'
-              : 'لم يعد يطلب الكلمة'}
+              ? 'لم تعد تطلب التحدث'
+              : 'لم يعد يطلب التحدث'}
         </Txt>
       )}
       <SheetError text={error} />

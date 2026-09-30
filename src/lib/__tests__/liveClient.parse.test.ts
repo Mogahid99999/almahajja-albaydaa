@@ -1,6 +1,6 @@
 /**
  * src/lib/liveClient.ts — the pure P4 parsers (the SDK itself is never loaded in Jest).
- *  - room metadata {allowRequests}: anything unreadable keeps «طلب الكلمة» OPEN
+ *  - room metadata {allowRequests}: anything unreadable keeps «طلب التحدث» OPEN
  *    (a moderator closes it explicitly; a parse glitch must not silence the room);
  *  - the server's control data message {t:'rejected'} → «اعتذر المشرف…».
  */

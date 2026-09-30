@@ -13,4 +13,8 @@ module.exports = {
   testMatch: ['<rootDir>/tests/contract/**/*.contract.test.ts'],
   modulePathIgnorePatterns: ['<rootDir>/.claude/'],
   testTimeout: 30000,
+  // The suites share ONE staging project: the live flag suite switches
+  // app_config.live_enabled ('staff' / 'off') while it runs, which breaks any
+  // live suite running beside it (V23 P7) — one file at a time.
+  maxWorkers: 1,
 };

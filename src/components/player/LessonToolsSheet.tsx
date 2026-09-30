@@ -3,11 +3,11 @@
  * bar's tools icon next to تحميل. Same targets as the chip row.
  */
 import Feather from '@expo/vector-icons/Feather';
-import { Modal, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Txt } from '@/components/ui';
+import { SheetModal, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 
 type Router = ReturnType<typeof useRouter>;
@@ -36,49 +36,43 @@ export function LessonToolsSheet({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="إغلاق" />
-        <View style={[styles.sheet, { paddingBottom: 18 + insets.bottom }]}>
-          <View style={styles.handle} />
-          <Txt weight="semibold" size={14} color={colors.textSlate} style={{ marginBottom: 6 }}>
-            أدوات الدرس
-          </Txt>
-          {TOOLS.map((tool) => (
-            <Pressable
-              key={tool.path}
-              onPress={() => open(tool.path)}
-              accessibilityRole="button"
-              accessibilityLabel={tool.label}
-              style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
-            >
-              <View style={styles.rowIcon}>
-                <Feather name={tool.icon} size={17} color={colors.primaryTeal} />
-              </View>
-              <Txt size={14.5} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
-                {tool.label}
-              </Txt>
-              <Feather name="chevron-left" size={16} color={colors.textGhost} />
-            </Pressable>
-          ))}
-        </View>
+    <SheetModal
+      visible={visible}
+      onClose={onClose}
+      backdropColor={BACKDROP_COLOR}
+      backdropAccessibilityLabel="إغلاق"
+    >
+      <View style={[styles.sheet, { paddingBottom: 18 + insets.bottom }]}>
+        <View style={styles.handle} />
+        <Txt weight="semibold" size={14} color={colors.textSlate} style={{ marginBottom: 6 }}>
+          أدوات الدرس
+        </Txt>
+        {TOOLS.map((tool) => (
+          <Pressable
+            key={tool.path}
+            onPress={() => open(tool.path)}
+            accessibilityRole="button"
+            accessibilityLabel={tool.label}
+            style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+          >
+            <View style={styles.rowIcon}>
+              <Feather name={tool.icon} size={17} color={colors.primaryTeal} />
+            </View>
+            <Txt size={14.5} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
+              {tool.label}
+            </Txt>
+            <Feather name="chevron-left" size={16} color={colors.textGhost} />
+          </Pressable>
+        ))}
       </View>
-    </Modal>
+    </SheetModal>
   );
 }
 
+/** This sheet's (deeper) dim — drawn and faded by SheetModal. */
+const BACKDROP_COLOR = 'rgba(15,40,36,0.5)';
+
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' } as ViewStyle,
-
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15,40,36,0.5)',
-  } as ViewStyle,
-
   sheet: {
     backgroundColor: colors.bgSand,
     borderTopLeftRadius: 22,

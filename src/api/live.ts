@@ -430,9 +430,12 @@ export async function liveControl(
 
 /**
  * create_live_session (0138) — sheikh / admin / publisher, from the section page
- * (the recording lands in that section). Starts now: the caller goes straight
- * to the green room. Server errors (D3 «بث آخر قائم», title length…) come back
- * as the Postgres error with an Arabic message.
+ * or the staff screen (the recording lands in that section). Without
+ * `scheduledAt` it starts now (status green): the caller goes straight to the
+ * green room. With `scheduledAt` (ISO) it is `scheduled`: students see it in
+ * «المجالس القادمة» with «ذكّرني», and the host opens the green room later.
+ * Server errors (D3 «بث آخر قائم», title length, a past time…) come back as
+ * the Postgres error with an Arabic message.
  */
 export async function createLiveSession(input: {
   sectionId: string;
@@ -440,12 +443,15 @@ export async function createLiveSession(input: {
   /** «إشعار للجميع عند البدء». */
   notify?: boolean;
   allowRequests?: boolean;
+  /** «في موعد لاحق» — an ISO timestamp; omitted / null = now. */
+  scheduledAt?: string | null;
 }): Promise<string> {
   const { data, error } = await supabase.rpc('create_live_session', {
     p_section: input.sectionId,
     p_title: input.title,
     p_notify: input.notify ?? true,
     p_allow_requests: input.allowRequests ?? true,
+    ...(input.scheduledAt ? { p_scheduled_at: input.scheduledAt } : {}),
   });
   if (error) throw error;
   return data as string;

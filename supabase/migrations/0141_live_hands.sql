@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 0141_live_hands.sql
--- المَحجّة البَيْضَاء — V23 P4: «طلب الكلمة» (raise hand) goes through the server.
+-- المَحجّة البَيْضَاء — V23 P4: «طلب التحدث» (raise hand) goes through the server.
 --
 -- P4 makes every LiveKit participant attribute (g / r / h / hid) and the
 -- participant name SERVER-ONLY: no token or permission carries

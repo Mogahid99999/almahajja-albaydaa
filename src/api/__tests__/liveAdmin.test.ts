@@ -15,8 +15,10 @@ import { Platform } from 'react-native';
 
 const mockRpc = jest.fn();
 const mockGetSession = jest.fn();
+const mockInvoke = jest.fn();
 jest.mock('@/lib/supabase', () => ({
   supabase: {
+    functions: { invoke: (...a: unknown[]) => mockInvoke(...a) },
     rpc: (...a: unknown[]) => mockRpc(...a),
     auth: { getSession: (...a: unknown[]) => mockGetSession(...a) },
   },
@@ -24,6 +26,7 @@ jest.mock('@/lib/supabase', () => ({
 
 import {
   downloadRawRecording,
+  endLiveSession,
   getLiveAdminOverview,
   getLiveInbox,
   getLiveInterventions,
@@ -283,5 +286,29 @@ describe('raw recording download (media worker)', () => {
     (global as { fetch: unknown }).fetch = fetchSpy;
     await expect(downloadRawRecording('s1', 'مجلس')).rejects.toThrow(RAW_DOWNLOAD_COPY.unauthorized);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('endLiveSession («إنهاء البث للجميع» from the staff screen)', () => {
+  test('live-control `end` for that session', async () => {
+    mockInvoke.mockResolvedValue({ data: { ok: true, status: 'ended' }, error: null });
+    await endLiveSession('s-live');
+    expect(mockInvoke).toHaveBeenCalledWith('live-control', {
+      body: { sessionId: 's-live', action: 'end' },
+      timeout: 20_000,
+    });
+  });
+
+  test('a refusal is a LiveControlError with the server code', async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { name: 'FunctionsHttpError', context: { status: 403, json: async () => ({ error: 'forbidden' }) } },
+    });
+    await expect(endLiveSession('s-live')).rejects.toMatchObject({ name: 'LiveControlError', code: 'forbidden' });
+  });
+
+  test('no answer → «network», never a hang', async () => {
+    mockInvoke.mockResolvedValue({ data: null, error: { name: 'FunctionsFetchError', context: {} } });
+    await expect(endLiveSession('s-live')).rejects.toMatchObject({ code: 'network' });
   });
 });

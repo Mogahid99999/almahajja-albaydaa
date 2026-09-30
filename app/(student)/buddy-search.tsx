@@ -10,7 +10,7 @@
  * Route: /(student)/buddy-search
  */
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, TextInput, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
@@ -27,6 +27,7 @@ import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
+import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';
 
 export default function BuddySearchScreen() {
@@ -242,83 +243,73 @@ export default function BuddySearchScreen() {
       )}
 
       {/* ── Confirmation sheet ─────────────────────────────────────────────── */}
-      <Modal
-        visible={!!candidate}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCandidate(null)}
-      >
+      <SheetModal visible={!!candidate} onClose={() => setCandidate(null)}>
         <Pressable
-          onPress={() => setCandidate(null)}
-          style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
+          onPress={() => {}}
+          style={{
+            backgroundColor: colors.bgSandRaised,
+            borderTopLeftRadius: radius.artwork,
+            borderTopRightRadius: radius.artwork,
+            paddingHorizontal: 22,
+            paddingTop: 18,
+            paddingBottom: 34,
+            gap: 14,
+          }}
         >
-          <Pressable
-            onPress={() => {}}
+          <View
             style={{
-              backgroundColor: colors.bgSandRaised,
-              borderTopLeftRadius: radius.artwork,
-              borderTopRightRadius: radius.artwork,
-              paddingHorizontal: 22,
-              paddingTop: 18,
-              paddingBottom: 34,
-              gap: 14,
+              alignSelf: 'center',
+              width: 44,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: colors.borderSand2,
             }}
+          />
+
+          <Txt weight="display" size={19} color={colors.primaryTeal} align="center">
+            دعوة رفيق دراسة
+          </Txt>
+
+          <Txt size={13.5} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
+            {user?.gender === 'female'
+              ? `هل تريدين دعوة ${candidate?.displayName ?? ''} لتكون رفيقتك في طلب العلم؟`
+              : `هل تريد دعوة ${candidate?.displayName ?? ''} ليكون رفيقك في طلب العلم؟`}
+          </Txt>
+
+          {send.isError ? (
+            <Txt size={12} color={colors.stateDanger} align="center">
+              {(send.error as Error).message}
+            </Txt>
+          ) : null}
+
+          <Pressable
+            onPress={onConfirmSend}
+            disabled={send.isPending}
+            accessibilityRole="button"
+            style={({ pressed }) => ({
+              paddingVertical: 14,
+              borderRadius: radius.input,
+              alignItems: 'center',
+              backgroundColor: colors.primaryTeal,
+              opacity: pressed || send.isPending ? 0.7 : 1,
+            })}
           >
-            <View
-              style={{
-                alignSelf: 'center',
-                width: 44,
-                height: 5,
-                borderRadius: 3,
-                backgroundColor: colors.borderSand2,
-              }}
-            />
-
-            <Txt weight="display" size={19} color={colors.primaryTeal} align="center">
-              دعوة رفيق دراسة
+            <Txt size={15} weight="semibold" color={colors.onTealPrimary}>
+              {send.isPending ? 'جارٍ الإرسال…' : 'إرسال الدعوة'}
             </Txt>
+          </Pressable>
 
-            <Txt size={13.5} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
-              {user?.gender === 'female'
-                ? `هل تريدين دعوة ${candidate?.displayName ?? ''} لتكون رفيقتك في طلب العلم؟`
-                : `هل تريد دعوة ${candidate?.displayName ?? ''} ليكون رفيقك في طلب العلم؟`}
+          <Pressable
+            onPress={() => setCandidate(null)}
+            accessibilityRole="button"
+            style={({ pressed }) => ({ alignItems: 'center', paddingVertical: 6, opacity: pressed ? 0.7 : 1 })}
+          >
+            <Txt size={13} color={colors.textMuted}>
+              إلغاء
             </Txt>
-
-            {send.isError ? (
-              <Txt size={12} color={colors.stateDanger} align="center">
-                {(send.error as Error).message}
-              </Txt>
-            ) : null}
-
-            <Pressable
-              onPress={onConfirmSend}
-              disabled={send.isPending}
-              accessibilityRole="button"
-              style={({ pressed }) => ({
-                paddingVertical: 14,
-                borderRadius: radius.input,
-                alignItems: 'center',
-                backgroundColor: colors.primaryTeal,
-                opacity: pressed || send.isPending ? 0.7 : 1,
-              })}
-            >
-              <Txt size={15} weight="semibold" color={colors.onTealPrimary}>
-                {send.isPending ? 'جارٍ الإرسال…' : 'إرسال الدعوة'}
-              </Txt>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setCandidate(null)}
-              accessibilityRole="button"
-              style={({ pressed }) => ({ alignItems: 'center', paddingVertical: 6, opacity: pressed ? 0.7 : 1 })}
-            >
-              <Txt size={13} color={colors.textMuted}>
-                إلغاء
-              </Txt>
-            </Pressable>
           </Pressable>
         </Pressable>
-      </Modal>
+      </SheetModal>
 
       {/* iOS deferred-gender capture — once saved, `hasGender` flips and the
           search UI replaces the prompt card automatically. */}

@@ -1,6 +1,6 @@
 /**
  * «إدارة المجلس» — the moderators' sheet (PLAN_LIVE_V23 §7.6):
- *  - «استقبال طلبات الكلمة» switch (room metadata, live-control set_allow_requests)
+ *  - «استقبال طلبات التحدث» switch (room metadata, live-control set_allow_requests)
  *  - who is on the floor now (speakers + moderators) → PersonSheet
  *  - pending requests, oldest first → RequestSheet
  * Names come resolved from the room (staff see real names — D2).

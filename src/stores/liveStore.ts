@@ -65,10 +65,10 @@ export type { LiveConn, LivePerson } from "@/lib/liveConnection";
  * (a quiet banner, ~6 s) and calls clearNotice(); `id` changes on every new one.
  *   hand_raised     «رفعت يدك. يراها المشرفون في مكانك من الحلقة»
  *   accepted        «صرت من المتحدثين. افتح الميكروفون وأغلقه متى شئت. المجلس يُسجَّل وصوتك ضمنه»
- *   rejected        «اعتذر المشرف عن إعطائك الكلمة الآن»
+ *   rejected        «اعتذر المشرف عن قبول طلب التحدث الآن»
  *   muted           «أغلق المشرف ميكروفونك، وتستطيع فتحه متى احتجت»
- *   demoted         «أعادك المشرف إلى الاستماع. ارفع يدك من جديد إن أردت الكلمة»
- *   requests_closed «لا يستقبل المشرفون طلبات الكلمة الآن»
+ *   demoted         «أعادك المشرف إلى الاستماع. ارفع يدك من جديد إن أردت التحدث»
+ *   requests_closed «لا يستقبل المشرفون طلبات التحدث الآن»
  *   rate_limited    «انتظر قليلاً ثم حاول مجدداً»
  *   mic_denied      «اسمح للتطبيق باستخدام الميكروفون لتتحدث»
  *   failed          «تعذّر تنفيذ الطلب. حاول مرة أخرى»
@@ -115,11 +115,11 @@ export interface LiveState {
   notice: LiveNotice | null;
   /** My microphone is published and unmuted. */
   micOn: boolean;
-  /** raiseHand/lowerHand in flight (disable «طلب الكلمة» meanwhile). */
+  /** raiseHand/lowerHand in flight (disable «طلب التحدث» meanwhile). */
   handBusy: boolean;
   /** setMic in flight. */
   micBusy: boolean;
-  /** Room metadata «استقبال طلبات الكلمة» (moderators switch it). */
+  /** Room metadata «استقبال طلبات التحدث» (moderators switch it). */
   allowRequests: boolean;
 
   /** Throws LiveTokenError (e.g. 'gender_required' → show GenderPrompt, then call join again). */
@@ -141,7 +141,7 @@ export interface LiveState {
   stepDown(): Promise<void>;
   /** Moderators. Throws LiveControlError (code: forbidden | invalid_target | not_present | guest_cannot_speak | network …). */
   moderate(action: LiveModerationAction, identity: string): Promise<void>;
-  /** Moderators: «استقبال طلبات الكلمة». Throws LiveControlError. */
+  /** Moderators: «استقبال طلبات التحدث». Throws LiveControlError. */
   setAllowRequests(allow: boolean): Promise<void>;
   /** Host: hand the session to a moderator present (host_leave), then leave the room. Throws LiveControlError. */
   handOver(identity: string): Promise<void>;

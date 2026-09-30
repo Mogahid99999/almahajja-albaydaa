@@ -1,7 +1,7 @@
 /**
  * Small shared visuals of the live UI, ported from the approved prototype:
  *  - `LiveAvatar`   the round person tile (`.pav`) with the brother / niqab icon
- *  - `SheikhAvatar` the teal tile with the brass initial (`.av.k-sheikh`)
+ *  - `SheikhAvatar` the teal tile with the brass sheikh pictogram (`.av.k-sheikh`)
  *  - `LiveMarker`   the small live diamond (`.lm`) — static, calm
  *  - `HandGlyph`    the raised-hand stroke icon (Feather has none)
  *  - `VoiceBars`    four quiet voice bars (`.vb`), static
@@ -9,10 +9,11 @@
 import { View, type ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { Rhombus, Txt } from '@/components/ui';
+import { Rhombus } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { BrotherIcon } from './BrotherIcon';
 import { NiqabIcon } from './NiqabIcon';
+import { SheikhIcon, sheikhIconLabel } from './SheikhIcon';
 import { LIVE, type Sex } from './liveUi';
 
 export function LiveAvatar({
@@ -79,9 +80,11 @@ export function LiveAvatar({
   );
 }
 
-/** The sheikh's tile: teal disc, brass Amiri initial. */
-export function SheikhAvatar({ name, size }: { name: string; size: number }) {
-  const initial = Array.from(name.replace(/^(الشيخ|د\.|الدكتور)\s+/, '').trim())[0] ?? 'ع';
+/**
+ * The sheikh's tile: teal disc, brass sheikh pictogram (owner 2026-09-29: an
+ * icon, never the name's initial / a number). Announced with his name.
+ */
+export function SheikhAvatar({ name, size }: { name: string | null | undefined; size: number }) {
   return (
     <View
       style={{
@@ -95,9 +98,12 @@ export function SheikhAvatar({ name, size }: { name: string; size: number }) {
         justifyContent: 'center',
       }}
     >
-      <Txt weight="display" size={size * 0.44} color={colors.accentBrass} align="center" centerGlyph>
-        {initial}
-      </Txt>
+      <SheikhIcon
+        size={Math.round(size * 0.62)}
+        color={colors.accentBrass}
+        band={colors.primaryTeal}
+        label={sheikhIconLabel(name)}
+      />
     </View>
   );
 }

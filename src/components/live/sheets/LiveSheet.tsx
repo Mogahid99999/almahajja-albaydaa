@@ -1,13 +1,14 @@
 /**
- * The bottom-sheet frame of the live sheets (same Modal pattern as the app's
- * GenderPrompt): dim backdrop (tap to close), sand panel with a rounded top,
- * header = title + sub on the RTL start, close «×» on the end.
+ * The bottom-sheet frame of the live sheets, on the shared SheetModal (the dim
+ * fades in place, only the panel slides — RN Modal "slide" used to carry the
+ * dim up the screen with it): dim backdrop (tap to close), sand panel with a
+ * rounded top, header = title + sub on the RTL start, close «×» on the end.
  */
 import type { ReactNode } from 'react';
-import { Modal, Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { IconButton, Txt } from '@/components/ui';
+import { IconButton, SheetModal, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 
 export function LiveSheet({
@@ -18,6 +19,7 @@ export function LiveSheet({
   showClose = true,
   children,
   maxHeightRatio,
+  heightRatio,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -27,49 +29,51 @@ export function LiveSheet({
   children: ReactNode;
   /** Cap the panel (e.g. 0.82 for long lists); content sizes itself otherwise. */
   maxHeightRatio?: number;
+  /**
+   * A FIXED panel height instead (e.g. 0.72) — for sheets with a search field:
+   * a content-sized panel shrinks as results narrow and sinks behind the
+   * keyboard; a fixed one keeps the field high on the screen.
+   */
+  heightRatio?: number;
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Pressable
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(22,53,47,0.35)' }}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="إغلاق"
-        />
-        <View
-          style={{
-            backgroundColor: colors.bgSandRaised,
-            borderTopLeftRadius: radius.artwork,
-            borderTopRightRadius: radius.artwork,
-            paddingHorizontal: 20,
-            paddingTop: 10,
-            paddingBottom: insets.bottom + 22,
-            ...(maxHeightRatio ? { maxHeight: `${Math.round(maxHeightRatio * 100)}%` as const } : null),
-          }}
-        >
-          <View style={{ alignItems: 'center', paddingBottom: 12 }}>
-            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.borderSand2 }} />
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
-            <View style={{ flex: 1 }}>
-              <Txt weight="display" size={21} color={colors.primaryTeal} style={{ lineHeight: 30 }}>
-                {title}
+    <SheetModal visible={visible} onClose={onClose} backdropAccessibilityLabel="إغلاق">
+      <View
+        style={{
+          backgroundColor: colors.bgSandRaised,
+          borderTopLeftRadius: radius.artwork,
+          borderTopRightRadius: radius.artwork,
+          paddingHorizontal: 20,
+          paddingTop: 10,
+          paddingBottom: insets.bottom + 22,
+          ...(heightRatio
+            ? { height: `${Math.round(heightRatio * 100)}%` as const }
+            : maxHeightRatio
+              ? { maxHeight: `${Math.round(maxHeightRatio * 100)}%` as const }
+              : null),
+        }}
+      >
+        <View style={{ alignItems: 'center', paddingBottom: 12 }}>
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.borderSand2 }} />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+          <View style={{ flex: 1 }}>
+            <Txt weight="display" size={21} color={colors.primaryTeal} style={{ lineHeight: 30 }}>
+              {title}
+            </Txt>
+            {sub ? (
+              <Txt size={12.5} color={colors.textFaint} style={{ lineHeight: 20, marginTop: 2 }}>
+                {sub}
               </Txt>
-              {sub ? (
-                <Txt size={12.5} color={colors.textFaint} style={{ lineHeight: 20, marginTop: 2 }}>
-                  {sub}
-                </Txt>
-              ) : null}
-            </View>
-            {showClose ? (
-              <IconButton icon="x" size={36} iconSize={18} onPress={onClose} accessibilityLabel="إغلاق" />
             ) : null}
           </View>
-          {children}
+          {showClose ? (
+            <IconButton icon="x" size={36} iconSize={18} onPress={onClose} accessibilityLabel="إغلاق" />
+          ) : null}
         </View>
+        {children}
       </View>
-    </Modal>
+    </SheetModal>
   );
 }

@@ -5,7 +5,8 @@
  *  - staff's green room here (P4) → «العودة إلى غرفة التجهيز»
  *  - staff who can host (admin / publisher / sheikh — create_live_session),
  *    nothing live/green here → «ابدأ مجلساً مباشراً» → CreateLiveSheet → the
- *    green room (under a scheduled pin too).
+ *    green room (under a scheduled pin too), or «في موعد لاحق» → a calm
+ *    «جُدول المجلس: …» line (the scheduled pin appears with the refetch).
  * Renders nothing otherwise. TODO(P6): the review state.
  */
 import Feather from '@expo/vector-icons/Feather';
@@ -21,6 +22,7 @@ import { useSectionPage } from '@/hooks/useSections';
 import { useLiveStore } from '@/stores/liveStore';
 import { LiveMarker } from './LiveAvatar';
 import { useNow } from './LiveHomeCard';
+import { scheduledConfirmLine } from './liveSchedule';
 import {
   LIVE_COPY,
   LIVE_P4_COPY,
@@ -48,6 +50,7 @@ export function LiveSectionPin({ sectionId }: { sectionId: string }) {
   // Already cached by the section page (same query) — the title prefill.
   const sectionTitle = useSectionPage(sectionId).data?.section?.title ?? '';
   const [createOpen, setCreateOpen] = useState(false);
+  const [scheduledLine, setScheduledLine] = useState<string | null>(null);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -64,7 +67,22 @@ export function LiveSectionPin({ sectionId }: { sectionId: string }) {
   const staffStart =
     canStart && !live && !green ? (
       <>
-        <StartLiveCta onPress={() => setCreateOpen(true)} />
+        <StartLiveCta
+          onPress={() => {
+            setScheduledLine(null);
+            setCreateOpen(true);
+          }}
+        />
+        {scheduledLine ? (
+          <Txt
+            size={12.5}
+            color={colors.primaryTeal}
+            style={{ marginTop: 8, lineHeight: 20, alignSelf: 'stretch' }}
+            accessibilityLiveRegion="polite"
+          >
+            {scheduledLine}
+          </Txt>
+        ) : null}
         <CreateLiveSheet
           visible={createOpen}
           onClose={() => setCreateOpen(false)}
@@ -77,6 +95,10 @@ export function LiveSectionPin({ sectionId }: { sectionId: string }) {
               pushTimer.current = null;
               router.push(liveGreenHref(id));
             }, AFTER_SHEET_MS);
+          }}
+          onScheduled={(_id, at) => {
+            setCreateOpen(false);
+            setScheduledLine(scheduledConfirmLine(at, Date.now()));
           }}
         />
       </>

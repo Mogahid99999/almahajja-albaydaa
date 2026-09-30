@@ -9,7 +9,7 @@
  * Route: /(student)/activity  (opened from the streak ring on رحلتي العلمية).
  */
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
@@ -32,6 +32,7 @@ import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
+import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';
 import { JourneyGate } from '@/components/journey/JourneyGate';
 
@@ -186,48 +187,43 @@ export default function ActivityScreen() {
       )}
 
       {/* Day detail sheet */}
-      <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
+      <SheetModal visible={!!selected} onClose={() => setSelected(null)}>
         <Pressable
-          onPress={() => setSelected(null)}
-          style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
+          onPress={() => {}}
+          style={{
+            backgroundColor: colors.bgSandRaised,
+            borderTopLeftRadius: radius.artwork,
+            borderTopRightRadius: radius.artwork,
+            paddingHorizontal: 22,
+            paddingTop: 18,
+            // Clear the system nav bar (gesture pill / 3-button) so the last
+            // detail line isn't hidden behind it.
+            paddingBottom: 24 + insets.bottom,
+            gap: 10,
+          }}
         >
-          <Pressable
-            onPress={() => {}}
-            style={{
-              backgroundColor: colors.bgSandRaised,
-              borderTopLeftRadius: radius.artwork,
-              borderTopRightRadius: radius.artwork,
-              paddingHorizontal: 22,
-              paddingTop: 18,
-              // Clear the system nav bar (gesture pill / 3-button) so the last
-              // detail line isn't hidden behind it.
-              paddingBottom: 24 + insets.bottom,
-              gap: 10,
-            }}
-          >
-            <View style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderSand2 }} />
-            {selected ? (
-              <>
-                <Txt weight="display" size={17} color={colors.primaryTeal} align="center">
-                  {longDate(selected.day)}
-                </Txt>
-                {selected.secondsListened > 0 ? (
-                  <DetailLine text={`استمعت ${arNum(Math.round(selected.secondsListened / 60))} دقيقة`} />
-                ) : null}
-                {selected.lessonsCompleted > 0 ? (
-                  <DetailLine text={`أكملت ${arNum(selected.lessonsCompleted)} ${selected.lessonsCompleted === 1 ? 'درساً' : 'دروس'}`} />
-                ) : null}
-                {selected.quizzesPassed > 0 ? (
-                  <DetailLine text={`اجتزت ${arNum(selected.quizzesPassed)} ${selected.quizzesPassed === 1 ? 'اختباراً' : 'اختبارات'}`} />
-                ) : null}
-                {selected.benefitsWritten > 0 ? (
-                  <DetailLine text={`كتبت ${arNum(selected.benefitsWritten)} ${selected.benefitsWritten === 1 ? 'فائدة' : 'فوائد'}`} />
-                ) : null}
-              </>
-            ) : null}
-          </Pressable>
+          <View style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderSand2 }} />
+          {selected ? (
+            <>
+              <Txt weight="display" size={17} color={colors.primaryTeal} align="center">
+                {longDate(selected.day)}
+              </Txt>
+              {selected.secondsListened > 0 ? (
+                <DetailLine text={`استمعت ${arNum(Math.round(selected.secondsListened / 60))} دقيقة`} />
+              ) : null}
+              {selected.lessonsCompleted > 0 ? (
+                <DetailLine text={`أكملت ${arNum(selected.lessonsCompleted)} ${selected.lessonsCompleted === 1 ? 'درساً' : 'دروس'}`} />
+              ) : null}
+              {selected.quizzesPassed > 0 ? (
+                <DetailLine text={`اجتزت ${arNum(selected.quizzesPassed)} ${selected.quizzesPassed === 1 ? 'اختباراً' : 'اختبارات'}`} />
+              ) : null}
+              {selected.benefitsWritten > 0 ? (
+                <DetailLine text={`كتبت ${arNum(selected.benefitsWritten)} ${selected.benefitsWritten === 1 ? 'فائدة' : 'فوائد'}`} />
+              ) : null}
+            </>
+          ) : null}
         </Pressable>
-      </Modal>
+      </SheetModal>
     </Screen>
   );
 }

@@ -34,8 +34,10 @@ export const LIVE = {
  * The room route. Cast because Expo's generated typed-routes file only learns
  * `app/live/[id].tsx` after the next `expo start` regenerates it.
  */
-export function liveRoomHref(id: string): Href {
-  return { pathname: '/live/[id]', params: { id } } as unknown as Href;
+export function liveRoomHref(id: string, opts?: { end?: boolean }): Href {
+  // `end` (the host / a moderator pressed the mini-bar's ×): the room opens
+  // straight on «مغادرة الحلقة» — «أغادر ويستمر البث» / «إنهاء البث للجميع».
+  return { pathname: '/live/[id]', params: opts?.end ? { id, end: '1' } : { id } } as unknown as Href;
 }
 
 /** `r` attribute of a participant (supabase/functions/_shared/liveRules.ts LiveRole). */
@@ -80,9 +82,9 @@ export const LIVE_COPY = {
   offline: 'انقطع اتصالك بالإنترنت. سنعيدك إلى الحلقة تلقائياً عند عودته.',
   failed: 'تعذّر الدخول إلى الحلقة',
   ended: 'انتهى المجلس',
-  endedThanks: 'جزاكم الله خيراً على الحضور',
+  endedThanks: 'اللهم اغفر للقائمين على هذا الأمر ولوالديهم',
   leave: 'مغادرة الحلقة',
-  request: 'طلب الكلمة',
+  request: 'طلب التحدث',
   nobody: 'لا أحد يتحدث الآن',
   meSpeaking: 'أنت تتحدث الآن',
   liveNow: 'مباشر الآن',
@@ -255,17 +257,17 @@ export function liveGreenHref(id: string): Href {
 
 export const LIVE_P4_COPY = {
   requestPending: 'بانتظار الإذن · إلغاء',
-  requestsClosed: 'لا يستقبل المشرفون طلبات الكلمة الآن',
+  requestsClosed: 'لا يستقبل المشرفون طلبات التحدث الآن',
   micOn: 'الميكروفون مفتوح',
   micOff: 'الميكروفون مغلق',
   micOpenA11y: 'فتح الميكروفون',
   micCloseA11y: 'إغلاق الميكروفون',
   stepDown: 'العودة إلى الاستماع',
-  approve: 'السماح بالكلمة',
+  approve: 'السماح بالتحدث',
   reject: 'الاعتذار',
   mute: 'إغلاق الميكروفون',
-  allowRequests: 'استقبال طلبات الكلمة',
-  requests: 'طلبات الكلمة',
+  allowRequests: 'استقبال طلبات التحدث',
+  requests: 'طلبات التحدث',
   manage: 'إدارة المجلس',
   leaveKeep: 'أغادر ويستمر البث',
   endAll: 'إنهاء البث للجميع',
@@ -278,17 +280,18 @@ export const LIVE_P4_COPY = {
   greenRoom: 'غرفة التجهيز',
   startBroadcast: 'ابدأ البث',
   cancel: 'إلغاء',
-  guestCannotSpeak: 'الضيف يستمع فقط، ولا يمكن إعطاؤه الكلمة',
+  ending: 'جارٍ إنهاء البث…',
+  guestCannotSpeak: 'الضيف يستمع فقط، ولا يمكن السماح له بالتحدث',
 } as const;
 
 /** One-shot room messages (liveStore `notice.kind` → §15 copy). */
 export const NOTICE_COPY = {
   hand_raised: 'رفعت يدك. يراها المشرفون في مكانك من الحلقة',
   accepted: 'صرت من المتحدثين. افتح الميكروفون وأغلقه متى شئت. المجلس يُسجَّل وصوتك ضمنه',
-  rejected: 'اعتذر المشرف عن إعطائك الكلمة الآن',
+  rejected: 'اعتذر المشرف عن قبول طلب التحدث الآن',
   muted: 'أغلق المشرف ميكروفونك، وتستطيع فتحه متى احتجت',
-  demoted: 'أعادك المشرف إلى الاستماع. ارفع يدك من جديد إن أردت الكلمة',
-  requests_closed: 'لا يستقبل المشرفون طلبات الكلمة الآن',
+  demoted: 'أعادك المشرف إلى الاستماع. ارفع يدك من جديد إن أردت التحدث',
+  requests_closed: 'لا يستقبل المشرفون طلبات التحدث الآن',
   rate_limited: 'انتظر قليلاً ثم حاول مجدداً',
   mic_denied: 'اسمح للتطبيق باستخدام الميكروفون لتتحدث',
   failed: 'تعذّر تنفيذ الطلب. حاول مرة أخرى',
@@ -300,7 +303,7 @@ export function noticeText(kind: unknown): string | null {
   return typeof kind === 'string' && kind in NOTICE_COPY ? NOTICE_COPY[kind as NoticeKind] : null;
 }
 
-/** «طلب الكلمة» client rate limit: the button rests this long after each toggle. */
+/** «طلب التحدث» client rate limit: the button rests this long after each toggle. */
 export const HAND_COOLDOWN_MS = 5000;
 /** The «إنهاء البث للجميع» undo window (§7.6). */
 export const END_UNDO_MS = 5000;
@@ -398,9 +401,9 @@ export function moderationLabel(action: ModerationAction, g: Sex): string {
   }
 }
 
-/** «يطلب الكلمة» / «تطلب الكلمة», with how long ago the hand went up. */
+/** «يطلب التحدث» / «تطلب التحدث», with how long ago the hand went up. */
 export function handLine(g: Sex, handAt: number | null | undefined, nowMs: number): string {
-  const verb = g === 'f' ? 'تطلب الكلمة' : 'يطلب الكلمة';
+  const verb = g === 'f' ? 'تطلب التحدث' : 'يطلب التحدث';
   if (!handAt) return verb;
   const min = Math.floor((nowMs / 1000 - handAt) / 60);
   return min >= 1 ? `${verb} · منذ ${arNum(min)} دقيقة` : `${verb} · الآن`;

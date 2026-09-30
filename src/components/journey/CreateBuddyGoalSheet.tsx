@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, View, type ViewStyle } from 'react-native';
+import { Pressable, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { BuddyGoalMetric } from '@/api/buddyGoals';
 import { colors, radius } from '@/constants/theme';
 import { arNum } from '@/lib/format';
+import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';
 import { buddyMetricChoices, buddyMetricNoun } from './labels';
 
@@ -48,82 +49,77 @@ export function CreateBuddyGoalSheet({
   }, [visible]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <SheetModal visible={visible} onClose={onClose}>
       <Pressable
-        onPress={onClose}
-        style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
+        onPress={() => {}}
+        style={{
+          backgroundColor: colors.bgSandRaised,
+          borderTopLeftRadius: radius.artwork,
+          borderTopRightRadius: radius.artwork,
+          paddingHorizontal: 22,
+          paddingTop: 18,
+          paddingBottom: 24 + insets.bottom,
+          gap: 14,
+        }}
       >
-        <Pressable
-          onPress={() => {}}
-          style={{
-            backgroundColor: colors.bgSandRaised,
-            borderTopLeftRadius: radius.artwork,
-            borderTopRightRadius: radius.artwork,
-            paddingHorizontal: 22,
-            paddingTop: 18,
-            paddingBottom: 24 + insets.bottom,
-            gap: 14,
+        <View style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderSand2 }} />
+
+        <Txt weight="display" size={17} color={colors.primaryTeal} align="center">
+          هدف مشترك مع رفيقك
+        </Txt>
+        <Txt size={13} color={colors.textMuted} align="center">
+          {buddyName}
+        </Txt>
+
+        {/* Metric */}
+        <Chips
+          label="نوع الهدف"
+          options={buddyMetricChoices.map((c) => ({ key: c.metric, label: c.label }))}
+          value={metric}
+          onPick={(k) => {
+            const m = k as BuddyGoalMetric;
+            setMetric(m);
+            setTarget(PRESETS[m][1] ?? PRESETS[m][0]);
           }}
+        />
+
+        {/* Target */}
+        <Chips
+          label={`القيمة (${buddyMetricNoun(metric, target)} لكل طالب)`}
+          options={PRESETS[metric].map((n) => ({ key: String(n), label: arNum(n) }))}
+          value={String(target)}
+          onPick={(k) => setTarget(Number(k))}
+        />
+
+        {/* Duration */}
+        <Chips
+          label="المدة (أيام)"
+          options={DAY_PRESETS.map((n) => ({ key: String(n), label: arNum(n) }))}
+          value={String(days)}
+          onPick={(k) => setDays(Number(k))}
+        />
+
+        <Pressable
+          onPress={() => onCreate(metric, target, days)}
+          disabled={saving}
+          accessibilityRole="button"
+          style={({ pressed }) =>
+            ({
+              marginTop: 4,
+              paddingVertical: 14,
+              borderRadius: radius.input,
+              alignItems: 'center',
+              backgroundColor: colors.primaryTeal,
+              opacity: pressed || saving ? 0.6 : 1,
+            }) as ViewStyle
+          }
         >
-          <View style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderSand2 }} />
-
-          <Txt weight="display" size={17} color={colors.primaryTeal} align="center">
-            هدف مشترك مع رفيقك
+          <Txt size={15} weight="semibold" color={colors.onTealPrimary}>
+            {saving ? 'جارٍ الإرسال…' : 'إرسال الدعوة'}
           </Txt>
-          <Txt size={13} color={colors.textMuted} align="center">
-            {buddyName}
-          </Txt>
-
-          {/* Metric */}
-          <Chips
-            label="نوع الهدف"
-            options={buddyMetricChoices.map((c) => ({ key: c.metric, label: c.label }))}
-            value={metric}
-            onPick={(k) => {
-              const m = k as BuddyGoalMetric;
-              setMetric(m);
-              setTarget(PRESETS[m][1] ?? PRESETS[m][0]);
-            }}
-          />
-
-          {/* Target */}
-          <Chips
-            label={`القيمة (${buddyMetricNoun(metric, target)} لكل طالب)`}
-            options={PRESETS[metric].map((n) => ({ key: String(n), label: arNum(n) }))}
-            value={String(target)}
-            onPick={(k) => setTarget(Number(k))}
-          />
-
-          {/* Duration */}
-          <Chips
-            label="المدة (أيام)"
-            options={DAY_PRESETS.map((n) => ({ key: String(n), label: arNum(n) }))}
-            value={String(days)}
-            onPick={(k) => setDays(Number(k))}
-          />
-
-          <Pressable
-            onPress={() => onCreate(metric, target, days)}
-            disabled={saving}
-            accessibilityRole="button"
-            style={({ pressed }) =>
-              ({
-                marginTop: 4,
-                paddingVertical: 14,
-                borderRadius: radius.input,
-                alignItems: 'center',
-                backgroundColor: colors.primaryTeal,
-                opacity: pressed || saving ? 0.6 : 1,
-              }) as ViewStyle
-            }
-          >
-            <Txt size={15} weight="semibold" color={colors.onTealPrimary}>
-              {saving ? 'جارٍ الإرسال…' : 'إرسال الدعوة'}
-            </Txt>
-          </Pressable>
         </Pressable>
       </Pressable>
-    </Modal>
+    </SheetModal>
   );
 }
 

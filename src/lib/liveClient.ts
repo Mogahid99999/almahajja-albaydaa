@@ -247,7 +247,7 @@ export interface LiveRoomPatch {
   hostPresent?: boolean;
   /** My microphone is published and unmuted. */
   micOn?: boolean;
-  /** Room metadata «استقبال طلبات الكلمة». */
+  /** Room metadata «استقبال طلبات التحدث». */
   allowRequests?: boolean;
 }
 

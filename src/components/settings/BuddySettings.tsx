@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 
 import type { BuddyStatus } from '@/api/types';
@@ -7,6 +7,7 @@ import { colors, radius } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useCancelBuddy, useMyBuddies } from '@/hooks/useBuddy';
 import { Card } from '@/components/ui/Card';
+import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';
 
 /**
@@ -57,81 +58,71 @@ export function BuddySettings() {
         ))}
       </Card>
 
-      <Modal
-        visible={!!confirming}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setConfirming(null)}
-      >
+      <SheetModal visible={!!confirming} onClose={() => setConfirming(null)}>
         <Pressable
-          onPress={() => setConfirming(null)}
-          style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
+          onPress={() => {}}
+          style={{
+            backgroundColor: colors.bgSandRaised,
+            borderTopLeftRadius: radius.artwork,
+            borderTopRightRadius: radius.artwork,
+            paddingHorizontal: 22,
+            paddingTop: 18,
+            paddingBottom: 34,
+            gap: 14,
+          }}
         >
-          <Pressable
-            onPress={() => {}}
+          <View
             style={{
-              backgroundColor: colors.bgSandRaised,
-              borderTopLeftRadius: radius.artwork,
-              borderTopRightRadius: radius.artwork,
-              paddingHorizontal: 22,
-              paddingTop: 18,
-              paddingBottom: 34,
-              gap: 14,
+              alignSelf: 'center',
+              width: 44,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: colors.borderSand2,
             }}
+          />
+
+          <Txt weight="display" size={19} color={colors.primaryTeal} align="center">
+            إنهاء الرفقة
+          </Txt>
+
+          <Txt size={13.5} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
+            {`هل تريد إنهاء رفقة ${confirming?.displayName ?? ''}؟ يمكنك اختيار رفيق آخر لاحقًا`}
+          </Txt>
+
+          {cancel.isError ? (
+            <Txt size={12} color={colors.stateDanger} align="center">
+              {(cancel.error as Error).message}
+            </Txt>
+          ) : null}
+
+          <Pressable
+            onPress={onConfirm}
+            disabled={cancel.isPending}
+            accessibilityRole="button"
+            style={({ pressed }) => ({
+              paddingVertical: 14,
+              borderRadius: radius.input,
+              alignItems: 'center',
+              backgroundColor: colors.stateDanger,
+              opacity: pressed || cancel.isPending ? 0.7 : 1,
+            })}
           >
-            <View
-              style={{
-                alignSelf: 'center',
-                width: 44,
-                height: 5,
-                borderRadius: 3,
-                backgroundColor: colors.borderSand2,
-              }}
-            />
-
-            <Txt weight="display" size={19} color={colors.primaryTeal} align="center">
-              إنهاء الرفقة
+            <Txt size={15} weight="semibold" color={colors.surfaceWhite}>
+              {cancel.isPending ? 'جارٍ الإلغاء…' : 'إنهاء الرفقة'}
             </Txt>
+          </Pressable>
 
-            <Txt size={13.5} color={colors.textSlate} align="center" style={{ lineHeight: 22 }}>
-              {`هل تريد إنهاء رفقة ${confirming?.displayName ?? ''}؟ يمكنك اختيار رفيق آخر لاحقًا`}
+          <Pressable
+            onPress={() => setConfirming(null)}
+            accessibilityRole="button"
+            style={({ pressed }) => ({ alignItems: 'center', paddingVertical: 6, opacity: pressed ? 0.7 : 1 })}
+          >
+            <Txt size={13} color={colors.textMuted}>
+              رجوع
             </Txt>
-
-            {cancel.isError ? (
-              <Txt size={12} color={colors.stateDanger} align="center">
-                {(cancel.error as Error).message}
-              </Txt>
-            ) : null}
-
-            <Pressable
-              onPress={onConfirm}
-              disabled={cancel.isPending}
-              accessibilityRole="button"
-              style={({ pressed }) => ({
-                paddingVertical: 14,
-                borderRadius: radius.input,
-                alignItems: 'center',
-                backgroundColor: colors.stateDanger,
-                opacity: pressed || cancel.isPending ? 0.7 : 1,
-              })}
-            >
-              <Txt size={15} weight="semibold" color={colors.surfaceWhite}>
-                {cancel.isPending ? 'جارٍ الإلغاء…' : 'إنهاء الرفقة'}
-              </Txt>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setConfirming(null)}
-              accessibilityRole="button"
-              style={({ pressed }) => ({ alignItems: 'center', paddingVertical: 6, opacity: pressed ? 0.7 : 1 })}
-            >
-              <Txt size={13} color={colors.textMuted}>
-                رجوع
-              </Txt>
-            </Pressable>
           </Pressable>
         </Pressable>
-      </Modal>
+      </SheetModal>
     </>
   );
 }

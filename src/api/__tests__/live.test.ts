@@ -21,6 +21,7 @@ jest.mock('@/lib/supabase', () => ({
 }));
 
 import {
+  createLiveSession,
   fetchLiveToken,
   getLiveByCode,
   getLiveNow,
@@ -380,5 +381,40 @@ describe('getLiveParticipantsForStaff (D2)', () => {
   test('a non-staff caller gets the RPC’s error', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'غير مصرح', code: '42501' } });
     await expect(getLiveParticipantsForStaff('sess-1')).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('createLiveSession (scheduling, owner 2026-09-29)', () => {
+  test('«الآن»: no p_scheduled_at — the session opens green', async () => {
+    mockRpc.mockResolvedValue({ data: 'new-id', error: null });
+    await expect(createLiveSession({ sectionId: 'sec-1', title: 'مجلس', notify: true, allowRequests: false })).resolves.toBe(
+      'new-id',
+    );
+    expect(mockRpc).toHaveBeenCalledWith('create_live_session', {
+      p_section: 'sec-1',
+      p_title: 'مجلس',
+      p_notify: true,
+      p_allow_requests: false,
+    });
+  });
+
+  test('«في موعد لاحق»: the RPC receives the ISO time', async () => {
+    mockRpc.mockResolvedValue({ data: 'sched-id', error: null });
+    const at = '2026-09-30T17:30:00.000Z';
+    await createLiveSession({ sectionId: 'sec-1', title: 'مجلس', scheduledAt: at });
+    expect(mockRpc).toHaveBeenCalledWith('create_live_session', {
+      p_section: 'sec-1',
+      p_title: 'مجلس',
+      p_notify: true,
+      p_allow_requests: true,
+      p_scheduled_at: at,
+    });
+  });
+
+  test('the server Arabic refusal is thrown as is', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'موعد المجلس يجب أن يكون في المستقبل' } });
+    await expect(createLiveSession({ sectionId: 'sec-1', title: 'مجلس', scheduledAt: 'x' })).rejects.toEqual({
+      message: 'موعد المجلس يجب أن يكون في المستقبل',
+    });
   });
 });

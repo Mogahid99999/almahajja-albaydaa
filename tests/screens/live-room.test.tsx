@@ -7,7 +7,7 @@
  * is what join() receives; `gender_required` from live-token opens
  * GenderPrompt, and choosing a gender re-joins WITHOUT closing the room (found
  * on R5CX10P3BPL: the prompt's onClose ran before onResolved and collapsed the
- * room — the join then happened behind Home); a guest's «طلب الكلمة» asks to
+ * room — the join then happened behind Home); a guest's «طلب التحدث» asks to
  * register first (owner rule: guests listen, never speak); an ended session
  * shows «انتهى المجلس» and never joins.
  */
@@ -193,14 +193,14 @@ test('choosing a gender after gender_required re-joins and keeps the room open',
   expect(mockCollapse).not.toHaveBeenCalled();
 });
 
-test('a guest listens, but «طلب الكلمة» asks to register first', async () => {
+test('a guest listens, but «طلب التحدث» asks to register first', async () => {
   mockUser.current = { id: 'g1', role: 'student', isGuest: true, displayName: null, gender: 'male' };
   Object.assign(mockState, { session: liveSession, conn: 'ok', me: { identity: 'a'.repeat(16), role: 'listener', hidden: false, gender: 'm' } });
   await render(<LiveRoomScreen />);
   expect(mockJoin).not.toHaveBeenCalled(); // already in this room
 
-  await fireEvent.press(screen.getByLabelText('طلب الكلمة'));
-  expect(screen.getByText('سجّل أولاً لتطلب الكلمة')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('طلب التحدث'));
+  expect(screen.getByText('سجّل أولاً لتطلب التحدث')).toBeTruthy();
   await fireEvent.press(screen.getByText('تسجيل'));
   expect(mockRouter.push).toHaveBeenCalledWith('/register');
 });
@@ -224,22 +224,22 @@ function listenerIn(extra: Record<string, unknown> = {}, handUp = false) {
   });
 }
 
-test('a registered listener raises a hand — then «طلب الكلمة» rests 5 s (client rate limit)', async () => {
+test('a registered listener raises a hand — then «طلب التحدث» rests 5 s (client rate limit)', async () => {
   jest.useFakeTimers();
   try {
     listenerIn();
     await render(<LiveRoomScreen />);
-    await fireEvent.press(screen.getByText('طلب الكلمة'));
+    await fireEvent.press(screen.getByText('طلب التحدث'));
     expect(mockState.raiseHand).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('سجّل أولاً لتطلب الكلمة')).toBeNull();
+    expect(screen.queryByText('سجّل أولاً لتطلب التحدث')).toBeNull();
 
-    await fireEvent.press(screen.getByText('طلب الكلمة')); // still resting
+    await fireEvent.press(screen.getByText('طلب التحدث')); // still resting
     expect(mockState.raiseHand).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       jest.advanceTimersByTime(5000);
     });
-    await fireEvent.press(screen.getByText('طلب الكلمة'));
+    await fireEvent.press(screen.getByText('طلب التحدث'));
     expect(mockState.raiseHand).toHaveBeenCalledTimes(2);
   } finally {
     jest.useRealTimers();
@@ -249,40 +249,40 @@ test('a registered listener raises a hand — then «طلب الكلمة» rests
 test('with my hand up the dock says «بانتظار الإذن · إلغاء» and lowers it', async () => {
   listenerIn({}, true);
   await render(<LiveRoomScreen />);
-  expect(screen.queryByText('طلب الكلمة')).toBeNull();
+  expect(screen.queryByText('طلب التحدث')).toBeNull();
   await fireEvent.press(screen.getByText('بانتظار الإذن · إلغاء'));
   expect(mockState.lowerHand).toHaveBeenCalledTimes(1);
   expect(mockState.raiseHand).not.toHaveBeenCalled();
 });
 
-test('while a hand request is in flight «طلب الكلمة» does nothing', async () => {
+test('while a hand request is in flight «طلب التحدث» does nothing', async () => {
   listenerIn({ handBusy: true });
   await render(<LiveRoomScreen />);
-  await fireEvent.press(screen.getByText('طلب الكلمة'));
+  await fireEvent.press(screen.getByText('طلب التحدث'));
   expect(mockState.raiseHand).not.toHaveBeenCalled();
 });
 
 test('requests closed by the moderators: disabled with the §15 hint', async () => {
   listenerIn({ allowRequests: false });
   await render(<LiveRoomScreen />);
-  expect(screen.getByText('لا يستقبل المشرفون طلبات الكلمة الآن')).toBeTruthy();
-  await fireEvent.press(screen.getByText('طلب الكلمة'));
+  expect(screen.getByText('لا يستقبل المشرفون طلبات التحدث الآن')).toBeTruthy();
+  await fireEvent.press(screen.getByText('طلب التحدث'));
   expect(mockState.raiseHand).not.toHaveBeenCalled();
 });
 
-test('a guest never reaches raiseHand — «طلب الكلمة» is still the register sheet', async () => {
+test('a guest never reaches raiseHand — «طلب التحدث» is still the register sheet', async () => {
   mockUser.current = { id: 'g1', role: 'student', isGuest: true, displayName: null, gender: 'male' };
   Object.assign(mockState, { session: liveSession, conn: 'ok', me: { identity: 'a'.repeat(16), role: 'listener', hidden: false, gender: 'm' } });
   await render(<LiveRoomScreen />);
-  await fireEvent.press(screen.getByLabelText('طلب الكلمة'));
-  expect(screen.getByText('سجّل أولاً لتطلب الكلمة')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('طلب التحدث'));
+  expect(screen.getByText('سجّل أولاً لتطلب التحدث')).toBeTruthy();
   expect(mockState.raiseHand).not.toHaveBeenCalled();
 });
 
 test('a speaker gets the mic toggle and a visible «العودة إلى الاستماع»', async () => {
   listenerIn({ me: { identity: ME, role: 'speaker', hidden: false, gender: 'm' } });
   await render(<LiveRoomScreen />);
-  expect(screen.queryByText('طلب الكلمة')).toBeNull();
+  expect(screen.queryByText('طلب التحدث')).toBeNull();
   expect(screen.getByText('الميكروفون مغلق')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('فتح الميكروفون'));
   expect(mockState.setMic).toHaveBeenCalledWith(true);
@@ -330,7 +330,7 @@ test('an ended session shows «انتهى المجلس» and never joins', async
   mockSession.current = { ...liveSession, status: 'ended' };
   await render(<LiveRoomScreen />);
   expect(screen.getByText('انتهى المجلس')).toBeTruthy();
-  expect(screen.getByText('جزاكم الله خيراً على الحضور')).toBeTruthy();
+  expect(screen.getByText('اللهم اغفر للقائمين على هذا الأمر ولوالديهم')).toBeTruthy();
   expect(mockJoin).not.toHaveBeenCalled();
 
   await fireEvent.press(screen.getByText('العودة'));

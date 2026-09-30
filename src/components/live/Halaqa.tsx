@@ -60,6 +60,7 @@ import {
 } from '@/lib/halaqaLayout';
 import { BrotherShapes } from './BrotherIcon';
 import { NiqabShapes } from './NiqabIcon';
+import { SheikhIcon, sheikhIconLabel } from './SheikhIcon';
 import { HandGlyph, LiveAvatar } from './LiveAvatar';
 import type { LiveCounts, LivePerson } from './liveTypes';
 import { LIVE, roleKind, sexOf, speakVerb, type Sex } from './liveUi';
@@ -161,7 +162,6 @@ type BoardProps = {
   layout: HalaqaLayout;
   mode: HalaqaMode;
   hostOff: boolean;
-  sheikhInitial: string;
   brothers: number;
   sisters: number;
   onMore: () => void;
@@ -172,7 +172,6 @@ const HalaqaBoard = memo(function HalaqaBoard({
   layout,
   mode,
   hostOff,
-  sheikhInitial,
   brothers,
   sisters,
   onMore,
@@ -346,25 +345,6 @@ const HalaqaBoard = memo(function HalaqaBoard({
         LIVE.labelSisters,
       )}
 
-      {starOn ? (
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: layout.cx - med.core,
-            top: layout.cy - med.core,
-            width: med.core * 2,
-            height: med.core * 2,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Txt weight="display" size={28 * k} color={colors.accentBrass} align="center" centerGlyph>
-            {sheikhInitial}
-          </Txt>
-        </View>
-      ) : null}
-
       {/* One touch layer for every listener seat (hit-tested), under the chips. */}
       {live ? (
         <Pressable
@@ -500,7 +480,7 @@ export function describePerson(p: LivePerson, name: string): { title: string; su
         : kind === 'speaker'
           ? f ? 'متحدثة' : 'متحدث'
           : p.hand
-            ? f ? 'تطلب الكلمة' : 'يطلب الكلمة'
+            ? f ? 'تطلب التحدث' : 'يطلب التحدث'
             : f ? 'مستمعة' : 'مستمع';
   if (p.hidden) sub += ' · بدون اسم';
   return { title: name, sub };
@@ -594,8 +574,9 @@ export function Halaqa({
   }, [tip]);
 
   const live = mode === 'live';
-  const sheikhInitial =
-    Array.from(sheikhName.replace(/^(الشيخ|د\.|الدكتور)\s+/, '').trim())[0] ?? 'ع';
+  // The sheikh pictogram in the medallion (owner 2026-09-29: an icon, never
+  // the name's initial or a number) — only while the host is here.
+  const sheikhOn = live && !hostOff;
 
   // Ripple centre: the speaker's seat, or the medallion for the host.
   let center: { x: number; y: number } | null = null;
@@ -627,7 +608,6 @@ export function Halaqa({
         layout={layout}
         mode={mode}
         hostOff={hostOff}
-        sheikhInitial={sheikhInitial}
         brothers={input.brothers}
         sisters={input.sisters}
         onMore={onMore}
@@ -646,7 +626,7 @@ export function Halaqa({
           ))
         : null}
 
-      {/* The medallion: tap → the sheikh's name; «انقطع مؤقتاً» while away. */}
+      {/* The medallion: the sheikh icon; tap → his name; «انقطع مؤقتاً» while away. */}
       {live ? (
         <Pressable
           onPress={() => {
@@ -659,7 +639,7 @@ export function Halaqa({
             });
           }}
           accessibilityRole="button"
-          accessibilityLabel={sheikhName}
+          accessibilityLabel={sheikhIconLabel(sheikhName)}
           style={{
             position: 'absolute',
             left: layout.cx - layout.medallion.core * 1.4,
@@ -667,8 +647,19 @@ export function Halaqa({
             width: layout.medallion.core * 2.8,
             height: layout.medallion.core * 2.8,
             borderRadius: layout.medallion.core * 1.4,
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
-        />
+        >
+          {sheikhOn ? (
+            <SheikhIcon
+              size={Math.round(layout.medallion.core * 1.45)}
+              color={colors.accentBrass}
+              band={colors.primaryTealDeep}
+              label={sheikhIconLabel(sheikhName)}
+            />
+          ) : null}
+        </Pressable>
       ) : null}
       {live && hostOff ? (
         <SeatLabel

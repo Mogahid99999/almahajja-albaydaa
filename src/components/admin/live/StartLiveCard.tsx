@@ -2,9 +2,12 @@
  * «ابدأ مجلساً مباشراً» on the staff «البث المباشر» screen (D7, owner
  * 2026-09-29): staff can't reach the student section page (AuthGate sends
  * admins/publishers to /admin and sheikhs to /sheikh), so the section is
- * picked here → CreateLiveSheet (title + notify + requests) → the host's green
- * room. Hosting from the browser is LATER: on web the card only says
- * «يبدأ البث من تطبيق الهاتف».
+ * picked here (SectionPicker — a bottom sheet, owner 2026-09-29) →
+ * CreateLiveSheet (title + «متى يبدأ المجلس؟» + notify + requests) → «الآن»:
+ * the host's green room; «في موعد لاحق»: the sheet closes and a calm line
+ * confirms «جُدول المجلس: …» (the session then shows under «قيد التجهيز
+ * والمجدولة», where its host gets «فتح غرفة التجهيز»). Hosting from the
+ * browser is LATER: on web the card only says «يبدأ البث من تطبيق الهاتف».
  *
  * D3 (one live at a time) is the RPC's call — its Arabic message shows in the
  * sheet; while a session is already green/live the card says so up front.
@@ -13,27 +16,32 @@ import Feather from '@expo/vector-icons/Feather';
 import { useMemo, useState } from 'react';
 import { Platform, View } from 'react-native';
 
-import { TreePicker } from '@/components/admin/TreePicker';
+import { scheduledConfirmLine } from '@/components/live/liveSchedule';
 import { CreateLiveSheet } from '@/components/live/sheets/CreateLiveSheet';
 import { Card, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { useSectionsFlat } from '@/hooks/useSections';
 import { ADMIN_LIVE_COPY } from './liveAdminUi';
 import { ActionButton } from './parts';
+import { SectionPicker } from './SectionPickerSheet';
 
 export function StartLiveCard({
   canStart,
   activeTitle,
   onCreated,
+  onScheduled,
 }: {
   /** create_live_session: content manager or sheikh. */
   canStart: boolean;
   /** Title of the session already holding the one green/live slot (D3), if any. */
   activeTitle: string | null;
   onCreated: (sessionId: string) => void;
+  /** A session was scheduled for later — refresh the lists. */
+  onScheduled?: (sessionId: string, scheduledAt: string) => void;
 }) {
   const [sectionId, setSectionId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [scheduledLine, setScheduledLine] = useState<string | null>(null);
   const { data: sections = [] } = useSectionsFlat();
   const sectionTitle = useMemo(
     () => (sectionId ? (sections.find((s) => s.id === sectionId)?.title ?? '') : ''),
@@ -78,7 +86,14 @@ export function StartLiveCard({
         {ADMIN_LIVE_COPY.startSub}
       </Txt>
 
-      <TreePicker value={sectionId} onChange={setSectionId} label={ADMIN_LIVE_COPY.pickSection} />
+      <SectionPicker
+        value={sectionId}
+        onChange={(id) => {
+          setScheduledLine(null);
+          setSectionId(id);
+        }}
+        placeholder={ADMIN_LIVE_COPY.pickSection}
+      />
 
       {activeTitle ? (
         <View
@@ -105,9 +120,32 @@ export function StartLiveCard({
           icon="radio"
           tone="primary"
           disabled={!sectionId}
-          onPress={() => setSheetOpen(true)}
+          onPress={() => {
+            setScheduledLine(null);
+            setSheetOpen(true);
+          }}
         />
       </View>
+
+      {scheduledLine ? (
+        <View
+          accessibilityLiveRegion="polite"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: 8,
+            marginTop: 12,
+            padding: 10,
+            borderRadius: radius.sm,
+            backgroundColor: 'rgba(31,74,66,0.06)',
+          }}
+        >
+          <Feather name="calendar" size={14} color={colors.primaryTeal600} style={{ marginTop: 3 }} />
+          <Txt size={12.5} color={colors.primaryTeal} style={{ flex: 1, lineHeight: 20 }}>
+            {scheduledLine}
+          </Txt>
+        </View>
+      ) : null}
 
       {sectionId ? (
         <CreateLiveSheet
@@ -119,6 +157,13 @@ export function StartLiveCard({
             setSheetOpen(false);
             setSectionId(null);
             onCreated(id);
+          }}
+          onScheduled={(id, at) => {
+            // No green room for a later session: close, confirm, refresh.
+            setSheetOpen(false);
+            setSectionId(null);
+            setScheduledLine(scheduledConfirmLine(at, Date.now()));
+            onScheduled?.(id, at);
           }}
         />
       ) : null}

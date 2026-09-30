@@ -418,7 +418,7 @@ pg_cron every minute: sessions with `scheduled_at` in 15 min → `live_reminder`
 
 - Tokens: short TTL, per-session identity, no user ids in the room. Banned users get `403`.
 - Only `live-control` (server) changes permissions; clients can only set their own hand/visibility attributes.
-- Rate limits: hand raise toggles ≤ 1 per 5 s (client) and moderators can switch requests off («استقبال طلبات الكلمة»).
+- Rate limits: hand raise toggles ≤ 1 per 5 s (client) and moderators can switch requests off («استقبال طلبات التحدث»).
 - Recordings private until published; raw deleted per D5; interventions list lets the admin review student voices before publishing (they were told «صوتك سيكون ضمن التسجيل» on approval).
 - VPS: our containers only on `almahajja_net`; secrets 600; no SSH keys or tokens in the repo.
 
@@ -483,14 +483,14 @@ Video, screen share, chat/comments, reactions, live transcription/captions, mult
 |---|---|
 | home.card | «مباشر الآن» · «بدأ منذ {n} دقيقة» · «{count} في الحلقة» · «الشيخ يتحدث» · «استمع» / «العودة إلى الحلقة» |
 | room.now | «يتحدث الآن: {name}» · «تتحدث الآن: {name}» (f) · «أنت تتحدث الآن» · «لا أحد يتحدث الآن» |
-| room.request | «طلب الكلمة» · «بانتظار الإذن · إلغاء» · «رفعت يدك. يراها المشرفون في مكانك من الحلقة» |
+| room.request | «طلب التحدث» · «بانتظار الإذن · إلغاء» · «رفعت يدك. يراها المشرفون في مكانك من الحلقة» |
 | room.accepted | «صرت من المتحدثين. افتح الميكروفون وأغلقه متى شئت. المجلس يُسجَّل وصوتك ضمنه» |
-| room.rejected | «اعتذر المشرف عن إعطائك الكلمة الآن» |
+| room.rejected | «اعتذر المشرف عن قبول طلب التحدث الآن» |
 | room.muted | «أغلق المشرف ميكروفونك، وتستطيع فتحه متى احتجت» |
-| room.demoted | «أعادك المشرف إلى الاستماع. ارفع يدك من جديد إن أردت الكلمة» |
+| room.demoted | «أعادك المشرف إلى الاستماع. ارفع يدك من جديد إن أردت التحدث» |
 | identity | «كيف تظهرين في الحلقة؟» · «باسمي» · «بدون اسم» · «تظهرين «طالبة» في الحلقة وفي القوائم» |
 | states | «جارٍ الدخول إلى الحلقة…» · «جارٍ إعادة الاتصال…» · «الاتصال ضعيف · قد يتقطع الصوت قليلاً» · «انقطع اتصال الشيخ مؤقتاً. ابقَ في الحلقة، يُستأنف الصوت تلقائياً عند عودته.» · «انقطع اتصالك بالإنترنت. سنعيدك إلى الحلقة تلقائياً عند عودته.» · «تعذّر الدخول إلى الحلقة» |
-| end | «مغادرة الحلقة» · «أغادر ويستمر البث» · «إنهاء البث للجميع» · «إنهاء البث للجميع؟» · «ينتهي البث خلال ثوانٍ · تراجع» · «انتهى المجلس» · «جزاكم الله خيراً على الحضور» |
+| end | «مغادرة الحلقة» · «أغادر ويستمر البث» · «إنهاء البث للجميع» · «إنهاء البث للجميع؟» · «ينتهي البث خلال ثوانٍ · تراجع» · «انتهى المجلس» · «اللهم اغفر للقائمين على هذا الأمر ولوالديهم» |
 | buddy | «رفيقك {name} ليس في الحلقة · ادعُه» · «رفيقتك {name} ليست في الحلقة · ادعيها» · «أُرسلت الدعوة إلى {name}» |
 | push | «بدأ البث المباشر» · «رفيقك {name} يدعوك» / «رفيقتك {name} تدعوك» |
 | share | «مشاركة رابط البث» · «من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى متجر جهازه.» |

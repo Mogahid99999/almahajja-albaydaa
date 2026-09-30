@@ -4,7 +4,9 @@
  *
  * Actions depend on the platform (D7: the room and the green room open only in
  * the phone app) and the role (content managers: retry / raw download / open in
- * «الواردة» / cancel any; a sheikh: cancel and host his own).
+ * «الواردة» / cancel any; a sheikh: cancel and host his own). «إنهاء البث
+ * للجميع» (a live session: its host or a content manager) works on the web too,
+ * so a forgotten live can be closed from the browser.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { Platform, View } from 'react-native';
@@ -17,6 +19,7 @@ import {
   ADMIN_LIVE_COPY,
   attendeesLine,
   canCancel,
+  canEndLive,
   peakLine,
   sessionState,
   startedAgo,
@@ -31,11 +34,15 @@ export interface LiveSessionCardProps {
   onOpenRoom: (s: LiveAdminSession) => void;
   onOpenGreen: (s: LiveAdminSession) => void;
   onCancel: (s: LiveAdminSession) => void;
+  /** «إنهاء البث للجميع» (the screen confirms first). */
+  onEnd?: (s: LiveAdminSession) => void;
   onRetry: (s: LiveAdminSession) => void;
   onOpenInbox: (s: LiveAdminSession) => void;
   onDownload: (s: LiveAdminSession) => void;
   retrying?: boolean;
   downloading?: boolean;
+  /** live-control `end` in flight for this session. */
+  endingLive?: boolean;
   /** A per-card error / notice (retry, download…). */
   note?: { text: string; tone: 'danger' | 'ok' | 'muted' } | null;
 }
@@ -51,11 +58,13 @@ export function LiveSessionCard({
   onOpenRoom,
   onOpenGreen,
   onCancel,
+  onEnd,
   onRetry,
   onOpenInbox,
   onDownload,
   retrying = false,
   downloading = false,
+  endingLive = false,
   note = null,
 }: LiveSessionCardProps) {
   const isWeb = Platform.OS === 'web';
@@ -90,7 +99,9 @@ export function LiveSessionCard({
   const showDownload =
     manager && !['scheduled', 'green', 'live', 'cancelled'].includes(s.status) && (s.rawLocal || s.rawBackup);
   const showCancel = canCancel(s, manager);
-  const hasActions = isLive || hostCanOpenGreen || showInbox || showRetry || showDownload || showCancel;
+  const showEnd = !!onEnd && canEndLive(s, manager);
+  const hasActions =
+    isLive || hostCanOpenGreen || showInbox || showRetry || showDownload || showCancel || showEnd;
 
   return (
     <Card
@@ -184,6 +195,15 @@ export function LiveSessionCard({
           ) : null}
           {showCancel ? (
             <ActionButton label={ADMIN_LIVE_COPY.cancel} icon="x" tone="danger" onPress={() => onCancel(s)} />
+          ) : null}
+          {showEnd && onEnd ? (
+            <ActionButton
+              label={endingLive ? ADMIN_LIVE_COPY.ending : ADMIN_LIVE_COPY.endLive}
+              icon="square"
+              tone="danger"
+              busy={endingLive}
+              onPress={() => onEnd(s)}
+            />
           ) : null}
         </View>
       ) : null}

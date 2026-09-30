@@ -1,10 +1,10 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 
 import type { Gender } from '@/api/types';
-import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
+import { Card, ConcentricMotif, Logo, Screen, SheetModal, Txt } from '@/components/ui';
 import { GenderPills } from '@/components/ui/GenderPills';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
@@ -305,78 +305,76 @@ export default function RegisterScreen() {
     </Screen>
     </KeyboardAvoidingView>
 
-    {/* onRequestClose = Android hardware back inside the modal — mirrors the
-        «رجوع» button instead of being a dead key. */}
-    <Modal visible={oathVisible} transparent animationType="slide" onRequestClose={onCancelOath}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}>
-        <View
-          style={{
-            backgroundColor: colors.bgSandRaised,
-            borderTopLeftRadius: radius.artwork,
-            borderTopRightRadius: radius.artwork,
-            paddingHorizontal: 22,
-            paddingTop: 22,
-            paddingBottom: 28,
-            gap: 16,
-          }}
+    {/* onClose = Android hardware back inside the modal — mirrors the «رجوع»
+        button instead of being a dead key (the dim itself isn't tappable). */}
+    <SheetModal visible={oathVisible} onClose={onCancelOath} dismissOnBackdrop={false}>
+      <View
+        style={{
+          backgroundColor: colors.bgSandRaised,
+          borderTopLeftRadius: radius.artwork,
+          borderTopRightRadius: radius.artwork,
+          paddingHorizontal: 22,
+          paddingTop: 22,
+          paddingBottom: 28,
+          gap: 16,
+        }}
+      >
+        <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
+          تأكيد البيانات
+        </Txt>
+        <Txt size={13.5} color={colors.textMuted} align="right" style={{ lineHeight: 23 }}>
+          {OATH_TEXT}
+        </Txt>
+
+        <Pressable
+          onPress={() => setOathChecked((c) => !c)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}
         >
-          <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
-            تأكيد البيانات
-          </Txt>
-          <Txt size={13.5} color={colors.textMuted} align="right" style={{ lineHeight: 23 }}>
-            {OATH_TEXT}
-          </Txt>
-
-          <Pressable
-            onPress={() => setOathChecked((c) => !c)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}
+          <View
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 5,
+              borderWidth: 1.5,
+              borderColor: oathChecked ? colors.primaryTeal : colors.borderSand2,
+              backgroundColor: oathChecked ? colors.primaryTeal : colors.surfaceWhite,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <View
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 5,
-                borderWidth: 1.5,
-                borderColor: oathChecked ? colors.primaryTeal : colors.borderSand2,
-                backgroundColor: oathChecked ? colors.primaryTeal : colors.surfaceWhite,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {oathChecked ? <Feather name="check" size={14} color={colors.onTealPrimary} /> : null}
-            </View>
-            <Txt size={13} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
-              أقسم بالله أن هذه البيانات صحيحة
-            </Txt>
-          </Pressable>
+            {oathChecked ? <Feather name="check" size={14} color={colors.onTealPrimary} /> : null}
+          </View>
+          <Txt size={13} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
+            أقسم بالله أن هذه البيانات صحيحة
+          </Txt>
+        </Pressable>
 
-          <Pressable
-            onPress={onConfirmOath}
-            disabled={!oathChecked || register.isPending}
-            style={[
-              {
-                backgroundColor: colors.primaryTeal,
-                borderRadius: radius.input,
-                paddingVertical: 14,
-                alignItems: 'center',
-                opacity: !oathChecked || register.isPending ? 0.5 : 1,
-              },
-              shadows.button,
-            ]}
-          >
-            <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
-              {register.isPending ? 'جارٍ التسجيل…' : 'متابعة'}
-            </Txt>
-          </Pressable>
+        <Pressable
+          onPress={onConfirmOath}
+          disabled={!oathChecked || register.isPending}
+          style={[
+            {
+              backgroundColor: colors.primaryTeal,
+              borderRadius: radius.input,
+              paddingVertical: 14,
+              alignItems: 'center',
+              opacity: !oathChecked || register.isPending ? 0.5 : 1,
+            },
+            shadows.button,
+          ]}
+        >
+          <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
+            {register.isPending ? 'جارٍ التسجيل…' : 'متابعة'}
+          </Txt>
+        </Pressable>
 
-          <Pressable onPress={onCancelOath} style={{ alignItems: 'center', paddingVertical: 4 }}>
-            <Txt size={13} weight="semibold" color={colors.textMuted}>
-              رجوع
-            </Txt>
-          </Pressable>
-        </View>
+        <Pressable onPress={onCancelOath} style={{ alignItems: 'center', paddingVertical: 4 }}>
+          <Txt size={13} weight="semibold" color={colors.textMuted}>
+            رجوع
+          </Txt>
+        </Pressable>
       </View>
-    </Modal>
+    </SheetModal>
     </>
   );
 }

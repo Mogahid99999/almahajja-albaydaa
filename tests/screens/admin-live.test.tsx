@@ -11,10 +11,18 @@
  *  - failed → «إعادة المعالجة» (retry_live_recording); ready + needs title →
  *    «فتح في الواردة» with that lecture; «تنزيل التسجيل الأصلي»;
  *  - a sheikh (not a content manager) gets none of those manager actions;
- *  - «إلغاء المجلس» asks first, then cancel_live_session.
+ *  - «إلغاء المجلس» asks first, then cancel_live_session;
+ *  - scheduling (owner 2026-09-29): a session scheduled from the sheet does NOT
+ *    open the green room — the lists refresh and «جُدول المجلس: …» confirms;
+ *  - «إنهاء البث للجميع» (owner: «احاول انهاء البث ولا يقفل معي»): a live card
+ *    offers it to its host / a content manager, on the phone AND the web; it
+ *    asks first (naming the section), then live-control `end`; a refusal stays
+ *    on the card in Arabic.
  */
 import { Platform } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
+
+import { scheduledConfirmLine } from '@/components/live/liveSchedule';
 
 const mockRouter = { push: jest.fn(), back: jest.fn(), replace: jest.fn() };
 jest.mock('expo-router', () => ({
@@ -25,11 +33,11 @@ jest.mock('expo-router', () => ({
 jest.mock('@/components/admin/AdminShell', () => ({
   AdminShell: ({ children }: { children: React.ReactNode }) => children,
 }));
-// The real TreePicker reads the sections tree; one button picks «sec-1».
-jest.mock('@/components/admin/TreePicker', () => {
+// The real SectionPicker (own test) reads the sections tree; one button picks «sec-1».
+jest.mock('@/components/admin/live/SectionPickerSheet', () => {
   const { Pressable, Text } = require('react-native');
   return {
-    TreePicker: ({ onChange }: { onChange: (id: string) => void }) => (
+    SectionPicker: ({ onChange }: { onChange: (id: string) => void }) => (
       <Pressable onPress={() => onChange('sec-1')}>
         <Text>اختيار قسم تجربة</Text>
       </Pressable>
@@ -45,19 +53,27 @@ jest.mock('@/components/live/sheets/CreateLiveSheet', () => {
       sectionId,
       initialTitle,
       onCreated,
+      onScheduled,
     }: {
       visible: boolean;
       sectionId: string;
       initialTitle: string;
       onCreated: (id: string) => void;
+      onScheduled?: (id: string, at: string) => void;
     }) =>
       visible ? (
-        <Pressable onPress={() => onCreated('new-session')}>
-          <Text>{`ورقة الإنشاء ${sectionId} ${initialTitle}`}</Text>
-        </Pressable>
+        <>
+          <Pressable onPress={() => onCreated('new-session')}>
+            <Text>{`ورقة الإنشاء ${sectionId} ${initialTitle}`}</Text>
+          </Pressable>
+          <Pressable onPress={() => onScheduled?.('sched-session', mockScheduledAt)}>
+            <Text>جدولة من الورقة</Text>
+          </Pressable>
+        </>
       ) : null,
   };
 });
+const mockScheduledAt = new Date(2026, 8, 30, 20, 30).toISOString();
 jest.mock('@/hooks/useSections', () => ({
   useSectionsFlat: () => ({
     data: [{ id: 'sec-1', title: 'كتاب التوحيد', parentId: null, depth: 0, path: ['كتاب التوحيد'], order: 1 }],
@@ -76,8 +92,12 @@ const mockLive = {
   cancel: mk(),
   retry: mk(),
   download: mk(),
+  end: mk(),
   refresh: jest.fn(),
 };
+jest.mock('@/components/admin/live/useEndLiveSession', () => ({
+  useEndLiveSession: () => mockLive.end,
+}));
 jest.mock('@/hooks/useLiveAdmin', () => ({
   useLiveAdminOverview: () => ({
     data: mockLive.overview,
@@ -179,6 +199,7 @@ beforeEach(() => {
   mockLive.cancel = mk();
   mockLive.retry = mk();
   mockLive.download = mk();
+  mockLive.end = mk();
   mockLive.refresh = jest.fn();
   mockLive.overview = {
     active: [liveNow],
@@ -297,4 +318,78 @@ test('the host opens his scheduled session\'s green room on the phone', async ()
   await render(<AdminLiveScreen />);
   await fireEvent.press(screen.getByText('فتح غرفة التجهيز'));
   expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/live/green/[id]', params: { id: 's-sched' } });
+});
+
+test('scheduling from the sheet: no green room — the lists refresh and «جُدول المجلس: …» confirms', async () => {
+  await render(<AdminLiveScreen />);
+  await fireEvent.press(screen.getByText('اختيار قسم تجربة'));
+  await fireEvent.press(screen.getAllByText('ابدأ مجلساً مباشراً')[1]);
+  await fireEvent.press(screen.getByText('جدولة من الورقة'));
+
+  expect(mockRouter.push).not.toHaveBeenCalled();
+  expect(mockLive.refresh).toHaveBeenCalled();
+  const line = scheduledConfirmLine(mockScheduledAt, Date.now());
+  expect(line).toMatch(/^جُدول المجلس: (اليوم|غداً) [٠-٩]+:[٠-٩]+ م، ويصل الطلاب تذكير قبل بدئه$/);
+  expect(screen.getByText(line)).toBeTruthy();
+  // The sheet closed.
+  expect(screen.queryByText('جدولة من الورقة')).toBeNull();
+});
+
+describe('«إنهاء البث للجميع» on the live card', () => {
+  test('a content manager: asks first (naming the section), then live-control end for that session', async () => {
+    await render(<AdminLiveScreen />);
+    await fireEvent.press(screen.getByText('إنهاء البث للجميع'));
+    expect(screen.getByText('إنهاء البث للجميع؟')).toBeTruthy();
+    expect(
+      screen.getByText('ينتهي «شرح كتاب التوحيد · الدرس السابع» عند جميع الحاضرين، ويُحفظ التسجيل في قسم كتاب التوحيد.'),
+    ).toBeTruthy();
+    expect(mockLive.end.mutate).not.toHaveBeenCalled();
+
+    const confirm = screen.getAllByText('إنهاء البث للجميع');
+    await fireEvent.press(confirm[confirm.length - 1]);
+    expect(mockLive.end.mutate).toHaveBeenCalledTimes(1);
+    expect(mockLive.end.mutate).toHaveBeenCalledWith('s-live', expect.any(Object));
+  });
+
+  test('on the web too — an admin can close a forgotten live from the browser', async () => {
+    (Platform as { OS: string }).OS = 'web';
+    await render(<AdminLiveScreen />);
+    expect(screen.queryByText('فتح الحلقة')).toBeNull();
+    await fireEvent.press(screen.getByText('إنهاء البث للجميع'));
+    const confirm = screen.getAllByText('إنهاء البث للجميع');
+    await fireEvent.press(confirm[confirm.length - 1]);
+    expect(mockLive.end.mutate).toHaveBeenCalledWith('s-live', expect.any(Object));
+  });
+
+  test('a refusal stays on the card in Arabic', async () => {
+    const { LiveControlError } = require('@/api/live');
+    mockLive.end.mutate.mockImplementation((_id: unknown, o: { onError: (e: unknown) => void; onSettled: () => void }) => {
+      o.onError(new LiveControlError('forbidden'));
+      o.onSettled();
+    });
+    await render(<AdminLiveScreen />);
+    await fireEvent.press(screen.getByText('إنهاء البث للجميع'));
+    const confirm = screen.getAllByText('إنهاء البث للجميع');
+    await fireEvent.press(confirm[confirm.length - 1]);
+    expect(screen.getByText('لا تملك صلاحية هذا الإجراء')).toBeTruthy();
+    expect(screen.queryByText('إنهاء البث للجميع؟')).toBeNull();
+  });
+
+  test('busy while the end runs', async () => {
+    mockLive.end = { mutate: jest.fn(), isPending: true, variables: 's-live' };
+    await render(<AdminLiveScreen />);
+    expect(screen.getByText('جارٍ إنهاء البث…')).toBeTruthy();
+  });
+
+  test('a sheikh who is not its host gets no end button; the host does', async () => {
+    mockUser.current = { role: 'sheikh', isGuest: false };
+    mockLive.overview = { active: [liveNow], scheduled: [], recent: [], isManager: false };
+    const { unmount } = await render(<AdminLiveScreen />);
+    expect(screen.queryByText('إنهاء البث للجميع')).toBeNull();
+    await unmount();
+
+    mockLive.overview = { active: [{ ...liveNow, isMine: true }], scheduled: [], recent: [], isManager: false };
+    await render(<AdminLiveScreen />);
+    expect(screen.getByText('إنهاء البث للجميع')).toBeTruthy();
+  });
 });

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
+  StyleSheet,
   TextInput,
   View,
   type ViewStyle,
@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radius } from '@/constants/theme';
 import { arDuration } from '@/lib/format';
+import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';
 
 /**
@@ -44,19 +45,19 @@ export function AddBookmarkSheet({
   }, [visible]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <SheetModal visible={visible} onClose={onClose}>
+      {/* Spans the whole sheet layer, TOP-anchored — so `height` (Android) still
+          shrinks it from the bottom and the flex-end sheet rides above the
+          keyboard; taps beside the sheet reach the backdrop. */}
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        pointerEvents="box-none"
       >
         <Pressable
-          onPress={onClose}
-          style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
-        >
-          <Pressable
-            onPress={() => {}}
-            style={{
-              backgroundColor: colors.bgSandRaised,
+          onPress={() => {}}
+          style={{
+            backgroundColor: colors.bgSandRaised,
             borderTopLeftRadius: radius.artwork,
             borderTopRightRadius: radius.artwork,
             paddingHorizontal: 22,
@@ -127,9 +128,8 @@ export function AddBookmarkSheet({
               {saving ? 'جارٍ الحفظ…' : 'حفظ العلامة'}
             </Txt>
           </Pressable>
-          </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
-    </Modal>
+    </SheetModal>
   );
 }

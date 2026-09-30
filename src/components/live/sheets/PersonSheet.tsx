@@ -4,7 +4,7 @@
  * the REAL name for staff (D2, useLiveStaffParticipants).
  *
  * Actions follow the target's role (liveRules canTarget):
- *  - listener with a raised hand → «السماح بالكلمة» / «الاعتذار»
+ *  - listener with a raised hand → «السماح بالتحدث» / «الاعتذار»
  *  - speaker   → «إغلاق الميكروفون» (while it is open) · «إعادته/إعادتها إلى الاستماع»
  *  - moderator → «إغلاق الميكروفون» only (staff are never demoted)
  *  - the host  → nothing (never muted)

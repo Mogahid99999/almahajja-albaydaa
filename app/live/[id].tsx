@@ -15,9 +15,14 @@
  * P4 (§7.6): a registered listener raises a hand from the dock; speakers and
  * staff get the mic toggle. Moderators (host/moderator) take requests from the
  * strip (RequestSheet), act on people (PersonSheet from «في الحلقة» or the
- * halaqa) and switch «استقبال طلبات الكلمة» (ManageSheet); their «مغادرة
+ * halaqa) and switch «استقبال طلبات التحدث» (ManageSheet); their «مغادرة
  * الحلقة» opens EndSheet — the 5-second undo before live-control `end` runs
- * HERE (a ref timer), so it survives the sheet closing and is cancelled on unmount.
+ * HERE (a ref timer), so it survives the sheet closing; leaving the screen
+ * during the undo ends at once. While the `end` request runs, «جارٍ إنهاء
+ * البث…» shows (it takes ~3 s — the host used to see nothing and think it
+ * failed); a refusal shows an Arabic line. Opened with `?end=1` (the host /
+ * a moderator pressed the mini-bar's ×) the room goes straight to EndSheet —
+ * the × no longer walks the host out of a broadcast that keeps running.
  *
  * P5 (§9.2/§9.3): the top bar's share icon opens ShareSheet («مشاركة رابط البث»,
  * https://go.almahajja.app/live/{code}); for a registered listener with buddies
@@ -102,6 +107,8 @@ const BAD_CONNS: ReadonlySet<LiveConn> = new Set<LiveConn>(['failed', 'offline',
 const ACTIVE_CONNS: ReadonlySet<LiveConn> = new Set<LiveConn>(['ok', 'poor', 'hostdrop']);
 /** iOS can't present a Modal while another one is still dismissing. */
 const SHEET_SWAP_MS = Platform.OS === 'ios' ? 400 : 0;
+/** `?end=1`: let the room screen finish opening before EndSheet slides up. */
+const END_SHEET_DELAY_MS = 350;
 
 type Step = 'idle' | 'identity' | 'gender' | 'joining';
 
@@ -110,7 +117,7 @@ export default function LiveRoomScreen() {
 }
 
 function LiveRoom({ collapse }: { collapse: () => void }) {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, end: endParam } = useLocalSearchParams<{ id: string; end?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { data: user } = useCurrentUser();
@@ -297,9 +304,12 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   // believes it ended.
   const endTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ending, setEnding] = useState(false);
+  const [endBusy, setEndBusy] = useState(false);
   const [endError, setEndError] = useState<string | null>(null);
+  const mounted = useRef(true);
   useEffect(
     () => () => {
+      mounted.current = false;
       if (endTimer.current) {
         clearTimeout(endTimer.current);
         endTimer.current = null;
@@ -316,7 +326,14 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
     endTimer.current = setTimeout(() => {
       endTimer.current = null;
       setEnding(false);
-      endForAll().catch((e: unknown) => setEndError(controlErrorText(e)));
+      setEndBusy(true);
+      endForAll()
+        .catch((e: unknown) => {
+          if (mounted.current) setEndError(controlErrorText(e));
+        })
+        .finally(() => {
+          if (mounted.current) setEndBusy(false);
+        });
     }, END_UNDO_MS);
   }, [endForAll]);
   const undoEnding = useCallback(() => {
@@ -358,6 +375,18 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
     exit();
     void leave();
   };
+
+  // `?end=1` from the mini-bar's × (moderators): open «مغادرة الحلقة» once the
+  // room is up (a beat later, so the sheet doesn't race the screen opening).
+  const endAsked = useRef(false);
+  useEffect(() => {
+    if (endParam !== '1' || endAsked.current || !joinedHere || !isMod || roomConn === 'ended') return;
+    const t = setTimeout(() => {
+      endAsked.current = true;
+      setEndOpen(true);
+    }, END_SHEET_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [endParam, joinedHere, isMod, roomConn]);
 
   const manageRows = (ids: readonly string[]): ManageRow[] =>
     ids.flatMap((pid) => {
@@ -472,6 +501,7 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
                 style={{ position: 'absolute', left: 14, right: 14, bottom: 8, gap: 8, zIndex: 4 }}
               >
                 {ending ? <LiveUndoBar onUndo={undoEnding} /> : null}
+                {endBusy ? <LiveNoticePill text={LIVE_P4_COPY.ending} icon="clock" tone="good" /> : null}
                 {endError ? (
                   <LiveNoticePill text={endError} icon="alert-circle" onPress={() => setEndError(null)} />
                 ) : null}
@@ -840,7 +870,7 @@ function RequestsStrip({
             key={pid}
             onPress={() => onOpen(pid)}
             accessibilityRole="button"
-            accessibilityLabel={`${name} · ${f ? 'تطلب الكلمة' : 'يطلب الكلمة'}`}
+            accessibilityLabel={`${name} · ${f ? 'تطلب التحدث' : 'يطلب التحدث'}`}
             style={({ pressed }) => ({
               flexDirection: 'row',
               alignItems: 'center',

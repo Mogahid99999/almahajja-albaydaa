@@ -45,7 +45,7 @@ function subLine(p: LivePerson): string {
         : kind === 'speaker'
           ? f ? 'من الأخوات' : 'من الإخوة'
           : f ? 'مستمعة' : 'مستمع';
-  if (p.hand) sub += f ? ' · تطلب الكلمة' : ' · يطلب الكلمة';
+  if (p.hand) sub += f ? ' · تطلب التحدث' : ' · يطلب التحدث';
   if (p.hidden && f) sub += ' · بدون اسم';
   return sub;
 }

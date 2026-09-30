@@ -24,10 +24,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LiveMiniBar } from '@/components/live/LiveMiniBar';
 import { Divider, IconButton, Logo, Rhombus, Txt } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useSignOut } from '@/hooks/useAuth';
+import { useLiveStore } from '@/stores/liveStore';
 
 // ─── Nav item config ─────────────────────────────────────────────────────────
 
@@ -384,6 +386,11 @@ export function AdminShell({
         )}
       </View>
 
+      {/* A sheikh/admin who minimised his live room lands back here: without the
+          live mini-bar he had no way back into the room and no way to end it
+          (owner report «احاول انهاء البث ولا يقفل معي»). Phone only. */}
+      {Platform.OS !== 'web' ? <ShellLiveMiniBar /> : null}
+
       {/* ── Compact: drawer overlay ── */}
       {compact ? (
         <SidebarDrawer
@@ -570,3 +577,9 @@ const styles = StyleSheet.create({
     // Anchored to the start (right in RTL) via being first flex child.
   } as ViewStyle,
 });
+
+/** The live mini-bar (same as the student app's) while this device is in a live. */
+function ShellLiveMiniBar() {
+  const inLive = useLiveStore((s) => s.session !== null);
+  return inLive ? <LiveMiniBar /> : null;
+}

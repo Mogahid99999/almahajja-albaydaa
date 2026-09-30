@@ -5,11 +5,11 @@
  * Invariants: the requests strip lists raised hands OLDEST first (handAt) with
  * the REAL name for staff (D2 — a sister who chose «بدون اسم» included);
  * RequestSheet approves / rejects through liveStore.moderate; a refusal shows
- * as one Arabic line (a guest: «الضيف يستمع فقط، ولا يمكن إعطاؤه الكلمة»);
+ * as one Arabic line (a guest: «الضيف يستمع فقط، ولا يمكن السماح له بالتحدث»);
  * PersonSheet offers only what liveRules allows by target role — mute a
  * speaker/moderator with an open mic (never the host), demote a speaker only
  * (never a moderator), with the gendered «إعادته / إعادتها إلى الاستماع»;
- * ManageSheet's «استقبال طلبات الكلمة» switch calls setAllowRequests.
+ * ManageSheet's «استقبال طلبات التحدث» switch calls setAllowRequests.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
@@ -135,34 +135,34 @@ beforeEach(() => {
 
 test('the requests strip lists raised hands oldest first, with real names for staff (D2)', async () => {
   await render(<LiveRoomScreen />);
-  const chips = screen.getAllByLabelText(/(يطلب|تطلب) الكلمة$/);
-  expect(chips.map((c) => c.props.accessibilityLabel)).toEqual(['مريم · تطلب الكلمة', 'خالد · يطلب الكلمة']);
+  const chips = screen.getAllByLabelText(/(يطلب|تطلب) التحدث$/);
+  expect(chips.map((c) => c.props.accessibilityLabel)).toEqual(['مريم · تطلب التحدث', 'خالد · يطلب التحدث']);
   expect(screen.queryByText('طالبة')).toBeNull(); // the LiveKit alias is not what staff see
 });
 
-test('RequestSheet «السماح بالكلمة» approves that person and closes', async () => {
+test('RequestSheet «السماح بالتحدث» approves that person and closes', async () => {
   await render(<LiveRoomScreen />);
-  await fireEvent.press(screen.getByLabelText('خالد · يطلب الكلمة'));
-  expect(screen.getByText('السماح بالكلمة')).toBeTruthy();
-  await fireEvent.press(screen.getByText('السماح بالكلمة'));
+  await fireEvent.press(screen.getByLabelText('خالد · يطلب التحدث'));
+  expect(screen.getByText('السماح بالتحدث')).toBeTruthy();
+  await fireEvent.press(screen.getByText('السماح بالتحدث'));
   expect(mockModerate).toHaveBeenCalledWith('approve', 'bro');
-  expect(screen.queryByText('السماح بالكلمة')).toBeNull();
+  expect(screen.queryByText('السماح بالتحدث')).toBeNull();
 });
 
 test('RequestSheet «الاعتذار» rejects', async () => {
   await render(<LiveRoomScreen />);
-  await fireEvent.press(screen.getByLabelText('مريم · تطلب الكلمة'));
+  await fireEvent.press(screen.getByLabelText('مريم · تطلب التحدث'));
   await fireEvent.press(screen.getByText('الاعتذار'));
   expect(mockModerate).toHaveBeenCalledWith('reject', 'sis');
 });
 
-test('approving a guest shows «الضيف يستمع فقط، ولا يمكن إعطاؤه الكلمة» and keeps the sheet', async () => {
+test('approving a guest shows «الضيف يستمع فقط، ولا يمكن السماح له بالتحدث» and keeps the sheet', async () => {
   mockModerate.mockRejectedValue(new LiveControlError('guest_cannot_speak'));
   await render(<LiveRoomScreen />);
-  await fireEvent.press(screen.getByLabelText('خالد · يطلب الكلمة'));
-  await fireEvent.press(screen.getByText('السماح بالكلمة'));
+  await fireEvent.press(screen.getByLabelText('خالد · يطلب التحدث'));
+  await fireEvent.press(screen.getByText('السماح بالتحدث'));
   await act(async () => {});
-  expect(screen.getByText('الضيف يستمع فقط، ولا يمكن إعطاؤه الكلمة')).toBeTruthy();
+  expect(screen.getByText('الضيف يستمع فقط، ولا يمكن السماح له بالتحدث')).toBeTruthy();
   expect(screen.getByText('الاعتذار')).toBeTruthy(); // still open — they can decline instead
 });
 
@@ -170,15 +170,15 @@ test('a listener sees no requests strip (moderators only)', async () => {
   Object.assign(mockState, { me: { identity: ME, role: 'listener', hidden: false, gender: 'm' } });
   mockUser.current = { id: 'u1', role: 'student', isGuest: false, displayName: 'أحمد', gender: 'male' };
   await render(<LiveRoomScreen />);
-  expect(screen.queryByLabelText('خالد · يطلب الكلمة')).toBeNull();
+  expect(screen.queryByLabelText('خالد · يطلب التحدث')).toBeNull();
   expect(screen.queryByLabelText('إدارة المجلس')).toBeNull();
 });
 
-test('ManageSheet: «استقبال طلبات الكلمة» off → setAllowRequests(false)', async () => {
+test('ManageSheet: «استقبال طلبات التحدث» off → setAllowRequests(false)', async () => {
   await render(<LiveRoomScreen />);
   await fireEvent.press(screen.getByLabelText('إدارة المجلس'));
   expect(screen.getByText('المتحدثون الآن · ١')).toBeTruthy(); // سعيد — not the host, not me
-  const sw = screen.getByLabelText('استقبال طلبات الكلمة');
+  const sw = screen.getByLabelText('استقبال طلبات التحدث');
   await fireEvent(sw, 'change', { nativeEvent: { value: false } });
   expect(mockState.setAllowRequests).toHaveBeenCalledWith(false);
 });
@@ -239,7 +239,7 @@ test('the host is never muted', async () => {
 
 test('a listener with a raised hand: approve / reject from PersonSheet too', async () => {
   await renderPerson(person('bro', { hand: true, handAt: 1_790_000_600 }), 'خالد');
-  await fireEvent.press(screen.getByText('السماح بالكلمة'));
+  await fireEvent.press(screen.getByText('السماح بالتحدث'));
   expect(mockModerate).toHaveBeenCalledWith('approve', 'bro');
 });
 

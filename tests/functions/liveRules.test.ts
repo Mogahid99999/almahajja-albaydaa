@@ -308,7 +308,7 @@ describe('§5.2 action → permission (D1)', () => {
   });
 });
 
-describe('P4 hand «طلب الكلمة» and guests (owner 2026-09-28: guests listen only)', () => {
+describe('P4 hand «طلب التحدث» and guests (owner 2026-09-28: guests listen only)', () => {
   test('guests listen only (owner 2026-09-28): a guest raising his hand is guest_cannot_speak, before any lookup', () => {
     for (const appRole of [null, 'student', 'admin']) {
       expect(preauthorizeLiveAction('hand', { appRole, isGuest: true }, { up: true })).toEqual({
@@ -367,7 +367,7 @@ describe('P4 hand «طلب الكلمة» and guests (owner 2026-09-28: guests l
     expect(LIVE_ERROR_STATUS.rate_limited).toBe(429);
   });
 
-  test('raising needs «استقبال طلبات الكلمة» and the rate limit; lowering is never refused', () => {
+  test('raising needs «استقبال طلبات التحدث» and the rate limit; lowering is never refused', () => {
     const now = Date.parse('2026-09-29T10:00:05Z');
     const base = { up: true, allowRequests: true, lastToggleMs: null, nowMs: now };
     expect(handVerdict(base)).toEqual({ ok: true });

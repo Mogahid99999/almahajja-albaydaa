@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ENCOURAGEMENT_PHRASES } from '@/api/encouragement';
 import { arabicOr } from '@/lib/errorText';
 import { colors, radius } from '@/constants/theme';
 import { useSendEncouragement } from '@/hooks/useBuddyGoals';
+import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';
 
 /**
@@ -46,69 +47,64 @@ export function EncouragementSheet({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <SheetModal visible={visible} onClose={onClose}>
       <Pressable
-        onPress={onClose}
-        style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
+        onPress={() => {}}
+        style={{
+          backgroundColor: colors.bgSandRaised,
+          borderTopLeftRadius: radius.artwork,
+          borderTopRightRadius: radius.artwork,
+          paddingHorizontal: 22,
+          paddingTop: 18,
+          paddingBottom: 20 + insets.bottom,
+          gap: 12,
+          maxHeight: '80%',
+        }}
       >
-        <Pressable
-          onPress={() => {}}
-          style={{
-            backgroundColor: colors.bgSandRaised,
-            borderTopLeftRadius: radius.artwork,
-            borderTopRightRadius: radius.artwork,
-            paddingHorizontal: 22,
-            paddingTop: 18,
-            paddingBottom: 20 + insets.bottom,
-            gap: 12,
-            maxHeight: '80%',
-          }}
-        >
-          <View style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderSand2 }} />
-          <Txt weight="display" size={17} color={colors.primaryTeal} align="center">
-            {`تشجيع ${buddyName}`}
+        <View style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.borderSand2 }} />
+        <Txt weight="display" size={17} color={colors.primaryTeal} align="center">
+          {`تشجيع ${buddyName}`}
+        </Txt>
+
+        {error ? (
+          <Txt size={12.5} color={colors.stateDanger} align="center">
+            {error}
           </Txt>
+        ) : null}
 
-          {error ? (
-            <Txt size={12.5} color={colors.stateDanger} align="center">
-              {error}
-            </Txt>
-          ) : null}
-
-          <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 8 }}>
-            {ENCOURAGEMENT_PHRASES.map((p) => {
-              const isSent = sentKey === p.key;
-              return (
-                <Pressable
-                  key={p.key}
-                  onPress={() => pick(p.key)}
-                  disabled={send.isPending}
-                  accessibilityRole="button"
-                  style={({ pressed }) => ({
-                    paddingVertical: 16,
-                    paddingHorizontal: 16,
-                    borderRadius: radius.card,
-                    backgroundColor: isSent ? colors.primaryTeal : colors.surfaceCard,
-                    borderWidth: 1,
-                    borderColor: isSent ? colors.primaryTeal : colors.borderSand,
-                    opacity: pressed || send.isPending ? 0.7 : 1,
-                  })}
+        <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 8 }}>
+          {ENCOURAGEMENT_PHRASES.map((p) => {
+            const isSent = sentKey === p.key;
+            return (
+              <Pressable
+                key={p.key}
+                onPress={() => pick(p.key)}
+                disabled={send.isPending}
+                accessibilityRole="button"
+                style={({ pressed }) => ({
+                  paddingVertical: 16,
+                  paddingHorizontal: 16,
+                  borderRadius: radius.card,
+                  backgroundColor: isSent ? colors.primaryTeal : colors.surfaceCard,
+                  borderWidth: 1,
+                  borderColor: isSent ? colors.primaryTeal : colors.borderSand,
+                  opacity: pressed || send.isPending ? 0.7 : 1,
+                })}
+              >
+                <Txt
+                  weight="display"
+                  size={14.5}
+                  align="center"
+                  color={isSent ? colors.onTealPrimary : colors.textInk}
+                  style={{ lineHeight: 24 }}
                 >
-                  <Txt
-                    weight="display"
-                    size={14.5}
-                    align="center"
-                    color={isSent ? colors.onTealPrimary : colors.textInk}
-                    style={{ lineHeight: 24 }}
-                  >
-                    {isSent ? 'تم الإرسال — بارك الله فيكما' : p.text}
-                  </Txt>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
+                  {isSent ? 'تم الإرسال — بارك الله فيكما' : p.text}
+                </Txt>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </Pressable>
-    </Modal>
+    </SheetModal>
   );
 }

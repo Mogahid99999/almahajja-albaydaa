@@ -22,7 +22,7 @@
  */
 import { Platform } from 'react-native';
 
-import { isLiveStatus, type LiveStatus } from '@/api/live';
+import { isLiveStatus, liveControl, type LiveStatus } from '@/api/live';
 import { supabase } from '@/lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -326,6 +326,20 @@ export async function retryLiveRecording(sessionId: string): Promise<string> {
   const { data, error } = await supabase.rpc('retry_live_recording', { p_session: sessionId });
   if (error) throw error;
   return data as string;
+}
+
+/**
+ * «إنهاء البث للجميع» from the staff screen — live-control `end` (the host or a
+ * content manager; liveRules authorizeLiveAction). Works from the browser too:
+ * an admin can end a forgotten live without joining the room. The server stops
+ * the recording, closes the room for everyone and the recording goes on to the
+ * section as usual. Reuses live.ts `liveControl` — the same functions.invoke
+ * with a 20 s fetch timeout under a hard deadline (withDeadline), so a stuck
+ * auth lock can never leave the button spinning. Throws LiveControlError
+ * (`code`: forbidden | invalid_state | network …) — map with controlErrorText.
+ */
+export async function endLiveSession(sessionId: string): Promise<void> {
+  await liveControl('end', { sessionId });
 }
 
 // ─── Raw recording download (media worker) ───────────────────────────────────

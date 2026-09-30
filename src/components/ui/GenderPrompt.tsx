@@ -15,12 +15,13 @@
  * registration form keeps its own inline picker on Android.
  */
 import { useState } from 'react';
-import { Modal, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import type { Gender } from '@/api/types';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useUpdateProfile } from '@/hooks/useAuth';
 import { GenderPills } from './GenderPills';
+import { SheetModal } from './SheetModal';
 import { Txt } from './Txt';
 
 export function GenderPrompt({
@@ -71,71 +72,69 @@ export function GenderPrompt({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={cancel}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}>
-        <View
-          style={{
-            backgroundColor: colors.bgSandRaised,
-            borderTopLeftRadius: radius.artwork,
-            borderTopRightRadius: radius.artwork,
-            paddingHorizontal: 22,
-            paddingTop: 22,
-            paddingBottom: 28,
-            gap: 16,
+    <SheetModal visible={visible} onClose={cancel} dismissOnBackdrop={false}>
+      <View
+        style={{
+          backgroundColor: colors.bgSandRaised,
+          borderTopLeftRadius: radius.artwork,
+          borderTopRightRadius: radius.artwork,
+          paddingHorizontal: 22,
+          paddingTop: 22,
+          paddingBottom: 28,
+          gap: 16,
+        }}
+      >
+        <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
+          تحديد الجنس
+        </Txt>
+        <Txt size={13.5} color={colors.textMuted} align="center" style={{ lineHeight: 23 }}>
+          {message}
+        </Txt>
+
+        <GenderPills
+          value={gender}
+          onChange={(g) => {
+            setGender(g);
+            setError(false);
           }}
+        />
+        {error ? (
+          <Txt size={12} color={colors.stateDanger} align="center">
+            يرجى تحديد الجنس
+          </Txt>
+        ) : null}
+
+        {update.isError ? (
+          <Txt size={12} color={colors.stateDanger} align="center">
+            تعذّر الحفظ، حاول مرة أخرى
+          </Txt>
+        ) : null}
+
+        <Pressable
+          onPress={onConfirm}
+          disabled={update.isPending}
+          style={[
+            {
+              backgroundColor: colors.primaryTeal,
+              borderRadius: radius.input,
+              paddingVertical: 14,
+              alignItems: 'center',
+              opacity: update.isPending ? 0.5 : 1,
+            },
+            shadows.button,
+          ]}
         >
-          <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
-            تحديد الجنس
+          <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
+            {update.isPending ? 'جارٍ الحفظ…' : 'متابعة'}
           </Txt>
-          <Txt size={13.5} color={colors.textMuted} align="center" style={{ lineHeight: 23 }}>
-            {message}
+        </Pressable>
+
+        <Pressable onPress={cancel} style={{ alignItems: 'center', paddingVertical: 4 }}>
+          <Txt size={13} weight="semibold" color={colors.textMuted}>
+            رجوع
           </Txt>
-
-          <GenderPills
-            value={gender}
-            onChange={(g) => {
-              setGender(g);
-              setError(false);
-            }}
-          />
-          {error ? (
-            <Txt size={12} color={colors.stateDanger} align="center">
-              يرجى تحديد الجنس
-            </Txt>
-          ) : null}
-
-          {update.isError ? (
-            <Txt size={12} color={colors.stateDanger} align="center">
-              تعذّر الحفظ، حاول مرة أخرى
-            </Txt>
-          ) : null}
-
-          <Pressable
-            onPress={onConfirm}
-            disabled={update.isPending}
-            style={[
-              {
-                backgroundColor: colors.primaryTeal,
-                borderRadius: radius.input,
-                paddingVertical: 14,
-                alignItems: 'center',
-                opacity: update.isPending ? 0.5 : 1,
-              },
-              shadows.button,
-            ]}
-          >
-            <Txt weight="semibold" size={15} color={colors.onTealPrimary}>
-              {update.isPending ? 'جارٍ الحفظ…' : 'متابعة'}
-            </Txt>
-          </Pressable>
-
-          <Pressable onPress={cancel} style={{ alignItems: 'center', paddingVertical: 4 }}>
-            <Txt size={13} weight="semibold" color={colors.textMuted}>
-              رجوع
-            </Txt>
-          </Pressable>
-        </View>
+        </Pressable>
       </View>
-    </Modal>
+    </SheetModal>
   );
 }

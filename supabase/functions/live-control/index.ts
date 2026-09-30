@@ -49,7 +49,7 @@
 //   demote              speaker → listener (moderators; or himself — step_down).
 //                       If he is out of the room (network drop) the DB role
 //                       still changes, so his re-join token is a listener's.
-//   set_allow_requests  «استقبال طلبات الكلمة» → session row + room metadata
+//   set_allow_requests  «استقبال طلبات التحدث» → session row + room metadata
 //   host_leave          the host hands the session to a moderator present
 //   leave               marks left_at (an explicit leave drops speaker status;
 //                       a network drop does NOT — live-token keeps a stored
@@ -57,7 +57,7 @@
 //   hand                { sessionId, up: boolean } — the CALLER's own hand
 //                       (identity ignored), live sessions only. up:true: a
 //                       listener only (else 409 invalid_target), guests 403
-//                       guest_cannot_speak, «استقبال طلبات الكلمة» off 409
+//                       guest_cannot_speak, «استقبال طلبات التحدث» off 409
 //                       requests_closed, ≤ 1 toggle / 5 s (0141 hand_at, 429
 //                       rate_limited). up:false: anyone, idempotent, never
 //                       rate-limited (also fine when he already left the

@@ -1,5 +1,5 @@
 /**
- * A guest taps «طلب الكلمة» (owner rule, 2026-09-28): guests listen like
+ * A guest taps «طلب التحدث» (owner rule, 2026-09-28): guests listen like
  * everyone else, but asking to speak needs an account — say so calmly and offer
  * «تسجيل». The room keeps playing (the caller minimises it to the mini-bar).
  */
@@ -19,9 +19,9 @@ export function GuestSpeakSheet({
   onRegister: () => void;
 }) {
   return (
-    <LiveSheet visible={visible} onClose={onClose} title="سجّل أولاً لتطلب الكلمة">
+    <LiveSheet visible={visible} onClose={onClose} title="سجّل أولاً لتطلب التحدث">
       <Txt size={13.5} color={colors.textSlate} style={{ lineHeight: 24 }}>
-        الاستماع إلى المجلس متاح لك كما هو، أما طلب الكلمة فللمسجّلين فقط.
+        الاستماع إلى المجلس متاح لك كما هو، أما طلب التحدث فللمسجّلين فقط.
       </Txt>
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
         <Pressable

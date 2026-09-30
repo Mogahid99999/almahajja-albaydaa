@@ -23,6 +23,7 @@ import { StreakCard } from '@/components/home/StreakCard';
 import { JourneyHomeCard } from '@/components/journey/JourneyHomeCard';
 import { LiveHomeCard } from '@/components/live/LiveHomeCard';
 import { LiveUpcomingCard } from '@/components/live/LiveUpcomingCard';
+import { useLiveHomeSlot } from '@/components/live/useLiveHomeSlot';
 import { SupportContactLink } from '@/components/SupportContactLink';
 
 /**
@@ -41,9 +42,11 @@ import { SupportContactLink } from '@/components/SupportContactLink';
  */
 export default function HomeScreen() {
   const { data, isLoading } = useHome();
-  // «مباشر الآن» takes the ContinueCard slot while a live is on (V23 §7.3).
+  // «مباشر الآن» takes the ContinueCard slot while a live is on (V23 §7.3) —
+  // and gives it back the moment this device knows it ended (useLiveHomeSlot:
+  // the server's «live» can lag the room's end by a poll).
   const { data: liveNow } = useLiveNow();
-  const live = liveNow?.live ?? null;
+  const live = useLiveHomeSlot(liveNow);
   const upcoming = live ? [] : (liveNow?.upcoming ?? []);
   const miniPad = useMiniPlayerPad();
   // Pull-to-refresh refreshes EVERYTHING the server can change — sections, the

@@ -18,6 +18,10 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 // mock keeps Animated components/hooks render-only (BottomNavBar etc.).
 jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
 
+// Gesture handler's native module doesn't exist under Jest either (SheetModal's
+// drag-to-dismiss renders a GestureHandlerRootView + GestureDetector) — official setup.
+require('react-native-gesture-handler/jestSetup');
+
 jest.mock('react-native-safe-area-context', () =>
   // The package's official mock is an ESM default export.
   require('react-native-safe-area-context/jest/mock').default,

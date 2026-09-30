@@ -3,8 +3,8 @@
  * RTL row: «مغادرة الحلقة» (start/right) · middle · «من في الحلقة» (end/left).
  *
  * The middle (P4):
- *  - guest            «طلب الكلمة» → the «سجّل أولاً» sheet (`onRequest`; guests listen only)
- *  - listener         «طلب الكلمة» ⇄ «بانتظار الإذن · إلغاء» (`speak.kind === 'hand'`),
+ *  - guest            «طلب التحدث» → the «سجّل أولاً» sheet (`onRequest`; guests listen only)
+ *  - listener         «طلب التحدث» ⇄ «بانتظار الإذن · إلغاء» (`speak.kind === 'hand'`),
  *                     disabled while in flight and for 5 s after each toggle (client
  *                     rate limit); disabled with a hint while moderators take no requests
  *  - speaker / staff  the microphone toggle (`speak.kind === 'mic'`). A SPEAKER also gets
@@ -33,7 +33,7 @@ export type DockSpeak =
       up: boolean;
       /** raiseHand / lowerHand in flight. */
       busy: boolean;
-      /** Moderators switched «استقبال طلبات الكلمة» off. */
+      /** Moderators switched «استقبال طلبات التحدث» off. */
       closed: boolean;
       /** Not usable right now (e.g. reconnecting). */
       disabled?: boolean;
@@ -64,7 +64,7 @@ export function LiveDock({
   onLeave: () => void;
   onPeople: () => void;
   /**
-   * Guests only: «طلب الكلمة» → «سجّل أولاً» sheet (guests listen but never
+   * Guests only: «طلب التحدث» → «سجّل أولاً» sheet (guests listen but never
    * speak — owner, 2026-09-28). Wins over `speak`.
    */
   onRequest?: () => void;
@@ -181,7 +181,7 @@ const MAIN = {
   gap: 9,
 } as const;
 
-/** «طلب الكلمة» — the guest path, or the disabled placeholder before I'm in the room. */
+/** «طلب التحدث» — the guest path, or the disabled placeholder before I'm in the room. */
 function RequestButton({ label, onPress }: { label: string; onPress?: () => void }) {
   const disabled = !onPress;
   return (
@@ -205,7 +205,7 @@ function RequestButton({ label, onPress }: { label: string; onPress?: () => void
   );
 }
 
-/** «طلب الكلمة» ⇄ «بانتظار الإذن · إلغاء» with the 5-second rest after each toggle. */
+/** «طلب التحدث» ⇄ «بانتظار الإذن · إلغاء» with the 5-second rest after each toggle. */
 function HandButton({ speak }: { speak: Extract<DockSpeak, { kind: 'hand' }> }) {
   const [cooling, setCooling] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -246,7 +246,7 @@ function HandButton({ speak }: { speak: Extract<DockSpeak, { kind: 'hand' }> }) 
       accessibilityRole="button"
       accessibilityState={{ disabled, busy }}
       accessibilityLabel={label}
-      accessibilityHint={up ? 'يلغي طلب الكلمة' : closed ? LIVE_P4_COPY.requestsClosed : undefined}
+      accessibilityHint={up ? 'يلغي طلب التحدث' : closed ? LIVE_P4_COPY.requestsClosed : undefined}
       style={({ pressed }) => [
         MAIN,
         up
@@ -326,7 +326,7 @@ function StepDownSheet({
       visible={visible}
       onClose={onClose}
       title={`${LIVE_P4_COPY.stepDown}؟`}
-      sub="يُغلق ميكروفونك وتعود إلى الاستماع، ويمكنك طلب الكلمة من جديد متى شئت."
+      sub="يُغلق ميكروفونك وتعود إلى الاستماع، ويمكنك طلب التحدث من جديد متى شئت."
     >
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
         <SheetButton label={LIVE_P4_COPY.stepDown} tone="primary" onPress={onConfirm} />

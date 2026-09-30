@@ -1,9 +1,10 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, TextInput, View, type ViewStyle } from 'react-native';
+import { KeyboardAvoidingView, Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
 
 import type { FeedbackCategory } from '@/api/feedback';
 import { BlockedWordError } from '@/api/reports';
+import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';
 import { colors, fonts, radius } from '@/constants/theme';
 import { useSubmitFeedback } from '@/hooks/useFeedback';
@@ -86,145 +87,145 @@ export function FeedbackSheet({ visible, onClose }: { visible: boolean; onClose:
         : null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <SheetModal visible={visible} onClose={onClose}>
       {/* The app is edge-to-edge, so the keyboard OVERLAYS this modal instead of
-          resizing it — `padding` lifts the whole backdrop (and the flex-end-anchored
-          sheet inside it) above the keyboard, same fix as the lecture-note editor. */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+          resizing it — `padding` lifts the flex-end-anchored sheet above the
+          keyboard, same fix as the lecture-note editor. It spans the whole sheet
+          layer (top-anchored) and lets taps beside the sheet reach the backdrop. */}
+      <KeyboardAvoidingView
+        style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]}
+        behavior="padding"
+        pointerEvents="box-none"
+      >
         <Pressable
-          onPress={onClose}
-          style={{ flex: 1, backgroundColor: 'rgba(22,53,47,0.35)', justifyContent: 'flex-end' }}
+          onPress={() => {}}
+          style={{
+            backgroundColor: colors.bgSandRaised,
+            borderTopLeftRadius: radius.artwork,
+            borderTopRightRadius: radius.artwork,
+            paddingHorizontal: 22,
+            paddingTop: 18,
+            paddingBottom: 34,
+            gap: 14,
+          }}
         >
-          <Pressable
-            onPress={() => {}}
+          <View
             style={{
-              backgroundColor: colors.bgSandRaised,
-              borderTopLeftRadius: radius.artwork,
-              borderTopRightRadius: radius.artwork,
-              paddingHorizontal: 22,
-              paddingTop: 18,
-              paddingBottom: 34,
-              gap: 14,
+              alignSelf: 'center',
+              width: 44,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: colors.borderSand2,
             }}
-          >
-            <View
-              style={{
-                alignSelf: 'center',
-                width: 44,
-                height: 5,
-                borderRadius: 3,
-                backgroundColor: colors.borderSand2,
-              }}
-            />
+          />
 
-            {sent ? (
-              <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
-                <View
-                  style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: 26,
-                    backgroundColor: colors.primaryTeal,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Feather name="check" size={26} color={colors.onTealPrimary} />
-                </View>
-                <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
-                  شكرًا لك
-                </Txt>
-                <Txt size={13} color={colors.textMuted} align="center" style={{ lineHeight: 21 }}>
-                  وصلت ملاحظتك إلى فريق العمل، بارك الله فيك
-                </Txt>
+          {sent ? (
+            <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
+              <View
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
+                  backgroundColor: colors.primaryTeal,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Feather name="check" size={26} color={colors.onTealPrimary} />
               </View>
-            ) : (
-              <>
-                <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
-                  إرسال ملاحظة
-                </Txt>
-                <Txt size={12.5} color={colors.textMuted} align="center" style={{ lineHeight: 20 }}>
-                  نرحّب بملاحظاتك — تصل مباشرة إلى فريق العمل
-                </Txt>
-
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-                  {CATEGORIES.map((c) => (
-                    <CategoryChip
-                      key={c.value}
-                      label={c.label}
-                      icon={c.icon}
-                      active={category === c.value}
-                      onPress={() => setCategory(c.value)}
-                    />
-                  ))}
-                </View>
-
-                <TextInput
-                  value={message}
-                  onChangeText={setMessage}
-                  placeholder="اكتب ملاحظتك هنا…"
-                  placeholderTextColor={colors.textGhost}
-                  multiline
-                  textAlign="right"
-                  textAlignVertical="top"
-                  maxLength={2000}
-                  style={{
-                    minHeight: 96,
-                    backgroundColor: colors.surfaceWhite,
-                    borderWidth: 1.5,
-                    borderColor: colors.borderSand2,
-                    borderRadius: radius.input,
-                    paddingHorizontal: 14,
-                    paddingVertical: 10,
-                    fontFamily: fonts.body,
-                    fontSize: 14,
-                    lineHeight: 22,
-                    color: colors.textInk,
-                  }}
-                />
-
-                {errorMessage ? (
-                  <Txt size={12.5} color={colors.stateDanger} align="center">
-                    {errorMessage}
-                  </Txt>
-                ) : null}
-
-                <Pressable
-                  onPress={() => {
-                    if (!category) return;
-                    submit.mutate(
-                      { category, message: trimmed },
-                      { onSuccess: () => setSent(true) },
-                    );
-                  }}
-                  disabled={!canSubmit}
-                  accessibilityRole="button"
-                  style={({ pressed }) =>
-                    ({
-                      marginTop: 4,
-                      paddingVertical: 14,
-                      borderRadius: radius.input,
-                      alignItems: 'center',
-                      backgroundColor: colors.primaryTeal,
-                      opacity: pressed || !canSubmit ? 0.6 : 1,
-                    }) as ViewStyle
-                  }
-                >
-                  <Txt size={15} weight="semibold" color={colors.onTealPrimary}>
-                    {submit.isPending ? 'جارٍ الإرسال…' : 'إرسال'}
-                  </Txt>
-                </Pressable>
-              </>
-            )}
-
-            <Pressable onPress={onClose} disabled={submit.isPending} style={{ alignItems: 'center', paddingVertical: 6 }}>
-              <Txt size={13} weight="medium" color={colors.textMuted}>
-                {sent ? 'إغلاق' : 'إلغاء'}
+              <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
+                شكرًا لك
               </Txt>
-            </Pressable>
+              <Txt size={13} color={colors.textMuted} align="center" style={{ lineHeight: 21 }}>
+                وصلت ملاحظتك إلى فريق العمل، بارك الله فيك
+              </Txt>
+            </View>
+          ) : (
+            <>
+              <Txt weight="display" size={18} color={colors.primaryTeal} align="center">
+                إرسال ملاحظة
+              </Txt>
+              <Txt size={12.5} color={colors.textMuted} align="center" style={{ lineHeight: 20 }}>
+                نرحّب بملاحظاتك — تصل مباشرة إلى فريق العمل
+              </Txt>
+
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                {CATEGORIES.map((c) => (
+                  <CategoryChip
+                    key={c.value}
+                    label={c.label}
+                    icon={c.icon}
+                    active={category === c.value}
+                    onPress={() => setCategory(c.value)}
+                  />
+                ))}
+              </View>
+
+              <TextInput
+                value={message}
+                onChangeText={setMessage}
+                placeholder="اكتب ملاحظتك هنا…"
+                placeholderTextColor={colors.textGhost}
+                multiline
+                textAlign="right"
+                textAlignVertical="top"
+                maxLength={2000}
+                style={{
+                  minHeight: 96,
+                  backgroundColor: colors.surfaceWhite,
+                  borderWidth: 1.5,
+                  borderColor: colors.borderSand2,
+                  borderRadius: radius.input,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  fontFamily: fonts.body,
+                  fontSize: 14,
+                  lineHeight: 22,
+                  color: colors.textInk,
+                }}
+              />
+
+              {errorMessage ? (
+                <Txt size={12.5} color={colors.stateDanger} align="center">
+                  {errorMessage}
+                </Txt>
+              ) : null}
+
+              <Pressable
+                onPress={() => {
+                  if (!category) return;
+                  submit.mutate(
+                    { category, message: trimmed },
+                    { onSuccess: () => setSent(true) },
+                  );
+                }}
+                disabled={!canSubmit}
+                accessibilityRole="button"
+                style={({ pressed }) =>
+                  ({
+                    marginTop: 4,
+                    paddingVertical: 14,
+                    borderRadius: radius.input,
+                    alignItems: 'center',
+                    backgroundColor: colors.primaryTeal,
+                    opacity: pressed || !canSubmit ? 0.6 : 1,
+                  }) as ViewStyle
+                }
+              >
+                <Txt size={15} weight="semibold" color={colors.onTealPrimary}>
+                  {submit.isPending ? 'جارٍ الإرسال…' : 'إرسال'}
+                </Txt>
+              </Pressable>
+            </>
+          )}
+
+          <Pressable onPress={onClose} disabled={submit.isPending} style={{ alignItems: 'center', paddingVertical: 6 }}>
+            <Txt size={13} weight="medium" color={colors.textMuted}>
+              {sent ? 'إغلاق' : 'إلغاء'}
+            </Txt>
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
-    </Modal>
+    </SheetModal>
   );
 }

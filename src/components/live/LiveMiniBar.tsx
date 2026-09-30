@@ -3,6 +3,11 @@
  * rendered by `MiniPlayer` instead of the lecture bar while `liveStore.session`
  * is set. Same slot, same shape; RTL row = leave «×» · sheikh + speaker stack ·
  * «الحلقة · {title}» + who is speaking · pause/resume. Tap → back to the room.
+ *
+ * The host / a moderator: «×» opens the room on «مغادرة الحلقة» (hand over or
+ * «إنهاء البث للجميع») instead of silently leaving — a host who left from here
+ * used to walk out of a broadcast that kept running («لا يقفل معي»). After the
+ * end (or a failed connection) «×» just dismisses the bar.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
@@ -14,7 +19,16 @@ import { BOTTOM_NAV_BAR_HEIGHT } from '@/components/navigation/BottomNavBar';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useLiveStore } from '@/stores/liveStore';
 import { LiveAvatar, LiveMarker, SheikhAvatar } from './LiveAvatar';
-import { LIVE_COPY, NO_STAFF_NAMES, liveRoomHref, roleKind, sexOf, speakVerb, visibleName } from './liveUi';
+import {
+  LIVE_COPY,
+  NO_STAFF_NAMES,
+  isModeratorRole,
+  liveRoomHref,
+  roleKind,
+  sexOf,
+  speakVerb,
+  visibleName,
+} from './liveUi';
 
 export function LiveMiniBar({ liftAboveNavBar = false }: { liftAboveNavBar?: boolean }) {
   const router = useRouter();
@@ -26,6 +40,7 @@ export function LiveMiniBar({ liftAboveNavBar = false }: { liftAboveNavBar?: boo
   const activeSpeakers = useLiveStore((s) => s.activeSpeakers);
   const setPaused = useLiveStore((s) => s.setPaused);
   const leave = useLiveStore((s) => s.leave);
+  const myRole = useLiveStore((s) => s.me?.role ?? null);
 
   if (!session) return null;
 
@@ -81,6 +96,10 @@ export function LiveMiniBar({ liftAboveNavBar = false }: { liftAboveNavBar?: boo
       <Pressable
         onPress={(e) => {
           e.stopPropagation?.();
+          if (isModeratorRole(myRole) && conn !== 'ended' && conn !== 'failed') {
+            router.push(liveRoomHref(session.id, { end: true }));
+            return;
+          }
           void Promise.resolve(leave()).catch(() => {});
         }}
         hitSlop={10}

@@ -1,11 +1,13 @@
 /**
  * «البث المباشر» — the staff live screen (V23 P6, PLAN_LIVE_V23 §8; D7).
  *
- *  - Start card: section picker → CreateLiveSheet → the host's green room, on
- *    the PHONE (staff can't reach the student section page). On web:
+ *  - Start card: section picker → CreateLiveSheet → «الآن»: the host's green
+ *    room, on the PHONE (staff can't reach the student section page); «في موعد
+ *    لاحق»: scheduled (a calm confirmation line, the lists refresh). On web:
  *    «يبدأ البث من تطبيق الهاتف» (hosting from the browser comes later).
  *  - «مباشر الآن»: title, sheikh, section, started, attendees → «فتح الحلقة»
- *    (phone app only).
+ *    (phone app only) · «إنهاء البث للجميع» (its host or a content manager,
+ *    web too — live-control `end`, after a confirmation naming the section).
  *  - «قيد التجهيز والمجدولة»: green rooms + scheduled sessions → «فتح غرفة
  *    التجهيز» for its host, «إلغاء المجلس» (cancel_live_session).
  *  - «انتهت مؤخراً»: the recording job state/progress, «فتح في الواردة» for the
@@ -23,10 +25,11 @@ import type { LiveAdminSession } from '@/api/liveAdmin';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { LiveSessionCard } from '@/components/admin/live/LiveSessionCard';
-import { canHost, isContentManager } from '@/components/admin/live/liveAdminUi';
+import { ADMIN_LIVE_COPY, canHost, endLiveMessage, isContentManager } from '@/components/admin/live/liveAdminUi';
 import { ActionButton, EmptyLine, GroupHeading } from '@/components/admin/live/parts';
 import { StartLiveCard } from '@/components/admin/live/StartLiveCard';
-import { liveGreenHref, liveRoomHref, rpcErrorText } from '@/components/live/liveUi';
+import { useEndLiveSession } from '@/components/admin/live/useEndLiveSession';
+import { controlErrorText, liveGreenHref, liveRoomHref, rpcErrorText } from '@/components/live/liveUi';
 import { Card, Txt } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -58,9 +61,12 @@ export default function AdminLiveScreen() {
   const retry = useRetryLiveRecording();
   const download = useDownloadRawRecording();
   const refresh = useRefreshLiveAdmin();
+  // «إنهاء البث للجميع» (live-control `end`). The lists refresh either way.
+  const end = useEndLiveSession();
   const nowMs = useNow(30_000);
 
   const [pendingCancel, setPendingCancel] = useState<LiveAdminSession | null>(null);
+  const [pendingEnd, setPendingEnd] = useState<LiveAdminSession | null>(null);
   const [notes, setNotes] = useState<Record<string, Note>>({});
   const setNote = (id: string, note: Note | null) =>
     setNotes((prev) => {
@@ -83,6 +89,7 @@ export default function AdminLiveScreen() {
     onOpenRoom: (s: LiveAdminSession) => router.push(liveRoomHref(s.id)),
     onOpenGreen: (s: LiveAdminSession) => router.push(liveGreenHref(s.id)),
     onCancel: (s: LiveAdminSession) => setPendingCancel(s),
+    onEnd: (s: LiveAdminSession) => setPendingEnd(s),
     onRetry: (s: LiveAdminSession) => {
       setNote(s.id, null);
       retry.mutate(s.id, {
@@ -114,6 +121,7 @@ export default function AdminLiveScreen() {
       {...cardProps}
       retrying={retry.isPending && retry.variables === s.id}
       downloading={download.isPending && download.variables?.sessionId === s.id}
+      endingLive={end.isPending && end.variables === s.id}
       note={notes[s.id] ?? null}
     />
   );
@@ -156,6 +164,7 @@ export default function AdminLiveScreen() {
                 refresh();
                 router.push(liveGreenHref(id));
               }}
+              onScheduled={() => refresh()}
             />
           </>
         )}
@@ -208,6 +217,28 @@ export default function AdminLiveScreen() {
           });
         }}
         onCancel={() => setPendingCancel(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingEnd}
+        title="إنهاء البث للجميع؟"
+        message={pendingEnd ? endLiveMessage(pendingEnd) : ''}
+        confirmLabel={ADMIN_LIVE_COPY.endLive}
+        cancelLabel="تراجع"
+        pending={end.isPending}
+        onConfirm={() => {
+          const s = pendingEnd;
+          if (!s || end.isPending) return;
+          setNote(s.id, null);
+          end.mutate(s.id, {
+            onSuccess: () => setNote(s.id, { text: 'انتهى البث، ويُحفظ التسجيل في قسمه', tone: 'ok' }),
+            onError: (e) => setNote(s.id, { text: controlErrorText(e), tone: 'danger' }),
+            onSettled: () => setPendingEnd(null),
+          });
+        }}
+        onCancel={() => {
+          if (!end.isPending) setPendingEnd(null);
+        }}
       />
     </AdminShell>
   );
