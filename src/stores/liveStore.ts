@@ -63,6 +63,7 @@ export type { LiveConn, LivePerson } from "@/lib/liveConnection";
 /**
  * One-shot room messages (P4, PLAN §15 room.*). The room shows the latest one
  * (a quiet banner, ~6 s) and calls clearNotice(); `id` changes on every new one.
+ *   joined          «اللهم اغفر للقائمين على هذا الأمر ولوالديهم» (owner 2026-09-30: on entering)
  *   hand_raised     «رفعت يدك. يراها المشرفون في مكانك من الحلقة»
  *   accepted        «صرت من المتحدثين. افتح الميكروفون وأغلقه متى شئت. المجلس يُسجَّل وصوتك ضمنه»
  *   rejected        «اعتذر المشرف عن قبول طلب التحدث الآن»
@@ -74,6 +75,7 @@ export type { LiveConn, LivePerson } from "@/lib/liveConnection";
  *   failed          «تعذّر تنفيذ الطلب. حاول مرة أخرى»
  */
 export type LiveNoticeKind =
+  | "joined"
   | "hand_raised"
   | "accepted"
   | "rejected"
@@ -371,6 +373,10 @@ async function startJoin(
   const speaking = opts?.speaking === true;
   const my = ++joinGen;
   const prev = getState();
+  // A real entry (not a sister's «باسمي» ⇄ «بدون اسم» re-join of the same room)
+  // greets with the du'a once connected. Not in the host's green room.
+  const entering =
+    !speaking && !(prev.session?.id === session.id && IN_ROOM.has(prev.conn));
   if (prev.session) {
     // Switching sessions (or retrying / re-joining this one): drop the old room first.
     if (prev.session.id !== session.id && prev.me) sendLeave(prev.session.id);
@@ -447,6 +453,7 @@ async function startJoin(
     if (my === joinGen) setState({ conn: "failed", lastError: "network" });
     throw new LiveTokenError("network");
   }
+  if (my === joinGen && entering && getState().conn !== "ended") notify("joined");
   if (
     my === joinGen &&
     !speaking &&

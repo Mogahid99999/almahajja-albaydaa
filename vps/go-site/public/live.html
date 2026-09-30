@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>بث مباشر · المحجّة البيضاء</title>
-  <meta name="description" content="مجلس علم يُبث مباشرة في تطبيق المحجّة البيضاء. من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى متجر جهازه.">
+  <meta name="description" content="مجلس علم يُبث مباشرة في تطبيق المحجّة البيضاء. من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه أو كان إصداره قديماً يُوجَّه إلى Google Play.">
   <meta name="theme-color" content="#1f4a42">
   <meta name="robots" content="noindex">
 
@@ -26,10 +26,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="/live.css">
+  <!-- ?v= busts the 1-day cache (nginx + Cloudflare) — bump it whenever live.css / live.js change. -->
+  <link rel="stylesheet" href="/live.css?v=2">
   <!-- Per-environment Supabase URL + anon key (generated, never committed — see README). -->
   <script src="/config.js"></script>
-  <script src="/live.js" defer></script>
+  <script src="/live.js?v=2" defer></script>
 </head>
 <body>
   <main class="wrap">
@@ -45,22 +46,18 @@
       <p class="when" id="when" hidden></p>
     </section>
 
-    <a class="btn primary" id="open" href="riwaqalilm://">لديّ التطبيق · افتح البث</a>
-
-    <div class="stores">
+    <!-- live.js fills these per platform (Android: the room via an intent, Play as its fallback). -->
+    <div class="actions">
+      <a class="btn primary" id="open" href="#" hidden>افتح البث في التطبيق</a>
+      <p class="hint" id="hint" hidden></p>
       <a class="btn secondary" id="play" href="https://play.google.com/store/apps/details?id=com.riwaqalilm.app" rel="noopener">حمّل التطبيق من Google Play</a>
       <a class="btn secondary" id="appstore" href="#" rel="noopener" hidden>حمّل التطبيق من App Store</a>
     </div>
 
-    <p class="note" id="redirect" hidden>
-      <span>سننقلك إلى متجر جهازك بعد لحظات…</span>
-      <button type="button" id="stay">ابقَ هنا</button>
-    </p>
-
-    <p class="explain">من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى متجر جهازه.</p>
+    <p class="explain" id="explain">من لديه التطبيق يدخل الحلقة مباشرة، ومن ليس لديه يُوجَّه إلى Google Play.</p>
   </main>
   <noscript>
-    <p class="explain">افتح هذا الرابط من هاتف عليه تطبيق المحجّة البيضاء، أو حمّل التطبيق من متجر جهازك.</p>
+    <p class="explain">افتح هذا الرابط من هاتف عليه تطبيق المحجّة البيضاء، أو حمّل التطبيق من Google Play.</p>
   </noscript>
 </body>
 </html>

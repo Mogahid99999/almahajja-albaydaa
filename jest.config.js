@@ -22,10 +22,13 @@ module.exports = {
   // Supabase project and run only via `npm run test:contract` (own config).
   // tests/functions/ holds unit tests for the PURE edge-function logic in
   // supabase/functions/_shared/ (no Deno/npm imports there, so jest can load it).
+  // tests/go-site/ pins the share-link wiring: the static go.almahajja.app page's
+  // pure helpers (vps/go-site/public/live.js), assetlinks.json and the App Link filter.
   testMatch: [
     '<rootDir>/src/**/__tests__/**/*.test.ts?(x)',
     '<rootDir>/tests/screens/**/*.test.ts?(x)',
     '<rootDir>/tests/functions/**/*.test.ts?(x)',
+    '<rootDir>/tests/go-site/**/*.test.ts?(x)',
   ],
   // jest-expo's transformIgnorePatterns already whitelists expo/react-native
   // packages; keep the default.

@@ -338,6 +338,26 @@ describe('join', () => {
     expect(mockFetchToken).toHaveBeenLastCalledWith('sess-1', 'hidden');
   });
 
+  test('entering greets with the du\'a once connected; a sister\'s identity re-join does not repeat it', async () => {
+    mockFetchToken.mockResolvedValue(token({ gender: 'f', hidden: false }));
+    connectsOk();
+    await state().join(session);
+    expect(state().notice?.kind).toBe('joined');
+
+    useLiveStore.setState({ notice: null });
+    state().setPreferredIdentity('hidden');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+    expect(state().notice).toBeNull();
+  });
+
+  test('the host\'s green room gets no du\'a notice', async () => {
+    mockFetchToken.mockResolvedValue(token({ role: 'host' }));
+    connectsOk();
+    await state().openGreen({ ...session, status: 'green' });
+    expect(state().notice?.kind).not.toBe('joined');
+  });
+
   test('only preferredIdentity is persisted', () => {
     const opts = (useLiveStore as unknown as { persist: { getOptions: () => { partialize: (s: unknown) => unknown } } })
       .persist.getOptions();

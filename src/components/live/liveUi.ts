@@ -74,6 +74,9 @@ export const HIDDEN_SISTER_NAME = 'طالبة';
 
 // ─── §15 copy ────────────────────────────────────────────────────────────────
 
+/** The du'a for the organisers: shown on entering the room and again when the majlis ends. */
+export const LIVE_DUA = 'اللهم اغفر للقائمين على هذا الأمر ولوالديهم';
+
 export const LIVE_COPY = {
   connecting: 'جارٍ الدخول إلى الحلقة…',
   reconnecting: 'جارٍ إعادة الاتصال…',
@@ -82,7 +85,7 @@ export const LIVE_COPY = {
   offline: 'انقطع اتصالك بالإنترنت. سنعيدك إلى الحلقة تلقائياً عند عودته.',
   failed: 'تعذّر الدخول إلى الحلقة',
   ended: 'انتهى المجلس',
-  endedThanks: 'اللهم اغفر للقائمين على هذا الأمر ولوالديهم',
+  endedThanks: LIVE_DUA,
   leave: 'مغادرة الحلقة',
   request: 'طلب التحدث',
   nobody: 'لا أحد يتحدث الآن',
@@ -286,6 +289,7 @@ export const LIVE_P4_COPY = {
 
 /** One-shot room messages (liveStore `notice.kind` → §15 copy). */
 export const NOTICE_COPY = {
+  joined: LIVE_DUA,
   hand_raised: 'رفعت يدك. يراها المشرفون في مكانك من الحلقة',
   accepted: 'صرت من المتحدثين. افتح الميكروفون وأغلقه متى شئت. المجلس يُسجَّل وصوتك ضمنه',
   rejected: 'اعتذر المشرف عن قبول طلب التحدث الآن',

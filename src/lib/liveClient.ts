@@ -180,7 +180,8 @@ export async function configureListeningAudio(): Promise<void> {
  * echo canceller works against the room audio, so a speaker on the loudspeaker
  * doesn't feed the sheikh's voice back into the room / recording). Loudspeaker
  * stays preferred over the earpiece. Switched with a session restart (the
- * AudioSwitch mode/focus only apply on start).
+ * AudioSwitch mode/focus only apply on start) AND a new playout track
+ * ({@link recreatePlayout}).
  */
 let androidProfile: "listening" | "speaking" = "listening";
 
@@ -201,6 +202,54 @@ async function applyAndroidProfile(
   await rn.AudioSession.startAudioSession();
   androidAudioActive = true;
   androidProfile = profile;
+  // Before a connect there is no room yet: the first track starts right.
+  const room = run?.room;
+  if (room) await recreatePlayout(room);
+}
+
+/** Waiting for the SDP removal of every remote audio track (weak networks: then resubscribe anyway). */
+const PLAYOUT_CYCLE_MS = 4000;
+/** After the last removal, before subscribing again (WebRTC stops playout on its worker thread). */
+const PLAYOUT_SETTLE_MS = 150;
+
+/**
+ * Re-create WebRTC's playout AudioTrack so it takes the profile's
+ * AudioAttributes. configureAudio() only updates the attributes FIELD
+ * (WebRtcAudioTrackHelper); a running track keeps the ones it was created
+ * with — for a listener USAGE_MEDIA (app.json audioType "media"). On the
+ * loudspeaker the hardware echo canceller (which replaces WebRTC's software
+ * AEC on Android ≥ 10) has no reference for that stream, so the phone's mic
+ * sent the room back: the staging echo of 2026-09-30 (the sheikh heard
+ * himself 0.7–0.85 s late while a moderator's mic was open; only the host,
+ * configured before connecting, was right).
+ * WebRTC stops playout when its last receive stream goes and creates a new
+ * track (current attributes) when one returns: unsubscribe every remote audio
+ * track, wait until the removals landed (TrackUnsubscribed = the SDP removal),
+ * subscribe again — the listen-pause mechanism. A short gap for this phone only.
+ * @internal exported for the echo regression test.
+ */
+export async function recreatePlayout(room: LK.Room): Promise<void> {
+  const pubs: LK.RemoteTrackPublication[] = [];
+  for (const p of room.remoteParticipants.values()) {
+    for (const pub of p.audioTrackPublications.values()) {
+      if (pub.isSubscribed) pubs.push(pub);
+    }
+  }
+  if (!pubs.length) return; // no playout running (paused, or nobody publishes)
+  try {
+    for (const pub of pubs) pub.setSubscribed(false);
+    const until = Date.now() + PLAYOUT_CYCLE_MS;
+    while (pubs.some((pub) => pub.track) && Date.now() < until) await delay(50);
+    await delay(PLAYOUT_SETTLE_MS);
+  } finally {
+    for (const pub of pubs) {
+      try {
+        pub.setSubscribed(!paused);
+      } catch {
+        /* publication went away */
+      }
+    }
+  }
 }
 
 /**

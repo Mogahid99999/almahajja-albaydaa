@@ -184,6 +184,31 @@ describe('the room', () => {
     }
   });
 
+  // The share icon is not a staff tool: every listener in the room can pass the link on.
+  test('a guest listener sees the share icon and shares the link (no buddy invite)', async () => {
+    mockUser.current = { id: 'g1', role: 'student', isGuest: true, displayName: null, gender: 'male' };
+    mockBuddies.current = [{ buddyId: 'b1', displayName: 'حسن' }];
+    await render(<LiveRoomScreen />);
+    expect(screen.queryByLabelText('إدارة المجلس')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('مشاركة رابط البث'));
+    expect(screen.getByText('go.almahajja.app/live/ABC234')).toBeTruthy();
+    expect(screen.queryByText('ادعُ رفيقك إلى الحلقة')).toBeNull();
+    await fireEvent.press(screen.getByText('مشاركة'));
+    expect(shareSpy).toHaveBeenCalledTimes(1);
+    expect(shareSpy.mock.calls[0][0]).toEqual({ message: EXPECTED_MESSAGE });
+  });
+
+  test('a registered sister listening sees the share icon too', async () => {
+    mockUser.current = { id: 'u2', role: 'student', isGuest: false, displayName: 'مريم', gender: 'female' };
+    Object.assign(mockState, {
+      me: { identity: 'b'.repeat(16), role: 'listener', hidden: true, gender: 'f' },
+      preferredIdentity: 'hidden',
+    });
+    await render(<LiveRoomScreen />);
+    await fireEvent.press(screen.getByLabelText('مشاركة رابط البث'));
+    expect(screen.getByText('go.almahajja.app/live/ABC234')).toBeTruthy();
+  });
+
   test('no share icon once the session is over', async () => {
     mockSession.current = { ...liveSession, status: 'ended' };
     await render(<LiveRoomScreen />);

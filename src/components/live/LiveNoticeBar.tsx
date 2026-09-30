@@ -1,8 +1,9 @@
 /**
  * Quiet one-line room messages (PLAN_LIVE_V23 §15 room.*):
- *  - `LiveNoticeBar` shows the store's one-shot `notice` («رفعت يدك…»,
- *    «صرت من المتحدثين…», «أغلق المشرف ميكروفونك…») for ~6 s, then
+ *  - `LiveNoticeBar` shows the store's one-shot `notice` (the du'a on entering,
+ *    «رفعت يدك…», «صرت من المتحدثين…», «أغلق المشرف ميكروفونك…») for ~6 s, then
  *    clearNotice(); a new notice (new id) restarts the timer. Tap to dismiss.
+ *    The text wraps and is never cut (no line limit).
  *  - `LiveNoticePill` the same look for the room's own lines (a failed action).
  *  - `LiveUndoBar` «ينتهي البث خلال ثوانٍ · تراجع» (§7.6 end undo).
  * Calm: no animation, sand card, a small icon — announced politely to screen readers.
@@ -16,9 +17,10 @@ import { colors, shadows } from '@/constants/theme';
 import { useLiveStore } from '@/stores/liveStore';
 import { LIVE_P4_COPY, NOTICE_MS, noticeText, type NoticeKind } from './liveUi';
 
-const GOOD: ReadonlySet<NoticeKind> = new Set<NoticeKind>(['hand_raised', 'accepted']);
+const GOOD: ReadonlySet<NoticeKind> = new Set<NoticeKind>(['joined', 'hand_raised', 'accepted']);
 
 const ICON: Record<NoticeKind, keyof typeof Feather.glyphMap> = {
+  joined: 'heart',
   hand_raised: 'check-circle',
   accepted: 'mic',
   rejected: 'info',

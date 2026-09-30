@@ -114,30 +114,17 @@ h1 {
 .btn.primary { background: var(--teal); color: var(--on-teal); }
 .btn.primary:active { background: var(--teal-deep); }
 .btn.secondary { background: var(--inset); color: var(--teal); font-weight: 500; }
+.btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 
-.stores { display: flex; flex-direction: column; gap: 10px; }
+.actions { display: flex; flex-direction: column; gap: 10px; }
 
-.note {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--bg-raised);
+/* Under the primary button: where it leads when the app can't open the room. */
+.hint {
+  margin: -2px 4px 4px;
   color: var(--muted);
-  font-size: 13.5px;
-}
-.note button {
-  flex: none;
-  border: 0;
-  background: transparent;
-  color: var(--teal);
-  font: inherit;
-  font-weight: 600;
-  padding: 4px 6px;
-  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
 }
 
 .explain {

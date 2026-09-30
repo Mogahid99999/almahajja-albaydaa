@@ -1,25 +1,138 @@
 /*
  * go.almahajja.app/live/{code} — the share-link fallback (PLAN_LIVE_V23 §9.3, D8).
  *
- * Reached only when the app did NOT take the link (not installed, or an in-app
- * browser that ignores App Links / Universal Links):
- *   1. reads the share code from the path;
- *   2. asks Supabase get_live_by_code (anon key from /config.js) → live /
- *      scheduled / ended card — a gender-restricted session (restricted:true)
- *      shows only its status, never its title;
- *   3. «لديّ التطبيق · افتح البث» → riwaqalilm://live/code/{code};
- *   4. Android / iOS: after 1.5 s, on to Google Play / the App Store
- *      («ابقَ هنا» cancels; so does opening the app or leaving the page).
+ * Reached only when the app did NOT take the link:
+ *   - no app installed;
+ *   - an OLD app (< 1.1.3: no https /live filter) — Android hands the link to the browser;
+ *   - a current app whose App Link is not verified (assetlinks.json had no SHA-256
+ *     when it was installed), an in-app browser, or a URL typed into Chrome.
+ *
+ * Android — one button covers all three. «افتح البث في التطبيق» is a
+ * package-targeted https intent:
+ *   intent://go.almahajja.app/live/{code}#Intent;scheme=https;package=com.riwaqalilm.app;
+ *     S.browser_fallback_url=<Google Play, url-encoded>;end
+ *   → a current app (its https /live filter matches — verification is not needed
+ *     for an explicit package) opens the room via app/+native-intent.tsx;
+ *   → an old app (no matching filter) or no app → Chrome follows the fallback to
+ *     Google Play, which offers «تحديث» / «تثبيت».
+ * It never uses riwaqalilm:// — an old app owns that scheme too and would open
+ * on a route it doesn't have. Chrome only follows intents from a user tap, so
+ * there is NO automatic store redirect: it would carry a current-app user off
+ * to Play, whose «فتح» opens the app's home, not the room. A plain Google Play
+ * button («حدّث التطبيق أو ثبّته») stays for browsers that ignore intent://.
+ *
+ * iOS (out of scope this round) / desktop: a short note + Google Play (the App
+ * Store instead on iOS once config.js carries appStoreUrl).
+ *
+ * The card: get_live_by_code (anon key from /config.js) → live / scheduled /
+ * ended; a gender-restricted session (restricted:true) shows only its status.
  * Text is only ever set with textContent (titles come from the database).
+ *
+ * The pure helpers are exported under CommonJS for tests/go-site (no build step:
+ * in the browser `module` is undefined and the page boots instead).
  */
 (function () {
   'use strict';
 
-  var cfg = window.GO_CONFIG || {};
-  var PLAY_URL = 'https://play.google.com/store/apps/details?id=com.riwaqalilm.app';
-  var APP_STORE_URL = typeof cfg.appStoreUrl === 'string' ? cfg.appStoreUrl : '';
-  var REDIRECT_MS = 1500;
+  var PACKAGE = 'com.riwaqalilm.app';
+  var HOST = 'go.almahajja.app';
+  var PLAY_URL = 'https://play.google.com/store/apps/details?id=' + PACKAGE;
   var CODE_RE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
+
+  var COPY = {
+    open: 'افتح البث في التطبيق',
+    openHint: 'إن لم يكن التطبيق على جهازك، أو كان إصداره قديماً، ينقلك هذا الزر إلى Google Play.',
+    update: 'حدّث التطبيق أو ثبّته من Google Play',
+    play: 'حمّل التطبيق من Google Play',
+    explainAndroid: 'البث المباشر يحتاج الإصدار ١٫١٫٣ أو أحدث من التطبيق. بعد التحديث افتح الرابط من جديد.',
+    explainIos: 'تطبيق المحجّة البيضاء متاح الآن على أجهزة أندرويد من Google Play.',
+    explainIosStore: 'حمّل التطبيق، ثم افتح هذا الرابط من جديد.',
+    explainOther: 'افتح هذا الرابط من هاتف أندرويد عليه تطبيق المحجّة البيضاء، أو حمّل التطبيق من Google Play.',
+  };
+
+  // ── Pure helpers ────────────────────────────────────────────────────────────
+
+  /** «abc-234» / « ABC234 » → «ABC234»; null when it can't be a share code. */
+  function normalizeCode(raw) {
+    var c = String(raw == null ? '' : raw).replace(/[\s-]/g, '').toUpperCase();
+    return CODE_RE.test(c) ? c : null;
+  }
+
+  /** /live/ABC234 (one trailing slash is fine) → «ABC234»; anything else → null. */
+  function codeFromPath(pathname) {
+    var m = /^\/live\/([^/?#]+)\/?$/.exec(pathname || '');
+    if (!m) return null;
+    var raw;
+    try { raw = decodeURIComponent(m[1]); } catch (e) { return null; }
+    return normalizeCode(raw);
+  }
+
+  function platformOf(ua, maxTouchPoints) {
+    var s = ua || '';
+    if (/android/i.test(s)) return 'android';
+    // iPadOS 13+ reports a Mac user agent with touch.
+    if (/iPhone|iPad|iPod/i.test(s) || (/Macintosh/.test(s) && maxTouchPoints > 1)) return 'ios';
+    return 'other';
+  }
+
+  /** The Android button: the same https link, aimed at our package, Play as the fallback. */
+  function androidIntentUrl(code) {
+    return 'intent://' + HOST + '/live/' + code +
+      '#Intent;scheme=https;package=' + PACKAGE +
+      ';S.browser_fallback_url=' + encodeURIComponent(PLAY_URL) + ';end';
+  }
+
+  function isAppStoreUrl(url) {
+    return typeof url === 'string' && /^https:\/\/apps\.apple\.com\//.test(url);
+  }
+
+  /**
+   * What the page offers on a platform. Empty strings = hidden.
+   *   open     — the primary button's href (Android + a valid code only)
+   *   hint     — the line under it
+   *   play     — the Google Play button's href, playLabel its text
+   *   appStore — the App Store button's href (iOS, when configured)
+   *   explain  — the closing note
+   */
+  function pageFor(os, code, appStoreUrl) {
+    if (os === 'android') {
+      return {
+        open: code ? androidIntentUrl(code) : '',
+        hint: code ? COPY.openHint : '',
+        play: PLAY_URL,
+        playLabel: COPY.update,
+        appStore: '',
+        explain: COPY.explainAndroid,
+      };
+    }
+    var appStore = os === 'ios' && isAppStoreUrl(appStoreUrl) ? appStoreUrl : '';
+    return {
+      open: '',
+      hint: '',
+      play: appStore ? '' : PLAY_URL,
+      playLabel: COPY.play,
+      appStore: appStore,
+      explain: os === 'ios' ? (appStore ? COPY.explainIosStore : COPY.explainIos) : COPY.explainOther,
+    };
+  }
+
+  var api = {
+    PACKAGE: PACKAGE,
+    HOST: HOST,
+    PLAY_URL: PLAY_URL,
+    COPY: COPY,
+    normalizeCode: normalizeCode,
+    codeFromPath: codeFromPath,
+    platformOf: platformOf,
+    androidIntentUrl: androidIntentUrl,
+    pageFor: pageFor,
+  };
+  if (typeof module === 'object' && module && module.exports) module.exports = api;
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+
+  // ── The page ────────────────────────────────────────────────────────────────
+
+  var cfg = window.GO_CONFIG || {};
 
   function $(id) { return document.getElementById(id); }
   function show(el, on) { if (el) el.hidden = !on; }
@@ -29,24 +142,12 @@
     el.textContent = text || '';
     show(el, !!text);
   }
-
-  // ── The code: /live/ABC234 (a trailing slash / query is fine) ─────────────
-  function readCode() {
-    var m = /^\/live\/([^/?#]+)\/?$/.exec(window.location.pathname || '');
-    if (!m) return null;
-    var raw;
-    try { raw = decodeURIComponent(m[1]); } catch (e) { return null; }
-    var c = raw.replace(/[\s-]/g, '').toUpperCase();
-    return CODE_RE.test(c) ? c : null;
-  }
-
-  // ── Platform ────────────────────────────────────────────────────────────────
-  function platform() {
-    var ua = navigator.userAgent || '';
-    if (/android/i.test(ua)) return 'android';
-    // iPadOS 13+ reports a Mac user agent with touch.
-    if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
-    return 'other';
+  function setLink(id, href, label) {
+    var el = $(id);
+    if (!el) return;
+    if (href) el.href = href;
+    if (label) el.textContent = label;
+    show(el, !!href);
   }
 
   // ── Arabic formatting ───────────────────────────────────────────────────────
@@ -137,45 +238,16 @@
     });
   }
 
-  // ── Store redirect (1.5 s) ──────────────────────────────────────────────────
-  var timer = null;
-  function cancelRedirect() {
-    if (timer) clearTimeout(timer);
-    timer = null;
-    show($('redirect'), false);
-  }
-
   function start() {
-    var code = readCode();
-    var os = platform();
-    var storeUrl = os === 'android' ? PLAY_URL : os === 'ios' ? APP_STORE_URL : '';
+    if (!$('title')) return;
+    var code = codeFromPath(window.location.pathname);
+    var page = pageFor(platformOf(navigator.userAgent, navigator.maxTouchPoints), code, cfg.appStoreUrl);
 
-    var open = $('open');
-    open.href = code ? 'riwaqalilm://live/code/' + code : 'riwaqalilm://';
-    open.addEventListener('click', cancelRedirect);
-
-    var play = $('play');
-    var appstore = $('appstore');
-    if (APP_STORE_URL) appstore.href = APP_STORE_URL;
-    play.href = PLAY_URL;
-    show(play, os !== 'ios');
-    show(appstore, !!APP_STORE_URL && os !== 'android');
-
-    $('stay').addEventListener('click', cancelRedirect);
-    // The app took over (or the user left): never yank them to the store later.
-    document.addEventListener('visibilitychange', function () {
-      if (document.hidden) cancelRedirect();
-    });
-    window.addEventListener('pagehide', cancelRedirect);
-
-    if (storeUrl) {
-      show($('redirect'), true);
-      timer = setTimeout(function () {
-        timer = null;
-        show($('redirect'), false);
-        window.location.href = storeUrl;
-      }, REDIRECT_MS);
-    }
+    setLink('open', page.open, COPY.open);
+    setText('hint', page.hint);
+    setLink('play', page.play, page.playLabel);
+    setLink('appstore', page.appStore);
+    setText('explain', page.explain);
 
     if (!code) {
       render(null);
