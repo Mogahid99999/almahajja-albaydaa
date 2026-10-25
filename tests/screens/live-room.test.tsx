@@ -334,7 +334,7 @@ test('a room notice shows its §15 copy, then clears itself after ~6 s', async (
 test('entering shows the du\'a as a notice, whole — never cut to one line (owner 2026-09-30)', async () => {
   listenerIn({ notice: { kind: 'joined', id: 1 } });
   await render(<LiveRoomScreen />);
-  const line = screen.getByText('اللهم اغفر للقائمين على هذا الأمر ولوالديهم');
+  const line = screen.getByText('اللهم اغفر للقائمين على هذا العمل ولوالديهم');
   expect(line.props.numberOfLines).toBeUndefined();
   expect(line.props.ellipsizeMode).toBeUndefined();
 });
@@ -344,7 +344,7 @@ test('an ended session shows «انتهى المجلس» and never joins', async
   mockSession.current = { ...liveSession, status: 'ended' };
   await render(<LiveRoomScreen />);
   expect(screen.getByText('انتهى المجلس')).toBeTruthy();
-  expect(screen.getByText('اللهم اغفر للقائمين على هذا الأمر ولوالديهم')).toBeTruthy();
+  expect(screen.getByText('اللهم اغفر للقائمين على هذا العمل ولوالديهم')).toBeTruthy();
   expect(mockJoin).not.toHaveBeenCalled();
 
   await fireEvent.press(screen.getByText('العودة'));

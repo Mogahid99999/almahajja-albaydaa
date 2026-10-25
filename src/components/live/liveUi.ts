@@ -75,7 +75,7 @@ export const HIDDEN_SISTER_NAME = 'طالبة';
 // ─── §15 copy ────────────────────────────────────────────────────────────────
 
 /** The du'a for the organisers: shown on entering the room and again when the majlis ends. */
-export const LIVE_DUA = 'اللهم اغفر للقائمين على هذا الأمر ولوالديهم';
+export const LIVE_DUA = 'اللهم اغفر للقائمين على هذا العمل ولوالديهم';
 
 export const LIVE_COPY = {
   connecting: 'جارٍ الدخول إلى الحلقة…',
