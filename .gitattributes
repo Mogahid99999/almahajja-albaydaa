@@ -3,3 +3,9 @@
 # set when this repo lived on Windows) makes every hunk context mismatch, so
 # `npm install` silently builds an UNPATCHED expo-audio. Found in audit Phase 0.
 *.patch -text
+
+# Quran text + layout are pinned byte-for-byte (src/mushaf/__tests__/quranText.test.ts):
+# never let git rewrite their line endings.
+assets/mushaf/** binary
+data/quran/** binary
+src/mushaf/data/*.json binary

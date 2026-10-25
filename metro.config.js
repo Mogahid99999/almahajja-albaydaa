@@ -19,6 +19,10 @@ config.resolver.blockList = [...existingBlockList, /\.env(\..+)?\.local$/];
 // See shims/expo-symbols.js for the full rationale + how to revert.
 const EXPO_SYMBOLS_STUB = path.resolve(__dirname, 'shims/expo-symbols.js');
 
+// The mushaf text (assets/mushaf/hafs-v22.txt) ships as an asset, not JS —
+// see src/mushaf/text.ts.
+config.resolver.assetExts = [...config.resolver.assetExts, 'txt'];
+
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === 'expo-symbols') {

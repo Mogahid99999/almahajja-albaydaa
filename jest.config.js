@@ -17,6 +17,8 @@ module.exports = {
   moduleNameMapper: {
     // Mirror tsconfig.json's `@/*` → `./src/*` alias.
     '^@/(.*)$': '<rootDir>/src/$1',
+    // Text assets (the bundled mushaf text) resolve to a stub module id under jest.
+    '\.txt$': '<rootDir>/tests/assetStub.js',
   },
   // tests/contract/ is deliberately excluded: those hit the live staging
   // Supabase project and run only via `npm run test:contract` (own config).

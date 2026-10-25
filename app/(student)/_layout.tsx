@@ -25,16 +25,18 @@ export default function StudentLayout() {
   // keyboard covers the bottom one) — hide the bottom bar on that screen only.
   const pathname = usePathname();
   const noteScreenOpen = pathname.startsWith('/lecture-note');
+  // The mushaf reader is full-screen reading: no nav bar, no mini player.
+  const readerOpen = pathname.startsWith('/mushaf/read');
 
   // The bottom nav bar is visible on every screen in the student app so
   // navigation is always reachable — hidden only on the notes editor, where
   // it would sit behind the keyboard-avoiding editor and its own bar.
-  const showNavBar = !noteScreenOpen;
+  const showNavBar = !noteScreenOpen && !readerOpen;
 
   return (
     <View style={{ flex: 1 }}>
       <Stack screenOptions={{ headerShown: false }} />
-      {noteScreenOpen ? null : <MiniPlayer liftAboveNavBar={showNavBar} />}
+      {noteScreenOpen || readerOpen ? null : <MiniPlayer liftAboveNavBar={showNavBar} />}
       {showNavBar ? <BottomNavBar /> : null}
       <RestoreDownloadsDialog visible={restorePrompt.visible} onClose={restorePrompt.dismiss} />
     </View>
