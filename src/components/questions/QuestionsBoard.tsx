@@ -8,7 +8,7 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -138,12 +138,22 @@ function RegisterNudge() {
   );
 }
 
-function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: string }) {
+function Composer({
+  scope,
+  lectureId,
+  fixedCategory,
+}: {
+  scope: QuestionScope;
+  lectureId?: string;
+  /** Set by the «أسئلة عامة» / «فتاوى» tabs — the composer then asks in that category only. */
+  fixedCategory?: QuestionCategory;
+}) {
   const ask = useAskQuestion();
   const [body, setBody] = useState('');
   const [anonymous, setAnonymous] = useState(false);
   const [audience, setAudience] = useState<QuestionAudience>('public');
-  const [category, setCategory] = useState<QuestionCategory>('general');
+  const [pickedCategory, setCategory] = useState<QuestionCategory>('general');
+  const category = fixedCategory ?? pickedCategory;
   const [error, setError] = useState('');
   // Captured at submit time so the confirmation states clearly whether the
   // asker's name will show (the toggles may change before the line is read).
@@ -180,7 +190,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
   return (
     <Card style={{ marginBottom: 12 }}>
       <Txt weight="semibold" size={14} color={colors.textInk}>
-        اسأل سؤالاً
+        {fixedCategory === 'fatwa' ? 'اطلب فتوى' : 'اسأل سؤالاً'}
       </Txt>
       <TextInput
         value={body}
@@ -188,7 +198,7 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
           setBody(t);
           if (sent) setSent(null);
         }}
-        placeholder="اكتب سؤالك هنا..."
+        placeholder={fixedCategory === 'fatwa' ? 'اكتب مسألتك هنا...' : 'اكتب سؤالك هنا...'}
         placeholderTextColor={colors.textGhost}
         multiline
         textAlign="right"
@@ -198,8 +208,11 @@ function Composer({ scope, lectureId }: { scope: QuestionScope; lectureId?: stri
 
       {/* Category: سؤال عام أو فتوى شرعية. The shared tabsRow bottom margin is
           zeroed here — the options row below brings its own 12px top margin,
-          and letting both stack read as a hole in the composer's 12px rhythm. */}
-      <View style={[styles.tabsRow, { marginTop: 12, marginBottom: 0 }]}>
+          and letting both stack read as a hole in the composer's 12px rhythm.
+          Hidden when the tab already fixes the category. */}
+      <View
+        style={[styles.tabsRow, { marginTop: 12, marginBottom: 0 }, fixedCategory && { display: 'none' }]}
+      >
         <SegChip
           label="سؤال عام"
           active={category === 'general'}
@@ -529,11 +542,20 @@ export function QuestionsBoard({
   scope,
   lectureId,
   bottomPad = 0,
+  category,
+  headerTop,
 }: {
   scope: QuestionScope;
   lectureId?: string;
   /** Clearance below the last row so the footer clears the nav bar + MiniPlayer. */
   bottomPad?: number;
+  /**
+   * Fixed category (مساحة الأسئلة tabs «أسئلة عامة» / «فتاوى»): lists and asks in
+   * that category only, and the الكل/عام/فتوى filter row is hidden.
+   */
+  category?: QuestionCategory;
+  /** Rendered at the very top of the list header (e.g. the section switcher). */
+  headerTop?: ReactNode;
 }) {
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
@@ -544,7 +566,7 @@ export function QuestionsBoard({
   const [reportTarget, setReportTarget] = useState<PublicQuestion | MyQuestion | null>(null);
   const reportContent = useReportContent();
 
-  const activeCategory = categoryFilter === 'all' ? undefined : categoryFilter;
+  const activeCategory = category ?? (categoryFilter === 'all' ? undefined : categoryFilter);
   const publicQ = usePublicQuestions(scope, lectureId, activeCategory);
   const myQ = useMyQuestions(scope, lectureId, !isGuest, activeCategory);
 
@@ -581,7 +603,12 @@ export function QuestionsBoard({
 
   const header = (
     <>
-      {isGuest ? <RegisterNudge /> : <Composer scope={scope} lectureId={lectureId} />}
+      {headerTop}
+      {isGuest ? (
+        <RegisterNudge />
+      ) : (
+        <Composer scope={scope} lectureId={lectureId} fixedCategory={category} />
+      )}
 
       {/* Tabs */}
       <View style={styles.tabsRow}>
@@ -595,8 +622,8 @@ export function QuestionsBoard({
         ) : null}
       </View>
 
-      {/* Category filter: الكل / سؤال عام / فتوى شرعية */}
-      <View style={styles.tabsRow}>
+      {/* Category filter: الكل / سؤال عام / فتوى شرعية (not when a tab fixes it) */}
+      <View style={[styles.tabsRow, category && { display: 'none' }]}>
         <SegChip label="الكل" active={categoryFilter === 'all'} onPress={() => setCategoryFilter('all')} />
         <SegChip
           label="سؤال عام"

@@ -163,9 +163,17 @@ function BenefitsTab({ isAdmin }: { isAdmin: boolean }) {
             </Txt>
           </View>
           <View style={styles.lectureChip}>
-            <Feather name="headphones" size={12} color={colors.primaryTeal600} />
+            <Feather
+              name={b.lectureId ? 'headphones' : 'feather'}
+              size={12}
+              color={colors.primaryTeal600}
+            />
             <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1}>
-              {b.sectionTitle ? `${b.sectionTitle} ← ${b.lectureTitle}` : b.lectureTitle}
+              {!b.lectureId
+                ? 'فائدة عامة'
+                : b.sectionTitle
+                  ? `${b.sectionTitle} ← ${b.lectureTitle}`
+                  : b.lectureTitle}
             </Txt>
           </View>
           <Txt size={14} color={colors.textInk} style={{ marginTop: 8, lineHeight: 23 }}>

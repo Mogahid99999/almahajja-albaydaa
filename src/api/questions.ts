@@ -351,3 +351,72 @@ export async function revealQuestionAuthor(questionId: string): Promise<string |
   const name = typeof data === 'string' ? (data as string).trim() : '';
   return name.length ? name : null;
 }
+
+// ─── أسئلة المحاضرات — the cross-lecture feed (0161) ────────────────────────
+
+/** Where a lecture question came from — the lesson it was asked in. */
+export type QuestionSource = {
+  lectureId: string | null;
+  lectureTitle: string | null;
+  sectionId: string | null;
+  sectionTitle: string | null;
+  /** The section's parent («العقيدة» in «العقيدة ← كتاب التوحيد»). */
+  parentTitle: string | null;
+};
+
+export type LectureFeedQuestion = PublicQuestion & QuestionSource;
+export type MyLectureQuestion = MyQuestion & QuestionSource;
+
+function sourceOf(r: any): QuestionSource {
+  return {
+    lectureId: r.lecture_id ?? null,
+    lectureTitle: r.lecture_title ?? null,
+    sectionId: r.section_id ?? null,
+    sectionTitle: r.section_title ?? null,
+    parentTitle: r.parent_title ?? null,
+  };
+}
+
+/**
+ * Answered PUBLIC questions from every published lecture the viewer may see,
+ * latest answer first, each with its source lesson. Display-only: asking
+ * stays inside the lesson («أدوات الدرس» ← أسئلة الدرس).
+ */
+export async function getLectureQuestionsFeed(): Promise<LectureFeedQuestion[]> {
+  if (USE_MOCK) return [];
+  // `as never`: not in database.generated.ts until 0161 is applied + types regenerated.
+  const { data, error } = await supabase.rpc('get_lecture_questions_feed' as never);
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    body: r.body,
+    answerBody: normalizeAnswerBody(r.answer_body),
+    answerAudioPath: r.answer_audio_path ?? null,
+    askerDisplay: r.asker_display ?? null,
+    isMine: !!r.is_mine,
+    category: (r.category ?? 'general') as QuestionCategory,
+    createdAt: r.created_at,
+    answeredAt: r.answered_at ?? null,
+    ...sourceOf(r),
+  }));
+}
+
+/** The caller's own lecture questions (any status), with their source lesson. */
+export async function getMyLectureQuestions(): Promise<MyLectureQuestion[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase.rpc('get_my_lecture_questions' as never);
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    body: r.body,
+    answerBody: normalizeAnswerBody(r.answer_body),
+    answerAudioPath: r.answer_audio_path ?? null,
+    isAnonymous: !!r.is_anonymous,
+    audience: r.audience as QuestionAudience,
+    status: r.status as QuestionStatus,
+    category: (r.category ?? 'general') as QuestionCategory,
+    createdAt: r.created_at,
+    answeredAt: r.answered_at ?? null,
+    ...sourceOf(r),
+  }));
+}

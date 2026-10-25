@@ -23,8 +23,9 @@ export type BenefitStatus = 'visible' | 'hidden';
 /** Admin moderation row — the only surface where the author is resolved. */
 export type AdminBenefitRow = {
   id: string;
-  lectureId: string;
-  lectureTitle: string;
+  /** null for a «فائدة عامة» (0161). */
+  lectureId: string | null;
+  lectureTitle: string | null;
   /** The lesson's direct parent section — for «القسم ← الدرس» (V14). */
   sectionTitle: string | null;
   body: string;
@@ -68,6 +69,54 @@ export async function deleteOwnBenefit(benefitId: string): Promise<void> {
   if (error) throw error;
 }
 
+// ─── Unified feed (0161) ──────────────────────────────────────────────────────
+
+export type BenefitFeedKind = 'all' | 'lecture' | 'general' | 'mine';
+
+/** A feed row: lecture-linked (with its lesson + section crumb) or general. */
+export type FeedBenefit = LectureBenefit & {
+  lectureId: string | null;
+  lectureTitle: string | null;
+  sectionTitle: string | null;
+  parentTitle: string | null;
+};
+
+export async function getBenefitsFeed(
+  kind: BenefitFeedKind,
+  before: string | null = null,
+  limit = 40,
+): Promise<FeedBenefit[]> {
+  if (USE_MOCK) return [];
+  // `as never`: not in database.generated.ts until 0161 is applied + types regenerated.
+  const { data, error } = await supabase.rpc('get_benefits_feed' as never, {
+    p_kind: kind,
+    p_before: before,
+    p_limit: limit,
+  } as never);
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    body: r.body,
+    isMine: !!r.is_mine,
+    createdAt: r.created_at,
+    lectureId: r.lecture_id ?? null,
+    lectureTitle: r.lecture_title ?? null,
+    sectionTitle: r.section_title ?? null,
+    parentTitle: r.parent_title ?? null,
+  }));
+}
+
+/** «فائدة عامة» — not tied to a lesson; same gates as a lesson benefit. */
+export async function addGeneralBenefit(body: string): Promise<string> {
+  if (USE_MOCK) return '';
+  const { data, error } = await supabase.rpc('add_general_benefit' as never, { p_body: body } as never);
+  if (error) {
+    if (isBlockedWordError(error)) throw new BlockedWordError();
+    throw error;
+  }
+  return data as unknown as string;
+}
+
 // ─── Admin moderation ─────────────────────────────────────────────────────────
 
 export async function adminListBenefits(lectureId?: string): Promise<AdminBenefitRow[]> {
@@ -78,8 +127,8 @@ export async function adminListBenefits(lectureId?: string): Promise<AdminBenefi
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
     id: r.id,
-    lectureId: r.lecture_id,
-    lectureTitle: r.lecture_title,
+    lectureId: r.lecture_id ?? null,
+    lectureTitle: r.lecture_title ?? null,
     sectionTitle: r.section_title ?? null,
     body: r.body,
     status: r.status as BenefitStatus,

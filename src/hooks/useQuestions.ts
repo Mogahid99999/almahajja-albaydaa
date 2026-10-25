@@ -5,6 +5,8 @@ import {
   askQuestion,
   deleteOwnQuestion,
   deleteQuestion,
+  getLectureQuestionsFeed,
+  getMyLectureQuestions,
   getMyQuestions,
   getPublicQuestions,
   getQuestionInbox,
@@ -44,6 +46,24 @@ export function useMyQuestions(
     queryKey: queryKeys.myQuestions(scope, lectureId, category),
     queryFn: () => getMyQuestions(scope, lectureId, category),
     enabled: enabled && (scope === 'general' || !!lectureId),
+  });
+}
+
+/** أسئلة المحاضرات — answered public lecture questions across all lessons (0161). */
+export function useLectureQuestionsFeed(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.lectureQuestionsFeed,
+    queryFn: getLectureQuestionsFeed,
+    enabled,
+  });
+}
+
+/** The caller's own lecture questions with their source lessons (0161). */
+export function useMyLectureQuestions(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.myLectureQuestions,
+    queryFn: getMyLectureQuestions,
+    enabled,
   });
 }
 

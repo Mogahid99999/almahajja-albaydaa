@@ -1,7 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  addGeneralBenefit,
   addLectureBenefit,
+  getBenefitsFeed,
+  type BenefitFeedKind,
   adminDeleteBenefit,
   adminListBenefits,
   adminSetBenefitStatus,
@@ -13,6 +16,7 @@ import {
 import { queryKeys } from '@/constants/queryKeys';
 
 const ADMIN_BENEFITS_ROOT = ['admin', 'benefits'] as const;
+const BENEFITS_PAGE = 40;
 
 export function useLectureBenefits(lectureId: string) {
   return useQuery({
@@ -27,7 +31,8 @@ export function useAddBenefit(lectureId: string) {
   return useMutation({
     mutationFn: (body: string) => addLectureBenefit(lectureId, body),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.lectureBenefits(lectureId) });
+      // The ['benefits'] root covers this lesson's list AND the unified feed.
+      void qc.invalidateQueries({ queryKey: ['benefits'] });
     },
   });
 }
@@ -37,7 +42,44 @@ export function useDeleteOwnBenefit(lectureId: string) {
   return useMutation({
     mutationFn: (benefitId: string) => deleteOwnBenefit(benefitId),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.lectureBenefits(lectureId) });
+      void qc.invalidateQueries({ queryKey: ['benefits'] });
+    },
+  });
+}
+
+// ─── فوائد الدارسين — the unified feed (0161) ───────────────────────────────────
+
+/** Newest first, paged by created_at: الكل / من المحاضرات / فوائد عامة / فوائدي. */
+export function useBenefitsFeed(kind: BenefitFeedKind, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.benefitsFeed(kind),
+    queryFn: ({ pageParam }) => getBenefitsFeed(kind, pageParam, BENEFITS_PAGE),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) =>
+      last.length >= BENEFITS_PAGE ? last[last.length - 1].createdAt : undefined,
+    enabled,
+  });
+}
+
+/** Post a benefit — from a lesson (lectureId) or a general one (null). */
+export function usePostBenefit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lectureId: string | null; body: string }) =>
+      vars.lectureId ? addLectureBenefit(vars.lectureId, vars.body) : addGeneralBenefit(vars.body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['benefits'] });
+    },
+  });
+}
+
+/** Delete one of my benefits from the feed (no lesson context needed). */
+export function useDeleteMyBenefit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (benefitId: string) => deleteOwnBenefit(benefitId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['benefits'] });
     },
   });
 }
