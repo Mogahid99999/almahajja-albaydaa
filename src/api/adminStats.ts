@@ -48,3 +48,15 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     })),
   };
 }
+
+/** «استخدام المصحف» — unique users (guests included) who opened the mushaf (0161). */
+export type MushafUsageStats = { today: number; d7: number; d30: number; total: number };
+
+export async function getMushafUsageStats(): Promise<MushafUsageStats> {
+  if (USE_MOCK) return { today: 0, d7: 0, d30: 0, total: 0 };
+  // `as never`: not in database.generated.ts until 0161 is applied + types regenerated.
+  const { data, error } = await supabase.rpc('admin_mushaf_usage_stats' as never);
+  if (error) throw error;
+  const r = (data ?? {}) as Partial<MushafUsageStats>;
+  return { today: r.today ?? 0, d7: r.d7 ?? 0, d30: r.d30 ?? 0, total: r.total ?? 0 };
+}

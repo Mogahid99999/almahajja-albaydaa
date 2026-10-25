@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { getAdminDashboardStats } from '@/api/adminStats';
+import { getAdminDashboardStats, getMushafUsageStats } from '@/api/adminStats';
 import { getAdminProgressAnalytics } from '@/api/adminAnalytics';
 import { getAdminRatingsSummary } from '@/api/ratings';
 import { queryKeys } from '@/constants/queryKeys';
@@ -16,6 +16,16 @@ export function useAdminStats(enabled = true) {
   return useQuery({
     queryKey: queryKeys.adminStats,
     queryFn: getAdminDashboardStats,
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+/** «استخدام المصحف» — aggregate unique-user counts for the dashboard. */
+export function useMushafUsage(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.mushafUsage,
+    queryFn: getMushafUsageStats,
     staleTime: 60_000,
     enabled,
   });

@@ -1,71 +1,64 @@
-import { Link } from 'expo-router';
-import { Pressable, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useState } from 'react';
 
-import { colors, radius } from '@/constants/theme';
-import { Rhombus, Txt } from '@/components/ui';
+import { Card, Txt } from '@/components/ui';
+import { colors } from '@/constants/theme';
 
 /**
- * "لا تنسَ الدعاء" — quiet dashed-brass card at the bottom of the Home screen.
- * Non-intrusive; links to the About page so students can read more.
+ * «لا تنسَ الدعاء» — a plain, centred card at the bottom of Home showing ONE
+ * du'a, rotating locally: each new app session shows the next one. No network,
+ * no tracking — the index lives in AsyncStorage on this device.
  */
-export function DuaCard() {
-  return (
-    <Link href="/about" asChild>
-      <Pressable
-        accessibilityRole="link"
-        accessibilityLabel="لا تنسَ الدعاء للمشايخ والمساهمين"
-        style={({ pressed }) => ({
-          marginTop: 24,
-          opacity: pressed ? 0.85 : 1,
-        })}
-      >
-        <View
-          style={{
-            backgroundColor: 'rgba(176,137,79,0.06)',
-            borderWidth: 1,
-            borderStyle: 'dashed',
-            borderColor: colors.accentBrassSoft,
-            borderRadius: radius.card,
-            padding: 16,
-            paddingHorizontal: 18,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 14,
-          }}
-        >
-          {/* Rhombus brand mark */}
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <Rhombus size={20} color={colors.accentBrassMuted} filled={false} />
-          </View>
+export const DUAS = [
+  'اللهم انفعنا بما علّمتنا، وعلّمنا ما ينفعنا.',
+  'اللهم اغفر لمشايخنا، وتقبّل منهم، واجزهم عنّا خير الجزاء.',
+  'اللهم اغفر للقائمين على هذا العمل ولوالديهم، وبارك في جهودهم، ووفّقهم لما تحب وترضى.',
+  'اللهم ارزقنا علماً نافعاً، وعملاً صالحاً، وإخلاصاً وقبولاً.',
+] as const;
 
-          {/* Text block */}
-          <View style={{ flex: 1 }}>
-            <Txt
-              weight="display"
-              size={15}
-              color="#5c4a2a"
-              style={{ lineHeight: 22 }}
-            >
-              لا تنسَ الدعاء
-            </Txt>
-            <Txt
-              size={12}
-              color={colors.textFaint}
-              style={{ marginTop: 3, lineHeight: 20 }}
-            >
-              ادعُ لمشايخ المنصة ولكل من ساهم في نشر هذا العلم، جزاهم الله خيراً.
-            </Txt>
-          </View>
-        </View>
-      </Pressable>
-    </Link>
+const KEY = 'dua-card-index';
+/** Chosen once per JS session, so the du'a doesn't change while navigating. */
+let sessionIndex: Promise<number> | null = null;
+
+export function nextDuaIndex(prev: number | null): number {
+  return prev == null || !Number.isFinite(prev) ? 0 : (prev + 1) % DUAS.length;
+}
+
+function pickSessionIndex(): Promise<number> {
+  if (!sessionIndex) {
+    sessionIndex = AsyncStorage.getItem(KEY)
+      .then((v) => nextDuaIndex(v == null ? null : Number(v)))
+      .catch(() => 0)
+      .then((i) => {
+        void AsyncStorage.setItem(KEY, String(i)).catch(() => {});
+        return i;
+      });
+  }
+  return sessionIndex;
+}
+
+export function DuaCard() {
+  const [i, setI] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void pickSessionIndex().then((n) => alive && setI(n));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <Card style={{ paddingVertical: 18, paddingHorizontal: 18 }}>
+      <Txt
+        weight="display"
+        size={16}
+        color={colors.primaryTeal}
+        align="center"
+        accessibilityLabel={`لا تنسَ الدعاء: ${DUAS[i ?? 0]}`}
+        style={{ lineHeight: 30, opacity: i == null ? 0 : 1 }}
+      >
+        {DUAS[i ?? 0]}
+      </Txt>
+    </Card>
   );
 }

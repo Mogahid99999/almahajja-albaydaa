@@ -17,7 +17,7 @@ import { NewlyAddedRail } from '@/components/home/NewlyAddedRail';
 import { FeaturedRail } from '@/components/home/FeaturedRail';
 import { BuddyCard } from '@/components/home/BuddyCard';
 import { BuddyGoalInvitesCard } from '@/components/home/BuddyGoalInvitesCard';
-import { QuestionsHomeCard } from '@/components/home/QuestionsHomeCard';
+import { DoorsRow } from '@/components/home/DoorsRow';
 import { SectionsGrid } from '@/components/home/SectionsGrid';
 import { StreakCard } from '@/components/home/StreakCard';
 import { JourneyHomeCard } from '@/components/journey/JourneyHomeCard';
@@ -131,8 +131,8 @@ export default function HomeScreen() {
 
           <SectionsGrid sections={data?.sections ?? []} />
 
-          {/* ساحة الأسئلة — general Q&A entry */}
-          <QuestionsHomeCard />
+          {/* أبواب — الأسئلة · الفوائد · المصحف (replaces the single questions card) */}
+          <DoorsRow />
 
           {/* رحلتي العلمية — quiet personal-progress entry */}
           <JourneyHomeCard />

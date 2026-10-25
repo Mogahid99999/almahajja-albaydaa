@@ -82,7 +82,7 @@ jest.mock('@/components/home/StreakCard', () => ({ StreakCard: () => null }));
 jest.mock('@/components/home/BuddyCard', () => ({ BuddyCard: () => null }));
 jest.mock('@/components/home/BuddyGoalInvitesCard', () => ({ BuddyGoalInvitesCard: () => null }));
 jest.mock('@/components/home/SectionsGrid', () => ({ SectionsGrid: () => null }));
-jest.mock('@/components/home/QuestionsHomeCard', () => ({ QuestionsHomeCard: () => null }));
+jest.mock('@/components/home/DoorsRow', () => ({ DoorsRow: () => null }));
 jest.mock('@/components/home/DuaCard', () => ({ DuaCard: () => null }));
 jest.mock('@/components/journey/JourneyHomeCard', () => ({ JourneyHomeCard: () => null }));
 jest.mock('@/components/SupportContactLink', () => ({ SupportContactLink: () => null }));

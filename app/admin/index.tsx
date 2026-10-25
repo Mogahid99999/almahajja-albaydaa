@@ -15,7 +15,7 @@ import { AdminShell } from '@/components/admin/AdminShell';
 import { Card, Divider, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useAdminLectures, useUnclassifiedLectures } from '@/hooks/useAdmin';
-import { useAdminStats } from '@/hooks/useAdminStats';
+import { useAdminStats, useMushafUsage } from '@/hooks/useAdminStats';
 import { useStaffOnly } from '@/hooks/useAdminGuard';
 import { useAdminReports } from '@/hooks/useReports';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -191,13 +191,14 @@ export default function AdminHome() {
   const isStaffViewer = role === 'admin' || role === 'sheikh';
   const isAdmin = role === 'admin';
   const { data: stats, refetch: refetchStats } = useAdminStats(isStaffViewer);
+  const { data: mushaf, refetch: refetchMushaf } = useMushafUsage(isStaffViewer);
   const { data: lectures = [], refetch: refetchLectures } = useAdminLectures();
   const { data: unclassified = [], refetch: refetchUnclassified } = useUnclassifiedLectures();
   const { data: openReports = [], refetch: refetchReports } = useAdminReports('open', isAdmin);
   const { refreshing, onRefresh } = usePullToRefresh([
     refetchLectures,
     refetchUnclassified,
-    ...(isStaffViewer ? [refetchStats] : []),
+    ...(isStaffViewer ? [refetchStats, refetchMushaf] : []),
     ...(isAdmin ? [refetchReports] : []),
   ]);
 
@@ -250,6 +251,24 @@ export default function AdminHome() {
         <StatCard label="ساعات الاستماع" value={h(stats?.listenHoursTotal)} icon="clock" />
         <StatCard label="الاستماع هذا الشهر" value={h(stats?.listenHoursMonth)} icon="trending-up" />
       </View>
+
+      {/* استخدام المصحف — unique users (guests included), aggregate only */}
+      {isStaffViewer ? (
+        <>
+          <Txt weight="semibold" size={14} color={colors.textInk} style={styles.groupHeading}>
+            استخدام المصحف
+          </Txt>
+          <View style={styles.statsRow}>
+            <StatCard label="اليوم" value={n(mushaf?.today)} icon="book-open" accent />
+            <StatCard label="آخر ٧ أيام" value={n(mushaf?.d7)} icon="calendar" />
+            <StatCard label="آخر ٣٠ يوماً" value={n(mushaf?.d30)} icon="calendar" />
+            <StatCard label="إجمالي المستخدمين منذ الإطلاق" value={n(mushaf?.total)} icon="users" />
+          </View>
+          <Txt size={11.5} color={colors.textGhost} style={{ marginTop: -4, marginBottom: 8 }}>
+            مستخدمون فريدون، والزوار محسوبون. اليوم بتوقيت مكة (UTC+3). لا تُعرض أسماء ولا سور ولا صفحات.
+          </Txt>
+        </>
+      ) : null}
 
       {/* Top lists */}
       <View style={styles.topGrid}>
