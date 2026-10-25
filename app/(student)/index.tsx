@@ -25,6 +25,7 @@ import { LiveHomeCard } from '@/components/live/LiveHomeCard';
 import { LiveUpcomingCard } from '@/components/live/LiveUpcomingCard';
 import { useLiveHomeSlot } from '@/components/live/useLiveHomeSlot';
 import { SupportContactLink } from '@/components/SupportContactLink';
+import { ScheduleTodayCard } from '@/components/home/ScheduleTodayCard';
 
 /**
  * Home — student landing screen.
@@ -103,6 +104,12 @@ export default function HomeScreen() {
             <ContinueCard continueListening={data.continueListening} />
           </View>
         ) : null}
+
+        {/* دروس اليوم — the weekly schedule (0158); hides itself when empty */}
+        <ScheduleTodayCard
+          liveSectionId={live?.sectionId ?? null}
+          containerStyle={{ paddingHorizontal: spacing.screenH, marginBottom: 28 }}
+        />
 
         {/* أُضيف حديثاً — newest published, auto-sorted (first) */}
         <NewlyAddedRail lectures={data?.newlyAdded ?? []} />

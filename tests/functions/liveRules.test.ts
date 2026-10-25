@@ -33,7 +33,9 @@ import {
   isBanned,
   isEnvRoom,
   isLiveIdentity,
+  jwtHeaderAlg,
   jwtRoleClaim,
+  liveGrantsFor,
   LIVE_ACTIONS,
   LIVE_ERROR_STATUS,
   LIVE_GRANTS,
@@ -45,6 +47,7 @@ import {
   livekitWsUrl,
   parseLiveControlRequest,
   parseLiveEnabledLevel,
+  parseLiveJoinContext,
   parseLiveTokenRequest,
   participantAttributes,
   preauthorizeLiveAction,
@@ -208,7 +211,10 @@ describe('names and privacy (decision 3, D2 as changed 2026-09-28)', () => {
       r: 'listener',
       h: '0',
       hid: '1',
+      rx: '1',
     });
+    // 0157: a moderator stopped this attendee's reactions → rx '0'.
+    expect(participantAttributes({ gender: 'm', role: 'speaker', hiddenName: false, reactionsBlocked: true }).rx).toBe('0');
   });
 
   test('identity is the 16-hex SQL live_identity — never a raw user id', () => {
@@ -310,6 +316,7 @@ describe('§5.2 action → permission (D1)', () => {
     const allowed = [
       'open_green', 'start', 'end', 'cancel', 'approve', 'reject', 'mute', 'demote',
       'step_down', 'set_allow_requests', 'host_leave', 'auto_end', 'resume_recording',
+      'react_block', // 0157
     ];
     for (const action of LIVE_ACTIONS) {
       for (const ctx of [{}, { targetIsSelf: true }, { next: 'cancelled' as const }]) {
@@ -564,6 +571,133 @@ describe('env, bans, egress', () => {
     expect(safeEqual('abc', 'abd')).toBe(false);
     expect(safeEqual('abc', 'abcd')).toBe(false);
   });
+
+  test('LOAD V24: the JWT header alg picks local (ES256) vs GoTrue (legacy HS256) verification', () => {
+    const b64u = (o: object) =>
+      require('buffer').Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    expect(jwtHeaderAlg(`${b64u({ alg: 'ES256', kid: 'k1', typ: 'JWT' })}.${b64u({ sub: 'u' })}.sig`)).toBe('ES256');
+    expect(jwtHeaderAlg(`${b64u({ alg: 'HS256', typ: 'JWT' })}.${b64u({ role: 'anon' })}.sig`)).toBe('HS256');
+    expect(jwtHeaderAlg(`${b64u({ typ: 'JWT' })}.x.y`)).toBeNull();
+    expect(jwtHeaderAlg('sb_publishable_abc')).toBeNull();
+    expect(jwtHeaderAlg(null)).toBeNull();
+  });
+});
+
+describe('0157 reactions: who may send them, and the moderator stop', () => {
+  test('registered listeners and speakers may send (data grant); guests never; staff always', () => {
+    expect(liveGrantsFor('listener', { isGuest: false, reactionsBlocked: false }).canPublishData).toBe(true);
+    expect(liveGrantsFor('speaker', { isGuest: false, reactionsBlocked: false }).canPublishData).toBe(true);
+    expect(liveGrantsFor('listener', { isGuest: true, reactionsBlocked: false }).canPublishData).toBe(false);
+    expect(liveGrantsFor('host', { isGuest: false, reactionsBlocked: true }).canPublishData).toBe(true);
+    expect(liveGrantsFor('moderator', { isGuest: false, reactionsBlocked: true }).canPublishData).toBe(true);
+  });
+
+  test('a stopped attendee loses only the data grant — listening and the mic stay as they were', () => {
+    const l = liveGrantsFor('listener', { isGuest: false, reactionsBlocked: true });
+    expect(l).toEqual({ ...LIVE_GRANTS.listener, canPublishData: false });
+    const s = liveGrantsFor('speaker', { isGuest: false, reactionsBlocked: true });
+    expect([s.canSubscribe, s.canPublish, s.canPublishData]).toEqual([true, true, false]);
+    expect(speakerPermission(true, true).canPublishData).toBe(true);
+    expect(speakerPermission(false).canPublishData).toBe(false);
+  });
+
+  test('react_block: moderators only, aimed at a listener or speaker — never the host or a moderator', () => {
+    const mod = user({ appRole: 'admin', liveRole: 'moderator' });
+    expect(authorizeLiveAction('react_block', mod).ok).toBe(true);
+    expect(authorizeLiveAction('react_block', user()).ok).toBe(false);
+    expect(authorizeLiveAction('react_block', user({ isGuest: true })).ok).toBe(false);
+    expect(canTarget('react_block', 'listener').ok).toBe(true);
+    expect(canTarget('react_block', 'speaker').ok).toBe(true);
+    expect(canTarget('react_block', 'host').ok).toBe(false);
+    expect(canTarget('react_block', 'moderator').ok).toBe(false);
+  });
+
+  test('react_block needs an identity and a boolean `blocked`', () => {
+    const id = '0123456789abcdef';
+    expect(parseLiveControlRequest({ action: 'react_block', sessionId: SESSION, identity: id, blocked: true })).toMatchObject({
+      ok: true,
+      value: { action: 'react_block', identity: id, blocked: true },
+    });
+    expect(parseLiveControlRequest({ action: 'react_block', sessionId: SESSION, identity: id })).toEqual({
+      ok: false,
+      error: 'blocked required',
+    });
+    expect(parseLiveControlRequest({ action: 'react_block', sessionId: SESSION, identity: id, blocked: 'yes' }).ok).toBe(false);
+    expect(parseLiveControlRequest({ action: 'react_block', sessionId: SESSION, blocked: true }).ok).toBe(false);
+  });
+
+  test('the stop survives a re-join: live_join_context carries reactions_blocked', () => {
+    expect(parseLiveJoinContext({ stored: { role: 'listener', hidden_name: null, reactions_blocked: true } })?.stored)
+      .toEqual({ role: 'listener', hiddenName: null, reactionsBlocked: true });
+  });
+
+  test('regression (2026-10-05): hidden_name is a BOOLEAN — a sister who chose her name stays named on re-join', () => {
+    const named = parseLiveJoinContext({ stored: { role: 'listener', hidden_name: false } })?.stored;
+    expect(named?.hiddenName).toBe(false);
+    expect(resolveHiddenName('f', null, named?.hiddenName)).toBe(false);
+    const hidden = parseLiveJoinContext({ stored: { role: 'listener', hidden_name: true } })?.stored;
+    expect(resolveHiddenName('f', null, hidden?.hiddenName)).toBe(true);
+  });
+});
+
+describe('live_join_context (0155) — one round trip for live-token', () => {
+  const raw = {
+    user: { banned_until: null, is_anonymous: false },
+    flag: 'all',
+    profile: { role: 'student', gender: 'female', display_name: 'مريم' },
+    session: {
+      id: SESSION,
+      status: 'live',
+      room_name: 'prd_abc',
+      host_user_id: HOST,
+      section_id: 'sec-1',
+      allow_requests: true,
+    },
+    stored: { role: 'speaker', hidden_name: true },
+    visible: true,
+    identity: '0123456789abcdef',
+  };
+
+  test('maps the jsonb to the fields live-token decides on', () => {
+    expect(parseLiveJoinContext(raw)).toEqual({
+      user: { bannedUntil: null, isAnonymous: false },
+      flag: 'all',
+      profile: { role: 'student', gender: 'female', displayName: 'مريم' },
+      session: {
+        id: SESSION,
+        status: 'live',
+        roomName: 'prd_abc',
+        hostUserId: HOST,
+        sectionId: 'sec-1',
+        allowRequests: true,
+      },
+      stored: { role: 'speaker', hiddenName: true, reactionsBlocked: false },
+      visible: true,
+      identity: '0123456789abcdef',
+    });
+  });
+
+  test('a deleted user, a missing session or no stored row stay null (→ 401 / 404 / first join)', () => {
+    const ctx = parseLiveJoinContext({ ...raw, user: null, session: null, stored: null, profile: null });
+    expect(ctx?.user).toBeNull();
+    expect(ctx?.session).toBeNull();
+    expect(ctx?.stored).toBeNull();
+    expect(ctx?.profile).toBeNull();
+  });
+
+  test('fail closed: anything but a literal true is "not visible"; a guest flag must be literal true', () => {
+    expect(parseLiveJoinContext({ ...raw, visible: null })?.visible).toBe(false);
+    expect(parseLiveJoinContext({ ...raw, visible: 'true' })?.visible).toBe(false);
+    expect(parseLiveJoinContext({ ...raw, user: { is_anonymous: 'yes' } })?.user?.isAnonymous).toBe(false);
+    expect(parseLiveJoinContext({ ...raw, user: { is_anonymous: true } })?.user?.isAnonymous).toBe(true);
+  });
+
+  test('a session without its key fields is treated as not found; non-objects are a server error', () => {
+    expect(parseLiveJoinContext({ ...raw, session: { id: SESSION } })?.session).toBeNull();
+    expect(parseLiveJoinContext(null)).toBeNull();
+    expect(parseLiveJoinContext([raw])).toBeNull();
+    expect(parseLiveJoinContext('x')).toBeNull();
+  });
 });
 
 describe('request parsing', () => {
@@ -588,6 +722,7 @@ describe('request parsing', () => {
         allow: null,
         reason: null,
         up: null,
+        blocked: null,
       },
     });
     expect(parseLiveControlRequest({ action: 'auto_end', sessionId: SESSION, reason: 'host_absent' })).toMatchObject({
@@ -618,7 +753,7 @@ describe('request parsing', () => {
   test('live-control hand: `up` is a required boolean; the caller acts on himself', () => {
     expect(parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: true })).toEqual({
       ok: true,
-      value: { action: 'hand', sessionId: SESSION, identity: null, trackSid: null, allow: null, reason: null, up: true },
+      value: { action: 'hand', sessionId: SESSION, identity: null, trackSid: null, allow: null, reason: null, up: true, blocked: null },
     });
     expect(parseLiveControlRequest({ action: 'hand', sessionId: SESSION, up: false })).toMatchObject({
       ok: true,

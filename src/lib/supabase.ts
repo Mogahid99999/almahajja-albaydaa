@@ -7,6 +7,7 @@ import { AppState, Platform } from 'react-native';
 
 import type { Database } from '@/types/database';
 import { env } from './env';
+import { dbBreaker, isServerFailureStatus, ServerBusyError } from './serverBreaker';
 
 /**
  * Hard ceiling on a single auth (GoTrue) or database (PostgREST) request.
@@ -33,6 +34,10 @@ export function fetchWithTimeout(
 ): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (!isBoundedRequest(url)) return fetch(input, init);
+  // LOAD V24: database reads/writes pause briefly while the server is failing
+  // (src/lib/serverBreaker.ts) instead of piling onto it. Auth is never gated.
+  const gated = url.includes('/rest/v1/');
+  if (gated && !dbBreaker.allow(Date.now())) return Promise.reject(new ServerBusyError());
   const controller = new AbortController();
   // Respect a caller's own AbortSignal (e.g. React Query cancellation).
   const outer = init?.signal;
@@ -41,7 +46,20 @@ export function fetchWithTimeout(
     else outer.addEventListener('abort', () => controller.abort(), { once: true });
   }
   const timer = setTimeout(() => controller.abort(), ms);
-  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+  const req = fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+  if (!gated) return req;
+  return req.then(
+    (res) => {
+      if (isServerFailureStatus(res.status)) dbBreaker.onFailure(Date.now());
+      else dbBreaker.onSuccess();
+      return res;
+    },
+    (err: unknown) => {
+      // A caller's own cancellation says nothing about the server.
+      if (!outer?.aborted) dbBreaker.onFailure(Date.now());
+      throw err;
+    },
+  );
 }
 
 /**

@@ -146,7 +146,10 @@ Deno.serve(async (req) => {
     const { data: isMod } = await callerClient.rpc("is_moderator");
     if (!isMod) return json({ error: "forbidden" }, 403);
   } else {
-    const { data: isManager } = await callerClient.rpc("is_content_manager");
+    // 0160: lectures and their attachments also open to the sheikh
+    // (is_lecture_manager); broadcast media stays admin/publisher.
+    const gate = kind === "broadcast" ? "is_content_manager" : "is_lecture_manager";
+    const { data: isManager } = await callerClient.rpc(gate);
     if (!isManager) return json({ error: "forbidden" }, 403);
   }
 

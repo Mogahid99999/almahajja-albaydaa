@@ -292,6 +292,12 @@ export default function ProfileScreen() {
           label="رحلتي العلمية"
           onPress={() => router.push('/(student)/journey')}
         />
+        <Divider />
+        <LinkRow
+          icon="calendar"
+          label="الجدول الأسبوعي"
+          onPress={() => router.push('/(student)/schedule' as Parameters<typeof router.push>[0])}
+        />
         {!isGuest ? (
           <>
             <Divider />

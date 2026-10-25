@@ -28,6 +28,7 @@ const mockConfigureSpeaking = jest.fn(async () => undefined);
 const mockSetMic = jest.fn(async (_on: boolean) => undefined);
 const mockReleaseMic = jest.fn(async () => undefined);
 const mockMicPermission = jest.fn(async () => undefined);
+const mockSendReaction = jest.fn(async (_k: string) => true);
 jest.mock('@/lib/liveClient', () => ({
   MicPermissionError: class MicPermissionError extends Error {},
   configureSpeakingAudio: () => mockConfigureSpeaking(),
@@ -41,6 +42,7 @@ jest.mock('@/lib/liveClient', () => ({
   stopLiveAudio: () => mockStopAudio(),
   setLivePaused: (p: boolean) => mockSetPaused(p),
   markSessionEnded: () => mockMarkEnded(),
+  sendLiveReaction: (k: string) => mockSendReaction(k),
 }));
 
 const mockStopLecture = jest.fn();
@@ -79,7 +81,10 @@ jest.mock('../../../modules/live-foreground', () => ({
 }));
 
 import { LiveTokenError } from '@/api/live';
+import { queryKeys } from '@/constants/queryKeys';
+import { queryClient } from '@/lib/queryClient';
 import {
+  endedHere,
   followAuthUser,
   notifyLiveSessionEnded,
   onLiveComments,
@@ -392,6 +397,7 @@ describe('room patches', () => {
       micOn: false,
       speaking: false,
       isMe: true,
+      reactBlocked: false,
     };
     patch({ people: { [me.identity]: me }, counts: { brothers: 1, sisters: 0 }, activeSpeakers: ['h1'] });
     expect(state()).toMatchObject({
@@ -530,6 +536,7 @@ describe('P4 speaking & moderation', () => {
       micOn: false,
       speaking: false,
       isMe: true,
+      reactBlocked: false,
       ...over,
     },
   });
@@ -637,6 +644,43 @@ describe('P4 speaking & moderation', () => {
     await state().handOver('fedcba9876543210');
     expect(mockLiveControl).toHaveBeenCalledWith('host_leave', { sessionId: 'sess-1', identity: 'fedcba9876543210' });
     expect(state().session).toBeNull();
+  });
+});
+
+describe('ending while this device is still joining (owner 2026-10-05 «احاول انهاء البث, معلق»)', () => {
+  test('«إنهاء البث للجميع» cancels the join at once and the open screen reads the session as ended', async () => {
+    mockFetchToken.mockResolvedValue(token({ role: 'host' }));
+    // The LiveKit connect never finishes (the room is being deleted under it).
+    mockConnect.mockImplementation((_p: unknown, s: LiveSink) => {
+      sink = s;
+      return new Promise(() => undefined);
+    });
+    queryClient.setQueryData(queryKeys.liveSession('sess-1'), session);
+    void state().join(session);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(state().conn).toBe('connecting');
+
+    await state().endForAll();
+
+    expect(mockLiveControl).toHaveBeenCalledWith('end', { sessionId: 'sess-1' });
+    expect(state().conn).toBe('ended');
+    expect(mockDisconnect).toHaveBeenCalled();
+    expect(queryClient.getQueryData<LiveSessionPublic>(queryKeys.liveSession('sess-1'))?.status).toBe('ended');
+    // A late patch from the abandoned connect cannot revive the room.
+    sink!.patch({ conn: 'ok' });
+    expect(state().conn).toBe('ended');
+  });
+
+  test('ended from the staff card (endedHere): the same, with no room action needed', async () => {
+    mockFetchToken.mockResolvedValue(token());
+    mockConnect.mockImplementation(() => new Promise(() => undefined));
+    void state().join(session);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    endedHere('sess-1');
+    expect(state().conn).toBe('ended');
+    // Another session id is not this room's business.
+    endedHere('other');
+    expect(state().conn).toBe('ended');
   });
 });
 
@@ -759,5 +803,72 @@ describe('sign-in while in a live re-joins as the new user', () => {
     mockFetchToken.mockRejectedValueOnce(new LiveTokenError('banned'));
     await followAuthUser('user-b');
     expect(state()).toMatchObject({ session, conn: 'failed', lastError: 'banned' });
+  });
+});
+
+describe('0157 reactions «التفاعل»', () => {
+  const ME = '0123456789abcdef';
+  const meAs = (over: Record<string, unknown> = {}) => ({
+    [ME]: {
+      identity: ME, name: 'عبد الله', gender: 'm' as const, role: 'listener' as const, hidden: false,
+      hand: false, handAt: null, micOn: false, speaking: false, isMe: true, reactBlocked: false, ...over,
+    },
+  });
+
+  beforeEach(async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-10-05T12:00:00Z'));
+    mockSendReaction.mockClear();
+    mockFetchToken.mockResolvedValue(token());
+    connectsOk();
+    await state().join(session);
+    patch({ people: meAs() });
+  });
+  afterEach(() => jest.useRealTimers());
+
+  test('sent over LiveKit (never the DB), shown to me at once, then a 1.2 s cooldown', async () => {
+    const { onLiveReaction } = jest.requireActual('../liveStore') as typeof import('../liveStore');
+    const seen: unknown[] = [];
+    const off = onLiveReaction((e) => seen.push(e));
+    expect(await state().sendReaction('like')).toBe('sent');
+    expect(mockSendReaction).toHaveBeenCalledWith('like');
+    expect(mockLiveControl).not.toHaveBeenCalled();
+    expect(seen).toEqual([{ key: 'like', identity: ME, mine: true }]);
+    expect(await state().sendReaction('love')).toBe('cooldown');
+    jest.setSystemTime(Date.now() + 1_200);
+    expect(await state().sendReaction('love')).toBe('sent');
+    off();
+  });
+
+  test('stopped by a moderator: nothing is sent', async () => {
+    patch({ people: meAs({ reactBlocked: true }) });
+    expect(await state().sendReaction('like')).toBe('blocked');
+    expect(mockSendReaction).not.toHaveBeenCalled();
+  });
+
+  test('received reactions are thinned per sender (a modified client cannot flood my screen)', () => {
+    const { onLiveReaction } = jest.requireActual('../liveStore') as typeof import('../liveStore');
+    const seen: string[] = [];
+    const off = onLiveReaction((e) => seen.push(`${e.identity}:${e.key}`));
+    sink!.event?.({ type: 'reaction', key: 'like', identity: 'x1' });
+    sink!.event?.({ type: 'reaction', key: 'love', identity: 'x1' }); // same sender, too soon
+    sink!.event?.({ type: 'reaction', key: 'dua', identity: 'x2' });
+    expect(seen).toEqual(['x1:like', 'x2:dua']);
+    off();
+  });
+
+  test('react_block / react_unblock go to live-control with the target and the flag', async () => {
+    await state().moderate('react_block', 'fedcba9876543210');
+    expect(mockLiveControl).toHaveBeenCalledWith('react_block', {
+      sessionId: 'sess-1',
+      identity: 'fedcba9876543210',
+      blocked: true,
+    });
+    await state().moderate('react_unblock', 'fedcba9876543210');
+    expect(mockLiveControl).toHaveBeenLastCalledWith('react_block', {
+      sessionId: 'sess-1',
+      identity: 'fedcba9876543210',
+      blocked: false,
+    });
   });
 });

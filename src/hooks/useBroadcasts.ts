@@ -31,7 +31,8 @@ export function useHomeBroadcasts() {
   return useQuery({
     queryKey: queryKeys.homeBroadcasts,
     queryFn: getHomeBroadcasts,
-    staleTime: 5 * 60_000,
+    // LOAD V24: persisted + the default 30 min; app_open invalidates it when a newer
+    // inbox item exists (a new reminder always writes one).
   });
 }
 

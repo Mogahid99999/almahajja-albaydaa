@@ -11,7 +11,7 @@
  * action); a quiet «سُئل بلا اسم» hint marks these questions.
  */
 import Feather from '@expo/vector-icons/Feather';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -289,6 +289,19 @@ function QuestionCard({
   );
 }
 
+/** Newest first by when it was asked, or by its latest answer (unanswered last). */
+function sortQuestions<T extends { createdAt: string; answeredAt: string | null }>(
+  list: readonly T[],
+  by: 'asked' | 'answered',
+): T[] {
+  const t = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
+  return [...list].sort((a, b) =>
+    by === 'answered'
+      ? t(b.answeredAt) - t(a.answeredAt) || t(b.createdAt) - t(a.createdAt)
+      : t(b.createdAt) - t(a.createdAt),
+  );
+}
+
 export default function AdminQuestions() {
   useAdminOnly();
   const [scope, setScope] = useState<ScopeFilter>('all');
@@ -312,7 +325,10 @@ export default function AdminQuestions() {
     category: category === 'all' ? undefined : category,
   });
 
-  const list = questions ?? [];
+  // Explicit order (owner 2026-10-25): newest asked first, or most recently
+  // answered first; ties fall back to the newer question.
+  const [sortBy, setSortBy] = useState<'asked' | 'answered'>('asked');
+  const list = useMemo(() => sortQuestions(questions ?? [], sortBy), [questions, sortBy]);
 
   const renderItem = useCallback(
     ({ item: q }: { item: InboxQuestion }) => (
@@ -350,10 +366,14 @@ export default function AdminQuestions() {
         <FilterChip label="تمت الإجابة" active={status === 'answered'} onPress={() => setStatus('answered')} />
         <FilterChip label="المخفية" active={status === 'hidden'} onPress={() => setStatus('hidden')} />
       </View>
-      <View style={[styles.filterRow, { marginBottom: 18 }]}>
+      <View style={styles.filterRow}>
         <FilterChip label="كل التصنيفات" active={category === 'all'} onPress={() => setCategory('all')} />
         <FilterChip label="سؤال عام" active={category === 'general'} onPress={() => setCategory('general')} />
         <FilterChip label="فتوى شرعية" active={category === 'fatwa'} onPress={() => setCategory('fatwa')} />
+      </View>
+      <View style={[styles.filterRow, { marginBottom: 18 }]}>
+        <FilterChip label="الأحدث" active={sortBy === 'asked'} onPress={() => setSortBy('asked')} />
+        <FilterChip label="آخر ما أُجيب" active={sortBy === 'answered'} onPress={() => setSortBy('answered')} />
       </View>
 
       {!isLoading && list.length > 0 ? (

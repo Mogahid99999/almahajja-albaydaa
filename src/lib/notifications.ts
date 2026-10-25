@@ -575,3 +575,46 @@ export async function getInitialDeepLink(): Promise<
     return null;
   }
 }
+
+// ─── «الجدول الأسبوعي» lesson reminders (0158) ─────────────────────────────────
+
+/**
+ * One local notification at an exact instant (a lesson's «ذكّرني» — device
+ * only, nothing on the server). Never throws; false when it couldn't be set.
+ */
+export async function scheduleLocalAt(
+  identifier: string,
+  atMs: number,
+  content: { title: string; body: string; data?: Record<string, unknown> },
+): Promise<boolean> {
+  const N = nm();
+  if (!N || !Device.isDevice) return false;
+  try {
+    const perm = await N.getPermissionsAsync();
+    if (!perm.granted) return false;
+    await N.scheduleNotificationAsync({
+      identifier,
+      content: { title: content.title, body: content.body, sound: 'default', data: content.data ?? {} },
+      trigger: { ...channelField(), type: N.SchedulableTriggerInputTypes.DATE, date: new Date(atMs) },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Cancel every pending local notification whose identifier starts with `prefix`. */
+export async function cancelLocalByPrefix(prefix: string): Promise<void> {
+  const N = nm();
+  if (!N) return;
+  try {
+    const pending = await N.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      pending
+        .filter((p) => p.identifier.startsWith(prefix))
+        .map((p) => N.cancelScheduledNotificationAsync(p.identifier)),
+    );
+  } catch {
+    // Non-fatal.
+  }
+}

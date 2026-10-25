@@ -267,8 +267,13 @@ export const LIVE_P4_COPY = {
   micCloseA11y: 'إغلاق الميكروفون',
   stepDown: 'العودة إلى الاستماع',
   approve: 'السماح بالتحدث',
-  reject: 'الاعتذار',
+  /** 2026-10-05: was «الاعتذار» — the owner asked for an explicit «رفض». */
+  reject: 'رفض الطلب',
+  rejectShort: 'رفض',
+  approveShort: 'قبول',
   mute: 'إغلاق الميكروفون',
+  muteShort: 'كتم',
+  openMics: 'ميكروفونات مفتوحة',
   allowRequests: 'استقبال طلبات التحدث',
   requests: 'طلبات التحدث',
   manage: 'إدارة المجلس',
@@ -346,7 +351,47 @@ type PersonLike = {
   handAt?: number | null;
   micOn?: boolean | null;
   isMe?: boolean | null;
+  /** 0157: a moderator stopped this person's reactions. */
+  reactBlocked?: boolean | null;
 };
+
+/**
+ * Everyone in the room, the host included — the ONE number on the room's face
+ * («الحضور»); the brothers / sisters split lives in «في الحلقة» (owner 2026-10-05).
+ */
+export function presentTotal(people: Readonly<Record<string, unknown>>): number {
+  return Object.keys(people).length;
+}
+
+/** Open microphones the moderators can close with one tap: not the host, not me. */
+export function openMics(people: Readonly<Record<string, PersonLike>>): string[] {
+  return Object.keys(people).filter((id) => {
+    const p = people[id];
+    const kind = roleKind(p.role);
+    return !p.isMe && !!p.micOn && (kind === 'speaker' || kind === 'moderator');
+  });
+}
+
+/**
+ * Names across the hijab (owner 2026-10-05): an ordinary attendee sees the
+ * names of his own side only — brothers the brothers, sisters the sisters (a
+ * hidden sister stays «طالبة») — and the other side as a count. The sheikh is
+ * named for everyone; the host / moderators / staff see every name (they run
+ * the room). A viewer whose gender isn't known yet sees nobody's name.
+ */
+export function seesNameOf(
+  viewer: Sex | null,
+  privileged: boolean,
+  p: { gender?: unknown; role?: unknown },
+): boolean {
+  if (privileged || roleKind(p.role) === 'host') return true;
+  return viewer !== null && sexOf(p.gender) === viewer;
+}
+
+/** What stands for a name the viewer may not see. */
+export function otherSideName(p: { gender?: unknown }): string {
+  return sexOf(p.gender) === 'f' ? 'إحدى الأخوات' : 'أحد الإخوة';
+}
 
 /** Raised hands the moderators take, oldest first (`handAt`; 0/null = an old server's '1' → first). */
 export function requestQueue(people: Readonly<Record<string, PersonLike>>): string[] {
@@ -375,18 +420,22 @@ export function otherModerators(people: Readonly<Record<string, PersonLike>>): s
     .map(([id]) => id);
 }
 
-export type ModerationAction = 'approve' | 'reject' | 'mute' | 'demote';
+export type ModerationAction = 'approve' | 'reject' | 'mute' | 'demote' | 'react_block' | 'react_unblock';
 
 /**
- * What a moderator may do to one person (liveRules canTarget): approve/reject a
- * listener's raised hand; mute a speaker or a moderator (never the host);
+ * What a moderator may do to one person (liveRules canTarget): approve any
+ * listener (raised hand or not), reject a raised hand; mute a speaker or a moderator (never the host);
  * demote a speaker only (moderators are staff — never demoted). Nothing on myself.
  */
 export function moderationActionsFor(p: PersonLike | null | undefined): ModerationAction[] {
   if (!p || p.isMe) return [];
   const kind = roleKind(p.role);
-  if (kind === 'listener') return p.hand ? ['approve', 'reject'] : [];
-  if (kind === 'speaker') return p.micOn ? ['mute', 'demote'] : ['demote'];
+  // 0157: any listener or speaker can have their reactions stopped / allowed again.
+  const react: ModerationAction = p.reactBlocked ? 'react_unblock' : 'react_block';
+  // A moderator may also give the floor to a listener who never asked (owner
+  // 2026-10-25): he lands among the speakers with his mic closed.
+  if (kind === 'listener') return p.hand ? ['approve', 'reject', react] : ['approve', react];
+  if (kind === 'speaker') return p.micOn ? ['mute', 'demote', react] : ['demote', react];
   if (kind === 'moderator') return p.micOn ? ['mute'] : [];
   return [];
 }
@@ -402,6 +451,10 @@ export function moderationLabel(action: ModerationAction, g: Sex): string {
       return LIVE_P4_COPY.mute;
     case 'demote':
       return g === 'f' ? 'إعادتها إلى الاستماع' : 'إعادته إلى الاستماع';
+    case 'react_block':
+      return g === 'f' ? 'إيقاف تفاعلاتها' : 'إيقاف تفاعلاته';
+    case 'react_unblock':
+      return g === 'f' ? 'السماح بتفاعلاتها' : 'السماح بتفاعلاته';
   }
 }
 
@@ -611,6 +664,15 @@ export const LIVE_COMMENTS_COPY = {
   blocked: 'لا يمكنك التعليق في هذا المجلس',
   sendFailed: 'تعذّر الإرسال. حاول مرة أخرى',
 } as const;
+
+/**
+ * The label under a floating reaction: the name the viewer sees on that seat
+ * (nameOf), except a guest's «ضيف»/«ضيفة» → «طالب» / «طالبة» (owner 2026-10-25).
+ */
+export function reactionSenderLabel(seen: string, gender: unknown): string {
+  if (seen === 'ضيف' || seen === 'ضيفة') return sexOf(gender) === 'f' ? HIDDEN_SISTER_NAME : NAMELESS_BROTHER_NAME;
+  return seen;
+}
 
 /** The author line of a comment: the name, or «طالب» / «طالبة» for «بدون اسم». */
 export function commentAuthorLabel(c: { name: string | null; gender: unknown }): string {

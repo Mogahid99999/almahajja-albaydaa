@@ -124,6 +124,11 @@ export function mapLiveSession(raw: RawLiveRow | null | undefined, fallbackStatu
 export async function getLiveNow(): Promise<LiveNow> {
   const { data, error } = await supabase.rpc('get_live_now');
   if (error) throw error;
+  return parseLiveNow(data);
+}
+
+/** get_live_now's jsonb → LiveNow. Also fed by app_open (0156), which embeds the same payload. */
+export function parseLiveNow(data: unknown): LiveNow {
   const j = (data ?? {}) as {
     live?: RawLiveRow | null;
     upcoming?: (RawLiveRow & { reminded?: unknown })[] | null;

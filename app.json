@@ -3,14 +3,14 @@
     "name": "المحجة البيضاء",
     "slug": "riwaq-al-ilm",
     "scheme": "riwaqalilm",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.riwaqalilm.app",
-      "buildNumber": "14",
+      "buildNumber": "16",
       "entitlements": {
         "aps-environment": "production"
       },
@@ -18,7 +18,8 @@
         "UIBackgroundModes": [
           "audio"
         ],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "لا يستخدم التطبيق الكاميرا ولا يطلب الوصول إليها؛ البث المباشر صوتي فقط، ويرد هذا الوصف لأن مكتبة البث تتضمن دعم الفيديو."
       },
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -61,7 +62,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 13,
+      "versionCode": 15,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
@@ -97,7 +98,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "يستخدم التطبيق الميكروفون لتسجيل الإجابات الصوتية على أسئلة طلبة العلم.",
+          "microphonePermission": "يستخدم التطبيق الميكروفون لتسجيل الإجابات الصوتية على أسئلة طلبة العلم، وللتحدث في البث المباشر عندما يُؤذن لك بالتحدث.",
           "recordAudioAndroid": true
         }
       ],

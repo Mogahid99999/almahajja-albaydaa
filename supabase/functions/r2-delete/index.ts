@@ -47,9 +47,6 @@ Deno.serve(async (req) => {
   const { data: caller, error: callerErr } = await callerClient.auth.getUser();
   if (callerErr || !caller?.user) return json({ error: "invalid session" }, 401);
 
-  const { data: isManager } = await callerClient.rpc("is_content_manager");
-  if (!isManager) return json({ error: "forbidden" }, 403);
-
   let body: { key?: string };
   try {
     body = await req.json();
@@ -58,6 +55,12 @@ Deno.serve(async (req) => {
   }
   const key = body.key;
   if (!key) return json({ error: "key required" }, 400);
+
+  // 0160: a sheikh (is_lecture_manager) may delete lecture / attachment / raw
+  // upload objects only; anything else stays admin/publisher.
+  const lectureKey = /^(lectures|attachments|incoming)\//.test(key);
+  const { data: isManager } = await callerClient.rpc(lectureKey ? "is_lecture_manager" : "is_content_manager");
+  if (!isManager) return json({ error: "forbidden" }, 403);
 
   try {
     await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));

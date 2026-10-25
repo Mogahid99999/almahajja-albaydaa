@@ -18,6 +18,14 @@
 //
 // Accepted payloads:
 //   {"type":"BATCH","ids":["<uuid>", …]}   ← the trigger (0122)
+//   {"type":"DIRECT","users":["<uuid>", …],
+//    "notification":{type,title,body,data}} ← push WITHOUT inbox rows (0150:
+//                                              live_start — one payload for a
+//                                              chunk of recipients, nothing
+//                                              written per user)
+//   {"type":"MESSAGES","messages":[{user_id,type,title,body,data}, …]}
+//                                           ← per-user pushes from push_outbox
+//                                              (0151: reminders, no inbox rows)
 //   {"record": {<notifications row>}}      ← legacy Database Webhook envelope
 //   {<notifications row>}                  ← bare row, for manual testing
 //
@@ -59,7 +67,14 @@ type NotificationRow = {
 };
 
 type WebhookPayload =
-  & { type?: string; ids?: string[]; record?: NotificationRow }
+  & {
+    type?: string;
+    ids?: string[];
+    record?: NotificationRow;
+    users?: string[];
+    notification?: Omit<NotificationRow, "id" | "user_id">;
+    messages?: NotificationRow[];
+  }
   & Partial<NotificationRow>;
 
 type ExpoMessage = {
@@ -91,7 +106,26 @@ Deno.serve(async (req) => {
   // A batch carries ids only (the trigger must not ship 500 full rows through
   // pg_net), so re-read them here. A legacy/manual call carries the row itself.
   let rows: NotificationRow[];
-  if (Array.isArray(payload.ids) && payload.ids.length) {
+  if (payload.type === "DIRECT") {
+    // 0150: one shared payload for a chunk of recipients — no inbox rows exist,
+    // so nothing is re-read from `notifications`.
+    const n = payload.notification;
+    if (!Array.isArray(payload.users) || !payload.users.length || !n?.type || !n.title) {
+      return json({ error: "DIRECT needs users + notification{type,title,body,data}" }, 400);
+    }
+    rows = payload.users.map((user_id) => ({
+      user_id,
+      type: n.type,
+      title: n.title,
+      body: n.body ?? "",
+      data: n.data ?? {},
+    }));
+  } else if (payload.type === "MESSAGES") {
+    // 0151: per-user messages from push_outbox — again no inbox rows.
+    rows = (payload.messages ?? [])
+      .filter((m) => m?.user_id && m?.title)
+      .map((m) => ({ user_id: m.user_id, type: m.type, title: m.title, body: m.body ?? "", data: m.data ?? {} }));
+  } else if (Array.isArray(payload.ids) && payload.ids.length) {
     const { data, error } = await supabase
       .from("notifications")
       .select("id, user_id, type, title, body, data")
@@ -137,7 +171,10 @@ Deno.serve(async (req) => {
   // RPC for the whole batch (0122) rather than a COUNT per recipient. Other
   // notification types omit `badge`, leaving the existing count untouched.
   const badgeByUser = new Map<string, number>();
-  const badgeUsers = [
+  // Only inbox-backed rows have an unread count to show (0151: DIRECT/MESSAGES
+  // pushes have no rows, so the count would be meaningless — skip the RPC).
+  const rowBacked = payload.type !== "DIRECT" && payload.type !== "MESSAGES";
+  const badgeUsers = !rowBacked ? [] : [
     ...new Set(
       rows.filter((r) => r.type === "new_lecture" && tokensByUser.has(r.user_id))
         .map((r) => r.user_id),

@@ -1,12 +1,14 @@
 /**
  * «إدارة المجلس» — the moderators' sheet (PLAN_LIVE_V23 §7.6):
  *  - «استقبال طلبات التحدث» switch (room metadata, live-control set_allow_requests)
- *  - who is on the floor now (speakers + moderators) → PersonSheet
- *  - pending requests, oldest first → RequestSheet
+ *  - who is on the floor now (speakers + moderators) → PersonSheet, with a
+ *    one-tap «كتم» on every open microphone (owner 2026-10-05)
+ *  - pending requests, oldest first → RequestSheet, with one-tap «قبول» /
+ *    «رفض» on the row itself
  * Names come resolved from the room (staff see real names — D2).
  */
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Switch, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, Switch, View } from 'react-native';
 
 import { Divider, Txt, cardRowStyle } from '@/components/ui';
 import { colors } from '@/constants/theme';
@@ -40,7 +42,29 @@ export function ManageSheet({
   onOpenRequest: (identity: string) => void;
 }) {
   const setAllowRequests = useLiveStore((s) => s.setAllowRequests);
+  const moderate = useLiveStore((s) => s.moderate);
   const now = useNow(30_000);
+  // One-tap row actions: "<action>:<identity>" in flight.
+  const [busy, setBusy] = useState<string | null>(null);
+  const alive = useRef(true);
+  useEffect(
+    () => () => {
+      alive.current = false;
+    },
+    [],
+  );
+  const quick = async (action: 'mute' | 'approve' | 'reject', row: ManageRow) => {
+    if (busy) return;
+    setBusy(`${action}:${row.identity}`);
+    setError(null);
+    try {
+      await moderate(action, row.identity);
+    } catch (e) {
+      if (alive.current) setError(controlErrorText(e, sexOf(row.person.gender)));
+    } finally {
+      if (alive.current) setBusy(null);
+    }
+  };
   // Optimistic switch; the room metadata confirms (or the error reverts it).
   const [pending, setPending] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +133,19 @@ export function ManageSheet({
               last={i === speakers.length - 1}
               sub={floorLine(r.person)}
               onPress={() => onOpenPerson(r.identity)}
+              actions={
+                r.person.micOn && roleKind(r.person.role) !== 'host' && !r.person.isMe
+                  ? [
+                      {
+                        label: LIVE_P4_COPY.muteShort,
+                        tone: 'danger',
+                        busy: busy === `mute:${r.identity}`,
+                        disabled: !!busy,
+                        onPress: () => void quick('mute', r),
+                      },
+                    ]
+                  : undefined
+              }
             />
           ))
         ) : (
@@ -126,6 +163,22 @@ export function ManageSheet({
               sub={handLine(sexOf(r.person.gender), r.person.handAt, now)}
               hand
               onPress={() => onOpenRequest(r.identity)}
+              actions={[
+                {
+                  label: LIVE_P4_COPY.approveShort,
+                  tone: 'primary',
+                  busy: busy === `approve:${r.identity}`,
+                  disabled: !!busy,
+                  onPress: () => void quick('approve', r),
+                },
+                {
+                  label: LIVE_P4_COPY.rejectShort,
+                  tone: 'danger',
+                  busy: busy === `reject:${r.identity}`,
+                  disabled: !!busy,
+                  onPress: () => void quick('reject', r),
+                },
+              ]}
             />
           ))
         ) : (
@@ -159,6 +212,14 @@ function Empty({ text }: { text: string }) {
   );
 }
 
+type RowAction = {
+  label: string;
+  tone: 'primary' | 'danger';
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+};
+
 function Row({
   row,
   sub,
@@ -166,6 +227,7 @@ function Row({
   last,
   hand = false,
   onPress,
+  actions,
 }: {
   row: ManageRow;
   sub: string;
@@ -173,6 +235,8 @@ function Row({
   last: boolean;
   hand?: boolean;
   onPress: () => void;
+  /** One-tap buttons at the row's end (mute / approve / reject). */
+  actions?: readonly RowAction[];
 }) {
   const g = sexOf(row.person.gender);
   return (
@@ -213,8 +277,41 @@ function Row({
             {sub}
           </Txt>
         </View>
-        {hand ? <HandGlyph size={16} color={colors.accentBrassMuted} /> : null}
+        {hand && !actions?.length ? <HandGlyph size={16} color={colors.accentBrassMuted} /> : null}
+        {actions?.map((a) => <RowButton key={a.label} action={a} />)}
       </Pressable>
     </>
+  );
+}
+
+function RowButton({ action }: { action: RowAction }) {
+  const fg = action.tone === 'primary' ? colors.onTealPrimary : '#9e3d2f';
+  return (
+    <Pressable
+      onPress={action.onPress}
+      disabled={action.disabled}
+      accessibilityRole="button"
+      accessibilityLabel={action.label}
+      accessibilityState={{ disabled: action.disabled, busy: action.busy }}
+      hitSlop={4}
+      style={({ pressed }) => ({
+        minWidth: 52,
+        height: 32,
+        paddingHorizontal: 12,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: action.tone === 'primary' ? colors.primaryTeal : 'rgba(158,61,47,0.10)',
+        opacity: action.disabled && !action.busy ? 0.5 : pressed ? 0.8 : 1,
+      })}
+    >
+      {action.busy ? (
+        <ActivityIndicator size="small" color={fg} />
+      ) : (
+        <Txt size={12.5} weight="semibold" color={fg}>
+          {action.label}
+        </Txt>
+      )}
+    </Pressable>
   );
 }

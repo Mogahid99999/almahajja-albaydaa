@@ -8,17 +8,24 @@
  *  - everyone else sees the LiveKit names: «طالبة» for a hidden sister.
  * A sister also gets her own «ظهورك في الحلقة» row to change her choice.
  * Moderators (P4) tap a row → PersonSheet (`onSelectPerson`).
+ *
+ * Across the hijab (owner 2026-10-05, liveUi seesNameOf): an ordinary attendee
+ * sees his own side's names — brothers the brothers, sisters the sisters (a
+ * hidden sister stays «طالبة») — and the other side as a number only. The
+ * sheikh is listed for everyone; the host, moderators and staff see all.
  */
-import { useMemo } from 'react';
-import { Pressable, SectionList, View } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, SectionList, View } from 'react-native';
 
 import { Divider, Txt, cardRowStyle } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useLiveStaffParticipants } from '@/hooks/useLive';
+import { useLiveStore } from '@/stores/liveStore';
 import { arNum } from '@/lib/format';
 import { HandGlyph, LiveAvatar, SheikhAvatar } from '../LiveAvatar';
 import type { LiveCounts, LivePerson } from '../liveTypes';
-import { asList, roleKind, sexOf, staffNameMap, visibleName, type Sex } from '../liveUi';
+import { LIVE_P4_COPY, asList, controlErrorText, roleKind, seesNameOf, sexOf, staffNameMap, visibleName, type Sex } from '../liveUi';
 import { LiveSheet } from './LiveSheet';
 
 type Row = {
@@ -30,6 +37,7 @@ type Row = {
   me: boolean;
   moderator: boolean;
   hand: boolean;
+  listener: boolean;
 };
 
 type Group = { key: 'front' | 'speakers' | 'brothers' | 'sisters'; title: string; data: Row[]; footer: string | null };
@@ -61,6 +69,9 @@ export function PeopleSheet({
   myName,
   onChangeIdentity,
   onSelectPerson,
+  viewer = null,
+  privileged = true,
+  canInvite = false,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -74,7 +85,39 @@ export function PeopleSheet({
   onChangeIdentity?: () => void;
   /** Moderators (P4): a row opens that person's sheet (approve / mute / demote). */
   onSelectPerson?: (identity: string) => void;
+  /** My side ('m' brothers / 'f' sisters); null = not known yet (no names but the sheikh's). */
+  viewer?: Sex | null;
+  /** Host / moderator / staff: every name (default — the old behaviour). */
+  privileged?: boolean;
+  /** Moderators: a one-tap «السماح» beside every listener (owner 2026-10-25) — no raised hand needed. */
+  canInvite?: boolean;
 }) {
+  const moderate = useLiveStore((s) => s.moderate);
+  const [inviting, setInviting] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const alive = useRef(true);
+  useEffect(
+    () => () => {
+      alive.current = false;
+    },
+    [],
+  );
+  useEffect(() => {
+    if (visible) setInviteError(null);
+  }, [visible]);
+  const invite = async (row: { id: string; gender: Sex }) => {
+    if (inviting) return;
+    setInviting(row.id);
+    setInviteError(null);
+    try {
+      await moderate('approve', row.id);
+    } catch (e) {
+      if (alive.current) setInviteError(controlErrorText(e, row.gender));
+    } finally {
+      if (alive.current) setInviting(null);
+    }
+  };
+
   // D2: only staff ever ask for real names (the RPC refuses everyone else too).
   const staffRes: unknown = useLiveStaffParticipants(sessionId, isStaff && visible);
   const staffList = asList<unknown>(isStaff ? staffRes : null);
@@ -92,6 +135,11 @@ export function PeopleSheet({
       const g = sexOf(p.gender);
       const kind = roleKind(p.role);
       const hidden = !!p.hidden && g === 'f';
+      // The other side, for an ordinary attendee: counted, never listed.
+      if (!p.isMe && !seesNameOf(viewer, privileged, p)) {
+        listed = { ...listed, [g]: listed[g] + 1 };
+        continue;
+      }
       const name = p.isMe
         ? `أنت${hidden ? ' (بدون اسم)' : ''}`
         : visibleName(id, p, isStaff, staff);
@@ -104,6 +152,7 @@ export function PeopleSheet({
         me: !!p.isMe,
         moderator: kind === 'moderator',
         hand: !!p.hand,
+        listener: kind === 'listener',
       };
       if (kind === 'host') {
         hostCount++;
@@ -122,12 +171,21 @@ export function PeopleSheet({
     const sTotal = Math.max(counts?.sisters ?? 0, listed.f);
     const moreB = bTotal - listed.m;
     const moreS = sTotal - listed.f;
-    const sisterFooter = [
-      moreS > 0 ? `و${arNum(moreS)} أخريات` : null,
-      hiddenSisters > 0 ? `منهن ${arNum(hiddenSisters)} بدون اسم` : null,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    const seesSisters = privileged || viewer === 'f';
+    const seesBrothers = privileged || viewer === 'm';
+    const sisterFooter = !seesSisters
+      ? 'أسماء الأخوات تظهر للأخوات فقط'
+      : [
+          moreS > 0 ? `و${arNum(moreS)} أخريات` : null,
+          hiddenSisters > 0 ? `منهن ${arNum(hiddenSisters)} بدون اسم` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+    const brotherFooter = !seesBrothers
+      ? 'أسماء الإخوة تظهر للإخوة فقط'
+      : moreB > 0
+        ? `و${arNum(moreB)} آخرون`
+        : null;
     const out: Group[] = [];
     if (front.length) out.push({ key: 'front', title: 'في صدر المجلس', data: front, footer: null });
     if (speakers.length) {
@@ -137,11 +195,11 @@ export function PeopleSheet({
       key: 'brothers',
       title: `الإخوة · ${arNum(bTotal)}`,
       data: brothers,
-      footer: moreB > 0 ? `و${arNum(moreB)} آخرون` : null,
+      footer: brotherFooter,
     });
     out.push({ key: 'sisters', title: `الأخوات · ${arNum(sTotal)}`, data: sisters, footer: sisterFooter || null });
     return { groups: out, total: bTotal + sTotal + hostCount };
-  }, [people, counts, isStaff, staff]);
+  }, [people, counts, isStaff, staff, viewer, privileged]);
 
   const sisterMe = myIdentity?.gender === 'f';
 
@@ -161,7 +219,13 @@ export function PeopleSheet({
         initialNumToRender={20}
         style={{ flexGrow: 0 }}
         ListHeaderComponent={
-          sisterMe ? (
+          <>
+          {inviteError ? (
+            <Txt size={12} color={colors.stateDanger} align="center" style={{ marginBottom: 6 }}>
+              {inviteError}
+            </Txt>
+          ) : null}
+          {sisterMe ? (
             <Pressable
               onPress={onChangeIdentity}
               accessibilityRole="button"
@@ -185,7 +249,8 @@ export function PeopleSheet({
                 تغيير
               </Txt>
             </Pressable>
-          ) : null
+          ) : null}
+          </>
         }
         renderSectionHeader={({ section }) => (
           <Txt size={12} weight="semibold" color={colors.textFaint} style={{ marginTop: 14, marginBottom: 6 }}>
@@ -235,6 +300,34 @@ export function PeopleSheet({
               </Txt>
             </View>
             {item.hand ? <HandGlyph size={16} color={colors.accentBrassMuted} /> : null}
+            {canInvite && item.listener && !item.me ? (
+              <Pressable
+                onPress={() => void invite(item)}
+                disabled={!!inviting}
+                accessibilityRole="button"
+                accessibilityLabel={`${LIVE_P4_COPY.approve} · ${item.name}`}
+                hitSlop={6}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: colors.primaryTeal,
+                  opacity: pressed || (inviting && inviting !== item.id) ? 0.6 : 1,
+                })}
+              >
+                {inviting === item.id ? (
+                  <ActivityIndicator size="small" color={colors.onTealPrimary} />
+                ) : (
+                  <Feather name="mic" size={13} color={colors.onTealPrimary} />
+                )}
+                <Txt size={12} weight="semibold" color={colors.onTealPrimary}>
+                  السماح
+                </Txt>
+              </Pressable>
+            ) : null}
           </Pressable>
         )}
       />

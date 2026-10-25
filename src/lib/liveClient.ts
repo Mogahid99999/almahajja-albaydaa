@@ -54,6 +54,12 @@ import {
   type LiveConn,
   type LivePerson,
 } from "@/lib/liveConnection";
+import {
+  encodeReaction,
+  parseReaction,
+  REACTIONS_TOPIC,
+  type ReactionKey,
+} from "@/lib/liveReactions";
 
 // ─── SDK loading / init ─────────────────────────────────────────────────────────
 
@@ -344,7 +350,9 @@ export type LiveClientEvent =
   /** My publish permission was revoked (demoted) — the mic is already dropped. */
   | { type: "publishRevoked" }
   /** A comments update from live-control (data message, topic "comments", 0147). */
-  | { type: "comments"; msg: LiveCommentsMessage };
+  | { type: "comments"; msg: LiveCommentsMessage }
+  /** Someone's reaction (data message from that participant, topic "reactions", 0157). */
+  | { type: "reaction"; key: ReactionKey; identity: string };
 
 export interface LiveSink {
   patch(p: LiveRoomPatch): void;
@@ -670,9 +678,15 @@ function createRoom(r: Run): LK.Room {
         topic?: string,
       ) => {
         if (!current()) return;
-        if (topic === "control") {
+        if (topic === "control" && !sender) {
+          // Only the server (live-control, no sender) — 0157 gives listeners a
+          // data grant for reactions, so a participant must not fake a refusal.
           if (parseControlMessage(payload) === "rejected")
             r.sink.event?.({ type: "rejected" });
+        } else if (topic === REACTIONS_TOPIC && sender) {
+          // 0157: a participant's own reaction (the store rate-limits per sender).
+          const key = parseReaction(payload);
+          if (key) r.sink.event?.({ type: "reaction", key, identity: sender.identity });
         } else if (topic === LIVE_COMMENTS_TOPIC && !sender) {
           // Only the server (live-control, no sender): hosts/moderators may
           // publish data too, and must not be able to forge a comment.
@@ -867,6 +881,24 @@ export async function disconnectLive(): Promise<void> {
 }
 
 /** Local listen-pause: unsubscribe (pause) / re-subscribe (resume) every remote audio track. */
+/**
+ * Send a reaction to everyone in the room (0157, lossy data on topic
+ * "reactions"). false when not in a room or LiveKit refuses (no data grant:
+ * a guest, or a moderator stopped my reactions). Never throws.
+ */
+export async function sendLiveReaction(key: ReactionKey): Promise<boolean> {
+  const room = run?.room;
+  if (!room) return false;
+  const local = room.localParticipant;
+  if (local.permissions && !local.permissions.canPublishData) return false;
+  try {
+    await local.publishData(new Uint8Array(encodeReaction(key)), { reliable: false, topic: REACTIONS_TOPIC });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function setLivePaused(p: boolean): void {
   paused = p;
   if (run) applyPaused(run);

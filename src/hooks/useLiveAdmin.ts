@@ -20,6 +20,7 @@ import {
   getLiveAdminOverview,
   getLiveInbox,
   getLiveInterventions,
+  deleteLiveRecording,
   retryLiveRecording,
   saveLiveLecture,
   type LiveAdminOverview,
@@ -144,6 +145,16 @@ export function useSaveLiveLecture() {
 }
 
 /** «إعادة المعالجة» — retry_live_recording. */
+/** «حذف التسجيل» — admin only (0157). */
+export function useDeleteLiveRecording() {
+  const invalidate = useLiveAdminInvalidate();
+  return useMutation({
+    mutationFn: deleteLiveRecording,
+    networkMode: 'always',
+    onSettled: invalidate,
+  });
+}
+
 export function useRetryLiveRecording() {
   const invalidate = useLiveAdminInvalidate();
   return useMutation({

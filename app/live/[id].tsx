@@ -33,6 +33,16 @@
  * opens CommentsSheet — everyone present reads the list live; registered
  * listeners write (a guest is asked to register); the host / moderators /
  * staff see a count of new ones on the pill.
+ *
+ * Owner batch 2026-10-05:
+ *  - the room's face shows ONE number, «الحضور · N» (the brothers / sisters
+ *    split is in «في الحلقة»);
+ *  - names across the hijab: ordinary attendees see their own side's names
+ *    only (liveUi seesNameOf) — here, in the halaqa and in «في الحلقة»;
+ *  - «التفاعل»: a smile pill opens six signs that float over the halaqa for
+ *    everyone (LiveKit data only — 0157); moderators can stop one person's;
+ *  - moderators get one-tap controls in the strip above the attendance line:
+ *    «كتم» on every open microphone and «قبول» / «رفض» on every raised hand.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -48,7 +58,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LiveTokenError, type LiveSessionPublic } from '@/api/live';
-import { BrotherIcon } from '@/components/live/BrotherIcon';
 import { Halaqa } from '@/components/live/Halaqa';
 import { HandGlyph, LiveAvatar } from '@/components/live/LiveAvatar';
 import { LiveDock, type DockSpeak } from '@/components/live/LiveDock';
@@ -60,7 +69,7 @@ import {
   LiveStateLine,
   type NowSpeaker,
 } from '@/components/live/LiveStateLine';
-import { NiqabIcon } from '@/components/live/NiqabIcon';
+import { LIVE_REACT_COPY, ReactionPill, ReactionsOverlay, ReactionTray } from '@/components/live/LiveReactions';
 import {
   END_UNDO_MS,
   LIVE,
@@ -82,12 +91,19 @@ import {
   isLiveStaff,
   isModeratorRole,
   liveErrorCode,
+  openMics,
   otherModerators,
+  NAMELESS_BROTHER_NAME,
+  otherSideName,
+  reactionSenderLabel,
+  presentTotal,
   requestQueue,
   roleKind,
+  seesNameOf,
   sexOf,
   staffNameMap,
   visibleName,
+  type Sex,
 } from '@/components/live/liveUi';
 import { useNow } from '@/components/live/LiveHomeCard';
 import { BuddyInviteSheet } from '@/components/live/sheets/BuddyInviteSheet';
@@ -159,6 +175,9 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const stepDown = useLiveStore((s) => s.stepDown);
   const handOver = useLiveStore((s) => s.handOver);
   const endForAll = useLiveStore((s) => s.endForAll);
+  // Owner batch 2026-10-05: reactions + one-tap moderation.
+  const sendReaction = useLiveStore((s) => s.sendReaction);
+  const moderate = useLiveStore((s) => s.moderate);
 
   const joinedHere = !!id && storeSession?.id === id;
   const session: LiveSessionPublic | null = sessionQ.data ?? (joinedHere ? storeSession : null);
@@ -178,6 +197,12 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   // «التعليقات والأسئلة» (0147) + a guest's «سجّل أولاً» for writing.
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [guestCommentOpen, setGuestCommentOpen] = useState(false);
+  // «التفاعل»: the six signs' tray, and a guest's «سجّل لتتفاعل».
+  const [reactOpen, setReactOpen] = useState(false);
+  const [guestReactOpen, setGuestReactOpen] = useState(false);
+  // One-tap moderation from the strip: which chip is busy, and a refusal line.
+  const [quickBusy, setQuickBusy] = useState<string | null>(null);
+  const [quickError, setQuickError] = useState<string | null>(null);
 
   // ── Entry flow ─────────────────────────────────────────────────────────────
   const doJoin = useCallback(
@@ -255,9 +280,25 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
     () => (isStaff ? staffNameMap(asList<unknown>(staffData)) : NO_STAFF_NAMES),
     [isStaff, staffData],
   );
+  // Names across the hijab (owner 2026-10-05): the host, moderators and staff
+  // see every name; everyone else only their own side's (seesNameOf).
+  const privileged = isStaff || isModeratorRole(joinedHere ? me?.role : undefined);
+  const viewer: Sex | null =
+    me?.gender ?? (user?.gender === 'female' ? 'f' : user?.gender === 'male' ? 'm' : null);
   const nameOf = useCallback(
-    (identity: string, p: LivePerson) => visibleName(identity, p, isStaff, staffMap),
-    [isStaff, staffMap],
+    (identity: string, p: LivePerson) =>
+      seesNameOf(viewer, privileged, p) ? visibleName(identity, p, isStaff, staffMap) : otherSideName(p),
+    [isStaff, staffMap, viewer, privileged],
+  );
+
+  // Under a reaction: the seat's name; a guest (LiveKit «ضيف»/«ضيفة») or a
+  // sender who already left reads «طالب» / «طالبة».
+  const reactionName = useCallback(
+    (identity: string) => {
+      const p = useLiveStore.getState().people[identity];
+      return p ? reactionSenderLabel(nameOf(identity, p), p.gender) : NAMELESS_BROTHER_NAME;
+    },
+    [nameOf],
   );
 
   const sheikhName = session?.sheikhName ?? '';
@@ -285,14 +326,23 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const active = ACTIVE_CONNS.has(roomConn);
   const mine = me && joinedHere ? people[me.identity] : undefined;
   const requestIds = useMemo(() => (isMod ? requestQueue(people) : []), [isMod, people]);
+  const micIds = useMemo(() => (isMod ? openMics(people) : []), [isMod, people]);
 
   // «التعليقات والأسئلة» (0147): read on (re)connect, then kept live by the
   // room's data messages. The host, moderators and staff see how many are new.
+  // LOAD V25: a listener reads the list only once they first open the sheet —
+  // a live start used to make every joiner read the 500 newest comments (and
+  // again on every reconnect) though most never open them. Staff and
+  // moderators still read on join: their «n new» badge needs the list.
+  const commentsStaff = isMod || isStaff;
+  const [commentsOpened, setCommentsOpened] = useState(false);
+  useEffect(() => {
+    if (commentsOpen) setCommentsOpened(true);
+  }, [commentsOpen]);
   const comments = useLiveComments(joinedHere ? id : null, {
-    enabled: joinedHere && !!me && active,
+    enabled: joinedHere && !!me && active && (commentsStaff || commentsOpened),
     open: commentsOpen,
   });
-  const commentsStaff = isMod || isStaff;
   const canModerateCmts = joinedHere && canModerateComments(myRole, user);
   const onAir = status === 'live' || (joinedHere && storeSession?.status === 'live');
   const commentsWrite: CommentsWriteState = user?.isGuest
@@ -349,6 +399,23 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
     },
     [],
   );
+  // One tap from the strip: «كتم» an open mic, «قبول» / «رفض» a raised hand.
+  const quick = useCallback(
+    async (action: 'mute' | 'approve' | 'reject', pid: string) => {
+      if (quickBusy) return;
+      setQuickBusy(`${action}:${pid}`);
+      setQuickError(null);
+      try {
+        await moderate(action, pid);
+      } catch (e) {
+        if (mounted.current) setQuickError(controlErrorText(e, sexOf(people[pid]?.gender)));
+      } finally {
+        if (mounted.current) setQuickBusy(null);
+      }
+    },
+    [quickBusy, moderate, people],
+  );
+
   const startEnding = useCallback(() => {
     if (endTimer.current) clearTimeout(endTimer.current);
     setEndError(null);
@@ -525,6 +592,7 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
               failedSub={failedSub}
               onRetry={session ? () => doJoin(session, preferredIdentity ?? undefined) : undefined}
             />
+            {joinedHere && stage ? <ReactionsOverlay width={stage.w} height={stage.h} senderName={reactionName} /> : null}
             {joinedHere ? (
               <View
                 pointerEvents="box-none"
@@ -535,19 +603,29 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
                 {endError ? (
                   <LiveNoticePill text={endError} icon="alert-circle" onPress={() => setEndError(null)} />
                 ) : null}
+                {quickError ? (
+                  <LiveNoticePill text={quickError} icon="alert-circle" onPress={() => setQuickError(null)} />
+                ) : null}
                 <LiveNoticeBar />
               </View>
             ) : null}
           </View>
 
-          {isMod && active && requestIds.length ? (
-            <RequestsStrip
-              ids={requestIds}
+          {isMod && active && (requestIds.length || micIds.length) ? (
+            <ModerationStrip
+              mics={micIds}
+              requests={requestIds}
               people={people}
               nameOf={personName}
+              busy={quickBusy}
+              onQuick={(action, pid) => void quick(action, pid)}
               onOpen={(rid) => setTarget({ kind: 'request', id: rid })}
               onManage={() => setManageOpen(true)}
             />
+          ) : null}
+
+          {joinedHere && reactOpen && active && !user?.isGuest ? (
+            <ReactionTray blocked={!!mine?.reactBlocked} onPick={(k) => void sendReaction(k)} />
           ) : null}
 
           {!entering && roomConn !== 'failed' ? (
@@ -560,12 +638,18 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
                 gap: 8,
               }}
             >
-              <AttendanceLine brothers={counts.brothers} sisters={counts.sisters} />
+              <AttendanceTotal total={presentTotal(people)} onPress={joinedHere ? () => setPeopleOpen(true) : undefined} />
               {joinedHere ? (
-                <CommentsPill
-                  badge={commentsStaff ? comments.unseen : 0}
-                  onPress={() => setCommentsOpen(true)}
-                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ReactionPill
+                    open={reactOpen && !user?.isGuest}
+                    onPress={() => (user?.isGuest ? setGuestReactOpen(true) : setReactOpen((o) => !o))}
+                  />
+                  <CommentsPill
+                    badge={commentsStaff ? comments.unseen : 0}
+                    onPress={() => setCommentsOpen(true)}
+                  />
+                </View>
               ) : null}
             </View>
           ) : null}
@@ -589,6 +673,9 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
           people={people}
           counts={counts}
           isStaff={isStaff}
+          viewer={viewer}
+          privileged={privileged}
+          canInvite={isMod}
           myIdentity={me ? { gender: me.gender, hidden: me.hidden } : null}
           myName={user?.displayName ?? null}
           onSelectPerson={
@@ -757,6 +844,18 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
         onRegister={() => {
           setGuestGateOpen(false);
           // The live keeps playing in the mini-bar while they register.
+          collapse();
+          router.push('/register');
+        }}
+      />
+
+      <GuestSpeakSheet
+        visible={guestReactOpen}
+        title={LIVE_REACT_COPY.guestTitle}
+        body={LIVE_REACT_COPY.guestBody}
+        onClose={() => setGuestReactOpen(false)}
+        onRegister={() => {
+          setGuestReactOpen(false);
           collapse();
           router.push('/register');
         }}
@@ -948,19 +1047,29 @@ function SignalBars({ level, tint }: { level: number; tint: string }) {
 }
 
 /**
- * Moderators: raised hands, oldest first (§7.6 requests strip). The leading
- * chip opens «إدارة المجلس»; each person chip opens RequestSheet.
+ * Moderators' one-tap strip (§7.6 requests strip + owner batch 2026-10-05):
+ *  - the leading chip opens «إدارة المجلس»;
+ *  - every OPEN microphone (not the host, not me) — «كتم» closes it at once;
+ *  - every raised hand, oldest first — «قبول» / «رفض» right on the chip; the
+ *    name opens RequestSheet as before.
  */
-function RequestsStrip({
-  ids,
+function ModerationStrip({
+  mics,
+  requests,
   people,
   nameOf,
+  busy,
+  onQuick,
   onOpen,
   onManage,
 }: {
-  ids: readonly string[];
+  mics: readonly string[];
+  requests: readonly string[];
   people: Readonly<Record<string, LivePerson>>;
   nameOf: (id: string) => string;
+  /** "<action>:<identity>" in flight. */
+  busy: string | null;
+  onQuick: (action: 'mute' | 'approve' | 'reject', id: string) => void;
   onOpen: (id: string) => void;
   onManage: () => void;
 }) {
@@ -974,7 +1083,7 @@ function RequestsStrip({
       <Pressable
         onPress={onManage}
         accessibilityRole="button"
-        accessibilityLabel={`${LIVE_P4_COPY.requests} · ${arNum(ids.length)}`}
+        accessibilityLabel={`${LIVE_P4_COPY.manage} · ${LIVE_P4_COPY.requests} ${arNum(requests.length)}`}
         style={({ pressed }) => ({
           flexDirection: 'row',
           alignItems: 'center',
@@ -988,63 +1097,177 @@ function RequestsStrip({
       >
         <HandGlyph size={15} color={colors.primaryTealDeep} />
         <Txt size={12.5} weight="semibold" color={colors.primaryTealDeep} tabular>
-          {`${LIVE_P4_COPY.requests} · ${arNum(ids.length)}`}
+          {`${LIVE_P4_COPY.requests} · ${arNum(requests.length)}`}
         </Txt>
       </Pressable>
-      {ids.map((pid) => {
+      {mics.map((pid) => {
         const p = people[pid];
         if (!p) return null;
         const name = nameOf(pid);
         const f = sexOf(p.gender) === 'f';
         return (
-          <Pressable
-            key={pid}
+          <StripChip key={`mic:${pid}`} gender={f ? 'f' : 'm'} name={name} icon="mic" a11y={`${name} · ${LIVE_P4_COPY.micOn}`}>
+            <ChipAction
+              label={LIVE_P4_COPY.muteShort}
+              tone="danger"
+              busy={busy === `mute:${pid}`}
+              disabled={!!busy}
+              onPress={() => onQuick('mute', pid)}
+            />
+          </StripChip>
+        );
+      })}
+      {requests.map((pid) => {
+        const p = people[pid];
+        if (!p) return null;
+        const name = nameOf(pid);
+        const f = sexOf(p.gender) === 'f';
+        return (
+          <StripChip
+            key={`req:${pid}`}
+            gender={f ? 'f' : 'm'}
+            name={name}
+            a11y={`${name} · ${f ? 'تطلب التحدث' : 'يطلب التحدث'}`}
             onPress={() => onOpen(pid)}
-            accessibilityRole="button"
-            accessibilityLabel={`${name} · ${f ? 'تطلب التحدث' : 'يطلب التحدث'}`}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 7,
-              height: 36,
-              paddingStart: 4,
-              paddingEnd: 12,
-              borderRadius: radius.pill,
-              backgroundColor: colors.surfaceCard,
-              borderWidth: 1,
-              borderColor: 'rgba(176,137,79,0.35)',
-              opacity: pressed ? 0.8 : 1,
-            })}
           >
-            <LiveAvatar gender={f ? 'f' : 'm'} size={28} />
-            <Txt size={12.5} weight="medium" numberOfLines={1} style={{ maxWidth: 130 }}>
-              {name}
-            </Txt>
-          </Pressable>
+            <ChipAction
+              label={LIVE_P4_COPY.approveShort}
+              tone="primary"
+              busy={busy === `approve:${pid}`}
+              disabled={!!busy}
+              onPress={() => onQuick('approve', pid)}
+            />
+            <ChipAction
+              label={LIVE_P4_COPY.rejectShort}
+              tone="danger"
+              busy={busy === `reject:${pid}`}
+              disabled={!!busy}
+              onPress={() => onQuick('reject', pid)}
+            />
+          </StripChip>
         );
       })}
     </ScrollView>
   );
 }
 
-function AttendanceLine({ brothers, sisters }: { brothers: number; sisters: number }) {
+function StripChip({
+  gender,
+  name,
+  icon,
+  a11y,
+  onPress,
+  children,
+}: {
+  gender: Sex;
+  name: string;
+  icon?: 'mic';
+  a11y: string;
+  onPress?: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <View
-      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}
-      accessibilityLabel={`${brothers} من الإخوة و${sisters} من الأخوات`}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        height: 40,
+        paddingStart: 4,
+        paddingEnd: 6,
+        borderRadius: radius.pill,
+        backgroundColor: colors.surfaceCard,
+        borderWidth: 1,
+        borderColor: icon === 'mic' ? 'rgba(44,97,87,0.35)' : 'rgba(176,137,79,0.35)',
+      }}
     >
-      <BrotherIcon size={16} color="#2c6157" />
-      <Txt size={12} color={colors.textSlate} tabular>
-        {arNum(brothers)} من الإخوة
-      </Txt>
-      <Txt size={12} color={colors.textGhost}>
-        ·
-      </Txt>
-      <NiqabIcon size={16} color={colors.primaryTealDeep} />
-      <Txt size={12} color={colors.textSlate} tabular>
-        {arNum(sisters)} من الأخوات
-      </Txt>
+      <Pressable
+        onPress={onPress}
+        disabled={!onPress}
+        accessibilityRole={onPress ? 'button' : undefined}
+        accessibilityLabel={a11y}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: pressed ? 0.8 : 1 })}
+      >
+        <LiveAvatar gender={gender} size={30} />
+        {icon === 'mic' ? <Feather name="mic" size={13} color={colors.primaryTeal} /> : null}
+        <Txt size={12.5} weight="medium" numberOfLines={1} style={{ maxWidth: 110 }}>
+          {name}
+        </Txt>
+      </Pressable>
+      {children}
     </View>
+  );
+}
+
+function ChipAction({
+  label,
+  tone,
+  busy,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  tone: 'primary' | 'danger';
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const bg = tone === 'primary' ? colors.primaryTeal : 'rgba(158,61,47,0.10)';
+  const fg = tone === 'primary' ? colors.onTealPrimary : '#9e3d2f';
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled, busy }}
+      hitSlop={4}
+      style={({ pressed }) => ({
+        minWidth: 44,
+        height: 28,
+        paddingHorizontal: 10,
+        borderRadius: radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: bg,
+        opacity: disabled && !busy ? 0.5 : pressed ? 0.8 : 1,
+      })}
+    >
+      {busy ? (
+        <ActivityIndicator size="small" color={fg} />
+      ) : (
+        <Txt size={12} weight="semibold" color={fg}>
+          {label}
+        </Txt>
+      )}
+    </Pressable>
+  );
+}
+
+/** The room's face shows ONE number (owner 2026-10-05); tapping opens «في الحلقة». */
+function AttendanceTotal({ total, onPress }: { total: number; onPress?: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={`الحضور ${arNum(total)}`}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 10,
+        opacity: pressed ? 0.75 : 1,
+      })}
+    >
+      <Feather name="users" size={15} color={colors.primaryTeal} />
+      <Txt size={12.5} weight="medium" color={colors.textSlate}>
+        الحضور
+      </Txt>
+      <Txt size={12.5} weight="semibold" color={colors.primaryTealDeep} tabular>
+        {arNum(total)}
+      </Txt>
+    </Pressable>
   );
 }
 

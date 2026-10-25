@@ -51,6 +51,18 @@ export const COMPLETE_THRESHOLD = 0.95;
 export const MAX_LISTEN_TICK_SEC = 90;
 
 /**
+ * Playback progress cadence (perf, 2026-10-03). The SERVER save (save_activity:
+ * progress upsert + listening credit) runs every 30 s while playing — it was
+ * every 5 s, ~2M RPCs and the largest write load on the 0.5 GB database. Pause,
+ * stop and switching lectures still save immediately. The LOCAL resume mirror
+ * (resume cache + download sidecar, no network) keeps the 5 s cadence so a
+ * force-killed app still resumes within a few seconds. A 30 s tick credits at
+ * most ~60 s at 2× speed, under MAX_LISTEN_TICK_SEC.
+ */
+export const PROGRESS_SERVER_SAVE_MS = 30_000;
+export const PROGRESS_LOCAL_MIRROR_MS = 5_000;
+
+/**
  * The two demo accounts (also seeded in Supabase Auth via scripts/seed-auth.mjs).
  * Only defined in mock mode — must not exist in the release JS bundle, since the
  * literal credentials would otherwise be recoverable from a shipped APK.

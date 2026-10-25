@@ -8,7 +8,7 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -549,8 +549,13 @@ export function QuestionsBoard({
   const myQ = useMyQuestions(scope, lectureId, !isGuest, activeCategory);
 
   const isLoading = tab === 'public' ? publicQ.isLoading : myQ.isLoading;
-  const data: (PublicQuestion | MyQuestion)[] =
-    tab === 'public' ? (publicQ.data ?? []) : (myQ.data ?? []);
+  // Answered questions: the latest answer first; «أسئلتي»: the newest asked first.
+  const data: (PublicQuestion | MyQuestion)[] = useMemo(() => {
+    const t = (iso: string | null | undefined) => (iso ? Date.parse(iso) || 0 : 0);
+    return tab === 'public'
+      ? [...(publicQ.data ?? [])].sort((a, b) => t(b.answeredAt) - t(a.answeredAt) || t(b.createdAt) - t(a.createdAt))
+      : [...(myQ.data ?? [])].sort((a, b) => t(b.createdAt) - t(a.createdAt));
+  }, [tab, publicQ.data, myQ.data]);
 
   // Pull-to-refresh: refresh the questions/answers AND all shared server data
   // (support link, notices, etc.) so nothing lingers stale after an admin edit.

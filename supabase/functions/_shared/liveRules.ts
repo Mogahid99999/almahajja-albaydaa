@@ -103,6 +103,24 @@ export const LIVE_GRANTS: Readonly<Record<LiveRole, LiveGrants>> = {
   moderator: { canSubscribe: true, canPublish: true, canPublishData: true, canUpdateOwnMetadata: false, roomAdmin: false },
 };
 
+/**
+ * The grants a token actually carries (0157 reactions). The table above is the
+ * role default; listeners and speakers additionally get canPublishData so they
+ * can send reactions on the LiveKit topic "reactions" — unless they are guests
+ * (guests listen only) or a moderator stopped their reactions
+ * (live_participants.reactions_blocked). Clients only accept "comments" and
+ * "control" messages that come from the SERVER (no sender), so the data grant
+ * can't be used to forge those.
+ */
+export function liveGrantsFor(
+  role: LiveRole,
+  opts: { isGuest: boolean; reactionsBlocked: boolean },
+): LiveGrants {
+  const base = LIVE_GRANTS[role];
+  if (role === "host" || role === "moderator") return base;
+  return { ...base, canPublishData: !opts.isGuest && !opts.reactionsBlocked };
+}
+
 /** Access-token lifetime (§5.1: 2 h). */
 export const TOKEN_TTL = "2h";
 
@@ -112,11 +130,11 @@ export const TOKEN_TTL = "2h";
  * field is spelled out; the function adds canPublishSources = [MICROPHONE].
  * canUpdateMetadata stays false (P4: attributes/name are server-only).
  */
-export function speakerPermission(canPublish: boolean) {
+export function speakerPermission(canPublish: boolean, canPublishData = false) {
   return {
     canSubscribe: true,
     canPublish,
-    canPublishData: false,
+    canPublishData,
     canUpdateMetadata: false,
     hidden: false,
   };
@@ -220,16 +238,23 @@ export function realDisplayName(profileName: string | null | undefined): string 
 }
 
 /**
- * LiveKit participant attributes (§5.1): g gender · r role · h hand · hid hidden.
- * Server-set only (no grant lets a participant write them). A fresh token
- * starts with the hand down.
+ * LiveKit participant attributes (§5.1): g gender · r role · h hand · hid hidden
+ * · rx reactions (0157: '0' = a moderator stopped them). Server-set only (no
+ * grant lets a participant write them). A fresh token starts with the hand down.
  */
 export function participantAttributes(input: {
   gender: LiveGender;
   role: LiveRole;
   hiddenName: boolean;
+  reactionsBlocked?: boolean;
 }): Record<string, string> {
-  return { g: input.gender, r: input.role, h: "0", hid: input.hiddenName ? "1" : "0" };
+  return {
+    g: input.gender,
+    r: input.role,
+    h: "0",
+    hid: input.hiddenName ? "1" : "0",
+    rx: input.reactionsBlocked ? "0" : "1",
+  };
 }
 
 /** Shape of the SQL-computed identity (live_identity, 0135): 16 lowercase hex. */
@@ -302,6 +327,84 @@ export function jwtRoleClaim(token: string | null | undefined): string | null {
   }
 }
 
+/**
+ * The `alg` of a JWT header, UNVERIFIED. live-token verifies asymmetric
+ * (ES256) session tokens locally against the project JWKS and falls back to
+ * GoTrue only for a legacy HS256 token (LOAD V24).
+ */
+export function jwtHeaderAlg(token: string | null | undefined): string | null {
+  const parts = (token ?? "").split(".");
+  if (parts.length !== 3) return null;
+  const json = base64UrlDecode(parts[0]);
+  if (!json) return null;
+  try {
+    const header = JSON.parse(json) as { alg?: unknown };
+    return typeof header.alg === "string" ? header.alg : null;
+  } catch {
+    return null;
+  }
+}
+
+/** live_join_context (0155): everything live-token reads, in one service-role round trip. */
+export type LiveJoinContext = {
+  /** null = no such auth user (deleted account). */
+  user: { bannedUntil: string | null; isAnonymous: boolean } | null;
+  flag: unknown;
+  profile: { role: string | null; gender: string | null; displayName: string | null } | null;
+  session: {
+    id: string;
+    status: string;
+    roomName: string;
+    hostUserId: string | null;
+    sectionId: string;
+    allowRequests: boolean;
+  } | null;
+  /** hiddenName is live_participants.hidden_name (BOOLEAN; null when unknown). */
+  stored: { role: string | null; hiddenName: boolean | null; reactionsBlocked: boolean } | null;
+  /** section_visible_to_viewer(section, profile gender). */
+  visible: boolean;
+  identity: unknown;
+};
+
+const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+const obj = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+/** Shape-checks the RPC's jsonb; null when it is not an object at all (→ server_error). */
+export function parseLiveJoinContext(raw: unknown): LiveJoinContext | null {
+  const r = obj(raw);
+  if (!r) return null;
+  const u = obj(r.user);
+  const p = obj(r.profile);
+  const s = obj(r.session);
+  const st = obj(r.stored);
+  return {
+    user: u ? { bannedUntil: str(u.banned_until), isAnonymous: u.is_anonymous === true } : null,
+    flag: r.flag ?? null,
+    profile: p ? { role: str(p.role), gender: str(p.gender), displayName: str(p.display_name) } : null,
+    session:
+      s && typeof s.id === "string" && typeof s.status === "string" && typeof s.room_name === "string"
+        ? {
+            id: s.id,
+            status: s.status,
+            roomName: s.room_name,
+            hostUserId: str(s.host_user_id),
+            sectionId: str(s.section_id) ?? "",
+            allowRequests: s.allow_requests === true,
+          }
+        : null,
+    stored: st
+      ? {
+          role: str(st.role),
+          hiddenName: typeof st.hidden_name === "boolean" ? st.hidden_name : null,
+          reactionsBlocked: st.reactions_blocked === true,
+        }
+      : null,
+    visible: r.visible === true,
+    identity: r.identity ?? null,
+  };
+}
+
 /** Constant-time string comparison (service-role bearer check). */
 export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -326,6 +429,7 @@ export const LIVE_ACTIONS = [
   "hand",
   "auto_end",
   "resume_recording",
+  "react_block",
 ] as const;
 export type LiveAction = (typeof LIVE_ACTIONS)[number];
 
@@ -353,7 +457,7 @@ export function isLiveAction(x: unknown): x is LiveAction {
 }
 
 /** Actions that act on another participant (`identity` required). `hand` acts on the caller himself. */
-export const TARGETED_ACTIONS: readonly LiveAction[] = ["approve", "reject", "mute", "demote"];
+export const TARGETED_ACTIONS: readonly LiveAction[] = ["approve", "reject", "mute", "demote", "react_block"];
 
 export type LiveActor =
   /** The service role — the media worker (auto_end / resume_recording only). */
@@ -422,6 +526,7 @@ export function authorizeLiveAction(
     case "reject":
     case "mute":
     case "set_allow_requests":
+    case "react_block":
       return staff ? OK : forbidden;
     case "open_green":
     case "start":
@@ -478,6 +583,9 @@ export function canTarget(
       return targetRole === "speaker" ? OK : bad;
     case "host_leave":
       return targetRole === "moderator" ? OK : bad;
+    case "react_block":
+      // Staff (host / moderators) keep their reactions; any attendee can be stopped.
+      return targetRole === "listener" || targetRole === "speaker" ? OK : bad;
     default:
       return OK;
   }
@@ -520,6 +628,9 @@ export function statusAfter(action: LiveAction, status: string): Transition {
     case "host_leave":
     case "hand":
       return status === "live" ? same() : bad;
+    case "react_block":
+      // 0157: a moderator stops / allows someone's reactions while the room is open.
+      return status === "live" || status === "green" ? same() : bad;
     case "leave":
       return same();
     case "auto_end":
@@ -744,6 +855,8 @@ export type LiveControlRequest = {
   reason: AutoEndReason | ResumeReason | null;
   /** hand: raise (true) / lower (false). */
   up: boolean | null;
+  /** react_block: stop (true) / allow again (false) that participant's reactions. */
+  blocked: boolean | null;
 };
 
 export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveControlRequest } | { ok: false; error: string } {
@@ -768,6 +881,9 @@ export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveC
   const up = b.up ?? null;
   if (up !== null && typeof up !== "boolean") return { ok: false, error: "invalid up" };
   if (b.action === "hand" && up === null) return { ok: false, error: "up required" };
+  const blocked = b.blocked ?? null;
+  if (blocked !== null && typeof blocked !== "boolean") return { ok: false, error: "invalid blocked" };
+  if (b.action === "react_block" && blocked === null) return { ok: false, error: "blocked required" };
   return {
     ok: true,
     value: {
@@ -779,6 +895,7 @@ export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveC
       allow: typeof allow === "boolean" ? allow : null,
       reason: reason as AutoEndReason | ResumeReason | null,
       up: typeof up === "boolean" ? up : null,
+      blocked: typeof blocked === "boolean" ? blocked : null,
     },
   };
 }

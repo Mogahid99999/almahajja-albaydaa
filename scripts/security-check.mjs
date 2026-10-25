@@ -152,7 +152,7 @@ async function signInAnon() {
 // ---- fixtures ---------------------------------------------------------
 const ts = Date.now();
 const PW = `Ch3ckPw-${ts}`;
-const fixtures = { userIds: [], anonId: null, lectureId: null, objectKey: null };
+const fixtures = { userIds: [], anonId: null, lectureId: null, objectKey: null, createdSectionId: null };
 
 async function setup() {
   const a = await createUser(`sec-check-a-${ts}@example.com`, PW);
@@ -170,8 +170,19 @@ async function setup() {
   fixtures.objectKey = objectKey;
 
   const secRes = await fetch(`${URL}/rest/v1/sections?select=id&limit=1`, { headers: svcHeaders });
-  const [section] = await secRes.json();
-  if (!section) throw new Error('no sections exist to attach a test lecture to');
+  let [section] = await secRes.json();
+  if (!section) {
+    // An empty project (e.g. staging wiped to accounts-only, 2026-10-03):
+    // create a throwaway section for the test lecture; teardown removes it.
+    const mkRes = await fetch(`${URL}/rest/v1/sections`, {
+      method: 'POST',
+      headers: { ...svcHeaders, Prefer: 'return=representation' },
+      body: JSON.stringify({ title: 'sec-check temp section' }),
+    });
+    [section] = await mkRes.json();
+    if (!section?.id) throw new Error('could not create a temp section for the test lecture');
+    fixtures.createdSectionId = section.id;
+  }
   fixtures.sectionId = section.id;
 
   const lecRes = await fetch(`${URL}/rest/v1/lectures`, {
@@ -200,6 +211,9 @@ async function setup() {
 async function teardown() {
   if (fixtures.lectureId) {
     await fetch(`${URL}/rest/v1/lectures?id=eq.${fixtures.lectureId}`, { method: 'DELETE', headers: svcHeaders });
+  }
+  if (fixtures.createdSectionId) {
+    await fetch(`${URL}/rest/v1/sections?id=eq.${fixtures.createdSectionId}`, { method: 'DELETE', headers: svcHeaders });
   }
   for (const id of fixtures.userIds) await deleteUser(id);
   if (fixtures.anonId) await deleteUser(fixtures.anonId);

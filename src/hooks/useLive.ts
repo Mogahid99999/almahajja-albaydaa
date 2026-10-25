@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import { useIsFocused } from 'expo-router';
 
 import {
   cancelLiveSession,
@@ -24,13 +25,50 @@ import {
   normalizeShareCode,
   setLiveReminder,
   type LiveNow,
+  type LiveStatus,
 } from '@/api/live';
 import { queryKeys } from '@/constants/queryKeys';
 import { notifyLiveSessionEnded, useLiveStore } from '@/stores/liveStore';
 
-/** get_live_now cadence while foregrounded. */
-export const LIVE_NOW_POLL_MS = 30_000;
-const LIVE_SESSION_POLL_MS = 30_000;
+/**
+ * get_live_now cadence (LOAD V24). Was every 30 s on every foreground app, on
+ * any screen — thousands of polls a minute during a live. Now only while a
+ * screen showing it (Home / the section pin) is focused, and:
+ *  - 60 s while a session is live or one is due within 2 h (start / end show
+ *    up within a minute; the start push deep-links straight into the room);
+ *  - 10 min otherwise (nothing to announce; app_open re-seeds it on each open).
+ */
+export const LIVE_NOW_ACTIVE_POLL_MS = 60_000;
+export const LIVE_NOW_IDLE_POLL_MS = 10 * 60_000;
+const LIVE_NOW_SOON_MS = 2 * 3600_000;
+/** On return to the foreground, refetch only if app_open hasn't just refreshed it. */
+const LIVE_NOW_RESUME_GRACE_MS = 3_000;
+const LIVE_NOW_RESUME_MAX_AGE_MS = 60_000;
+/** Room screen: the session is mostly ended by LiveKit's ROOM_DELETED; this is the fallback. */
+const LIVE_SESSION_POLL_MS = 90_000;
+/**
+ * …except while this device is still entering / re-entering the room: a join
+ * gets no ROOM_DELETED, so an end made elsewhere must stop it within seconds
+ * (owner 2026-10-05 «معلق»). A normal join connects in 1–3 s, so only a join
+ * that is actually stuck ever polls at this pace.
+ */
+export const LIVE_SESSION_JOINING_POLL_MS = 10_000;
+
+/** The room screen's session poll: off once over; fast only while this device is still joining. */
+export function liveSessionPollMs(status: LiveStatus | undefined, joining: boolean): number | false {
+  if (status && LIVE_OVER_STATUSES.has(status)) return false;
+  return joining ? LIVE_SESSION_JOINING_POLL_MS : LIVE_SESSION_POLL_MS;
+}
+
+export function liveNowPollMs(data: LiveNow | undefined, nowMs: number): number {
+  if (!data) return LIVE_NOW_IDLE_POLL_MS;
+  if (data.live) return LIVE_NOW_ACTIVE_POLL_MS;
+  const soon = data.upcoming.some((s) => {
+    const at = s.scheduledAt ? Date.parse(s.scheduledAt) : NaN;
+    return Number.isFinite(at) && at - nowMs < LIVE_NOW_SOON_MS;
+  });
+  return soon ? LIVE_NOW_ACTIVE_POLL_MS : LIVE_NOW_IDLE_POLL_MS;
+}
 const STAFF_PARTICIPANTS_POLL_MS = 15_000;
 /** Real names (D2) are dropped from memory soon after the staff sheet closes. */
 const STAFF_PARTICIPANTS_GC_MS = 5 * 60_000;
@@ -46,12 +84,14 @@ function useAppActive(): boolean {
 
 /**
  * The live session now + the next scheduled ones (+ my «ذكّرني» flags).
- * Refetches every 30 s while foregrounded, on return to the foreground, and
- * whenever the store joins/leaves a session or it ends.
+ * Polled (liveNowPollMs) only while foregrounded AND this screen is focused, on
+ * return to the foreground when app_open didn't just re-seed it, and whenever
+ * the store joins/leaves a session or it ends.
  */
 export function useLiveNow() {
   const qc = useQueryClient();
   const active = useAppActive();
+  const focused = useIsFocused();
   const sessionId = useLiveStore((s) => s.session?.id ?? null);
   const ended = useLiveStore((s) => s.conn === 'ended');
 
@@ -66,17 +106,28 @@ export function useLiveNow() {
 
   const wasActive = useRef(active);
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
     if (active && !wasActive.current) {
-      void qc.invalidateQueries({ queryKey: queryKeys.liveNow }, { cancelRefetch: false });
+      // app_open (≤ every 15 min) seeds this cache on the same foreground —
+      // give it a moment, then refetch only if the data is still old.
+      timer = setTimeout(() => {
+        const updatedAt = qc.getQueryState(queryKeys.liveNow)?.dataUpdatedAt ?? 0;
+        if (Date.now() - updatedAt > LIVE_NOW_RESUME_MAX_AGE_MS) {
+          void qc.invalidateQueries({ queryKey: queryKeys.liveNow }, { cancelRefetch: false });
+        }
+      }, LIVE_NOW_RESUME_GRACE_MS);
     }
     wasActive.current = active;
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [qc, active]);
 
   return useQuery({
     queryKey: queryKeys.liveNow,
     queryFn: getLiveNow,
     staleTime: 15_000,
-    refetchInterval: active ? LIVE_NOW_POLL_MS : false,
+    refetchInterval: (q) => (active && focused ? liveNowPollMs(q.state.data, Date.now()) : false),
     refetchIntervalInBackground: false,
   });
 }
@@ -88,16 +139,15 @@ export function useLiveNow() {
  */
 export function useLiveSession(id: string | null | undefined) {
   const active = useAppActive();
+  const joining = useLiveStore(
+    (s) => !!id && s.session?.id === id && (s.conn === 'connecting' || s.conn === 'reconnecting'),
+  );
   const query = useQuery({
     queryKey: queryKeys.liveSession(id ?? ''),
     queryFn: () => getLiveSession(id as string),
     enabled: !!id,
     staleTime: 15_000,
-    refetchInterval: (q) => {
-      if (!active) return false;
-      const status = q.state.data?.status;
-      return status && LIVE_OVER_STATUSES.has(status) ? false : LIVE_SESSION_POLL_MS;
-    },
+    refetchInterval: (q) => (active ? liveSessionPollMs(q.state.data?.status, joining) : false),
     refetchIntervalInBackground: false,
   });
   const status = query.data?.status;

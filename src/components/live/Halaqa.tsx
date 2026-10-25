@@ -333,17 +333,11 @@ const HalaqaBoard = memo(function HalaqaBoard({
       </Svg>
 
       {/* Zone labels — straight RN text (Arabic shaping on an SVG textPath is
-          unreliable), at the prototype's label radii in each top gap. */}
-      {label(
-        live ? `الإخوة · ${arNum(brothers)}` : 'الإخوة',
-        layout.labelRadius.brothers,
-        colors.primaryTeal600,
-      )}
-      {label(
-        live ? `الأخوات · ${arNum(sisters)}` : 'الأخوات',
-        layout.labelRadius.sisters,
-        LIVE.labelSisters,
-      )}
+          unreliable), at the prototype's label radii in each top gap. Names of
+          the zones only: the room's face carries ONE number, «الحضور» (owner
+          2026-10-05) — the split per side is in «في الحلقة». */}
+      {label('الإخوة', layout.labelRadius.brothers, colors.primaryTeal600)}
+      {label('الأخوات', layout.labelRadius.sisters, LIVE.labelSisters)}
 
       {/* One touch layer for every listener seat (hit-tested), under the chips. */}
       {live ? (

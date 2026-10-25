@@ -12,7 +12,8 @@
  *    التجهيز» for its host, «إلغاء المجلس» (cancel_live_session).
  *  - «انتهت مؤخراً»: the recording job state/progress, «فتح في الواردة» for the
  *    draft lecture, «إعادة المعالجة» (retry_live_recording) after a failure,
- *    «تنزيل التسجيل الأصلي» (media worker, staff JWT).
+ *    «تنزيل التسجيل الأصلي» (media worker, staff JWT) · «حذف التسجيل» (ADMIN
+ *    only, 0157 — once ready and not yet published; confirmed first).
  *
  * Admin, publisher and sheikh. A sheikh sees his own scheduled/ended sessions
  * (admin_live_overview, 0143) and has none of the content-manager actions.
@@ -25,7 +26,7 @@ import type { LiveAdminSession } from '@/api/liveAdmin';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { LiveSessionCard } from '@/components/admin/live/LiveSessionCard';
-import { ADMIN_LIVE_COPY, canHost, endLiveMessage, isContentManager } from '@/components/admin/live/liveAdminUi';
+import { ADMIN_LIVE_COPY, canHost, endLiveMessage, isContentManager, isLectureManager } from '@/components/admin/live/liveAdminUi';
 import { ActionButton, EmptyLine, GroupHeading } from '@/components/admin/live/parts';
 import { StartLiveCard } from '@/components/admin/live/StartLiveCard';
 import { useEndLiveSession } from '@/components/admin/live/useEndLiveSession';
@@ -35,6 +36,7 @@ import { colors } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   useCancelLiveAdminSession,
+  useDeleteLiveRecording,
   useDownloadRawRecording,
   useLiveAdminOverview,
   useRefreshLiveAdmin,
@@ -59,6 +61,7 @@ export default function AdminLiveScreen() {
   const overview = useLiveAdminOverview();
   const cancel = useCancelLiveAdminSession();
   const retry = useRetryLiveRecording();
+  const delRecording = useDeleteLiveRecording();
   const download = useDownloadRawRecording();
   const refresh = useRefreshLiveAdmin();
   // «إنهاء البث للجميع» (live-control `end`). The lists refresh either way.
@@ -67,6 +70,7 @@ export default function AdminLiveScreen() {
 
   const [pendingCancel, setPendingCancel] = useState<LiveAdminSession | null>(null);
   const [pendingEnd, setPendingEnd] = useState<LiveAdminSession | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<LiveAdminSession | null>(null);
   const [notes, setNotes] = useState<Record<string, Note>>({});
   const setNote = (id: string, note: Note | null) =>
     setNotes((prev) => {
@@ -78,6 +82,8 @@ export default function AdminLiveScreen() {
 
   const data = overview.data;
   const manager = data?.isManager ?? isContentManager(user);
+  // «حذف التسجيل» is the admin's alone (owner 2026-10-05; the RPC checks is_admin()).
+  const admin = !!user && !user.isGuest && user.role === 'admin';
   const live = (data?.active ?? []).filter((s) => s.status === 'live');
   const upcoming = [...(data?.active ?? []).filter((s) => s.status === 'green'), ...(data?.scheduled ?? [])];
   const recent = data?.recent ?? [];
@@ -86,6 +92,9 @@ export default function AdminLiveScreen() {
   const cardProps = {
     nowMs,
     manager,
+    lectureManager: isLectureManager(user),
+    admin,
+    onDeleteRecording: (s: LiveAdminSession) => setPendingDelete(s),
     onOpenRoom: (s: LiveAdminSession) => router.push(liveRoomHref(s.id)),
     onOpenGreen: (s: LiveAdminSession) => router.push(liveGreenHref(s.id)),
     onCancel: (s: LiveAdminSession) => setPendingCancel(s),
@@ -122,6 +131,7 @@ export default function AdminLiveScreen() {
       retrying={retry.isPending && retry.variables === s.id}
       downloading={download.isPending && download.variables?.sessionId === s.id}
       endingLive={end.isPending && end.variables === s.id}
+      deletingRecording={delRecording.isPending && delRecording.variables === s.id}
       note={notes[s.id] ?? null}
     />
   );
@@ -217,6 +227,28 @@ export default function AdminLiveScreen() {
           });
         }}
         onCancel={() => setPendingCancel(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingDelete}
+        title={ADMIN_LIVE_COPY.deleteRecordingTitle}
+        message={pendingDelete ? `«${pendingDelete.title}» — ${ADMIN_LIVE_COPY.deleteRecordingBody}` : ''}
+        confirmLabel={ADMIN_LIVE_COPY.deleteRecording}
+        cancelLabel="تراجع"
+        pending={delRecording.isPending}
+        onConfirm={() => {
+          const s = pendingDelete;
+          if (!s || delRecording.isPending) return;
+          setNote(s.id, null);
+          delRecording.mutate(s.id, {
+            onSuccess: () => setNote(s.id, { text: 'حُذف التسجيل', tone: 'ok' }),
+            onError: (e) => setNote(s.id, { text: rpcErrorText(e, 'تعذّر حذف التسجيل'), tone: 'danger' }),
+            onSettled: () => setPendingDelete(null),
+          });
+        }}
+        onCancel={() => {
+          if (!delRecording.isPending) setPendingDelete(null);
+        }}
       />
 
       <ConfirmDialog

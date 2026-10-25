@@ -1982,6 +1982,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      app_open: { Args: never; Returns: Json }
       ask_question: {
         Args: {
           p_audience: string
@@ -2563,6 +2564,19 @@ export type Database = {
           min_score: number
           not_taken: number
           passed_count: number
+        }[]
+      }
+      get_recent_lectures: {
+        Args: { p_limit?: number }
+        Returns: {
+          audio_size_bytes: number
+          completed: boolean
+          duration_sec: number
+          id: string
+          order: number
+          position_sec: number
+          sheikh_name: string
+          title: string
         }[]
       }
       get_resume_card: {

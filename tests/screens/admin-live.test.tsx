@@ -95,6 +95,7 @@ const mockLive = {
   retry: mk(),
   download: mk(),
   end: mk(),
+  del: mk(),
   refresh: jest.fn(),
   /** admin_live_comments per session (0147); the ids it was asked for. */
   comments: [] as unknown[],
@@ -113,6 +114,7 @@ jest.mock('@/hooks/useLiveAdmin', () => ({
   }),
   useCancelLiveAdminSession: () => mockLive.cancel,
   useRetryLiveRecording: () => mockLive.retry,
+  useDeleteLiveRecording: () => mockLive.del,
   useDownloadRawRecording: () => mockLive.download,
   useRefreshLiveAdmin: () => mockLive.refresh,
   useAdminLiveComments: (id: string) => {
@@ -150,6 +152,7 @@ function session(over: Record<string, unknown>) {
     durationSec: null,
     rawLocal: false,
     rawBackup: false,
+    recordingDeleted: false,
     job: null,
     ...over,
   };
@@ -209,6 +212,7 @@ beforeEach(() => {
   mockLive.retry = mk();
   mockLive.download = mk();
   mockLive.end = mk();
+  mockLive.del = mk();
   mockLive.refresh = jest.fn();
   mockLive.comments = [];
   mockLive.commentsAsked = [];
@@ -332,7 +336,8 @@ test('a sheikh sees his sessions without the content-manager actions', async () 
   await render(<AdminLiveScreen />);
   expect(screen.getByText('لا يوجد بث مباشر الآن')).toBeTruthy();
   expect(screen.queryByText('إعادة المعالجة')).toBeNull();
-  expect(screen.queryByText('فتح في الواردة')).toBeNull();
+  // 0160: a sheikh manages lectures — he titles/publishes the recording in الواردة.
+  expect(screen.getByText('فتح في الواردة')).toBeTruthy();
   expect(screen.queryByText('تنزيل التسجيل الأصلي')).toBeNull();
   // …but he can open and cancel the session he hosts.
   expect(screen.getByText('فتح غرفة التجهيز')).toBeTruthy();
@@ -426,5 +431,61 @@ describe('«إنهاء البث للجميع» on the live card', () => {
     mockLive.overview = { active: [{ ...liveNow, isMine: true }], scheduled: [], recent: [], isManager: false };
     await render(<AdminLiveScreen />);
     expect(screen.getByText('إنهاء البث للجميع')).toBeTruthy();
+  });
+});
+
+describe('«حذف التسجيل» — admin only, once the recording is ready (owner 2026-10-05, 0157)', () => {
+  test("an admin: asks first, then deletes that session's recording", async () => {
+    await render(<AdminLiveScreen />);
+    await fireEvent.press(screen.getByText('حذف التسجيل'));
+    expect(screen.getByText('حذف تسجيل هذا المجلس؟')).toBeTruthy();
+    const confirm = screen.getAllByText('حذف التسجيل');
+    await fireEvent.press(confirm[confirm.length - 1]);
+    expect(mockLive.del.mutate).toHaveBeenCalledWith('s-ready', expect.any(Object));
+  });
+
+  test('a publisher or a sheikh never sees it', async () => {
+    mockUser.current = { role: 'publisher', isGuest: false };
+    const { unmount } = await render(<AdminLiveScreen />);
+    expect(screen.queryByText('حذف التسجيل')).toBeNull();
+    await unmount();
+    mockUser.current = { role: 'sheikh', isGuest: false };
+    await render(<AdminLiveScreen />);
+    expect(screen.queryByText('حذف التسجيل')).toBeNull();
+  });
+
+  test('not while it is processing, not once published, and a deleted one says so', async () => {
+    mockLive.overview = {
+      active: [],
+      scheduled: [],
+      recent: [processing, { ...ready, id: 's-pub', lectureStatus: 'published', lectureNeedsTitle: false }],
+      isManager: true,
+    };
+    const { unmount } = await render(<AdminLiveScreen />);
+    expect(screen.queryByText('حذف التسجيل')).toBeNull();
+    await unmount();
+
+    mockLive.overview = {
+      active: [],
+      scheduled: [],
+      recent: [{ ...ready, recordingDeleted: true, lectureId: null }],
+      isManager: true,
+    };
+    await render(<AdminLiveScreen />);
+    expect(screen.getByText('حُذف التسجيل')).toBeTruthy();
+    expect(screen.queryByText('فتح في الواردة')).toBeNull();
+    expect(screen.queryByText('تنزيل التسجيل الأصلي')).toBeNull();
+  });
+
+  test('a refusal from the server stays on the card in Arabic', async () => {
+    mockLive.del.mutate.mockImplementation((_id: unknown, o: { onError: (e: unknown) => void; onSettled: () => void }) => {
+      o.onError({ message: 'تجري معالجة التسجيل الآن، احذفه بعد اكتمالها' });
+      o.onSettled();
+    });
+    await render(<AdminLiveScreen />);
+    await fireEvent.press(screen.getByText('حذف التسجيل'));
+    const confirm = screen.getAllByText('حذف التسجيل');
+    await fireEvent.press(confirm[confirm.length - 1]);
+    expect(screen.getByText('تجري معالجة التسجيل الآن، احذفه بعد اكتمالها')).toBeTruthy();
   });
 });

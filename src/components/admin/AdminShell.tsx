@@ -42,6 +42,7 @@ type NavKey =
   | 'featured'
   | 'unclassified'
   | 'live'
+  | 'schedule'
   | 'quizzes'
   | 'reminders'
   | 'questions'
@@ -61,7 +62,7 @@ type NavKey =
 // `sheikh` marks the subset a شيخ sees when routed into this shell — a
 // read/teach slice (dashboard · questions · quizzes · contributions ·
 // analytics) plus «البث المباشر» (V23 D7: staff start a live from there, on
-// the phone). Everything else stays admin/publisher-only.
+// the phone) and «الجدول الأسبوعي» (0158). Everything else stays admin/publisher-only.
 const NAV_ITEMS: {
   key: NavKey;
   label: string;
@@ -74,14 +75,16 @@ const NAV_ITEMS: {
   // Sheikh's questions inbox (their existing /sheikh screen), shown first in
   // the sheikh nav so their primary task stays one tap away.
   { key: 'questions-inbox', label: 'أسئلة الطلبة', href: '/sheikh', icon: 'help-circle', sheikh: true },
-  { key: 'lectures', label: 'المحاضرات', href: '/admin/lectures', icon: 'headphones' },
-  { key: 'upload', label: 'رفع محاضرة', href: '/admin/upload', icon: 'upload' },
+  { key: 'lectures', label: 'المحاضرات', href: '/admin/lectures', icon: 'headphones', sheikh: true },
+  { key: 'upload', label: 'رفع محاضرة', href: '/admin/upload', icon: 'upload', sheikh: true },
   { key: 'sections', label: 'الأقسام والشجرة', href: '/admin/sections', icon: 'folder' },
   { key: 'sheikhs', label: 'المشايخ', href: '/admin/sheikhs', icon: 'users' },
   { key: 'featured', label: 'المختارات', href: '/admin/featured', icon: 'bookmark' },
   { key: 'quizzes', label: 'الاختبارات', href: '/admin/quizzes', icon: 'check-square', sheikh: true },
-  { key: 'unclassified', label: 'المحاضرات الواردة', href: '/admin/unclassified', icon: 'inbox' },
+  { key: 'unclassified', label: 'المحاضرات الواردة', href: '/admin/unclassified', icon: 'inbox', sheikh: true },
   { key: 'live', label: 'البث المباشر', href: '/admin/live', icon: 'radio', sheikh: true },
+  // 0158: every moderator (admin · publisher · sheikh) edits the weekly schedule.
+  { key: 'schedule', label: 'الجدول الأسبوعي', href: '/admin/schedule', icon: 'calendar', sheikh: true },
   { key: 'reminders', label: 'التذكيرات النافعة', href: '/admin/reminders', icon: 'star' },
   { key: 'questions', label: 'مساحة الأسئلة', href: '/admin/questions', icon: 'help-circle', adminOnly: true },
   { key: 'contributions', label: 'مشاركات الدارسين', href: '/admin/contributions', icon: 'message-square', adminOnly: true, sheikh: true },

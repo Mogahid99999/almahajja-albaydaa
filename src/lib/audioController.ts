@@ -14,7 +14,12 @@ import {
 } from 'expo-audio';
 import * as Linking from 'expo-linking';
 
-import { COMPLETE_THRESHOLD, MAX_LISTEN_TICK_SEC } from '@/config';
+import {
+  COMPLETE_THRESHOLD,
+  MAX_LISTEN_TICK_SEC,
+  PROGRESS_LOCAL_MIRROR_MS,
+  PROGRESS_SERVER_SAVE_MS,
+} from '@/config';
 import { getLecturePlayback, getNextLecture, getPreviousLecture } from '@/api/lectures';
 import { getLectureBenefits } from '@/api/benefits';
 import { getMyNote } from '@/api/notes';
@@ -147,6 +152,8 @@ let currentDuration = 0;
 let currentSectionId: string | null = null;
 let currentOrder = 0;
 let lastSavedAt = 0;
+/** Last LOCAL resume mirror (no network) — see PROGRESS_LOCAL_MIRROR_MS. */
+let lastMirroredAt = 0;
 // V11 · C: the forward listened delta is computed here (no prev SELECT) — track
 // the last position we credited, whether we've saved this track yet (firstTouch),
 // and whether we've already reported this track's completion (so a re-listen or a
@@ -460,11 +467,18 @@ function onStatus(status: AudioStatus) {
     s.setLoadError(null);
   }
 
-  // Persist progress at most every ~5s while playing.
+  // While playing: the server save every PROGRESS_SERVER_SAVE_MS (30 s), the
+  // local resume mirror in between every PROGRESS_LOCAL_MIRROR_MS (5 s).
   const now = Date.now();
-  if (status.playing && currentId && now - lastSavedAt > 5000) {
-    lastSavedAt = now;
-    void persist(clampedPosition);
+  if (status.playing && currentId) {
+    if (now - lastSavedAt > PROGRESS_SERVER_SAVE_MS) {
+      lastSavedAt = now;
+      lastMirroredAt = now;
+      void persist(clampedPosition);
+    } else if (now - lastMirroredAt > PROGRESS_LOCAL_MIRROR_MS) {
+      lastMirroredAt = now;
+      mirrorResumeLocally(currentId, clampedPosition);
+    }
   }
 
   if (status.didJustFinish && currentId && currentId !== lastAutoAdvancedFrom) {
@@ -655,6 +669,12 @@ function resetTrackProgress(positionSec: number) {
   warmedNextFor = null;
 }
 
+/** The no-network half of persist(): download sidecar + local resume cache. */
+function mirrorResumeLocally(lectureId: string, positionSec: number) {
+  updateDownloadPosition(lectureId, positionSec);
+  saveResumePosition(lectureId, positionSec);
+}
+
 function persist(positionSec: number, finished = false) {
   if (!currentId) return Promise.resolve();
   // ALWAYS save the real last position as the resume point — NEVER pin it to the
@@ -668,12 +688,11 @@ function persist(positionSec: number, finished = false) {
   // Mirror the resume position into the download sidecar (no-op unless the
   // lecture is downloaded) so it resumes at the same second when played OFFLINE,
   // where the server progress row is unreachable.
-  updateDownloadPosition(currentId, pos);
-  // Also mirror it into the local resume cache — unlike the download sidecar
-  // above, this covers EVERY lecture (downloaded or streamed-only), closing
-  // the gap where a streamed lecture has no local fallback if the persisted
-  // query cache goes stale relative to disk across a force-kill.
-  saveResumePosition(currentId, pos);
+  // Also mirror it into the local resume cache — unlike the download sidecar,
+  // this covers EVERY lecture (downloaded or streamed-only), closing the gap
+  // where a streamed lecture has no local fallback if the persisted query
+  // cache goes stale relative to disk across a force-kill.
+  mirrorResumeLocally(currentId, pos);
 
   // Derive everything saveLectureProgress used to fetch (V11 · C — no prev SELECT):
   const posInt = Math.max(0, Math.round(pos));

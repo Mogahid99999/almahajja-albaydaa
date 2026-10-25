@@ -54,6 +54,8 @@ export interface LivePerson {
   micOn: boolean;
   speaking: boolean;
   isMe: boolean;
+  /** 0157: a moderator stopped this person's reactions (attribute rx = '0'). */
+  reactBlocked: boolean;
 }
 
 /**
@@ -301,6 +303,7 @@ export function toLivePerson(
     micOn: opts.micOn ?? false,
     speaking: opts.speaking,
     isMe: opts.isMe,
+    reactBlocked: a.rx === '0',
   };
 }
 

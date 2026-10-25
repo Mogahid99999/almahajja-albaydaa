@@ -40,7 +40,8 @@ export function UpdateGate({ children }: { children: ReactNode }) {
     queryKey: ['appVersionGate'],
     queryFn: getAppVersionGate,
     enabled,
-    staleTime: 5 * 60 * 1000,
+    // LOAD V24: persisted, and app_open re-seeds it on every (≤ 15 min) open.
+    staleTime: 30 * 60 * 1000,
   });
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
 

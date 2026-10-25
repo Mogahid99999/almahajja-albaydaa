@@ -31,6 +31,12 @@ export const ADMIN_LIVE_COPY = {
   endLive: 'إنهاء البث للجميع',
   ending: 'جارٍ إنهاء البث…',
   retry: 'إعادة المعالجة',
+  deleteRecording: 'حذف التسجيل',
+  deletingRecording: 'جارٍ الحذف…',
+  recordingDeleted: 'حُذف التسجيل',
+  deleteRecordingTitle: 'حذف تسجيل هذا المجلس؟',
+  deleteRecordingBody:
+    'يُحذف التسجيل نهائياً: المسودة في «الواردة» والملف الصوتي ونسخة البث الأصلية. لا يمكن التراجع.',
   openInbox: 'فتح في الواردة',
   download: 'تنزيل التسجيل الأصلي',
   downloading: 'جارٍ التنزيل…',
@@ -78,6 +84,9 @@ const WAIT_FOR_FILE_MS = 2 * 60 * 60 * 1000;
 
 /** Where a session (and its recording) stands, in one pill + optional progress. */
 export function sessionState(s: LiveAdminSession, nowMs: number): SessionState {
+  if (s.recordingDeleted) {
+    return { tone: 'muted', label: ADMIN_LIVE_COPY.recordingDeleted, progress: null, note: null };
+  }
   switch (s.status) {
     case 'live':
       return { tone: 'live', label: ADMIN_LIVE_COPY.liveNow, progress: null, note: null };
@@ -153,6 +162,11 @@ export function canHost(user: Pick<CurrentUser, 'role' | 'isGuest'> | null | und
 }
 
 /** is_content_manager(): admin | publisher — finalize, retry, raw download, cancel any. */
+/** 0160 is_lecture_manager: the sheikh also manages lectures (incoming queue, live recordings). */
+export function isLectureManager(user: Pick<CurrentUser, 'role' | 'isGuest'> | null | undefined): boolean {
+  return !!user && !user.isGuest && (user.role === 'admin' || user.role === 'publisher' || user.role === 'sheikh');
+}
+
 export function isContentManager(user: Pick<CurrentUser, 'role' | 'isGuest'> | null | undefined): boolean {
   return !!user && !user.isGuest && (user.role === 'admin' || user.role === 'publisher');
 }

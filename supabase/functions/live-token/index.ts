@@ -39,8 +39,16 @@
 // starts down (h=0). A guest is always a listener (guests listen only).
 //
 // Pure rules: ../_shared/liveRules.ts (tests/functions/liveRules.test.ts).
+//
+// LOAD V24 (2026-10-05): a join used to cost two GoTrue calls + 6 PostgREST
+// round trips — at a live start that is thousands of requests against the
+// same small instance the joiners need. Now: the session JWT (ES256) is
+// verified locally against the project JWKS (fetched once per isolate, cached;
+// a legacy HS256 token still goes to GoTrue), and steps 1–4 read everything in
+// ONE service-role RPC, live_join_context (0155). Same rules, same order.
 // =============================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 import { AccessToken, RoomServiceClient, TrackSource } from "npm:livekit-server-sdk@2.19.1";
 
 import {
@@ -48,13 +56,15 @@ import {
   isBanned,
   isEnvRoom,
   isLiveIdentity,
+  jwtHeaderAlg,
   LIVE_ERROR_STATUS,
-  LIVE_GRANTS,
   liveEnabledFor,
+  liveGrantsFor,
   liveGender,
   liveRoleFor,
   livekitWsUrl,
   type LiveErrorCode,
+  parseLiveJoinContext,
   parseLiveTokenRequest,
   participantAttributes,
   participantDisplayName,
@@ -82,6 +92,28 @@ const CORS = {
 };
 
 const rooms = new RoomServiceClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+// Project signing keys (ES256). jose caches them and refetches on an unknown kid.
+const JWKS = createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+
+/** The caller's user id from a VERIFIED session JWT, or null (→ 401). */
+async function verifiedUserId(authHeader: string): Promise<string | null> {
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (jwtHeaderAlg(token) === "HS256") {
+    // Legacy-signed token (or the anon key): GoTrue decides, as before.
+    const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await callerClient.auth.getUser();
+    return error || !data?.user ? null : data.user.id;
+  }
+  try {
+    const { payload } = await jwtVerify(token, JWKS, { audience: "authenticated" });
+    return typeof payload.sub === "string" && payload.sub ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -89,13 +121,8 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return fail("unauthorized");
-  const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: caller, error: callerErr } = await callerClient.auth.getUser();
-  if (callerErr || !caller?.user) return fail("unauthorized");
-  const userId = caller.user.id;
+  const userId = await verifiedUserId(authHeader);
+  if (!userId) return fail("unauthorized");
 
   let parsed;
   try {
@@ -110,44 +137,37 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // 1. Ban + guest flag, read fresh (a JWT can outlive a ban / a registration).
-  const { data: authUser } = await admin.auth.admin.getUserById(userId);
-  if (!authUser?.user) return fail("unauthorized");
-  const u = authUser.user as { banned_until?: string | null; is_anonymous?: boolean };
-  if (isBanned(u.banned_until, Date.now())) return fail("banned");
-  const isGuest = u.is_anonymous === true;
+  // 1–4 read in one round trip (0155): fresh ban/guest flags from auth.users
+  // (a JWT can outlive a ban / a registration), the P7 flag, the profile, the
+  // session, the stored participant row, the section scope, the identity.
+  const { data: rawCtx, error: ctxErr } = await admin.rpc("live_join_context", {
+    p_session: sessionId,
+    p_user: userId,
+  });
+  if (ctxErr) return fail("server_error", ctxErr.message);
+  const ctx = parseLiveJoinContext(rawCtx);
+  if (!ctx) return fail("server_error", "bad join context");
 
-  // 1b. P7 rollout flag + the caller's app role (profile read here, once).
-  const [{ data: flag, error: flagErr }, { data: profile, error: profileErr }] = await Promise.all([
-    admin.from("app_config").select("value").eq("key", "live_enabled").maybeSingle(),
-    admin.from("profiles").select("role, gender, display_name").eq("id", userId).maybeSingle(),
-  ]);
-  if (flagErr) return fail("server_error", flagErr.message);
-  if (profileErr) return fail("server_error", profileErr.message);
-  if (!liveEnabledFor(flag?.value, profile?.role, isGuest)) return fail("live_disabled");
+  // 1. Ban + guest flag.
+  if (!ctx.user) return fail("unauthorized");
+  if (isBanned(ctx.user.bannedUntil, Date.now())) return fail("banned");
+  const isGuest = ctx.user.isAnonymous;
+
+  // 1b. P7 rollout flag + the caller's app role.
+  const profile = ctx.profile;
+  if (!liveEnabledFor(ctx.flag, profile?.role, isGuest)) return fail("live_disabled");
 
   // 2. Session + who the caller is in it.
-  const { data: session, error: sessionErr } = await admin
-    .from("live_sessions")
-    .select("id, status, room_name, host_user_id, section_id, allow_requests")
-    .eq("id", sessionId)
-    .maybeSingle();
-  if (sessionErr) return fail("server_error", sessionErr.message);
+  const session = ctx.session;
   if (!session) return fail("not_found");
-  if (!isEnvRoom(session.room_name, ROOM_PREFIX)) return fail("server_error", "room of another environment");
-
-  const { data: stored } = await admin
-    .from("live_participants")
-    .select("role, hidden_name")
-    .eq("session_id", sessionId)
-    .eq("user_id", userId)
-    .maybeSingle();
+  if (!isEnvRoom(session.roomName, ROOM_PREFIX)) return fail("server_error", "room of another environment");
+  const stored = ctx.stored;
 
   let role = liveRoleFor({
     userId,
     appRole: profile?.role,
     isGuest,
-    hostUserId: session.host_user_id,
+    hostUserId: session.hostUserId,
     storedRole: stored?.role,
   });
   const join = canJoin(session.status, role);
@@ -156,31 +176,21 @@ Deno.serve(async (req) => {
   // 3. Gender (and the section's gender scope for students/guests).
   const gender = liveGender(profile?.gender);
   if (!gender) return fail("gender_required");
-  if (role === "listener" || role === "speaker") {
-    const { data: visible, error: visErr } = await callerClient.rpc("section_visible_to_viewer", {
-      p_section_id: session.section_id,
-      p_gender: profile?.gender ?? null,
-    });
-    if (visErr) return fail("server_error", visErr.message);
-    if (!visible) return fail("not_visible");
-  }
+  if ((role === "listener" || role === "speaker") && !ctx.visible) return fail("not_visible");
 
   // 4. Opaque, salted, per-session identity (SQL — the salt never leaves the DB).
-  const { data: identity, error: idErr } = await admin.rpc("live_identity", {
-    p_session: sessionId,
-    p_user: userId,
-  });
-  if (idErr || !isLiveIdentity(identity)) return fail("server_error", idErr?.message ?? "bad identity");
+  const identity = ctx.identity;
+  if (!isLiveIdentity(identity)) return fail("server_error", "bad identity");
 
   // 5. Participant row.
-  const hidden = resolveHiddenName(gender, identityChoice, stored?.hidden_name);
+  const hidden = resolveHiddenName(gender, identityChoice, stored?.hiddenName);
   const row = {
     session_id: sessionId,
     user_id: userId,
     identity,
     gender,
     hidden_name: hidden,
-    display_name: realDisplayName(profile?.display_name),
+    display_name: realDisplayName(profile?.displayName),
     role,
     left_at: null,
   };
@@ -211,7 +221,7 @@ Deno.serve(async (req) => {
         userId,
         appRole: profile?.role,
         isGuest,
-        hostUserId: session.host_user_id,
+        hostUserId: session.hostUserId,
         storedRole: fresh?.role,
       });
       ({ error: upErr } = await admin
@@ -222,34 +232,36 @@ Deno.serve(async (req) => {
     }
   }
   if (upErr) return fail("server_error", upErr.message);
-  const name = participantDisplayName({ isGuest, gender, hiddenName: hidden, role, displayName: profile?.display_name });
+  const name = participantDisplayName({ isGuest, gender, hiddenName: hidden, role, displayName: profile?.displayName });
 
   // 6. The green room must exist before the host joins (auto_create: false).
   if (session.status === "green") {
     try {
       await rooms.createRoom({
-        name: session.room_name,
+        name: session.roomName,
         emptyTimeout: ROOM_EMPTY_TIMEOUT_S,
         departureTimeout: ROOM_DEPARTURE_TIMEOUT_S,
         maxParticipants: ROOM_MAX_PARTICIPANTS,
-        metadata: roomMetadata(session.allow_requests),
+        metadata: roomMetadata(session.allowRequests),
       });
     } catch (e) {
       return fail("livekit_error", (e as Error).message);
     }
   }
 
-  // 7. Token.
-  const grants = LIVE_GRANTS[role];
+  // 7. Token. 0157: listeners/speakers may send reactions (data, topic
+  // "reactions") unless they are guests or a moderator stopped theirs.
+  const reactionsBlocked = stored?.reactionsBlocked === true;
+  const grants = liveGrantsFor(role, { isGuest, reactionsBlocked });
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
     name,
     ttl: TOKEN_TTL,
-    attributes: participantAttributes({ gender, role, hiddenName: hidden }),
+    attributes: participantAttributes({ gender, role, hiddenName: hidden, reactionsBlocked }),
   });
   at.addGrant({
     roomJoin: true,
-    room: session.room_name,
+    room: session.roomName,
     canSubscribe: grants.canSubscribe,
     canPublish: grants.canPublish,
     canPublishData: grants.canPublishData,
@@ -262,7 +274,7 @@ Deno.serve(async (req) => {
   return json({
     token,
     url: livekitWsUrl(LIVEKIT_URL),
-    roomName: session.room_name,
+    roomName: session.roomName,
     identity,
     role,
     name,

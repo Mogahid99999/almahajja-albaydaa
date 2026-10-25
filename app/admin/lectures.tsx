@@ -18,6 +18,7 @@ import {
   StyleSheet,
   TextInput,
   View,
+  useWindowDimensions,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
@@ -51,6 +52,9 @@ const STATUS_META: Record<AppLectureStatus, { label: string; color: string; bg: 
   draft: { label: 'مسودة', color: colors.accentBrassMuted, bg: 'rgba(176,137,79,0.12)' },
   unclassified: { label: 'واردة', color: colors.textSlate, bg: colors.surfaceInset },
 };
+
+/** Below this width a lecture row puts its controls under the title. */
+const ROW_COMPACT_BREAKPOINT = 640;
 
 const FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: 'الكل' },
@@ -257,6 +261,9 @@ function LectureRow({
 }) {
   const meta = STATUS_META[row.status];
   const canTogglePublish = row.status !== 'unclassified';
+  // On a phone the title shared one line with duration + badge + three buttons
+  // and shrank to a few letters: there the controls drop to their own line.
+  const compact = useWindowDimensions().width < ROW_COMPACT_BREAKPOINT;
 
   // The handlers live in a ref so one PanResponder (created once) always calls
   // the latest closures — recreating it mid-gesture would drop the touch.
@@ -274,66 +281,19 @@ function LectureRow({
     }),
   ).current;
 
-  return (
-    <View style={styles.row}>
-      {/* Drag handle — only active when the list shows one section's full,
-          unfiltered lecture set (see `dragEnabled` in the screen component). */}
-      {dragEnabled ? (
-        <View {...pan.panHandlers} accessibilityLabel="اسحب لإعادة الترتيب" style={styles.dragHandle}>
-          <Feather name="menu" size={14} color={colors.textGhost} />
-        </View>
-      ) : null}
-
-      {/* Play */}
-      <Pressable
-        onPress={onPlay}
-        accessibilityLabel={isCurrent && isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
-        style={({ pressed }) => [styles.playBtn, pressed && { opacity: 0.7 }]}
-      >
-        <Feather
-          name={isCurrent && isPlaying ? 'pause' : 'play'}
-          size={15}
-          color={colors.onTealPrimary}
-        />
-      </Pressable>
-
-      {/* Title + meta */}
-      <View style={{ flex: 1 }}>
-        <Txt size={13} weight="semibold" color={colors.textInk} numberOfLines={1}>
-          {row.title}
-        </Txt>
-        <View style={styles.rowMeta}>
-          {row.sectionTitle ? (
-            <Txt size={12} color={colors.textMuted} numberOfLines={1}>
-              {row.sectionTitle}
-            </Txt>
-          ) : (
-            <Txt size={12} color={colors.textGhost}>غير مصنّفة</Txt>
-          )}
-          {row.sheikhName ? (
-            <>
-              <Txt size={12} color={colors.textGhost}> · </Txt>
-              <Txt size={12} color={colors.textMuted} numberOfLines={1}>
-                {row.sheikhName}
-              </Txt>
-            </>
-          ) : null}
-        </View>
-      </View>
-
-      {/* Duration */}
+  // Duration · status badge · actions — beside the title, or under it (compact).
+  const controls = (
+    <>
       <Txt size={12} color={colors.textGhost} tabular style={styles.duration}>
         {row.durationSec > 0 ? arDuration(row.durationSec) : '—'}
       </Txt>
 
-      {/* Status badge */}
       <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
         <Txt size={11} weight="semibold" color={meta.color}>
           {meta.label}
         </Txt>
       </View>
 
-      {/* Actions */}
       <View style={styles.actions}>
         {canTogglePublish ? (
           <Pressable
@@ -363,6 +323,58 @@ function LectureRow({
           <Feather name="trash-2" size={15} color={colors.stateDanger} />
         </Pressable>
       </View>
+    </>
+  );
+
+  return (
+    <View style={styles.row}>
+      {/* Drag handle — only active when the list shows one section's full,
+          unfiltered lecture set (see `dragEnabled` in the screen component). */}
+      {dragEnabled ? (
+        <View {...pan.panHandlers} accessibilityLabel="اسحب لإعادة الترتيب" style={styles.dragHandle}>
+          <Feather name="menu" size={14} color={colors.textGhost} />
+        </View>
+      ) : null}
+
+      {/* Play */}
+      <Pressable
+        onPress={onPlay}
+        accessibilityLabel={isCurrent && isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+        style={({ pressed }) => [styles.playBtn, pressed && { opacity: 0.7 }]}
+      >
+        <Feather
+          name={isCurrent && isPlaying ? 'pause' : 'play'}
+          size={15}
+          color={colors.onTealPrimary}
+        />
+      </Pressable>
+
+      {/* Title + meta */}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Txt size={13} weight="semibold" color={colors.textInk} numberOfLines={compact ? 2 : 1}>
+          {row.title}
+        </Txt>
+        <View style={styles.rowMeta}>
+          {row.sectionTitle ? (
+            <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ flexShrink: 1 }}>
+              {row.sectionTitle}
+            </Txt>
+          ) : (
+            <Txt size={12} color={colors.textGhost}>غير مصنّفة</Txt>
+          )}
+          {row.sheikhName ? (
+            <>
+              <Txt size={12} color={colors.textGhost}> · </Txt>
+              <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ flexShrink: 1 }}>
+                {row.sheikhName}
+              </Txt>
+            </>
+          ) : null}
+        </View>
+        {compact ? <View style={styles.rowControlsCompact}>{controls}</View> : null}
+      </View>
+
+      {compact ? null : controls}
     </View>
   );
 }
@@ -834,6 +846,13 @@ const styles = StyleSheet.create({
     ...shadows.button,
   } as ViewStyle,
 
+  rowControlsCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+  } as ViewStyle,
+
   rowMeta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -854,6 +873,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
 
   actions: {
+    marginStart: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,

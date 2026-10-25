@@ -135,5 +135,9 @@ export const queryKeys = {
   // and the staff list incl. deleted ones (admin_live_comments) — under
   // ['live', 'admin', …] with the other staff live reads (useLiveAdmin liveAdminKeys.all).
   liveComments: (sessionId: string) => ['live', 'comments', sessionId] as const,
+
+  // «الجدول الأسبوعي للدروس» (0158): ONE persisted read, refetched only when
+  // app_open's schedule_version moves.
+  schedule: ['schedule'] as const,
   liveAdminComments: (sessionId: string) => ['live', 'admin', 'comments', sessionId] as const,
 } as const;

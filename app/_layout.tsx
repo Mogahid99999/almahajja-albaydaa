@@ -39,10 +39,10 @@ import RNRestart from 'react-native-restart';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { checkBannedAndSignOut, onSessionLost } from '@/api/auth';
+import { onSessionLost, signOut } from '@/api/auth';
 import { isLectureVisibleToViewer } from '@/api/lectures';
-import { getNotificationPrefs, registerPushToken, touchLastOpened } from '@/api/notifications';
-import { getResumeTarget, hasResumableLesson } from '@/api/progress';
+import { registerPushToken } from '@/api/notifications';
+import { getResumeTarget } from '@/api/progress';
 import { forcedSignOutCleanup, useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
 import { Logo } from '@/components/ui/Logo';
 import { StartHereCard } from '@/components/onboarding/StartHereCard';
@@ -51,7 +51,6 @@ import { UpdateGate } from '@/components/UpdateGate';
 import { colors, radius } from '@/constants/theme';
 import {
   addResponseListener,
-  cancelDailyReminder,
   clearBadge,
   configureNotificationHandler,
   ensurePermission,
@@ -59,10 +58,11 @@ import {
   getToken,
   NEAR_COMPLETION_PCT,
   RESUME_LONGGAP_HOURS,
-  scheduleDailyReminder,
 } from '@/lib/notifications';
 import { pickPhrase } from '@/lib/notificationPhrases';
 import { recordAppOpen } from '@/lib/notificationState';
+import { isBroadcastPush, runAppOpen } from '@/lib/appOpen';
+import { registerPushTokenIfChanged } from '@/lib/pushTokenRegistry';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
 import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
 import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
@@ -108,6 +108,12 @@ const PERSISTED_QUERY_ROOTS = new Set<string>([
   'appContent', // «عن المنصة» + support contact (static)
   'notifications', // the user's own inbox/prefs on the user's own device (V11 · E —
   //                 server stays the source of truth on the next online refetch)
+  // LOAD V24: kept across launches so a cold start doesn't refetch them; app_open
+  // (src/lib/appOpen.ts) invalidates them when its counts/timestamps say they changed.
+  'buddy', // my buddy card state + the last app_open buddy counts (never search results)
+  'broadcasts', // Home «التذكيرات النافعة» card
+  'appVersionGate', // UpdateGate config, also seeded by app_open
+  'schedule', // «الجدول الأسبوعي» (0158) — works offline, refetched when its version moves
 ]);
 
 function shouldDehydrateQuery(query: Query): boolean {
@@ -119,6 +125,8 @@ function shouldDehydrateQuery(query: Query): boolean {
   // offline on رحلتي العلمية — never the attempt/intro/result payloads (server-graded,
   // answer-key sensitive, volatile).
   if (key[0] === 'quizzes') return key[1] === 'myStats';
+  // Buddy search results are other students' names for one typed query — never persisted.
+  if (key[0] === 'buddy' && key[1] === 'search') return false;
   return PERSISTED_QUERY_ROOTS.has(String(key[0]));
 }
 
@@ -439,7 +447,9 @@ function NotificationsBootstrap() {
       if (cancelled || !token) return;
       setToken(token);
       try {
-        await registerPushToken(token, Platform.OS);
+        // LOAD V24: only when the token/account changed or the last write is a
+        // week old — not an upsert on every cold start (`registered` is per run).
+        await registerPushTokenIfChanged(token, user.id, () => registerPushToken(token, Platform.OS));
         if (!cancelled) setRegistered(true);
       } catch {
         // Registration failure is non-fatal — the inbox still works.
@@ -460,13 +470,24 @@ function NotificationsBootstrap() {
       positionSec?: number;
       route?: string;
     }) => {
-      // Any notification tap is a fresh chance to reconcile state the push was
-      // about — most importantly buddy invites/accepts (route '/'), whose card
-      // otherwise stays stale (refetchOnWindowFocus is off) until a full restart.
-      // refetchType 'all' so even a not-yet-mounted buddy query refetches now,
-      // rather than serving cache when the Home card mounts after navigation.
-      void queryClient.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+      // A personal notification tap is a fresh chance to reconcile state the push
+      // was about — most importantly buddy invites/accepts (route '/'), whose
+      // card otherwise stays stale (refetchOnWindowFocus is off). refetchType
+      // 'all' so even a not-yet-mounted buddy query refetches now, rather than
+      // serving cache when the Home card mounts after navigation.
+      // LOAD V24: broadcast pushes (a new lesson / file, a live start) are
+      // push-only since 0151 — no inbox row, no buddy change — and are tapped on
+      // thousands of phones within minutes, so they refetch nothing here.
+      if (!isBroadcastPush(data)) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+        if (data.route === '/' || (data.route ?? '').includes('buddy')) {
+          void queryClient.invalidateQueries({
+            queryKey: ['buddy'],
+            refetchType: 'all',
+            predicate: (q) => q.queryKey[1] !== 'search' && q.queryKey[1] !== 'openCounts',
+          });
+        }
+      }
       if (data.lectureId) {
         // Carry the paused second so the player opens at the exact position (§8).
         const t =
@@ -517,47 +538,29 @@ function NotificationsBootstrap() {
     // Offline outbox (V11 · B): wire reconnect + post-boot triggers once the
     // session is ready, then drain on every foreground below.
     startOutbox();
-    const onActive = () => {
+    // LOAD V24: everything the server knows about this open — last-opened stamp,
+    // ban/deleted check, inbox + buddy change detection, the daily-reminder
+    // inputs (§7: the remembrance defers to an in-progress lesson), the live
+    // card and the version gate — comes from ONE app_open RPC, at most every
+    // 15 min (forced on the cold start). It refetches only what changed; before
+    // V24 each foreground fired 8–12 requests (incl. a GoTrue /user call).
+    // A ban/deletion drops the session exactly like before: forcedSignOutCleanup
+    // mirrors a manual sign-out's device cleanup (audio, reminders, the banned
+    // account's outbox, the query cache) and its currentUser write makes
+    // AuthGate reroute immediately.
+    const onSignedOut = async () => {
+      const restored = await signOut().catch(() => null);
+      await forcedSignOutCleanup(restored);
+    };
+    const onActive = (force: boolean) => {
       void recordAppOpen();
       void clearBadge(); // reset the launcher "new lessons" count on open (Issue 8)
-      void touchLastOpened(); // server stamp for the weekly-goal cron
-      void flushOutbox(); // replay any queued offline activity/note/goal writes
-      // Ban enforcement: if the admin banned this account, drop the session NOW
-      // (server-validated; a network failure never signs anyone out).
-      // forcedSignOutCleanup mirrors a manual sign-out's device cleanup — stops
-      // audio + local reminders, discards the banned account's un-synced outbox
-      // (its entries would otherwise replay under the restored guest), and
-      // resets the query cache so none of the banned account's data keeps
-      // rendering; its currentUser write makes AuthGate reroute immediately.
-      void checkBannedAndSignOut().then((res) => {
-        if (res.banned) void forcedSignOutCleanup(res.user);
-      });
-      // Refresh buddy + inbox state on every foreground — tapping a buddy
-      // invitation/accept push brings the app forward, and refetchOnWindowFocus
-      // is off, so without this the buddy card stays stale until a full restart.
-      void queryClient.invalidateQueries({ queryKey: ['buddy'], refetchType: 'all' });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
-      void (async () => {
-        try {
-          // §7 priority dispatcher (resume > weekly-goal > daily): the daily
-          // remembrance is lowest priority, so it defers whenever a resume nudge
-          // is the relevant one (an in-progress lesson exists). The weekly-goal
-          // midweek/2-days nudges are cron-push with their own once-per-week
-          // dedup, so they're coordinated server-side.
-          const [prefs, hasResume] = await Promise.all([
-            getNotificationPrefs(),
-            hasResumableLesson(),
-          ]);
-          if (prefs.daily_reminder && !hasResume) await scheduleDailyReminder();
-          else await cancelDailyReminder();
-        } catch {
-          // Non-fatal — a missed re-arm never blocks the app.
-        }
-      })();
+      void flushOutbox(); // replay any queued offline activity/note/goal writes (local queue)
+      void runAppOpen({ force, onSignedOut });
     };
-    onActive();
+    onActive(true);
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') onActive();
+      if (state === 'active') onActive(false);
     });
     return () => sub.remove();
   }, [user]);

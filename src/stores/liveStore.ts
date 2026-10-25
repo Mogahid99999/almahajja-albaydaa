@@ -37,6 +37,7 @@ import {
   type LiveTokenErrorCode,
 } from "@/api/live";
 import type { LiveCommentsMessage } from "@/api/liveComments";
+import { queryKeys } from "@/constants/queryKeys";
 import {
   onBeforeLecturePlay,
   stop as stopLecture,
@@ -51,12 +52,15 @@ import {
   MicPermissionError,
   releaseMic,
   requestMicPermission,
+  sendLiveReaction,
   setLivePaused,
   setMicEnabled,
   stopLiveAudio,
   type LiveSink,
 } from "@/lib/liveClient";
 import type { LiveConn, LivePerson } from "@/lib/liveConnection";
+import { queryClient } from "@/lib/queryClient";
+import { acceptReaction, canSendReaction, type ReactionKey } from "@/lib/liveReactions";
 import {
   onLiveForegroundLeave,
   startLiveForeground,
@@ -95,8 +99,20 @@ export interface LiveNotice {
   id: number;
 }
 
-/** Moderator actions on another participant (live-control; staff only — D1). */
-export type LiveModerationAction = "approve" | "reject" | "mute" | "demote";
+/**
+ * Moderator actions on another participant (live-control; staff only — D1).
+ * react_block / react_unblock (0157): stop / allow that person's reactions.
+ */
+export type LiveModerationAction =
+  | "approve"
+  | "reject"
+  | "mute"
+  | "demote"
+  | "react_block"
+  | "react_unblock";
+
+/** sendReaction's outcome (the room shows a short line for the refusals). */
+export type ReactionSendResult = "sent" | "cooldown" | "blocked" | "unavailable";
 
 export interface LiveState {
   session: LiveSessionPublic | null;
@@ -150,6 +166,11 @@ export interface LiveState {
   moderate(action: LiveModerationAction, identity: string): Promise<void>;
   /** Moderators: «استقبال طلبات التحدث». Throws LiveControlError. */
   setAllowRequests(allow: boolean): Promise<void>;
+  /**
+   * Send a reaction (0157) — LiveKit data only, never the DB. Rate-limited per
+   * device; mine shows at once (LiveKit doesn't echo to the sender). Never throws.
+   */
+  sendReaction(key: ReactionKey): Promise<ReactionSendResult>;
   /** Host: hand the session to a moderator present (host_leave), then leave the room. Throws LiveControlError. */
   handOver(identity: string): Promise<void>;
   /** Host / content manager: end for everyone (call AFTER the 5 s undo). The room then shows «انتهى المجلس». Throws LiveControlError. */
@@ -243,6 +264,32 @@ export function onLiveComments(listener: LiveCommentsListener): () => void {
   return () => {
     commentsListeners.delete(listener);
   };
+}
+
+/** Reactions «التفاعل» (0157): a flying sign for the overlay. Not kept in the store. */
+export type LiveReactionEvent = { key: ReactionKey; identity: string; mine: boolean };
+export type LiveReactionListener = (e: LiveReactionEvent) => void;
+const reactionListeners = new Set<LiveReactionListener>();
+/** Receiver-side spam guard: last accepted reaction per sender identity. */
+const lastReactionBy = new Map<string, number>();
+let lastReactionSentAt: number | null = null;
+
+/** Subscribe to the reactions of the room I'm in. Returns the unsubscribe. */
+export function onLiveReaction(listener: LiveReactionListener): () => void {
+  reactionListeners.add(listener);
+  return () => {
+    reactionListeners.delete(listener);
+  };
+}
+
+function emitReaction(e: LiveReactionEvent) {
+  for (const l of Array.from(reactionListeners)) {
+    try {
+      l(e);
+    } catch {
+      /* one listener's failure never stops the room */
+    }
+  }
 }
 
 function emitComments(msg: LiveCommentsMessage) {
@@ -377,7 +424,12 @@ function makeSink(gen: number): LiveSink {
       }
       if (p.conn === "failed") next.lastError = "network";
       setState(next);
-      if (was === "listener" && became === "speaker") notify("accepted");
+      if (was === "listener" && became === "speaker") {
+        notify("accepted");
+        // Invited without raising a hand: ask for the mic now, while it is
+        // still closed, so «افتح الميكروفون» later never hits the OS dialog.
+        void requestMicPermission().catch(() => undefined);
+      }
       if (was === "speaker" && became === "listener") {
         if (Date.now() < steppingDownUntil) steppingDownUntil = 0;
         else notify("demoted");
@@ -390,6 +442,11 @@ function makeSink(gen: number): LiveSink {
       else if (e.type === "mutedByModerator") notify("muted");
       else if (e.type === "publishRevoked") setForegroundMic(false);
       else if (e.type === "comments") emitComments(e.msg);
+      else if (e.type === "reaction") {
+        if (acceptReaction(lastReactionBy, e.identity, Date.now())) {
+          emitReaction({ key: e.key, identity: e.identity, mine: false });
+        }
+      }
     },
   };
 }
@@ -637,7 +694,28 @@ export const useLiveStore = create<LiveState>()(
       moderate: async (action, identity) => {
         const { session } = get();
         if (!session) throw new LiveControlError("not_present");
+        if (action === "react_block" || action === "react_unblock") {
+          await liveControl("react_block", {
+            sessionId: session.id,
+            identity,
+            blocked: action === "react_block",
+          });
+          return;
+        }
         await liveControl(action, { sessionId: session.id, identity });
+      },
+
+      sendReaction: async (key) => {
+        const { me, people, conn } = get();
+        if (!me || (conn !== "ok" && conn !== "poor" && conn !== "hostdrop")) return "unavailable";
+        if (people[me.identity]?.reactBlocked) return "blocked";
+        const now = Date.now();
+        if (!canSendReaction(lastReactionSentAt, now)) return "cooldown";
+        lastReactionSentAt = now;
+        const sent = await sendLiveReaction(key);
+        if (!sent) return people[me.identity]?.reactBlocked ? "blocked" : "unavailable";
+        emitReaction({ key, identity: me.identity, mine: true });
+        return "sent";
       },
 
       setAllowRequests: async (allow) => {
@@ -662,7 +740,7 @@ export const useLiveStore = create<LiveState>()(
         if (!session) throw new LiveControlError("not_present");
         await liveControl("end", { sessionId: session.id });
         // ROOM_DELETED normally ends the room; don't wait for it.
-        notifyLiveSessionEnded(session.id);
+        endedHere(session.id);
       },
 
       openGreen: async (session) => {
@@ -761,6 +839,23 @@ export function getLiveMicLevel(): number {
  * cancelled) — called by useLiveSession's poll. Ends the room even if the
  * ROOM_DELETED disconnect never arrived (e.g. while offline).
  */
+/**
+ * This device just ended the session — the room's «إنهاء البث للجميع» or the
+ * staff card's («البث المباشر»). The room ends NOW: a join still connecting is
+ * cancelled and the open screen reads «انتهى المجلس» from the cached status,
+ * without waiting for LiveKit's ROOM_DELETED (a join still connecting never
+ * gets it) or the next session poll. Owner 2026-10-05 «احاول انهاء البث,
+ * معلق»: the room sat on «جارٍ الانضمام» ~95 s after an end from this phone.
+ */
+export function endedHere(sessionId: string): void {
+  queryClient.setQueryData<LiveSessionPublic | null>(queryKeys.liveSession(sessionId), (old) =>
+    old && (old.status === "live" || old.status === "green" || old.status === "scheduled")
+      ? { ...old, status: "ended", endedAt: old.endedAt ?? new Date().toISOString() }
+      : old,
+  );
+  notifyLiveSessionEnded(sessionId);
+}
+
 export function notifyLiveSessionEnded(sessionId: string): void {
   const s = getState();
   if (s.session?.id !== sessionId || s.conn === "ended" || s.conn === "idle")

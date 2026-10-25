@@ -284,3 +284,35 @@ describe('F-507 — deep-link start on the already-current lecture', () => {
     expect(player.seeks).toContain(50);
   });
 });
+
+describe('perf 2026-10-03 — playback save cadence', () => {
+  test('while playing, the server save runs every 30 s and the local resume mirror every ~5 s', async () => {
+    const { controller } = fresh();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { saveResumePosition } = require('@/lib/resumeCache') as { saveResumePosition: jest.Mock };
+    mockGetLecturePlayback.mockResolvedValue(playback('L9', { durationSec: 3600 }));
+    await controller.playLecture('L9');
+    await flush();
+    const player = mockPlayers[0];
+    expect(player).toBeDefined();
+
+    mockSaveLectureProgress.mockClear();
+    saveResumePosition.mockClear();
+    let now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      // 90 s of playback, one status tick per second (expo-audio's default).
+      for (let t = 1; t <= 90; t++) {
+        now += 1000;
+        player.statusCb?.({ playing: true, isLoaded: true, currentTime: 100 + t, duration: 3600 });
+      }
+    } finally {
+      clock.mockRestore();
+    }
+
+    // Every 5 s this was 17 save_activity RPCs; now 2 (at ~31 s and ~62 s).
+    expect(mockSaveLectureProgress).toHaveBeenCalledTimes(2);
+    // …while the no-network resume mirror still tracks the position closely.
+    expect(saveResumePosition.mock.calls.length).toBeGreaterThanOrEqual(12);
+  });
+});

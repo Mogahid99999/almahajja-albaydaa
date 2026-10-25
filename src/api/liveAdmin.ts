@@ -23,6 +23,7 @@
 import { Platform } from 'react-native';
 
 import { isLiveStatus, liveControl, type LiveStatus } from '@/api/live';
+import { deleteFromR2 } from '@/api/storage';
 import { supabase } from '@/lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -68,6 +69,8 @@ export interface LiveAdminSession {
   rawLocal: boolean;
   /** The raw has an R2 backup (kept forever). */
   rawBackup: boolean;
+  /** 0157: an admin deleted the recording («حذف التسجيل»). */
+  recordingDeleted: boolean;
   job: LiveAdminJob | null;
 }
 
@@ -189,6 +192,7 @@ export function mapLiveAdminSession(raw: unknown): LiveAdminSession | null {
     durationSec: num(r.duration_sec),
     rawLocal: r.raw_local === true,
     rawBackup: r.raw_backup === true,
+    recordingDeleted: r.recording_deleted === true,
     job: mapJob(r.job),
   };
 }
@@ -322,6 +326,23 @@ export async function saveLiveLecture(input: SaveLiveLectureInput): Promise<void
 }
 
 /** retry_live_recording (0138) — content managers, after the job failed for good. */
+/**
+ * «حذف التسجيل» (0157, ADMIN only, once the recording is ready and not yet
+ * published): the RPC deletes the draft lecture, stamps the session and hands
+ * back every R2 key of the recording (compressed audio + raw backups); the
+ * objects are then removed through r2-delete — best-effort, the same cleanup
+ * as deleting any lecture. Throws the RPC's Arabic refusal.
+ */
+export async function deleteLiveRecording(sessionId: string): Promise<{ objects: number }> {
+  const { data, error } = await supabase.rpc('admin_delete_live_recording' as never, { p_session: sessionId } as never);
+  if (error) throw error;
+  const keys = Array.isArray((data as { keys?: unknown } | null)?.keys)
+    ? ((data as { keys: unknown[] }).keys.filter((k): k is string => typeof k === 'string' && k.length > 0))
+    : [];
+  await Promise.all(keys.map((k) => deleteFromR2(k)));
+  return { objects: keys.length };
+}
+
 export async function retryLiveRecording(sessionId: string): Promise<string> {
   const { data, error } = await supabase.rpc('retry_live_recording', { p_session: sessionId });
   if (error) throw error;

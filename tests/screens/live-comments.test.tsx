@@ -283,6 +283,23 @@ test('a sister with her name is warned first; «أرسل بدون اسم» sends
   expect(mockPost).toHaveBeenLastCalledWith({ kind: 'comment', text: 'فائدة', anonymous: false }, expect.anything());
 });
 
+test('LOAD V25: a listener reads the list only after first opening it; the host on join', async () => {
+  brother();
+  await render(<LiveRoomScreen />);
+  // In the room, connected, sheet never opened → no 500-comment read.
+  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: false, open: false });
+  await fireEvent.press(screen.getByText('التعليقات'));
+  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, open: true });
+
+  mockCommentsOpts.length = 0;
+  inRoom({
+    user: { id: 'a1', role: 'sheikh', isGuest: false, displayName: 'الشيخ', gender: 'male' },
+    me: { role: 'host', hidden: false, gender: 'm' },
+  });
+  await render(<LiveRoomScreen />);
+  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, open: false });
+});
+
 test('staff see the count of new ones and answer / delete / block', async () => {
   inRoom({
     user: { id: 'a1', role: 'sheikh', isGuest: false, displayName: 'الشيخ', gender: 'male' },

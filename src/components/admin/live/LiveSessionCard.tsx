@@ -35,6 +35,13 @@ export interface LiveSessionCardProps {
   nowMs: number;
   /** is_content_manager (admin | publisher). */
   manager: boolean;
+  /** 0160 is_lecture_manager (+ sheikh): may title/publish the recording in الواردة. */
+  lectureManager?: boolean;
+  /** The app's admin — «حذف التسجيل» is theirs alone (0157). */
+  admin?: boolean;
+  /** «حذف التسجيل» (the screen confirms first). */
+  onDeleteRecording?: (s: LiveAdminSession) => void;
+  deletingRecording?: boolean;
   onOpenRoom: (s: LiveAdminSession) => void;
   onOpenGreen: (s: LiveAdminSession) => void;
   onCancel: (s: LiveAdminSession) => void;
@@ -59,6 +66,10 @@ export function LiveSessionCard({
   session: s,
   nowMs,
   manager,
+  lectureManager = manager,
+  admin = false,
+  onDeleteRecording,
+  deletingRecording = false,
   onOpenRoom,
   onOpenGreen,
   onCancel,
@@ -99,13 +110,20 @@ export function LiveSessionCard({
   }
 
   const showRetry = manager && s.status === 'failed';
-  const showInbox = manager && s.status === 'ready' && s.lectureNeedsTitle && !!s.lectureId;
+  const gone = s.recordingDeleted;
+  const showInbox = lectureManager && !gone && s.status === 'ready' && s.lectureNeedsTitle && !!s.lectureId;
   const showDownload =
-    manager && !['scheduled', 'green', 'live', 'cancelled'].includes(s.status) && (s.rawLocal || s.rawBackup);
+    manager &&
+    !gone &&
+    !['scheduled', 'green', 'live', 'cancelled'].includes(s.status) &&
+    (s.rawLocal || s.rawBackup);
+  // 0157: ready, not yet deleted, never a lecture already published (deleted from «المحاضرات» instead).
+  const showDelete =
+    admin && !!onDeleteRecording && !gone && s.status === 'ready' && s.lectureStatus !== 'published';
   const showCancel = canCancel(s, manager);
   const showEnd = !!onEnd && canEndLive(s, manager);
   const hasActions =
-    isLive || hostCanOpenGreen || showInbox || showRetry || showDownload || showCancel || showEnd;
+    isLive || hostCanOpenGreen || showInbox || showRetry || showDownload || showCancel || showEnd || showDelete;
 
   return (
     <Card
@@ -199,6 +217,15 @@ export function LiveSessionCard({
           ) : null}
           {showCancel ? (
             <ActionButton label={ADMIN_LIVE_COPY.cancel} icon="x" tone="danger" onPress={() => onCancel(s)} />
+          ) : null}
+          {showDelete ? (
+            <ActionButton
+              label={deletingRecording ? ADMIN_LIVE_COPY.deletingRecording : ADMIN_LIVE_COPY.deleteRecording}
+              icon="trash-2"
+              tone="danger"
+              busy={deletingRecording}
+              onPress={() => onDeleteRecording?.(s)}
+            />
           ) : null}
           {showEnd && onEnd ? (
             <ActionButton

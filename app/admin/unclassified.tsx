@@ -32,7 +32,7 @@ import {
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { LiveDraftCard } from '@/components/admin/live/LiveDraftCard';
-import { isContentManager } from '@/components/admin/live/liveAdminUi';
+import { isLectureManager } from '@/components/admin/live/liveAdminUi';
 import { PendingRecordingCard } from '@/components/admin/live/PendingRecordingCard';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
@@ -148,11 +148,11 @@ export default function UnclassifiedScreen() {
   const classifyLecture = useClassifyLecture();
   const setLectureStatus = useSetLectureStatus();
 
-  // ── Live recordings (V23 P6) — content managers only ──
+  // ── Live recordings (V23 P6) — lecture managers (0160: + sheikh) ──
   const params = useLocalSearchParams<{ live?: string }>();
   const focusId = typeof params.live === 'string' && params.live ? params.live : null;
   const { data: user } = useCurrentUser();
-  const manager = isContentManager(user);
+  const manager = isLectureManager(user);
   const liveInbox = useLiveInbox(manager);
   const { data: sheikhs = [] } = useSheikhs();
   const { width } = useWindowDimensions();

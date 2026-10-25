@@ -87,6 +87,7 @@ jest.mock('@/components/home/DuaCard', () => ({ DuaCard: () => null }));
 jest.mock('@/components/journey/JourneyHomeCard', () => ({ JourneyHomeCard: () => null }));
 jest.mock('@/components/SupportContactLink', () => ({ SupportContactLink: () => null }));
 jest.mock('@/components/live/LiveUpcomingCard', () => ({ LiveUpcomingCard: () => null }));
+jest.mock('@/components/home/ScheduleTodayCard', () => ({ ScheduleTodayCard: () => null }));
 
 import { resetLiveHomeSlot } from '@/components/live/useLiveHomeSlot';
 import HomeScreen from '../../app/(student)/index';

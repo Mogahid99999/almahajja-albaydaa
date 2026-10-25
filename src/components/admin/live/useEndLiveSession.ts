@@ -10,6 +10,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { endLiveSession } from '@/api/liveAdmin';
 import { queryKeys } from '@/constants/queryKeys';
 import { useRefreshLiveAdmin } from '@/hooks/useLiveAdmin';
+import { endedHere } from '@/stores/liveStore';
 
 export function useEndLiveSession() {
   const qc = useQueryClient();
@@ -17,6 +18,9 @@ export function useEndLiveSession() {
   return useMutation({
     mutationFn: endLiveSession,
     networkMode: 'always',
+    // This phone's own room (open, minimised, or still joining) ends at once —
+    // it never waits for ROOM_DELETED or the room's next session poll.
+    onSuccess: (_d, sessionId) => endedHere(sessionId),
     onSettled: (_d, _e, sessionId) => {
       refresh();
       void qc.invalidateQueries({ queryKey: queryKeys.liveSession(sessionId) });

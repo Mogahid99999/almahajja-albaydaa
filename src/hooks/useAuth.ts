@@ -17,6 +17,7 @@ import {
 } from '@/api/auth';
 import type { CurrentUser } from '@/api/auth';
 import { unregisterPushToken } from '@/api/notifications';
+import { forgetPushTokenRegistration } from '@/lib/pushTokenRegistry';
 import type { Gender, HomeData } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 import { stop as stopPlayback } from '@/lib/audioController';
@@ -267,6 +268,8 @@ export function useSignOut() {
       // logging out".
       const deviceToken = useNotificationsStore.getState().token;
       if (deviceToken) await unregisterPushToken(deviceToken);
+      // LOAD V24: the row is gone — the next account on this device must register again.
+      await forgetPushTokenRegistration();
       await stopDeviceSideEffects();
       const restored = await signOut();
       const guest =

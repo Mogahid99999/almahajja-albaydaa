@@ -277,6 +277,7 @@ describe('people', () => {
       micOn: false,
       speaking: true,
       isMe: false,
+      reactBlocked: false,
     });
   });
 
@@ -323,6 +324,13 @@ describe('people', () => {
     micOn: false,
     speaking: false,
     isMe: false,
+    reactBlocked: false,
+  });
+
+  test('0157: rx = "0" marks a person whose reactions a moderator stopped', () => {
+    expect(toLivePerson({ identity: 'r1', name: 'زيد', attributes: { g: 'm', rx: '0' } }, { isMe: false, speaking: false }).reactBlocked).toBe(true);
+    expect(toLivePerson({ identity: 'r2', name: 'زيد', attributes: { g: 'm', rx: '1' } }, { isMe: false, speaking: false }).reactBlocked).toBe(false);
+    expect(toLivePerson({ identity: 'r3', name: 'زيد', attributes: { g: 'm' } }, { isMe: false, speaking: false }).reactBlocked).toBe(false);
   });
 
   test('counts are brothers vs sisters, host excluded', () => {

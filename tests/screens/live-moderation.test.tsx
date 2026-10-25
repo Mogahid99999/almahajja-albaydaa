@@ -155,11 +155,34 @@ test('RequestSheet «السماح بالتحدث» approves that person and clos
   expect(screen.queryByText('السماح بالتحدث')).toBeNull();
 });
 
-test('RequestSheet «الاعتذار» rejects', async () => {
+test('RequestSheet «رفض الطلب» rejects (was «الاعتذار» — owner 2026-10-05)', async () => {
   await render(<LiveRoomScreen />);
   await fireEvent.press(screen.getByLabelText('مريم · تطلب التحدث'));
-  await fireEvent.press(screen.getByText('الاعتذار'));
+  await fireEvent.press(screen.getByText('رفض الطلب'));
   expect(mockModerate).toHaveBeenCalledWith('reject', 'sis');
+});
+
+test('one tap from the strip: «رفض» / «قبول» on a raised hand, «كتم» on an open microphone', async () => {
+  await render(<LiveRoomScreen />);
+  // Raised hands, oldest first (the sister, then خالد) — each chip has its own buttons.
+  await fireEvent.press(screen.getAllByLabelText('رفض')[0]);
+  expect(mockModerate).toHaveBeenCalledWith('reject', 'sis');
+  await act(async () => {});
+  await fireEvent.press(screen.getAllByLabelText('قبول')[1]);
+  expect(mockModerate).toHaveBeenCalledWith('approve', 'bro');
+  await act(async () => {});
+  // سعيد speaks with his microphone open: «كتم» closes it at once.
+  expect(screen.getByLabelText('سعيد · الميكروفون مفتوح')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('كتم'));
+  expect(mockModerate).toHaveBeenCalledWith('mute', 'sp');
+});
+
+test('a refused one-tap action shows one Arabic line', async () => {
+  mockModerate.mockRejectedValue(new LiveControlError('guest_cannot_speak'));
+  await render(<LiveRoomScreen />);
+  await fireEvent.press(screen.getAllByLabelText('قبول')[0]);
+  await act(async () => {});
+  expect(screen.getByText('الضيف يستمع فقط، ولا يمكن السماح له بالتحدث')).toBeTruthy();
 });
 
 test('approving a guest shows «الضيف يستمع فقط، ولا يمكن السماح له بالتحدث» and keeps the sheet', async () => {
@@ -169,7 +192,7 @@ test('approving a guest shows «الضيف يستمع فقط، ولا يمكن �
   await fireEvent.press(screen.getByText('السماح بالتحدث'));
   await act(async () => {});
   expect(screen.getByText('الضيف يستمع فقط، ولا يمكن السماح له بالتحدث')).toBeTruthy();
-  expect(screen.getByText('الاعتذار')).toBeTruthy(); // still open — they can decline instead
+  expect(screen.getByText('رفض الطلب')).toBeTruthy(); // still open — they can decline instead
 });
 
 test('a listener sees no requests strip (moderators only)', async () => {
@@ -194,7 +217,9 @@ test('«في الحلقة» row → PersonSheet for that attendee', async () => 
   try {
     await render(<LiveRoomScreen />);
     await fireEvent.press(screen.getAllByLabelText('من في الحلقة')[0]);
-    await fireEvent.press(screen.getByText('سعيد'));
+    // سعيد is also on the open-mic chip of the strip; the sheet's row comes last.
+    const rows = screen.getAllByText('سعيد');
+    await fireEvent.press(rows[rows.length - 1]);
     await act(async () => {
       jest.advanceTimersByTime(500); // iOS: the people sheet dismisses first
     });
@@ -256,4 +281,23 @@ test('a failed mute shows a short Arabic line, not a code', async () => {
   await act(async () => {});
   expect(screen.getByText('غادر الحلقة')).toBeTruthy();
   expect(screen.queryByText('not_present')).toBeNull();
+});
+
+// ─── 0157: stop / allow one person's reactions ───────────────────────────────
+
+test('a moderator stops a listener\'s reactions from PersonSheet («إيقاف تفاعلاته»)', async () => {
+  await renderPerson(person('bro', {}), 'خالد');
+  await fireEvent.press(screen.getByText('إيقاف تفاعلاته'));
+  expect(mockModerate).toHaveBeenCalledWith('react_block', 'bro');
+});
+
+test('…and allows them again; a sister\'s label follows her gender', async () => {
+  await renderPerson(person('sis', { gender: 'f', reactBlocked: true }), 'فاطمة');
+  await fireEvent.press(screen.getByText('السماح بتفاعلاتها'));
+  expect(mockModerate).toHaveBeenCalledWith('react_unblock', 'sis');
+});
+
+test('the host and moderators are never offered a reactions stop', async () => {
+  await renderPerson(person('host', { role: 'host' }), 'الشيخ عبد الله');
+  expect(screen.queryByText('إيقاف تفاعلاته')).toBeNull();
 });

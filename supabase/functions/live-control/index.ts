@@ -50,6 +50,10 @@
 //                       If he is out of the room (network drop) the DB role
 //                       still changes, so his re-join token is a listener's.
 //   set_allow_requests  «استقبال طلبات التحدث» → session row + room metadata
+//   react_block         { identity, blocked } (0157) — moderators stop / allow
+//                       one listener's or speaker's reactions: DB flag
+//                       (live-token keeps it on re-join) + LiveKit data
+//                       permission + attribute rx ('0' stopped / '1').
 //   host_leave          the host hands the session to a moderator present
 //   leave               marks left_at (an explicit leave drops speaker status;
 //                       a network drop does NOT — live-token keeps a stored
@@ -184,7 +188,14 @@ type Session = {
   allow_requests: boolean;
   egress_id: string | null;
 };
-type Participant = { user_id: string; identity: string; role: string; left_at: string | null };
+type Participant = {
+  user_id: string;
+  identity: string;
+  role: string;
+  left_at: string | null;
+  /** 0157: a moderator stopped this participant's reactions. */
+  reactions_blocked: boolean;
+};
 
 class LiveFail extends Error {
   constructor(readonly code: LiveErrorCode, detail?: string) {
@@ -369,8 +380,12 @@ async function handle(req: Request): Promise<Response> {
       if (tuErr || !targetUser?.user) return fail("server_error", tuErr?.message ?? "target user not found");
       const speak = canSpeak({ isGuest: (targetUser.user as { is_anonymous?: boolean }).is_anonymous === true });
       if (!speak.ok) return fail(speak.code);
+      // 0157: a registered speaker keeps reactions unless a moderator stopped them.
       await lk(() => rooms.updateParticipant(room, target!.identity, {
-        permission: { ...speakerPermission(true), canPublishSources: [TrackSource.MICROPHONE] },
+        permission: {
+          ...speakerPermission(true, !target!.reactions_blocked),
+          canPublishSources: [TrackSource.MICROPHONE],
+        },
         attributes: { r: "speaker", h: "0" },
       }));
       await setRole(admin, session.id, target!.identity, "speaker");
@@ -401,7 +416,12 @@ async function handle(req: Request): Promise<Response> {
     case "demote": {
       try {
         await lk(() => rooms.updateParticipant(room, target!.identity, {
-          permission: { ...speakerPermission(false), canPublishSources: [TrackSource.MICROPHONE] },
+          // A speaker is never a guest (approve refuses guests): reactions stay
+          // as they were (0157).
+          permission: {
+            ...speakerPermission(false, !target!.reactions_blocked),
+            canPublishSources: [TrackSource.MICROPHONE],
+          },
           attributes: { r: "listener", h: "0" },
         }));
       } catch (e) {
@@ -411,6 +431,35 @@ async function handle(req: Request): Promise<Response> {
         if (!(e instanceof LiveFail && e.code === "not_present")) throw e;
       }
       await setRole(admin, session.id, target!.identity, "listener");
+      break;
+    }
+
+    case "react_block": {
+      // 0157: stop / allow one attendee's reactions. LiveKit enforces it (the
+      // data permission); the DB flag makes live-token keep it on a re-join.
+      const blocked = r.blocked === true;
+      const { error } = await admin
+        .from("live_participants")
+        .update({ reactions_blocked: blocked })
+        .eq("session_id", session.id)
+        .eq("identity", target!.identity);
+      if (error) return fail("server_error", error.message);
+      // Guests never get the data grant (guests listen only) — read fresh.
+      const { data: tu } = await admin.auth.admin.getUserById(target!.user_id);
+      const targetGuest = (tu?.user as { is_anonymous?: boolean } | undefined)?.is_anonymous === true;
+      try {
+        await lk(() => rooms.updateParticipant(room, target!.identity, {
+          permission: {
+            ...speakerPermission(target!.role === "speaker", !blocked && !targetGuest),
+            canPublishSources: [TrackSource.MICROPHONE],
+          },
+          attributes: { rx: blocked ? "0" : "1" },
+        }));
+      } catch (e) {
+        // Out of the room: the DB flag still applies to his next token.
+        if (!(e instanceof LiveFail && e.code === "not_present")) throw e;
+      }
+      result = { blocked };
       break;
     }
 
@@ -566,6 +615,8 @@ async function handle(req: Request): Promise<Response> {
         ? { reason: r.reason, from: session.status }
         : r.action === "resume_recording"
         ? { reason: r.reason, previous_egress: session.egress_id, ...result }
+        : r.action === "react_block"
+        ? { blocked: r.blocked }
         : {},
     });
     if (error) console.error(`live-control audit: ${error.message}`);
@@ -773,7 +824,7 @@ async function participantBy(
 ): Promise<Participant | null> {
   const { data, error } = await admin
     .from("live_participants")
-    .select("user_id, identity, role, left_at")
+    .select("user_id, identity, role, left_at, reactions_blocked")
     .eq("session_id", sessionId)
     .eq(column, value)
     .maybeSingle<Participant>();
