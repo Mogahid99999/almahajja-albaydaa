@@ -17,6 +17,12 @@
  *     good pack stays in use (and on disk) until then;
  *   - free space is checked before starting; the UI shows it only when short.
  * Downloads run while the app is alive (no background-transfer promise).
+ *
+ * Source: static files on our own server (env.mushafPackUrl, HTTPS) —
+ *   <base>/current.json              { version }   switched last when publishing
+ *   <base>/<version>/manifest.json   PackManifest  immutable
+ *   <base>/<version>/<name>.gz       gzip bytes, served WITHOUT Content-Encoding
+ * See scripts/mushaf/README.md. No source configured = print mode not offered.
  */
 import { onlineManager } from '@tanstack/react-query';
 import { Directory, File, Paths } from 'expo-file-system';
@@ -24,7 +30,7 @@ import { gunzipSync } from 'fflate';
 import { Platform } from 'react-native';
 import { create } from 'zustand';
 
-import { supabase } from '@/lib/supabase';
+import { env } from '@/lib/env';
 
 export type PackFile = { name: string; path: string; size: number; raw: number; md5: string };
 export type PackManifest = {
@@ -171,7 +177,7 @@ async function doInit() {
     });
     return;
   }
-  setStatus({ state: 'idle', total: null });
+  setStatus(env.mushafPackUrl ? { state: 'idle', total: null } : { state: 'unsupported' });
 }
 
 async function findPartial(): Promise<Progress | null> {
@@ -185,13 +191,32 @@ async function findPartial(): Promise<Progress | null> {
 }
 
 // ---------- server ----------
-async function invoke<T>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('mushaf-pack', { body });
-  if (error) throw error;
-  return data as T;
+const NAME_RE = /^(p\d{3}\.ttf|glyphs\.json)$/;
+const VERSION_RE = /^[a-zA-Z0-9._-]{1,64}$/;
+
+async function getJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return (await r.json()) as T;
 }
 
-const fetchManifest = () => invoke<{ manifest: PackManifest }>({ action: 'manifest' }).then((r) => r.manifest);
+/** current.json → that version's manifest; rejects anything that could write outside the pack. */
+async function fetchManifest(): Promise<PackManifest> {
+  const base = env.mushafPackUrl;
+  if (!base) throw new Error('no pack source');
+  const { version } = await getJson<{ version: string }>(`${base}/current.json`);
+  if (typeof version !== 'string' || !VERSION_RE.test(version)) throw new Error('bad version');
+  const m = await getJson<PackManifest>(`${base}/${version}/manifest.json`);
+  const ok =
+    m?.version === version &&
+    Array.isArray(m.files) &&
+    m.files.length > 0 &&
+    m.files.every((f) => NAME_RE.test(f.name) && f.path === f.name + '.gz' && f.size > 0 && f.raw > 0 && /^[0-9a-f]{32}$/.test(f.md5));
+  if (!ok) throw new Error('bad manifest');
+  return m;
+}
+
+const fileUrl = (version: string, f: PackFile) => `${env.mushafPackUrl}/${version}/${f.path}`;
 
 /** The download size, for the prep screen before anything is downloaded. */
 export async function fetchDownloadSize(): Promise<number | null> {
@@ -207,7 +232,6 @@ export async function fetchDownloadSize(): Promise<number | null> {
 
 // ---------- download ----------
 const CONCURRENCY = 4;
-const SIGN_BATCH = 40;
 const SPACE_MARGIN = 20 * 1024 * 1024;
 let running: Promise<void> | null = null;
 let stopRequested = false;
@@ -274,7 +298,7 @@ async function runDownload() {
   save();
 
   const todo = manifest.files.filter((f) => !done.has(f.name));
-  const need = todo.reduce((a, f) => a + f.raw + 0, 0) + SPACE_MARGIN;
+  const need = todo.reduce((a, f) => a + f.raw, 0) + SPACE_MARGIN;
   if (Paths.availableDiskSpace < need) {
     pausedWith('nospace', manifest, done, need);
     return;
@@ -285,42 +309,31 @@ async function runDownload() {
   progress();
 
   let failure: PauseReason | null = null;
-  try {
-    for (let i = 0; i < todo.length; i += SIGN_BATCH) {
+  let next = 0;
+  // One failure stops the others from taking new files; every worker is
+  // awaited (allSettled) so none reports progress after we report the stop.
+  let aborted = false;
+  const worker = async () => {
+    while (next < todo.length && !aborted) {
       if (stopRequested) throw new StopError();
-      const batch = todo.slice(i, i + SIGN_BATCH);
-      const { urls } = await invoke<{ urls: Record<string, string> }>({
-        action: 'sign',
-        version: manifest.version,
-        paths: batch.map((f) => f.path),
-      });
-      let next = 0;
-      // One failure stops the others from taking new files; every worker is
-      // awaited (allSettled) so none reports progress after we report the stop.
-      let aborted = false;
-      const worker = async () => {
-        while (next < batch.length && !aborted) {
-          if (stopRequested) throw new StopError();
-          const f = batch[next++];
-          await fetchOne(st, f, urls[f.path]);
-          done.add(f.name);
-          save();
-          if (!aborted) progress();
-        }
-      };
-      const results = await Promise.allSettled(
-        Array.from({ length: CONCURRENCY }, () =>
-          worker().catch((e) => {
-            aborted = true;
-            throw e;
-          }),
-        ),
-      );
-      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
-      if (failed) throw failed.reason;
+      const f = todo[next++];
+      await fetchOne(st, f, fileUrl(manifest.version, f));
+      done.add(f.name);
+      save();
+      if (!aborted) progress();
     }
-  } catch (e) {
-    failure = e instanceof StopError ? 'interrupted' : onlineManager.isOnline() ? 'error' : 'offline';
+  };
+  const results = await Promise.allSettled(
+    Array.from({ length: CONCURRENCY }, () =>
+      worker().catch((e) => {
+        aborted = true;
+        throw e;
+      }),
+    ),
+  );
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (failed) {
+    failure = failed.reason instanceof StopError ? 'interrupted' : onlineManager.isOnline() ? 'error' : 'offline';
   }
   if (failure) {
     save();
@@ -354,8 +367,7 @@ async function runDownload() {
 }
 
 /** Download one gzipped file, unpack, verify size + MD5; retried once. */
-async function fetchOne(dir: Directory, f: PackFile, url: string | undefined) {
-  if (!url) throw new Error('unsigned ' + f.path);
+async function fetchOne(dir: Directory, f: PackFile, url: string) {
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const tmp = new File(dir, f.name + '.gz.part');
@@ -392,17 +404,20 @@ export type GlyphIndex = {
   pages: string[][];
 };
 let glyphs: Promise<GlyphIndex> | null = null;
+let glyphsLoaded: GlyphIndex | null = null;
 export function loadGlyphIndex(): Promise<GlyphIndex> {
   if (!activeVersion) return Promise.reject(new Error('no pack'));
   if (!glyphs) {
     const f = new File(versionDir(activeVersion), 'glyphs.json');
-    glyphs = f.text().then((t) => JSON.parse(t) as GlyphIndex);
+    glyphs = f.text().then((t) => (glyphsLoaded = JSON.parse(t) as GlyphIndex));
     glyphs.catch(() => {
       glyphs = null;
     });
   }
   return glyphs;
 }
+/** The glyph index if already read this session — lets the reader open straight in print mode. */
+export const cachedGlyphIndex = (): GlyphIndex | null => (activeVersion ? glyphsLoaded : null);
 
 /** MB for the UI (binary MB, rounded up so «٥٢ م.ب» never undercounts). */
 export const toMB = (bytes: number) => Math.max(1, Math.ceil(bytes / (1024 * 1024)));

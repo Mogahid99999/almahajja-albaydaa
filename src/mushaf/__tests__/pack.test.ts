@@ -3,7 +3,7 @@
  *
  * expo-file-system is replaced by an in-memory disk that SURVIVES
  * jest.resetModules(), so "kill the app and reopen it" = re-import pack.ts
- * against the same disk. The server (mushaf-pack function + R2) is faked.
+ * against the same disk. The pack server (static files over HTTPS) is faked.
  */
 import { createHash } from 'crypto';
 import { gzipSync } from 'zlib';
@@ -22,6 +22,8 @@ type Server = {
   downloads: string[];
 };
 const mockServer: Server = { manifest: null, blobs: new Map(), fail: new Map(), corrupt: new Map(), downloads: [] };
+const mockBase = 'https://pack.test/mushaf';
+const mockEnv = { mushafPackUrl: mockBase as string | null };
 
 jest.mock('expo-file-system', () => {
   const uriOf = (parts: any[]) =>
@@ -73,7 +75,7 @@ jest.mock('expo-file-system', () => {
       return { exists: !!b, size: b?.length, md5: o?.md5 && b ? require('crypto').createHash('md5').update(b).digest('hex') : undefined };
     }
     static async downloadFileAsync(url: string, dest: File) {
-      const path = url.replace('https://r2.test/', '');
+      const path = url.replace(mockBase + '/', '');
       mockServer.downloads.push(path);
       const f = mockServer.fail.get(path);
       if (f) {
@@ -150,18 +152,16 @@ jest.mock('@tanstack/react-query', () => ({
   },
 }));
 
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    functions: {
-      invoke: async (_name: string, { body }: { body: any }) => {
-        if (body.action === 'manifest') return { data: { manifest: mockServer.manifest }, error: null };
-        const urls: Record<string, string> = {};
-        for (const p of body.paths) urls[p] = `https://r2.test/${body.version}/${p}`;
-        return { data: { urls }, error: null };
-      },
-    },
-  },
-}));
+jest.mock('@/lib/env', () => ({ env: mockEnv }));
+
+// current.json → <version>/manifest.json, as the server publishes them.
+const fetchMock = jest.fn(async (url: string) => {
+  const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+  if (url === `${mockBase}/current.json`) return json({ version: mockServer.manifest.version });
+  if (url === `${mockBase}/${mockServer.manifest?.version}/manifest.json`) return json(mockServer.manifest);
+  return { ok: false, status: 404, json: async () => ({}) };
+});
+(global as any).fetch = fetchMock;
 
 const md5 = (b: Uint8Array) => createHash('md5').update(b).digest('hex');
 
@@ -201,6 +201,7 @@ beforeEach(() => {
   mockDisk.dirs.clear();
   mockDisk.dirs.add('file:///doc');
   mockDisk.free = 1e12;
+  mockEnv.mushafPackUrl = mockBase;
   mockServer.blobs.clear();
   mockServer.fail.clear();
   mockServer.corrupt.clear();
@@ -343,5 +344,22 @@ describe('Madinah pack download', () => {
     await app.initPack();
     expect(app.usePackStore.getState().status.state).toBe('ready');
     expect(mockServer.downloads).toEqual([]);
+  });
+
+  it('a manifest naming files outside the pack is refused before anything is written', async () => {
+    const m = publish('v1');
+    m.files[1] = { ...m.files[1], name: '../../evil.ttf', path: '../../evil.ttf.gz' };
+    const app = launch();
+    await app.startPackDownload();
+    expect(app.usePackStore.getState().status).toMatchObject({ state: 'paused', reason: 'error' });
+    expect(mockServer.downloads).toEqual([]);
+    expect([...mockDisk.files.keys()].some((k) => k.includes('evil'))).toBe(false);
+  });
+
+  it('no pack source configured: print mode is not offered, the simplified mushaf opens directly', async () => {
+    mockEnv.mushafPackUrl = null;
+    const app = launch();
+    await app.initPack();
+    expect(app.usePackStore.getState().status).toEqual({ state: 'unsupported' });
   });
 });

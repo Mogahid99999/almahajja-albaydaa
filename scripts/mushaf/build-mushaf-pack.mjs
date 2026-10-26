@@ -12,9 +12,10 @@
  * 3. measures every line (glyph advances, parsed from the fonts) and records a
  *    uniform shrink for the few lines wider than the page;
  * 4. writes <workDir>/pack/<version>/{p001.ttf.gz…p604.ttf.gz, glyphs.json.gz, manifest.json}
- *    — gzip for transport only; the manifest holds each file's gz size, raw
+ *    and <workDir>/pack/current.json — the exact tree the server publishes;
+ *    gzip is for transport only; the manifest holds each file's gz size, raw
  *    size and the raw file's MD5, which the app verifies before use.
- * Then upload with scripts/mushaf/upload-pack.mjs.
+ * Then publish it on our server as described in scripts/mushaf/README.md.
  * Downloads are cached in <workDir>, so re-runs resume.
  */
 import crypto from 'node:crypto';
@@ -164,4 +165,6 @@ const manifest = {
   files,
 };
 fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
+// Published LAST on the server (see README) — it is what switches clients over.
+fs.writeFileSync(path.join(work, 'pack', 'current.json'), JSON.stringify({ version: PACK_VERSION }));
 console.log(JSON.stringify({ pack: dir, files: files.length, totalSize: manifest.totalSize, totalRaw: manifest.totalRaw, shrunkLines: Object.keys(shrink).length }));
