@@ -6,7 +6,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
@@ -95,7 +95,10 @@ export default function MushafIndex() {
     touchMushafUsage();
   }, []);
 
-  const open = (p: number) => openMushafReader(router, p);
+  const open = (p: number) => {
+    Keyboard.dismiss(); // never carry the search keyboard over a mushaf page
+    openMushafReader(router, p);
+  };
   const hits = useMemo(() => searchMushaf(q), [q]);
   const searching = q.trim().length > 0;
   const bottomPad = miniPad + insets.bottom + 24 + BOTTOM_NAV_CLEARANCE;
@@ -187,6 +190,7 @@ export default function MushafIndex() {
       <Screen scroll={false} bottomPad={0} padded>
         <Title onBack={() => router.back()} />
         <FlatList
+          key="rows"
           data={hits}
           keyExtractor={(h, i) => `${h.kind}${i}`}
           renderItem={({ item }) => hitRow(item, open)}
@@ -206,14 +210,21 @@ export default function MushafIndex() {
   return (
     <Screen scroll={false} bottomPad={0} padded>
       <Title onBack={() => router.back()} />
+      {/* Keyed by column count: the juz grid has numColumns={5}, and React Native
+          can't change numColumns on a reused FlatList (Android crash). The
+          one-column lists (suras / marks / search) share a key on purpose, so
+          the search box in their header is NOT remounted while typing — a
+          remount dropped its focus and the next tap only closed the keyboard. */}
       {tab === 'suras' ? (
         <FlatList
+          key="rows"
           data={SURAS}
           keyExtractor={(_, i) => String(i)}
           ListHeaderComponent={header}
           initialNumToRender={14}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: bottomPad }}
+          ListFooterComponent={<SourceNote />}
           renderItem={({ item, index }) => (
             <Row
               num={index + 1}
@@ -226,6 +237,7 @@ export default function MushafIndex() {
         />
       ) : tab === 'juz' ? (
         <FlatList
+          key="grid"
           data={Array.from({ length: 30 }, (_, i) => i + 1)}
           keyExtractor={(j) => String(j)}
           numColumns={5}
@@ -233,6 +245,7 @@ export default function MushafIndex() {
           keyboardShouldPersistTaps="handled"
           columnWrapperStyle={{ gap: 8 }}
           contentContainerStyle={{ gap: 8, paddingBottom: bottomPad }}
+          ListFooterComponent={<SourceNote />}
           renderItem={({ item }) => {
             const isCur = cur?.juz === item;
             return (
@@ -244,6 +257,7 @@ export default function MushafIndex() {
         />
       ) : (
         <FlatList
+          key="rows"
           data={bookmarks}
           keyExtractor={(p) => String(p)}
           ListHeaderComponent={
@@ -260,13 +274,28 @@ export default function MushafIndex() {
             <Row icon="bookmark" title={pageInfo(item).suraName} meta="علامتك" page={item} onPress={() => open(item)} />
           )}
           ListFooterComponent={
-            <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 10, lineHeight: 19 }}>
-              موضع القراءة يُحفظ وحده عند كل تقليب. العلامات تضعها أنت من شريط القراءة. وكلاهما يُحفظ على جهازك فقط.
-            </Txt>
+            <>
+              <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 10, lineHeight: 19 }}>
+                موضع القراءة يُحفظ وحده عند كل تقليب. العلامات تضعها أنت من شريط القراءة. وكلاهما يُحفظ على جهازك فقط.
+              </Txt>
+              <SourceNote />
+            </>
           }
         />
       )}
     </Screen>
+  );
+}
+
+/** Source attribution — quietly at the end of the index, never on a mushaf page. */
+function SourceNote() {
+  return (
+    <View style={styles.source}>
+      <View style={styles.sourceRule} />
+      <Txt size={11.5} color={colors.textGhost} align="center" style={{ lineHeight: 20 }}>
+        نص المصحف وخطوطه من إصدار مجمع الملك فهد لطباعة المصحف الشريف بالمدينة المنورة، جزى الله القائمين عليه خيراً.
+      </Txt>
+    </View>
   );
 }
 
@@ -282,6 +311,8 @@ function Title({ onBack }: { onBack: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  source: { alignItems: 'center', gap: 10, paddingTop: 20, paddingBottom: 8, paddingHorizontal: 12 },
+  sourceRule: { width: 36, height: 1, backgroundColor: colors.borderSand2 },
   packBanner: {
     flexDirection: 'row',
     alignItems: 'center',

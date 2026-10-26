@@ -2,6 +2,8 @@
  * فوائد الدارسين — one unified page (Concept 1): every visible benefit,
  * newest first, lecture-linked or «فائدة عامة». Anonymous as before; the
  * existing report / delete-own / admin hide+delete+ban paths are unchanged.
+ * Registered users add a GENERAL benefit in the box at the top (BenefitComposer);
+ * lesson benefits are added inside the lesson, as before.
  * Route: /(student)/benefits (Home door).
  */
 import Feather from '@expo/vector-icons/Feather';
@@ -20,7 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { BenefitFeedKind, FeedBenefit } from '@/api/benefits';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { AddBenefitSheet } from '@/components/benefits/AddBenefitSheet';
+import { BenefitComposer } from '@/components/benefits/BenefitComposer';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { SourceLink } from '@/components/questions/SourceLink';
 import { ReportSheet } from '@/components/reports/ReportSheet';
@@ -86,7 +88,6 @@ export default function BenefitsScreen() {
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
   const [kind, setKind] = useState<BenefitFeedKind>('all');
-  const [adding, setAdding] = useState(false);
   const [reportTarget, setReportTarget] = useState<FeedBenefit | null>(null);
   const [pendingDelete, setPendingDelete] = useState<FeedBenefit | null>(null);
   const feed = useBenefitsFeed(kind);
@@ -100,6 +101,13 @@ export default function BenefitsScreen() {
       <Txt size={12.5} color={colors.textMuted} style={{ marginBottom: 12, lineHeight: 20 }}>
         ما يقيّده إخوانك من الدروس ومن غيرها، الأحدث أولاً، وتُنشر دون أسماء
       </Txt>
+      {!isGuest ? (
+        <BenefitComposer
+          onPosted={() => {
+            if (kind === 'lecture') setKind('all');
+          }}
+        />
+      ) : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         {KINDS.filter((k) => !(k.registeredOnly && isGuest)).map((k) => {
           const on = k.key === kind;
@@ -143,19 +151,6 @@ export default function BenefitsScreen() {
         <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
           فوائد الدارسين
         </Txt>
-        {!isGuest ? (
-          <Pressable
-            onPress={() => setAdding(true)}
-            accessibilityRole="button"
-            accessibilityLabel="إضافة فائدة"
-            style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}
-          >
-            <Feather name="plus" size={15} color={colors.onTealPrimary} />
-            <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
-              فائدة
-            </Txt>
-          </Pressable>
-        ) : null}
       </View>
 
       <FlatList
@@ -164,6 +159,7 @@ export default function BenefitsScreen() {
         data={rows}
         keyExtractor={(b) => b.id}
         ListHeaderComponent={header}
+        keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <BenefitCard b={item} onReport={() => setReportTarget(item)} onDelete={() => setPendingDelete(item)} />
         )}
@@ -196,26 +192,12 @@ export default function BenefitsScreen() {
               <Txt size={12} color={colors.textGhost} align="center" style={{ lineHeight: 19 }}>
                 كن أول من يقيّد فائدة. تُنشر دون اسمك، ويستطيع كل دارس أن ينتفع بها.
               </Txt>
-              {!isGuest ? (
-                <Pressable onPress={() => setAdding(true)} style={({ pressed }) => [styles.addBtn, { marginTop: 6 }, pressed && { opacity: 0.85 }]}>
-                  <Txt size={12.5} weight="semibold" color={colors.onTealPrimary}>
-                    أضف فائدة
-                  </Txt>
-                </Pressable>
-              ) : null}
             </View>
           )
         }
         ListFooterComponent={feed.isFetchingNextPage ? <ActivityIndicator color={colors.primaryTeal} style={{ marginVertical: 12 }} /> : null}
       />
 
-      <AddBenefitSheet
-        visible={adding}
-        onClose={() => setAdding(false)}
-        onPosted={() => {
-          if (kind !== 'all' && kind !== 'mine') setKind('all');
-        }}
-      />
       <ReportSheet
         visible={!!reportTarget}
         pending={report.isPending}
@@ -260,14 +242,5 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSand,
   },
   chipOn: { backgroundColor: colors.primaryTeal, borderColor: colors.primaryTeal },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.primaryTeal,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
   empty: { alignItems: 'center', gap: 8, paddingVertical: 48, paddingHorizontal: 16 },
 });

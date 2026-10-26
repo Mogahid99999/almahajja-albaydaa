@@ -14,7 +14,7 @@
  * Slot positions are derived on the UI thread from (offset, base page), and the
  * commit swaps both in the same frame, so a turn never flickers.
  */
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -118,7 +118,14 @@ export function MushafPager({
       if (ok) runOnJS(onTap)();
     });
 
-  const pages = [page - 1, page, page + 1].filter((p) => p >= 1 && p <= PAGE_COUNT);
+  // Open fast: the page on screen renders alone in the first frame, its two
+  // neighbours (needed only once a swipe starts) right after it.
+  const [warm, setWarm] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setWarm(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const pages = (warm ? [page - 1, page, page + 1] : [page]).filter((p) => p >= 1 && p <= PAGE_COUNT);
 
   return (
     <GestureDetector gesture={Gesture.Race(pan, tap)}>
@@ -136,7 +143,11 @@ export function MushafPager({
         }}
       >
         {pages.map((p) => (
-          <Slot key={p} page={p} base={base} offset={offset} width={width}>
+          // Keyed by position (−1 / 0 / +1), not by page: a turn re-fills the
+          // same three slots instead of unmounting one page and mounting
+          // another. Mounting ~150 word <Text>s per turn leaked native memory
+          // steadily on Android (≈1 MB a turn, measured on device).
+          <Slot key={p - page} page={p} base={base} offset={offset} width={width}>
             {renderPage(p)}
           </Slot>
         ))}

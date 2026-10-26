@@ -18,6 +18,7 @@ jest.mock('@/hooks/useLecture', () => ({ useRecentLectures: () => ({ data: [], i
 jest.mock('@/hooks/useSearch', () => ({ useContentSearch: () => ({ data: null, isLoading: false }) }));
 
 const mockFeed = jest.fn();
+const mockPost = jest.fn();
 jest.mock('@/hooks/useBenefits', () => ({
   useBenefitsFeed: (kind: string) => {
     mockFeed(kind);
@@ -57,7 +58,7 @@ jest.mock('@/hooks/useBenefits', () => ({
     };
   },
   useDeleteMyBenefit: () => ({ mutate: jest.fn(), isPending: false }),
-  usePostBenefit: () => ({ mutate: jest.fn(), isPending: false }),
+  usePostBenefit: () => ({ mutate: mockPost, isPending: false }),
 }));
 
 import BenefitsScreen from '../../app/(student)/benefits';
@@ -84,11 +85,11 @@ test('filters: الكل / من المحاضرات / فوائد عامة / فوا
   expect(mockFeed).toHaveBeenLastCalledWith('mine');
 });
 
-test('the add sheet offers a lesson benefit or a general one', async () => {
-  const { getByLabelText, getByText, getAllByText } = await render(<BenefitsScreen />);
-  await fireEvent.press(getByLabelText('إضافة فائدة'));
-  expect(getByText('فائدة من درس')).toBeTruthy();
-  const general = getAllByText('فائدة عامة');
-  await fireEvent.press(general[general.length - 1]);
-  expect(getByLabelText('نص الفائدة')).toBeTruthy();
+test('registered users add a GENERAL benefit in the inline box — no lesson picker here', async () => {
+  const { getByLabelText, getByText, queryByText } = await render(<BenefitsScreen />);
+  expect(getByText('قيّد فائدة')).toBeTruthy();
+  await fireEvent.changeText(getByLabelText('نص الفائدة'), 'من بركة العلم نسبته إلى قائله');
+  await fireEvent.press(getByText('نشر الفائدة'));
+  expect(mockPost).toHaveBeenCalledWith({ lectureId: null, body: 'من بركة العلم نسبته إلى قائله' }, expect.anything());
+  expect(queryByText('فائدة من درس')).toBeNull();
 });

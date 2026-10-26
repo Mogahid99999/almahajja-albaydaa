@@ -5,7 +5,7 @@
  * Shows ONLY the download size (space is checked internally and mentioned only
  * when short), real progress (٪ · «X م.ب / Y م.ب» · bar), a clear stopped state
  * with «متابعة التحميل» / «إعادة المحاولة», then «تم تجهيز المصحف ✓» and the
- * reader. The quiet «اقرأ الآن بالخط المبسّط» link opens the bundled text at
+ * reader. The outlined «اقرأ الآن بالخط المبسّط» button opens the bundled text at
  * once and never cancels or deletes a partial download. Never shown again
  * once the pack is ready.
  */
@@ -165,8 +165,13 @@ export default function MushafPrepare() {
       </View>
 
       {status.state !== 'ready' && status.state !== 'checking' ? (
-        <Pressable onPress={readSimple} accessibilityRole="link" hitSlop={8} style={{ alignSelf: 'center', marginTop: 18, padding: 6 }}>
-          <Txt size={12.5} color={colors.textFaint} style={{ textDecorationLine: 'underline' }}>
+        <Pressable
+          onPress={readSimple}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.simpleBtn, pressed && { opacity: 0.8 }]}
+        >
+          <Feather name="book-open" size={16} color={colors.primaryTeal} />
+          <Txt size={14} weight="semibold" color={colors.primaryTeal}>
             اقرأ الآن بالخط المبسّط
           </Txt>
         </Pressable>
@@ -217,6 +222,19 @@ const styles = StyleSheet.create({
     borderRadius: radius.input,
     padding: 12,
     marginVertical: 14,
+  },
+  // Secondary to «تحميل المصحف»: outlined, never competes with the download.
+  simpleBtn: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: radius.input,
+    borderWidth: 1.5,
+    borderColor: colors.primaryTeal,
+    backgroundColor: colors.surfaceCard,
   },
   doneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 },
 });

@@ -76,10 +76,12 @@ const L = M.map((lines) => lines.map((ln) => {
   return out.join(' ');
 }).join('|'));
 
-// Fixed-page fitting for the V22 font: logical page width 340, font 17px, 4px min
-// gap. Lines whose natural width exceeds the line get ONE uniform shrink factor
-// (glyphs are never squeezed; words are never moved to another line).
-const FX = { width: 340, font: 17, gap: 4, margin: 0.985 };
+// Fixed-page fitting for the V22 font: logical page width 340, font 19px, 2px min
+// gap (owner: 17px read small with wide gaps). Lines whose natural width exceeds
+// the line get ONE uniform shrink factor (glyphs are never squeezed; words are
+// never moved to another line). scripts/mushaf/measure-simple-lines.mjs
+// re-measures and rewrites fx + shrink on its own (Chromium shaping, same rule).
+const FX = { width: 340, font: 19, gap: 2, margin: 0.985 };
 const shrink = {};
 W100.lines.forEach((lines, pi) => lines.forEach((x, li) => {
   if (!x) return;

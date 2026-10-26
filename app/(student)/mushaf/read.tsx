@@ -8,10 +8,13 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useFonts } from 'expo-font';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View, useWindowDimensions } from 'react-native';
+// The reading chrome sits over the pager's native Pan/Tap; gesture-handler's
+// Pressable joins that arbitration, so a press on Tt / ☰ isn't lost to it.
+import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MushafPage, MUSHAF_PAPER, HAFS_FAMILY, type MushafMode } from '@/components/mushaf/MushafPage';
@@ -19,7 +22,7 @@ import { MushafPager } from '@/components/mushaf/MushafPager';
 import { TextSizeIcon } from '@/components/mushaf/TextSizeIcon';
 import { Txt } from '@/components/ui';
 import { colors } from '@/constants/theme';
-import { activePackUri, initPack, loadGlyphIndex, usePackStore, type GlyphIndex } from '@/mushaf/pack';
+import { activePackUri, cachedGlyphIndex, initPack, loadGlyphIndex, usePackStore, type GlyphIndex } from '@/mushaf/pack';
 import { ar, clampPage, pageInfo } from '@/mushaf/quran';
 import { FONT_LEVELS, useMushafStore } from '@/mushaf/store';
 import { useQuranText } from '@/mushaf/text';
@@ -49,7 +52,8 @@ export default function MushafReader() {
   const [chrome, setChrome] = useState(true);
   const [fsOpen, setFsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [glyphs, setGlyphs] = useState<GlyphIndex | null>(null);
+  // Already in memory after the first open → no simplified-then-print double render.
+  const [glyphs, setGlyphs] = useState<GlyphIndex | null>(cachedGlyphIndex);
 
 
   useEffect(() => {
@@ -81,6 +85,24 @@ export default function MushafReader() {
 
   const mode: MushafMode = level > 0 ? 'flex' : printReady && glyphs ? 'print' : 'simple';
 
+  // On Android a touch on the reading bar ALSO reaches the page's native Tap
+  // gesture underneath, which then hid the bar (and closed the font panel)
+  // right after the button's own press — so Tt / ☰ looked dead. Touches that
+  // start on the chrome are stamped here and the page tap ignores them.
+  const chromeTouchAt = useRef(0);
+  // ☰: back to the index when it is the screen underneath; otherwise (opened
+  // from the Home door / «تابع») swap the reader for it. navigate('/mushaf')
+  // did nothing on device in the second case.
+  const navigation = useNavigation();
+  const openIndex = () => {
+    const st = navigation.getState();
+    const prev = st ? st.routes[st.index - 1] : undefined;
+    if (prev?.name === 'mushaf/index') router.back();
+    else router.replace('/mushaf');
+  };
+  const onChromeTouch = () => {
+    chromeTouchAt.current = Date.now();
+  };
   const showChrome = useCallback((on: boolean) => {
     setChrome(on);
     if (!on) setFsOpen(false);
@@ -144,15 +166,18 @@ export default function MushafReader() {
           onTurnStart={() => {
             if (chrome) showChrome(false);
           }}
-          onTap={() => showChrome(!chrome)}
+          onTap={() => {
+            if (Date.now() - chromeTouchAt.current < 600) return;
+            showChrome(!chrome);
+          }}
           renderPage={renderPage}
         />
       )}
 
       {/* Quiet reading chrome */}
       {chrome ? (
-        <View style={[styles.bar, { top }]}>
-          <Pressable onPress={() => router.navigate('/mushaf')} accessibilityLabel="الفهرس" hitSlop={6} style={styles.ib}>
+        <View style={[styles.bar, { top }]} onTouchStart={onChromeTouch}>
+          <Pressable onPress={openIndex} accessibilityLabel="الفهرس" hitSlop={6} style={styles.ib}>
             <Feather name="list" size={19} color={colors.primaryTeal} />
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
@@ -193,7 +218,7 @@ export default function MushafReader() {
       ) : null}
 
       {chrome && fsOpen ? (
-        <View style={[styles.fsPanel, { top: top + 58 }]}>
+        <View style={[styles.fsPanel, { top: top + 58 }]} onTouchStart={onChromeTouch}>
           <View style={styles.fsRow}>
             <Pressable
               onPress={() => setLevel(level - 1)}
@@ -243,6 +268,7 @@ export default function MushafReader() {
             setLevel(0);
             setToast('عادت صفحة المصحف إلى حجمها الأصلي');
           }}
+          onTouchStart={onChromeTouch}
           style={[styles.pill, { bottom: insets.bottom + 34 }]}
         >
           <Txt size={11.5} weight="semibold" color={colors.primaryTeal}>

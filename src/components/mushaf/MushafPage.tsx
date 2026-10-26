@@ -52,23 +52,27 @@ function SuraHeader({ sura, flex }: { sura: number; flex?: boolean }) {
   );
 }
 
+/**
+ * Whether THIS page's font is registered — read from the font registry on every
+ * render, never remembered: the pager reuses its three slots across turns, so a
+ * flag kept in state would still say «ready» for the previous page and draw the
+ * new page's glyph codes before its font exists (blank words that never redraw).
+ * The state only triggers the redraw once the font has loaded.
+ */
 function usePageFont(packUri: string | null, page: number, enabled: boolean) {
-  const [ready, setReady] = useState(() => isPageFontLoaded(page));
+  const [, setLoadedTick] = useState(0);
   useEffect(() => {
-    if (!enabled || !packUri || isPageFontLoaded(page)) {
-      setReady(isPageFontLoaded(page));
-      return;
-    }
+    if (!enabled || !packUri || isPageFontLoaded(page)) return;
     let alive = true;
     ensurePageFont(packUri, page).then(
-      () => alive && setReady(true),
-      () => alive && setReady(false),
+      () => alive && setLoadedTick((n) => n + 1),
+      () => {},
     );
     return () => {
       alive = false;
     };
   }, [packUri, page, enabled]);
-  return ready;
+  return isPageFontLoaded(page);
 }
 
 function FixedPage({
