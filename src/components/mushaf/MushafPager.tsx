@@ -143,11 +143,14 @@ export function MushafPager({
         }}
       >
         {pages.map((p) => (
-          // Keyed by position (−1 / 0 / +1), not by page: a turn re-fills the
-          // same three slots instead of unmounting one page and mounting
-          // another. Mounting ~150 word <Text>s per turn leaked native memory
-          // steadily on Android (≈1 MB a turn, measured on device).
-          <Slot key={p - page} page={p} base={base} offset={offset} width={width}>
+          // Keyed by page % 3: the same three slots are re-filled forever
+          // (mounting ~150 word <Text>s per turn leaked native memory on
+          // Android, ≈1 MB a turn), and a page keeps ITS slot across a turn,
+          // so the pages on screen never swap content at the commit (keying
+          // by position did — one frame showed the wrong page: a flash). Only
+          // the slot that has left the screen is re-filled with the new
+          // neighbour.
+          <Slot key={p % 3} page={p} base={base} offset={offset} width={width}>
             {renderPage(p)}
           </Slot>
         ))}
