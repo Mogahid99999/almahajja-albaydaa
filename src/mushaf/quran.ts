@@ -93,6 +93,15 @@ function suraStartOf(tokens: Token[]): number {
 
 const rawLines = (p: number) => PAGE_LINES[p - 1].split('|').map(parseLine);
 
+/** Number of Quran words on a printed page (ayah markers excluded). */
+export function pageWordCount(p: number): number {
+  let n = 0;
+  for (const line of rawLines(clampPage(p))) {
+    for (const t of line) if (t.k === 'w') n += t.to - t.from + 1;
+  }
+  return n;
+}
+
 /**
  * The 15 lines of a page. Empty layout lines are a sura header or the basmala:
  * a run of two before a sura start = header + basmala; at the top of a page a

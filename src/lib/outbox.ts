@@ -22,7 +22,7 @@ import { isOnline, onReconnect } from '@/lib/connectivity';
 import { replayActivity } from '@/api/progress';
 import { replayBookmark } from '@/api/bookmarks';
 import { saveMyNote } from '@/api/notes';
-import { setWeeklyGoal } from '@/api/journey';
+import { recordQuranWirdDay, setWeeklyGoal } from '@/api/journey';
 import {
   hasPending,
   loadQueue,
@@ -31,7 +31,7 @@ import {
   setOnEnqueue,
 } from '@/lib/outboxQueue';
 
-export type { OutboxActivity, OutboxEntry, OutboxGoal, OutboxNote } from '@/lib/outboxQueue';
+export type { OutboxActivity, OutboxEntry, OutboxGoal, OutboxNote, OutboxWird } from '@/lib/outboxQueue';
 export {
   clearQueue as clearOutbox,
   enqueueActivity,
@@ -97,6 +97,9 @@ async function doFlush(): Promise<void> {
       } else if (entry.kind === 'bookmark') {
         await replayBookmark(entry);
         didBookmark = true;
+      } else if (entry.kind === 'wird') {
+        await recordQuranWirdDay(entry.day);
+        didGoal = true;
       } else {
         await setWeeklyGoal(entry.metric, entry.target);
         didGoal = true;

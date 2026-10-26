@@ -156,6 +156,18 @@ export async function setWeeklyGoal(metric: GoalMetric, target: number): Promise
   if (error) throw error;
 }
 
+/**
+ * «ورد القرآن اليومي» completed on `day` (device-local YYYY-MM-DD): the day
+ * counts in المداومة like a meaningful listening day (0162). Idempotent. Only
+ * this fact is sent — no page, sura or count. Called from the outbox replay.
+ */
+export async function recordQuranWirdDay(day: string): Promise<void> {
+  if (USE_MOCK) return;
+  // `as never`: not in database.generated.ts until 0162 is applied + types regenerated.
+  const { error } = await supabase.rpc('record_quran_wird_day' as never, { p_day: day } as never);
+  if (error) throw error;
+}
+
 /** One touched series on «خريطة رحلتي» (§6). */
 export type JourneyMapEntry = {
   sectionId: string;

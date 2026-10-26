@@ -41,7 +41,12 @@ export type OutboxBookmark = {
   positionSec: number;
   note: string | null;
 };
-export type OutboxEntry = OutboxActivity | OutboxNote | OutboxGoal | OutboxBookmark;
+/**
+ * «ورد القرآن اليومي» completed on `day` (device-local). One per day; the
+ * server write (record_quran_wird_day) is idempotent, so a replay is harmless.
+ */
+export type OutboxWird = { kind: 'wird'; day: string };
+export type OutboxEntry = OutboxActivity | OutboxNote | OutboxGoal | OutboxBookmark | OutboxWird;
 
 /** Device-local YYYY-MM-DD (the day the activity is credited to). */
 export function localDay(d: Date = new Date()): string {
@@ -214,6 +219,14 @@ export async function enqueueBookmark(e: {
 }): Promise<void> {
   const q = await load();
   q.push({ kind: 'bookmark', ...e });
+  await persist();
+  onEnqueue?.();
+}
+
+/** Queue «the wird was completed on `day`» — at most one entry per day. */
+export async function enqueueWirdDay(day: string): Promise<void> {
+  const q = await load();
+  if (!q.some((x) => x.kind === 'wird' && x.day === day)) q.push({ kind: 'wird', day });
   await persist();
   onEnqueue?.();
 }

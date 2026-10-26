@@ -4,7 +4,9 @@
  * Mode: Madinah print once the pack is verified; the bundled simplified font
  * before that; enlarged (reflowed, vertical scroll) whenever A+ is on.
  * Chrome (index · sura/juz · Tt · bookmark) appears on tap and hides itself
- * while reading. The position is saved on every page turn.
+ * while reading. The position is saved on every page turn. With a daily wird,
+ * the page on screen counts toward it once it has really been read
+ * (useWirdReading); its progress sits in the reading bar only.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useFonts } from 'expo-font';
@@ -27,6 +29,8 @@ import { ar, clampPage, pageInfo } from '@/mushaf/quran';
 import { FONT_LEVELS, useMushafStore } from '@/mushaf/store';
 import { useQuranText } from '@/mushaf/text';
 import { touchMushafUsage } from '@/mushaf/usage';
+import { useWirdReading } from '@/mushaf/useWirdReading';
+import { useWirdToday } from '@/mushaf/useWirdToday';
 
 const CHROME_MS = 3500;
 
@@ -52,6 +56,8 @@ export default function MushafReader() {
   const [chrome, setChrome] = useState(true);
   const [fsOpen, setFsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // The font panel opens just under the bar, whose height grows with the wird line.
+  const [barH, setBarH] = useState(52);
   // Already in memory after the first open → no simplified-then-print double render.
   const [glyphs, setGlyphs] = useState<GlyphIndex | null>(cachedGlyphIndex);
 
@@ -120,6 +126,15 @@ export default function MushafReader() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  const wird = useWirdToday();
+  const [wirdDone, setWirdDone] = useState(false);
+  useWirdReading(page, fontsOk && !!text, () => setWirdDone(true));
+  useEffect(() => {
+    if (!wirdDone) return;
+    const t = setTimeout(() => setWirdDone(false), 6000);
+    return () => clearTimeout(t);
+  }, [wirdDone]);
+
   const info = pageInfo(page);
   const marked = bookmarks.includes(page);
   const ready = fontsOk && !!text;
@@ -176,7 +191,11 @@ export default function MushafReader() {
 
       {/* Quiet reading chrome */}
       {chrome ? (
-        <View style={[styles.bar, { top }]} onTouchStart={onChromeTouch}>
+        <View
+          style={[styles.bar, { top }]}
+          onTouchStart={onChromeTouch}
+          onLayout={(e) => setBarH(e.nativeEvent.layout.height)}
+        >
           <Pressable onPress={openIndex} accessibilityLabel="الفهرس" hitSlop={6} style={styles.ib}>
             <Feather name="list" size={19} color={colors.primaryTeal} />
           </Pressable>
@@ -187,6 +206,14 @@ export default function MushafReader() {
             <Txt size={10.5} color={colors.textGhost}>
               الجزء {ar(info.juz)} · صفحة {ar(page)}
             </Txt>
+            {wird.goal != null ? (
+              <Txt size={10.5} weight="semibold" color={wird.done ? colors.stateSuccess : colors.accentBrassMuted}>
+                {/* «من», not «·» or «/»: beside Arabic digits a dot reads as a zero (١٠). */}
+                {wird.done
+                  ? 'ورد اليوم: أتممته'
+                  : `ورد اليوم: ${ar(Math.min(wird.count, wird.goal))} من ${ar(wird.goal)}`}
+              </Txt>
+            ) : null}
           </View>
           <Pressable
             onPress={() => {
@@ -218,7 +245,7 @@ export default function MushafReader() {
       ) : null}
 
       {chrome && fsOpen ? (
-        <View style={[styles.fsPanel, { top: top + 58 }]} onTouchStart={onChromeTouch}>
+        <View style={[styles.fsPanel, { top: top + barH + 6 }]} onTouchStart={onChromeTouch}>
           <View style={styles.fsRow}>
             <Pressable
               onPress={() => setLevel(level - 1)}
@@ -288,6 +315,22 @@ export default function MushafReader() {
           <Feather name="arrow-right" size={14} color={colors.onTealPrimary} />
           <Txt size={12} color={colors.onTealPrimary}>اسحب إلى اليمين للصفحة التالية</Txt>
         </View>
+      ) : null}
+
+      {wirdDone ? (
+        <Pressable
+          onPress={() => setWirdDone(false)}
+          onTouchStart={onChromeTouch}
+          accessibilityRole="alert"
+          style={[styles.wirdDone, { bottom: insets.bottom + 56 }]}
+        >
+          <Txt size={14.5} weight="semibold" color={colors.primaryTeal} align="center">
+            أتممت وردك اليومي 🤍
+          </Txt>
+          <Txt size={12.5} color={colors.textMuted} align="center">
+            تقبّل الله منك وزادك علماً وهدى.
+          </Txt>
+        </Pressable>
       ) : null}
 
       {toast ? (
@@ -383,6 +426,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingVertical: 7,
     paddingHorizontal: 14,
+  },
+  wirdDone: {
+    position: 'absolute',
+    alignSelf: 'center',
+    gap: 3,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceCard,
+    borderWidth: 1,
+    borderColor: colors.borderSand2,
+    elevation: 4,
+    shadowColor: '#16352f',
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
   },
   toast: {
     position: 'absolute',

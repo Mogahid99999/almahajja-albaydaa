@@ -47,6 +47,7 @@ import { ResumeCard } from '@/components/journey/ResumeCard';
 import { JourneyMap } from '@/components/journey/JourneyMap';
 import { StreakDetailCard } from '@/components/journey/StreakDetailCard';
 import { StreakRing } from '@/components/journey/StreakRing';
+import { WirdCard } from '@/components/journey/WirdCard';
 
 /** One lifetime-total stat tile. */
 function StatCard({ value, label }: { value: string; label: string }) {
@@ -180,6 +181,11 @@ export default function JourneyScreen() {
               </Card>
             </Pressable>
           ) : null}
+
+          {/* ── ورد القرآن اليومي — one of the day's activities ─────────────────── */}
+          <View style={{ marginBottom: 16 }}>
+            <WirdCard />
+          </View>
 
           {/* ── Weekly goal ──────────────────────────────────────────────────── */}
           <View style={{ marginBottom: 16 }}>
