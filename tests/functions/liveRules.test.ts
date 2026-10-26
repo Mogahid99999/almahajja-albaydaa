@@ -154,6 +154,17 @@ describe('role in the session', () => {
     );
   });
 
+  test('0163 «متحدث دائم»: joins every session as a speaker, unless demoted in this one; never a guest', () => {
+    const base = { userId: USER, appRole: 'student', isGuest: false, hostUserId: HOST };
+    expect(liveRoleFor({ ...base, permanentSpeaker: true })).toBe('speaker');
+    expect(liveRoleFor({ ...base, permanentSpeaker: true, storedRole: 'listener' })).toBe('speaker');
+    expect(liveRoleFor({ ...base, permanentSpeaker: true, demotedHere: true, storedRole: 'listener' })).toBe('listener');
+    // re-approved after a demote: the stored speaker role wins again
+    expect(liveRoleFor({ ...base, permanentSpeaker: true, demotedHere: true, storedRole: 'speaker' })).toBe('speaker');
+    expect(liveRoleFor({ ...base, isGuest: true, permanentSpeaker: true })).toBe('listener');
+    expect(liveRoleFor({ ...base, appRole: 'admin', permanentSpeaker: true })).toBe('moderator');
+  });
+
   test('green admits host/moderators only; live admits everyone; over is over', () => {
     expect(canJoin('green', 'host')).toEqual({ ok: true });
     expect(canJoin('green', 'moderator')).toEqual({ ok: true });
@@ -674,7 +685,15 @@ describe('live_join_context (0155) — one round trip for live-token', () => {
       stored: { role: 'speaker', hiddenName: true, reactionsBlocked: false },
       visible: true,
       identity: '0123456789abcdef',
+      permanentSpeaker: false,
+      demotedHere: false,
     });
+  });
+
+  test('0163: permanent_speaker / demoted_here must be literal true (an older RPC body omits them)', () => {
+    const ctx = parseLiveJoinContext({ ...raw, permanent_speaker: true, demoted_here: 'true' });
+    expect(ctx?.permanentSpeaker).toBe(true);
+    expect(ctx?.demotedHere).toBe(false);
   });
 
   test('a deleted user, a missing session or no stored row stay null (→ 401 / 404 / first join)', () => {

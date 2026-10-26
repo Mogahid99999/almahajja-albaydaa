@@ -6,6 +6,8 @@ import {
   deleteUser,
   getAdminUserDetail,
   getAdminUserList,
+  getLiveSpeaker,
+  setLiveSpeaker,
   setUserPassword,
   setUserRole,
   unbanUser,
@@ -60,6 +62,18 @@ export function useAdminUserDetail(userId: string) {
     queryFn: () => getAdminUserDetail(userId),
     enabled: !!userId,
   });
+}
+
+/** «متحدث دائم في البثوث» (0163): read + toggle. */
+export function useAdminLiveSpeaker(userId: string) {
+  const qc = useQueryClient();
+  const key = queryKeys.adminUserLiveSpeaker(userId);
+  const query = useQuery({ queryKey: key, queryFn: () => getLiveSpeaker(userId), enabled: !!userId });
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => setLiveSpeaker(userId, on),
+    onSuccess: (on) => qc.setQueryData(key, on),
+  });
+  return { query, toggle };
 }
 
 /**

@@ -154,11 +154,16 @@ export function liveRoleFor(input: {
   hostUserId: string | null | undefined;
   /** live_participants.role from an earlier join (keeps an approved speaker a speaker). */
   storedRole?: string | null;
+  /** 0163: an admin made him a speaker in every session («متحدث دائم»). */
+  permanentSpeaker?: boolean;
+  /** 0163: a moderator demoted him (or he stepped down) in THIS session — that wins. */
+  demotedHere?: boolean;
 }): LiveRole {
   if (input.isGuest) return "listener";
   if (input.hostUserId && input.userId === input.hostUserId) return "host";
   if (isStaffRole(input.appRole)) return "moderator";
   if (input.storedRole === "speaker") return "speaker";
+  if (input.permanentSpeaker && !input.demotedHere) return "speaker";
   return "listener";
 }
 
@@ -364,6 +369,10 @@ export type LiveJoinContext = {
   /** section_visible_to_viewer(section, profile gender). */
   visible: boolean;
   identity: unknown;
+  /** 0163 live_permanent_speakers. */
+  permanentSpeaker: boolean;
+  /** 0163: a demote/step_down for him is in this session's moderation log. */
+  demotedHere: boolean;
 };
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
@@ -402,6 +411,8 @@ export function parseLiveJoinContext(raw: unknown): LiveJoinContext | null {
       : null,
     visible: r.visible === true,
     identity: r.identity ?? null,
+    permanentSpeaker: r.permanent_speaker === true,
+    demotedHere: r.demoted_here === true,
   };
 }
 

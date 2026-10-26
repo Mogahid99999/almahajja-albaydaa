@@ -213,6 +213,13 @@ export default function SectionScreen() {
         </View>
       ) : null}
 
+      {/* ── Attachments (PRD §13) — above the lectures (owner 2026-10-26) ──────── */}
+      {attachments.length > 0 ? (
+        <View style={{ paddingHorizontal: spacing.screenH, marginTop: 26 }}>
+          <AttachmentList attachments={attachments} sectionTitle={section.title} />
+        </View>
+      ) : null}
+
       {/* ── Lectures list title ───────────────────────────────────────────────── */}
       <View style={{ paddingHorizontal: spacing.screenH, marginTop: 26 }}>
         <SectionTitle title="محاضرات القسم" />
@@ -228,13 +235,6 @@ export default function SectionScreen() {
           <QuizListCard quizzes={quizzes} isChildNode={parentTitle != null} />
         </View>
       ) : null}
-
-      {/* ── Attachments (PRD §13) ────────────────────────────────────────────── */}
-      {attachments.length > 0 ? (
-        <View style={{ paddingHorizontal: spacing.screenH, marginTop: 26 }}>
-          <AttachmentList attachments={attachments} sectionTitle={section.title} />
-        </View>
-      ) : null}
     </>
   );
 
@@ -244,7 +244,7 @@ export default function SectionScreen() {
       padded
       // bottomPad moves INTO the FlatList content below — reserving it on the
       // outer container (with scroll={false}) would sit the list inside the pad
-      // and clip the quizzes/attachments footer, leaving a dead band above the
+      // and clip the quizzes footer, leaving a dead band above the
       // nav bar (the owner's screenshot). miniPad is 0 when nothing is playing.
       bottomPad={0}
       // Nav bar needs negative margin to break out of screen padding — we give

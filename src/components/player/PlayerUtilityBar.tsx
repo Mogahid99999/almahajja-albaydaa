@@ -1,14 +1,14 @@
 /**
  * Bottom utility bar (absolute-positioned, 26px from bottom) — sits directly
  * under the lesson-tools row (ملاحظاتي · الفوائد · الأسئلة · تحميل) and
- * holds the playback-speed slider (see PlaybackRateSlider).
+ * holds the playback-speed button (see PlaybackRateButton).
  */
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { setRate } from '@/lib/audioController';
 import { type PlaybackRate } from '@/stores/playerStore';
-import { PlaybackRateSlider } from './PlaybackRateSlider';
+import { PlaybackRateButton } from './PlaybackRateButton';
 
 type Props = {
   lectureId: string;
@@ -31,7 +31,7 @@ export function PlayerUtilityBar({ lectureId, rate, bottom = 26 }: Props) {
         alignItems: 'center',
       }}
     >
-      <PlaybackRateSlider rate={rate} onCommit={(next) => setRate(next as PlaybackRate)} />
+      <PlaybackRateButton rate={rate} onChange={(next) => setRate(next as PlaybackRate)} />
     </View>
   );
 }

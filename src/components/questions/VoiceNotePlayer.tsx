@@ -10,7 +10,7 @@
  * Audio: a dedicated `createAudioPlayer` instance per note (not the app's shared
  * lecture player) so a short answer never disturbs an in-progress lesson. The
  * player is released on unmount / source change. The seek bar is computed in a
- * plain physical L→R coordinate space (like PlaybackRateSlider) so drag and fill
+ * plain physical L→R coordinate space (like the old playback-rate slider) so drag and fill
  * agree under global forceRTL without mirroring.
  */
 import Feather from '@expo/vector-icons/Feather';

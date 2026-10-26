@@ -122,6 +122,27 @@ export async function getAdminUserDetail(userId: string): Promise<AdminUserDetai
   };
 }
 
+// ─── «متحدث دائم في البثوث» (0163, admin-only RPCs) ─────────────────────────
+
+export async function getLiveSpeaker(userId: string): Promise<boolean> {
+  if (USE_MOCK) return false;
+  const { data, error } = await supabase.rpc('admin_get_live_speaker' as never, { p_user: userId } as never);
+  if (error) throw error;
+  return data === true;
+}
+
+export async function setLiveSpeaker(userId: string, on: boolean): Promise<boolean> {
+  const { data, error } = await supabase.rpc(
+    'admin_set_live_speaker' as never,
+    { p_user: userId, p_on: on } as never,
+  );
+  if (error) {
+    if (error.message?.includes('guest_cannot_speak')) throw new Error('حساب الضيف لا يمكنه التحدث في البث.');
+    throw error;
+  }
+  return data === true;
+}
+
 // ─── Privileged mutations via the admin-users Edge Function ───────────────────
 
 async function invokeAdmin(body: Record<string, unknown>): Promise<any> {

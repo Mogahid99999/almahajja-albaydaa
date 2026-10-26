@@ -114,6 +114,7 @@ export const queryKeys = {
   adminUsers: (search: string, registeredOnly = false, status?: string) =>
     ['admin', 'users', search, registeredOnly, status ?? null] as const,
   adminUserDetail: (userId: string) => ['admin', 'user', userId] as const,
+  adminUserLiveSpeaker: (userId: string) => ['admin', 'user', userId, 'liveSpeaker'] as const,
   adminBuddies: ['admin', 'buddies'] as const,
   aboutContent: ['appContent', 'about'] as const,
   supportContact: ['appContent', 'support'] as const,

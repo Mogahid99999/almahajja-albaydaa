@@ -37,6 +37,8 @@
 // the webhook's participant_left never touches role (0138 live_room_event) —
 // only an explicit live-control `leave` or a demote does. The new token's hand
 // starts down (h=0). A guest is always a listener (guests listen only).
+// 0163: a «متحدث دائم» (live_permanent_speakers) joins every session as a
+// speaker (mic closed) unless a moderator demoted him in this one.
 //
 // Pure rules: ../_shared/liveRules.ts (tests/functions/liveRules.test.ts).
 //
@@ -169,6 +171,8 @@ Deno.serve(async (req) => {
     isGuest,
     hostUserId: session.hostUserId,
     storedRole: stored?.role,
+    permanentSpeaker: ctx.permanentSpeaker,
+    demotedHere: ctx.demotedHere,
   });
   const join = canJoin(session.status, role);
   if (!join.ok) return fail(join.code);
@@ -223,6 +227,8 @@ Deno.serve(async (req) => {
         isGuest,
         hostUserId: session.hostUserId,
         storedRole: fresh?.role,
+        permanentSpeaker: ctx.permanentSpeaker,
+        demotedHere: ctx.demotedHere,
       });
       ({ error: upErr } = await admin
         .from("live_participants")

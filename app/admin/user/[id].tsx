@@ -25,7 +25,7 @@ import { PhoneInput } from '@/components/ui/PhoneInput';
 import { splitPhone } from '@/constants/countries';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
-import { useAdminUserActions, useAdminUserDetail } from '@/hooks/useAdminUsers';
+import { useAdminLiveSpeaker, useAdminUserActions, useAdminUserDetail } from '@/hooks/useAdminUsers';
 import { arDate, arDuration, arNum, arSince } from '@/lib/format';
 import type { AppRole } from '@/api/auth';
 import type { AdminUserProfile } from '@/api/types';
@@ -290,6 +290,11 @@ export default function AdminUserDetailScreen() {
                 })}
               </View>
             </View>
+
+            {/* «متحدث دائم في البثوث» (0163) — students only; staff already moderate. */}
+            {profile.role === 'student' && (
+              <LiveSpeakerToggle userId={userId} onDone={flash} onError={onError} />
+            )}
 
             {/* Delete account — permanent, cascades all personal data (mirrors
                 the in-app self-delete flow, now admin-only per product decision). */}
@@ -560,6 +565,54 @@ export default function AdminUserDetailScreen() {
         onCancel={() => setPendingDelete(false)}
       />
     </AdminShell>
+  );
+}
+
+/**
+ * 0163: the student joins every live session as a speaker (mic closed) — no
+ * hand, no approval — without becoming staff. Enforced by live-token; a
+ * moderator can still demote him for one session.
+ */
+function LiveSpeakerToggle({
+  userId,
+  onDone,
+  onError,
+}: {
+  userId: string;
+  onDone: (msg: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const { query, toggle } = useAdminLiveSpeaker(userId);
+  const on = query.data === true;
+  const busy = query.isLoading || toggle.isPending;
+  return (
+    <View style={{ gap: 8 }}>
+      <Txt size={12} color={colors.textMuted}>
+        التحدث في البثوث
+      </Txt>
+      <Pressable
+        disabled={busy}
+        onPress={() =>
+          toggle.mutate(!on, {
+            onSuccess: (v) => onDone(v ? 'أصبح متحدثاً دائماً في البثوث' : 'أُلغي التحدث الدائم'),
+            onError,
+          })
+        }
+        style={[
+          styles.wideBtn,
+          { backgroundColor: on ? colors.primaryTeal : colors.surfaceInset },
+          busy && { opacity: 0.5 },
+        ]}
+      >
+        <Feather name={on ? 'mic' : 'mic-off'} size={16} color={on ? colors.onTealPrimary : colors.textMuted} />
+        <Txt size={13} weight="semibold" color={on ? colors.onTealPrimary : colors.textInk}>
+          {on ? 'متحدث دائم — إلغاء' : 'السماح بالتحدث الدائم في كل البثوث'}
+        </Txt>
+      </Pressable>
+      <Txt size={11} color={colors.textFaint}>
+        يدخل كل بث متحدثاً (المايك مغلق) دون طلب أو إذن، ويبقى للمشرف أن يعيده مستمعاً في البث الواحد.
+      </Txt>
+    </View>
   );
 }
 
