@@ -55,11 +55,10 @@ class LiveForegroundService : Service() {
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    // App swiped away from Recents. The process (and the JS room) survive while
-    // this service runs, so ask JS to leave the room properly (live-control
-    // `leave`, audio released) — then drop the service either way.
-    LiveForegroundModule.emitAction("leave")
-    stopNow()
+    // App swiped away from Recents: the live KEEPS PLAYING (owner 2026-11-06 «الصوت يشتغل في كل
+    // الاحوال»). The process and the JS room survive while this foreground service runs; the
+    // ongoing notification reopens the room, and its «مغادرة» action leaves. (Until 2026-11-06 a
+    // swipe left the live.)
     super.onTaskRemoved(rootIntent)
   }
 

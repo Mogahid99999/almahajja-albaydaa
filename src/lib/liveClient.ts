@@ -60,6 +60,7 @@ import {
   REACTIONS_TOPIC,
   type ReactionKey,
 } from "@/lib/liveReactions";
+import { backgroundTimers } from "../../modules/live-foreground";
 
 // ─── SDK loading / init ─────────────────────────────────────────────────────────
 
@@ -121,6 +122,23 @@ function loadSdk(): Sdk {
 }
 
 /**
+ * The SDK's signal ping / ping timeout run on `CriticalTimers` («timers that can be overridden with
+ * platform specific implementations that ensure that they are fired»). React Native's own timers
+ * stop while the app is in the background on Android, so the overdue ping timeout fired the
+ * instant the app came back → reconnect / full re-join (2026-11-05 prod live: «جارٍ الدخول إلى
+ * الحلقة», ~35 s of silence, device log «ping timeout triggered»). Native timers keep running.
+ */
+export function installCriticalTimers(lk: Pick<typeof LK, "CriticalTimers">): void {
+  const t = backgroundTimers;
+  if (!t) return; // iOS / web / a binary without the module: the SDK's defaults
+  const ct = lk.CriticalTimers as unknown as Record<string, unknown>;
+  ct.setTimeout = (cb: () => void, ms?: number) => t.setTimeout(cb, ms);
+  ct.setInterval = (cb: () => void, ms?: number) => t.setInterval(cb, ms);
+  ct.clearTimeout = (id?: number) => t.clearTimeout(id);
+  ct.clearInterval = (id?: number) => t.clearInterval(id);
+}
+
+/**
  * Load the SDK and call `registerGlobals()` exactly once (WebRTC globals,
  * polyfills, native events) + install the iOS audio policy. Idempotent; called
  * by every entry point below, so a join works even before the warm-up ran.
@@ -135,6 +153,7 @@ export function ensureLiveKit(): Sdk {
     } catch {
       /* logging only */
     }
+    installCriticalTimers(s.lk);
     registered = true;
   }
   return s;
