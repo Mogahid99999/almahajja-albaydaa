@@ -7,6 +7,7 @@ import { colors, radius, spacing } from '@/constants/theme';
 import { arLectureCount } from '@/lib/format';
 import { usePrefetchSection } from '@/hooks/useSections';
 import { Card, SectionIcon, SectionTitle, Txt } from '@/components/ui';
+import { SectionStatusTag } from '@/components/section/SectionStatusTag';
 
 type Props = {
   sections: SectionCard[];
@@ -118,9 +119,14 @@ function SectionGridCard({
             <SectionIcon title={section.title} size={20} color={colors.primaryTeal} />
           </View>
 
-          <Txt size={11} color={colors.textGhost}>
+          <Txt size={11} color={colors.textGhost} style={{ flexShrink: 1 }} numberOfLines={1}>
             {arLectureCount(section.lectureCount)}
           </Txt>
+
+          {/* «مستمر» / «منتهي» (0164) — pushed to the row's far end */}
+          <View style={{ marginStart: 'auto' }}>
+            <SectionStatusTag status={section.seriesStatus} size="sm" />
+          </View>
         </View>
       </Card>
     </Pressable>

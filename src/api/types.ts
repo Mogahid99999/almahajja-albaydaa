@@ -87,6 +87,14 @@ export type Gender = 'male' | 'female';
  *  the section AND everything nested under it to that gender only. */
 export type SectionVisibility = 'all' | 'male' | 'female';
 
+/** «مستمر» / «منتهي» (0164) — set by the admin; null = no badge. */
+export type SectionSeriesStatus = 'ongoing' | 'completed';
+
+/** Anything else the server might send (a future value) reads as «not set». */
+export function toSeriesStatus(v: unknown): SectionSeriesStatus | null {
+  return v === 'ongoing' || v === 'completed' ? v : null;
+}
+
 /** The accepted buddy's card data — encouraging phrases only, never ranks. */
 export type BuddyStatus = {
   buddyId: string;
@@ -401,6 +409,7 @@ export type SectionCard = {
   coverLetter: string;
   lectureCount: number;
   progressPct: number;
+  seriesStatus: SectionSeriesStatus | null;
 };
 
 /** Home rail card (مختارات + downloads). */
@@ -464,6 +473,7 @@ export type SectionHeaderData = {
   coverLetter: string;
   coverImage: string | null;
   showHeader: boolean;
+  seriesStatus: SectionSeriesStatus | null;
 };
 
 export type SectionPageData = {
@@ -756,6 +766,7 @@ export type SectionEditData = {
   order: number;
   showHeader: boolean;
   visibility: SectionVisibility;
+  seriesStatus: SectionSeriesStatus | null;
 };
 
 export type UnclassifiedItem = {

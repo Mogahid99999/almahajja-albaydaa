@@ -1582,6 +1582,7 @@ export type Database = {
           order: number
           parent_id: string | null
           search_vec: unknown
+          series_status: string | null
           show_header: boolean
           title: string
           updated_at: string
@@ -1596,6 +1597,7 @@ export type Database = {
           order?: number
           parent_id?: string | null
           search_vec?: unknown
+          series_status?: string | null
           show_header?: boolean
           title: string
           updated_at?: string
@@ -1610,6 +1612,7 @@ export type Database = {
           order?: number
           parent_id?: string | null
           search_vec?: unknown
+          series_status?: string | null
           show_header?: boolean
           title?: string
           updated_at?: string

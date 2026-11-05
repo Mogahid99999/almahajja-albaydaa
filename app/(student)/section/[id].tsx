@@ -43,6 +43,7 @@ import { ProgressCard } from '@/components/section/ProgressCard';
 import { SeriesSeal } from '@/components/journey/SeriesSeal';
 import { SectionHeaderBadge } from '@/components/section/SectionHeaderBadge';
 import { SectionNavBar } from '@/components/section/SectionNavBar';
+import { SectionStatusTag } from '@/components/section/SectionStatusTag';
 import { SubsectionsScroller } from '@/components/section/SubsectionsScroller';
 import { LiveSectionPin } from '@/components/live/LiveSectionPin';
 import { AttachmentList } from '@/components/attachments/AttachmentList';
@@ -149,7 +150,7 @@ export default function SectionScreen() {
         />
       </View>
 
-      {/* ── Meta row: sheikh chips + lecture count ───────────────────────────── */}
+      {/* ── Meta row: series status + sheikh chips + lecture count ───────────── */}
       <View
         style={{
           flexDirection: 'row',
@@ -160,6 +161,8 @@ export default function SectionScreen() {
           marginTop: section.showHeader ? 14 : 10,
         }}
       >
+        {/* «مستمر» / «منتهي» (0164) — first, so a student sees it at once */}
+        <SectionStatusTag status={section.seriesStatus} />
         {sheikhNames.map((name) => (
           <Chip key={name} label={name} bullet />
         ))}

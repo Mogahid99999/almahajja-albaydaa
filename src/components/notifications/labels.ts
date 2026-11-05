@@ -36,7 +36,7 @@ export const notificationTypeLabel: Record<NotificationType, string> = {
 export const notificationTypeDescription: Record<NotificationType, string> = {
   new_lecture: 'عند نشر درس جديد',
   new_attachment: 'عند إضافة مرفق جديد',
-  new_quiz: 'عند نشر اختبار في قسم تتابعه',
+  new_quiz: 'عند نشر اختبار جديد',
   beneficial_reminder: 'تذكيرات نافعة من إدارة المنصة',
   resume_reminder: 'تذكير لطيف بدرس لم تكمله',
   noncompletion_gentle: 'كلمة لطيفة إن توقفت قبل الإكمال',

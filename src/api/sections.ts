@@ -10,6 +10,7 @@ import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import type { HomeData, FlatSectionNode, SectionPageData, SectionCard, LectureRow, LectureCard, Attachment } from './types';
+import { toSeriesStatus } from './types';
 import { resolveAttachmentRows } from './attachments';
 import { getLecturePlayback } from './lectures';
 import { mapCard, type RawStatusRow } from './quizzes';
@@ -26,7 +27,15 @@ function coverLetter(stored: string, title: string): string {
 
 /** The jsonb document shape returned by the get_home_page RPC (migration 0047). */
 type HomePageRpc = {
-  sections: { id: string; title: string; cover_letter: string; total: number; completed: number }[];
+  sections: {
+    id: string;
+    title: string;
+    cover_letter: string;
+    total: number;
+    completed: number;
+    /** 0164 — absent before that migration. */
+    series_status?: string | null;
+  }[];
   newly_added: {
     id: string;
     title: string;
@@ -76,6 +85,7 @@ export async function getHomeData(): Promise<HomeData> {
       coverLetter: coverLetter(s.cover_letter, s.title),
       lectureCount: total,
       progressPct: total > 0 ? Math.round((completed / total) * 100) : 0,
+      seriesStatus: toSeriesStatus(s.series_status),
     };
   });
 
@@ -136,10 +146,18 @@ type SectionPageRpc = {
     cover_letter: string;
     show_header: boolean;
     parent_id: string | null;
+    series_status?: string | null;
   };
   parent_title: string | null;
   rollup: { total: number; completed: number; sheikh_names: string[] };
-  subsections: { id: string; title: string; cover_letter: string; total: number; completed: number }[];
+  subsections: {
+    id: string;
+    title: string;
+    cover_letter: string;
+    total: number;
+    completed: number;
+    series_status?: string | null;
+  }[];
   lectures: {
     id: string;
     title: string;
@@ -193,6 +211,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
       coverLetter: coverLetter(s.cover_letter, s.title),
       lectureCount: t,
       progressPct: t > 0 ? Math.round((c / t) * 100) : 0,
+      seriesStatus: toSeriesStatus(s.series_status),
     };
   });
 
@@ -221,6 +240,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
       coverLetter: coverLetter(page.section.cover_letter, page.section.title),
       coverImage: page.section.cover_image,
       showHeader: page.section.show_header,
+      seriesStatus: toSeriesStatus(page.section.series_status),
     },
     parentTitle: page.parent_title ?? null,
     sheikhNames: page.rollup?.sheikh_names ?? [],

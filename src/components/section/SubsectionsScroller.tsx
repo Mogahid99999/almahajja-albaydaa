@@ -19,6 +19,7 @@ import { usePrefetchSection } from '@/hooks/useSections';
 import { SectionIcon } from '@/components/ui/SectionIcon';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
+import { SectionStatusTag } from '@/components/section/SectionStatusTag';
 import type { SectionCard } from '@/api/types';
 
 type Props = {
@@ -101,9 +102,20 @@ export function SubsectionsScroller({ subsections }: Props) {
                 <SectionIcon title={sub.title} size={20} color={colors.primaryTeal} />
               </View>
 
-              <Txt size={11} color={colors.textGhost} tabular>
+              <Txt
+                size={11}
+                color={colors.textGhost}
+                tabular
+                style={{ flexShrink: 1 }}
+                numberOfLines={1}
+              >
                 {arLectureCount(sub.lectureCount)}
               </Txt>
+
+              {/* «مستمر» / «منتهي» (0164) — pushed to the row's far end */}
+              <View style={{ marginStart: 'auto' }}>
+                <SectionStatusTag status={sub.seriesStatus} size="sm" />
+              </View>
             </View>
           </Pressable>
         ))}

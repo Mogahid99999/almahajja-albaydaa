@@ -13,7 +13,14 @@ import type { AppLectureStatus } from '@/config';
 import { supabase } from '@/lib/supabase';
 import * as mock from '@/mock/api';
 import { deleteFromR2, uploadToR2 } from './storage';
-import type { AdminLectureRow, SectionEditData, SectionVisibility, UnclassifiedItem } from './types';
+import type {
+  AdminLectureRow,
+  SectionEditData,
+  SectionSeriesStatus,
+  SectionVisibility,
+  UnclassifiedItem,
+} from './types';
+import { toSeriesStatus } from './types';
 
 export type { AdminLectureRow, SectionEditData, UnclassifiedItem } from './types';
 
@@ -271,7 +278,7 @@ export async function deleteLecture(id: string): Promise<void> {
 export async function getSectionsEditData(): Promise<SectionEditData[]> {
   if (USE_MOCK) return mock.getSectionsEditData();
   const { data, error } = await supabase.from('sections')
-    .select('id, title, description, order, show_header, parent_id, visibility');
+    .select('id, title, description, order, show_header, parent_id, visibility, series_status');
   if (error) throw error;
   return (data ?? []).map((s) => ({
     id: s.id,
@@ -281,6 +288,7 @@ export async function getSectionsEditData(): Promise<SectionEditData[]> {
     order: s.order,
     showHeader: s.show_header,
     visibility: s.visibility as SectionVisibility,
+    seriesStatus: toSeriesStatus(s.series_status),
   }));
 }
 
@@ -314,7 +322,7 @@ export async function createSection(input: {
   return { id: data.id };
 }
 
-/** Edit a section node (title/description/parent/order/show_header/visibility). */
+/** Edit a section node (title/description/parent/order/show_header/visibility/series_status). */
 export async function updateSection(
   id: string,
   input: {
@@ -324,6 +332,8 @@ export async function updateSection(
     order?: number;
     showHeader?: boolean;
     visibility?: SectionVisibility;
+    /** null clears the badge. */
+    seriesStatus?: SectionSeriesStatus | null;
   },
 ): Promise<void> {
   if (USE_MOCK) return mock.updateSection(id, input);
@@ -334,6 +344,7 @@ export async function updateSection(
     order?: number;
     show_header?: boolean;
     visibility?: SectionVisibility;
+    series_status?: SectionSeriesStatus | null;
   } = {};
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
@@ -341,6 +352,7 @@ export async function updateSection(
   if (input.order !== undefined) patch.order = input.order;
   if (input.showHeader !== undefined) patch.show_header = input.showHeader;
   if (input.visibility !== undefined) patch.visibility = input.visibility;
+  if (input.seriesStatus !== undefined) patch.series_status = input.seriesStatus;
   const { error } = await supabase.from('sections').update(patch).eq('id', id);
   if (error) throw error;
 }

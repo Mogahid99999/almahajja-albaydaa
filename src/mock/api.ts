@@ -58,6 +58,7 @@ function sectionCard(s: db.DSection): SectionCard {
     coverLetter: s.cover_letter,
     lectureCount: total,
     progressPct: total > 0 ? Math.round((completed / total) * 100) : 0,
+    seriesStatus: null,
   };
 }
 
@@ -157,6 +158,7 @@ export async function getSectionPage(sectionId: string): Promise<SectionPageData
       coverLetter: s.cover_letter,
       coverImage: s.cover_image,
       showHeader: s.show_header,
+      seriesStatus: null,
     },
     parentTitle: parent?.title ?? null,
     sheikhNames: db.sheikhNamesIn(sectionId),
@@ -590,6 +592,7 @@ export async function getSectionsEditData(): Promise<SectionEditData[]> {
     order: s.order,
     showHeader: s.show_header,
     visibility: 'all',
+    seriesStatus: null,
   }));
 }
 

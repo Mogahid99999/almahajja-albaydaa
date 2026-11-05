@@ -36,7 +36,13 @@ import {
 import { notify } from '@/lib/notify';
 import { useSectionsFlat } from '@/hooks/useSections';
 import { arNum } from '@/lib/format';
-import type { AttachmentOwnerRef, FlatSectionNode, SectionEditData, SectionVisibility } from '@/api/types';
+import type {
+  AttachmentOwnerRef,
+  FlatSectionNode,
+  SectionEditData,
+  SectionSeriesStatus,
+  SectionVisibility,
+} from '@/api/types';
 
 /** Descendant ids (inclusive) of a node, walked over the flat list. */
 function subtreeIds(nodes: FlatSectionNode[], rootId: string): Set<string> {
@@ -168,6 +174,13 @@ const VISIBILITY_OPTIONS: { value: SectionVisibility; label: string }[] = [
   { value: 'female', label: 'نساء' },
 ];
 
+// «حالة القسم» (0164) — a small tag for students; «بدون» shows nothing.
+const SERIES_STATUS_OPTIONS: { value: SectionSeriesStatus | null; label: string }[] = [
+  { value: null, label: 'بدون' },
+  { value: 'ongoing', label: 'مستمر' },
+  { value: 'completed', label: 'منتهي' },
+];
+
 function VisibilityToggle({
   value,
   onChange,
@@ -175,13 +188,25 @@ function VisibilityToggle({
   value: SectionVisibility;
   onChange: (v: SectionVisibility) => void;
 }) {
+  return <OptionToggle options={VISIBILITY_OPTIONS} value={value} onChange={onChange} />;
+}
+
+function OptionToggle<T extends string | null>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
   return (
     <View style={styles.visibilityToggle}>
-      {VISIBILITY_OPTIONS.map((opt) => {
+      {options.map((opt) => {
         const active = value === opt.value;
         return (
           <Pressable
-            key={opt.value}
+            key={opt.value ?? 'none'}
             onPress={() => onChange(opt.value)}
             style={[styles.visibilityToggleBtn, active && styles.visibilityToggleBtnActive]}
             accessibilityRole="button"
@@ -219,6 +244,7 @@ function SectionEditor({
     order: number;
     showHeader: boolean;
     visibility: SectionVisibility;
+    seriesStatus: SectionSeriesStatus | null;
   }) => void;
   onCancel: () => void;
 }) {
@@ -228,6 +254,9 @@ function SectionEditor({
   const [order, setOrder] = useState(String(data?.order ?? 0));
   const [showHeader, setShowHeader] = useState(data?.showHeader ?? true);
   const [visibility, setVisibility] = useState<SectionVisibility>(data?.visibility ?? 'all');
+  const [seriesStatus, setSeriesStatus] = useState<SectionSeriesStatus | null>(
+    data?.seriesStatus ?? null,
+  );
 
   // Forbid reparenting under self or a descendant (would orphan/cycle the
   // subtree — F-1001: previously only the self case was actually guarded,
@@ -242,6 +271,7 @@ function SectionEditor({
       order: order ? Number(order) : 0,
       showHeader,
       visibility,
+      seriesStatus,
     });
   }
 
@@ -282,6 +312,14 @@ function SectionEditor({
         من يظهر له هذا القسم
       </Txt>
       <VisibilityToggle value={visibility} onChange={setVisibility} />
+
+      <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.fieldLabel}>
+        حالة القسم
+      </Txt>
+      <OptionToggle options={SERIES_STATUS_OPTIONS} value={seriesStatus} onChange={setSeriesStatus} />
+      <Txt size={12} color={colors.textMuted} style={{ marginTop: 6 }}>
+        تظهر للطلاب على بطاقة القسم وفي صفحته: هل ما زالت دروسه مستمرة أم انتهت
+      </Txt>
 
       <View style={styles.editorRow}>
         <View style={{ width: 130 }}>
