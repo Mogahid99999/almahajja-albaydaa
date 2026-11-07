@@ -5,7 +5,7 @@
  * it never overflows a phone). Each card opens the per-user detail + actions.
  */
 import Feather from '@expo/vector-icons/Feather';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,12 +20,14 @@ import {
 } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
+import { CountryFilter } from '@/components/admin/CountryFilter';
 import { Card, Txt } from '@/components/ui';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
-import { useAdminUsers, useCreateUser } from '@/hooks/useAdminUsers';
+import { useAdminCountryCounts, useAdminUsers, useCreateUser } from '@/hooks/useAdminUsers';
+import { parseCountryParam } from '@/lib/countryDisplay';
 import { arNum, arSince } from '@/lib/format';
 import { notify } from '@/lib/notify';
 import type { AppRole } from '@/api/auth';
@@ -295,6 +297,12 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
 export default function AdminUsers() {
   useAdminOnly();
   const router = useRouter();
+  // Country (migration 0165) lives in the URL — opened from the dashboard's «الطلاب حسب الدول»,
+  // survives refresh and a direct link. Search + status stay local, as before.
+  const params = useLocalSearchParams<{ country?: string }>();
+  const country = parseCountryParam(params.country);
+  const setCountry = (c: string | undefined) => router.setParams({ country: c });
+  const countries = useAdminCountryCounts(false);
   const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -326,9 +334,10 @@ export default function AdminUsers() {
     isFetchingNextPage,
     refetch,
     isRefetching,
-  } = useAdminUsers(search, registeredOnly, statusFilter);
+  } = useAdminUsers(search, registeredOnly, statusFilter, country);
 
-  const countLabel = filter === 'all' ? `${arNum(totalCount)} حساباً` : `${arNum(totalCount)} من هذا التصنيف`;
+  const countLabel =
+    filter === 'all' && !country ? `${arNum(totalCount)} حساباً` : `${arNum(totalCount)} من هذا التصنيف`;
 
   const renderItem = useCallback(
     ({ item: u }: { item: AdminUserRow }) => (
@@ -400,6 +409,12 @@ export default function AdminUsers() {
             </Pressable>
           );
         })}
+        <CountryFilter
+          value={country}
+          onChange={setCountry}
+          counts={countries.data}
+          loading={countries.isLoading}
+        />
       </View>
     </>
   );
@@ -410,7 +425,10 @@ export default function AdminUsers() {
       breadcrumb="إدارة المستخدمين"
       scroll={false}
       refreshing={isRefetching}
-      onRefresh={() => void refetch()}
+      onRefresh={() => {
+        void refetch();
+        void countries.refetch();
+      }}
     >
       <CreateUserModal visible={showCreate} onClose={() => setShowCreate(false)} />
 

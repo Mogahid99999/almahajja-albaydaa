@@ -4,6 +4,7 @@ import {
   banUser,
   createUser,
   deleteUser,
+  getAdminCountryCounts,
   getAdminUserDetail,
   getAdminUserList,
   getLiveSpeaker,
@@ -20,10 +21,15 @@ import type { AppRole } from '@/api/auth';
 import type { AdminUserStatus, Gender } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 
-export function useAdminUsers(search: string, registeredOnly = false, status?: AdminUserStatus) {
+export function useAdminUsers(
+  search: string,
+  registeredOnly = false,
+  status?: AdminUserStatus,
+  country?: string,
+) {
   const query = useInfiniteQuery({
-    queryKey: queryKeys.adminUsers(search, registeredOnly, status),
-    queryFn: ({ pageParam }) => getAdminUserList(search, pageParam, registeredOnly, status),
+    queryKey: queryKeys.adminUsers(search, registeredOnly, status, country),
+    queryFn: ({ pageParam }) => getAdminUserList(search, pageParam, registeredOnly, status, country),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
     staleTime: 30_000,
@@ -33,6 +39,16 @@ export function useAdminUsers(search: string, registeredOnly = false, status?: A
     data: query.data?.pages.flatMap((p) => p.items) ?? [],
     totalCount: query.data?.pages[0]?.totalCount ?? 0,
   };
+}
+
+/** «الطلاب حسب الدول» counts (0165). `enabled` = admin only (the RPC returns nothing to others). */
+export function useAdminCountryCounts(studentsOnly: boolean, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.adminCountryCounts(studentsOnly),
+    queryFn: () => getAdminCountryCounts(studentsOnly),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
 }
 
 export function useCreateUser() {

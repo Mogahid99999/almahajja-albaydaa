@@ -21,7 +21,7 @@ const EXPO_SYMBOLS_STUB = path.resolve(__dirname, 'shims/expo-symbols.js');
 
 // The mushaf text (assets/mushaf/hafs-v22.txt) ships as an asset, not JS —
 // see src/mushaf/text.ts.
-config.resolver.assetExts = [...config.resolver.assetExts, 'txt'];
+config.resolver.assetExts = [...config.resolver.assetExts, 'txt', 'woff2']; // woff2: web-only flag font (CountryFlag.web.tsx)
 
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {

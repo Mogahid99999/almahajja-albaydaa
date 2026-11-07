@@ -12,10 +12,12 @@ import React from 'react';
 import { Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AdminShell } from '@/components/admin/AdminShell';
+import { CountriesCard } from '@/components/admin/CountriesCard';
 import { Card, Divider, Txt } from '@/components/ui';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useAdminLectures, useUnclassifiedLectures } from '@/hooks/useAdmin';
 import { useAdminStats, useMushafUsage } from '@/hooks/useAdminStats';
+import { useAdminCountryCounts } from '@/hooks/useAdminUsers';
 import { useStaffOnly } from '@/hooks/useAdminGuard';
 import { useAdminReports } from '@/hooks/useReports';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -195,11 +197,13 @@ export default function AdminHome() {
   const { data: lectures = [], refetch: refetchLectures } = useAdminLectures();
   const { data: unclassified = [], refetch: refetchUnclassified } = useUnclassifiedLectures();
   const { data: openReports = [], refetch: refetchReports } = useAdminReports('open', isAdmin);
+  // «الطلاب حسب الدول» — admin only (each row opens إدارة المستخدمين, admin-only).
+  const countries = useAdminCountryCounts(true, isAdmin);
   const { refreshing, onRefresh } = usePullToRefresh([
     refetchLectures,
     refetchUnclassified,
     ...(isStaffViewer ? [refetchStats, refetchMushaf] : []),
-    ...(isAdmin ? [refetchReports] : []),
+    ...(isAdmin ? [refetchReports, countries.refetch] : []),
   ]);
 
   const draftCount = lectures.filter((l) => l.status === 'draft').length;
@@ -270,8 +274,9 @@ export default function AdminHome() {
         </>
       ) : null}
 
-      {/* Top lists */}
+      {/* Top lists (+ «الطلاب حسب الدول» for the admin) */}
       <View style={styles.topGrid}>
+        {isAdmin ? <CountriesCard rows={countries.data} loading={countries.isLoading} /> : null}
         <TopList
           title="أكثر الأقسام استماعًا"
           icon="bar-chart-2"

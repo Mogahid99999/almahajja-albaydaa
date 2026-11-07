@@ -57,6 +57,7 @@ export async function getAdminUserList(
   offset = 0,
   registeredOnly = false,
   status?: AdminUserStatus,
+  country?: string,
 ): Promise<AdminUserPage> {
   if (USE_MOCK) return { items: [], nextOffset: null, totalCount: 0 };
   const { data, error } = await supabase.rpc('admin_user_list', {
@@ -65,6 +66,7 @@ export async function getAdminUserList(
     p_offset: offset,
     p_registered_only: registeredOnly,
     p_status: status ?? undefined,
+    p_country: country || undefined,
   });
   if (error) throw error;
   // `total_count` is added by migration 0074; cast until database.generated.ts
@@ -74,6 +76,22 @@ export async function getAdminUserList(
   const nextOffset = items.length === ADMIN_USERS_PAGE_SIZE ? offset + ADMIN_USERS_PAGE_SIZE : null;
   const totalCount = rows[0]?.total_count ? Number(rows[0].total_count) : items.length;
   return { items, nextOffset, totalCount };
+}
+
+export type AdminCountryCount = { country: string; users: number };
+
+/**
+ * Registered accounts per country, largest first (migration 0165). The country is the calling
+ * code at the start of the stored phone (public.phone_country; 'ZZ' = unrecognisable code);
+ * accounts without a phone are not counted. Aggregated in the database — never client-side.
+ */
+export async function getAdminCountryCounts(studentsOnly: boolean): Promise<AdminCountryCount[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase.rpc('admin_country_counts', { p_students_only: studentsOnly });
+  if (error) throw error;
+  return ((data ?? []) as { country: string | null; users: number | string }[])
+    .filter((r) => !!r.country)
+    .map((r) => ({ country: String(r.country), users: Number(r.users) }));
 }
 
 export async function getAdminUserDetail(userId: string): Promise<AdminUserDetail> {

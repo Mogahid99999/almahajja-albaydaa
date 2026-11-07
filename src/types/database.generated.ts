@@ -1938,9 +1938,14 @@ export type Database = {
         Args: { p_report_id: string; p_status: string }
         Returns: undefined
       }
+      admin_country_counts: {
+        Args: { p_students_only?: boolean }
+        Returns: { country: string; users: number }[]
+      }
       admin_user_detail: { Args: { p_user_id: string }; Returns: Json }
       admin_user_list: {
         Args: {
+          p_country?: string
           p_limit?: number
           p_offset?: number
           p_registered_only?: boolean

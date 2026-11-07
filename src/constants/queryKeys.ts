@@ -111,8 +111,10 @@ export const queryKeys = {
   adminAnalytics: ['admin', 'analytics'] as const,
   adminRatingsSummary: ['admin', 'ratingsSummary'] as const,
   adminRatingsList: ['admin', 'ratingsList'] as const,
-  adminUsers: (search: string, registeredOnly = false, status?: string) =>
-    ['admin', 'users', search, registeredOnly, status ?? null] as const,
+  adminUsers: (search: string, registeredOnly = false, status?: string, country?: string) =>
+    ['admin', 'users', search, registeredOnly, status ?? null, country ?? null] as const,
+  /** «الطلاب حسب الدول» (0165): students only (dashboard) or every registered account (users filter). */
+  adminCountryCounts: (studentsOnly: boolean) => ['admin', 'countryCounts', studentsOnly] as const,
   adminUserDetail: (userId: string) => ['admin', 'user', userId] as const,
   adminUserLiveSpeaker: (userId: string) => ['admin', 'user', userId, 'liveSpeaker'] as const,
   adminBuddies: ['admin', 'buddies'] as const,
