@@ -7,7 +7,7 @@
  * and a "إظهار الهيدر" toggle → useCreateSection().mutate(...)
  */
 import Feather from '@expo/vector-icons/Feather';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   Pressable,
@@ -21,6 +21,10 @@ import {
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { AttachmentManager } from '@/components/admin/AttachmentManager';
+import {
+  CertificateSettingsFields,
+  type CertificateFormValue,
+} from '@/components/admin/CertificateSettingsFields';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { Card, Divider, Rhombus, Txt } from '@/components/ui';
@@ -33,6 +37,8 @@ import {
   useSectionsEditData,
   useUpdateSection,
 } from '@/hooks/useAdmin';
+import { certificateSettingsError, type SaveSectionCertificateInput } from '@/api/certificates';
+import { useSaveSectionCertificateSettings, useSectionCertificateSettings } from '@/hooks/useCertificates';
 import { notify } from '@/lib/notify';
 import { useSectionsFlat } from '@/hooks/useSections';
 import { arNum } from '@/lib/format';
@@ -245,7 +251,7 @@ function SectionEditor({
     showHeader: boolean;
     visibility: SectionVisibility;
     seriesStatus: SectionSeriesStatus | null;
-  }) => void;
+  }, certificate: SaveSectionCertificateInput | null) => void;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(data?.title ?? node.title);
@@ -258,11 +264,29 @@ function SectionEditor({
     data?.seriesStatus ?? null,
   );
 
+  // «شهادة إتمام» (0168): loaded per section, saved together with it.
+  const certQuery = useSectionCertificateSettings(node.id);
+  const [cert, setCert] = useState<CertificateFormValue | null>(null);
+  useEffect(() => {
+    const c = certQuery.data;
+    if (c && cert === null) {
+      setCert({
+        enabled: c.enabled,
+        lectureRule: c.lectureRule,
+        lecturePct: c.lecturePct,
+        quizRule: c.quizRule,
+        quizIds: c.quizzes.filter((q) => q.selected).map((q) => q.id),
+      });
+    }
+  }, [certQuery.data, cert]);
+  const certInput: SaveSectionCertificateInput | null = cert ? { sectionId: node.id, ...cert } : null;
+  const certError = certInput ? certificateSettingsError(certInput) : null;
+
   // Forbid reparenting under self or a descendant (would orphan/cycle the
   // subtree — F-1001: previously only the self case was actually guarded,
   // TreePicker offers every node incl. descendants with no exclusion).
   function save() {
-    if (!title.trim()) return;
+    if (!title.trim() || certError) return;
     const forbidden = subtreeIds(allSections, node.id); // includes node.id itself
     onSave({
       title: title.trim(),
@@ -272,7 +296,7 @@ function SectionEditor({
       showHeader,
       visibility,
       seriesStatus,
-    });
+    }, certInput);
   }
 
   return (
@@ -350,13 +374,26 @@ function SectionEditor({
         </View>
       </View>
 
+      <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.fieldLabel}>
+        شهادة الإتمام
+      </Txt>
+      <CertificateSettingsFields
+        value={cert ?? { enabled: false, lectureRule: 'all', lecturePct: null, quizRule: 'none', quizIds: [] }}
+        onChange={setCert}
+        quizzes={certQuery.data?.quizzes ?? []}
+        sectionId={node.id}
+        loading={certQuery.isLoading}
+        loadError={certQuery.isError}
+        validationError={certError}
+      />
+
       <View style={styles.editorActions}>
         <Pressable
           onPress={save}
-          disabled={pending || !title.trim()}
+          disabled={pending || !title.trim() || !!certError}
           style={({ pressed }) => [
             styles.saveBtn,
-            { opacity: pressed || pending || !title.trim() ? 0.6 : 1 },
+            { opacity: pressed || pending || !title.trim() || !!certError ? 0.6 : 1 },
           ]}
         >
           <Feather name="check" size={15} color={colors.onTealPrimary} style={{ marginLeft: 6 }} />
@@ -381,6 +418,7 @@ export default function SectionsScreen() {
   const { data: editData = [] } = useSectionsEditData();
   const createSection = useCreateSection();
   const updateSection = useUpdateSection();
+  const saveCertificate = useSaveSectionCertificateSettings();
   const deleteSection = useDeleteSection();
   const reorderSections = useReorderSections();
 
@@ -560,11 +598,25 @@ export default function SectionsScreen() {
                 node={node}
                 data={editById.get(node.id)}
                 allSections={sections}
-                pending={updateSection.isPending}
-                onSave={(input) =>
+                pending={updateSection.isPending || saveCertificate.isPending}
+                onSave={(input, certificate) =>
                   updateSection.mutate(
                     { id: node.id, input },
-                    { onSuccess: () => setEditingId(null) },
+                    {
+                      onSuccess: () => {
+                        if (!certificate) return setEditingId(null);
+                        saveCertificate.mutate(certificate, {
+                          onSuccess: () => setEditingId(null),
+                          onError: (e) =>
+                            notify(
+                              'تعذّر حفظ إعدادات الشهادة',
+                              /[؀-ۿ]/.test((e as { message?: string })?.message ?? '')
+                                ? (e as { message: string }).message
+                                : 'حُفظ القسم، وتعذّر حفظ إعدادات الشهادة. حاول مرة أخرى.',
+                            ),
+                        });
+                      },
+                    },
                   )
                 }
                 onCancel={() => setEditingId(null)}
