@@ -327,7 +327,9 @@ export type NotificationType =
   | 'live_invite'
   // 0166: a grader approved the written answers of a quiz attempt — a personal
   // inbox row (kept, never pruned) whose route opens that attempt's result.
-  | 'quiz_graded';
+  | 'quiz_graded'
+  // 0170: the student's certificate was issued; opens it.
+  | 'certificate_issued';
 
 /**
  * Every notification type, in a stable order. Single source of truth for the
@@ -356,6 +358,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'live_reminder',
   'live_invite',
   'quiz_graded',
+  'certificate_issued',
 ];
 
 /**

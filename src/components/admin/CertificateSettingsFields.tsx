@@ -35,6 +35,25 @@ const QUIZ_OPTIONS: { value: CertificateQuizRule; label: string }[] = [
   { value: 'selected', label: 'اختبارات محددة' },
 ];
 const PCT_PRESETS = [70, 80, 90];
+const FORM_PRESETS = ['بشرح', 'تقديم'];
+
+function DetailField({
+  label,
+  ...input
+}: { label: string; value: string; onChangeText: (t: string) => void; placeholder?: string; multiline?: boolean }) {
+  return (
+    <View style={{ marginTop: 10 }}>
+      <Txt size={12} color={colors.textMuted} style={{ marginBottom: 6 }}>{label}</Txt>
+      <TextInput
+        {...input}
+        accessibilityLabel={label}
+        placeholderTextColor={colors.textGhost}
+        textAlign="right"
+        style={[styles.detailInput, input.multiline && { minHeight: 72, textAlignVertical: 'top' as const }]}
+      />
+    </View>
+  );
+}
 
 /** «٨٠» / "80" → 80; anything else → null. */
 export function parsePct(text: string): number | null {
@@ -241,6 +260,56 @@ export function CertificateSettingsFields({
             </Txt>
           ) : null}
 
+          <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
+            ما يظهر على الشهادة
+          </Txt>
+          <DetailField
+            label="اسم المادة على الشهادة"
+            value={value.certificateTitle ?? ''}
+            onChangeText={(certificateTitle) => set({ certificateTitle })}
+            placeholder="كتاب التوحيد"
+          />
+          <DetailField
+            label="المؤلف (اختياري)"
+            value={value.author ?? ''}
+            onChangeText={(author) => set({ author })}
+            placeholder="الإمام محمد بن عبد الوهاب رحمه الله"
+          />
+          <Txt size={12} color={colors.textMuted} style={{ marginTop: 10, marginBottom: 6 }}>
+            صيغة تقديم المادة
+          </Txt>
+          <View style={styles.presets}>
+            {FORM_PRESETS.map((f) => {
+              const active = (value.presentationForm ?? 'بشرح') === f;
+              return (
+                <Pressable
+                  key={f}
+                  onPress={() => set({ presentationForm: f })}
+                  style={[styles.preset, active && styles.presetActive]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Txt size={12} weight="semibold" color={active ? colors.onTealPrimary : colors.textMuted}>{f}</Txt>
+                </Pressable>
+              );
+            })}
+          </View>
+          <DetailField
+            label="مقدم المادة / الشيخ"
+            value={value.presenterName ?? ''}
+            onChangeText={(presenterName) => set({ presenterName })}
+            placeholder="فضيلة الشيخ النذير محمد فرح"
+          />
+          <DetailField
+            label="نص مخصص (اختياري، يحل محل النص الختامي الافتراضي)"
+            value={value.customText ?? ''}
+            onChangeText={(customText) => set({ customText })}
+            multiline
+          />
+          <Txt size={12} color={colors.textMuted} style={{ marginTop: 6 }}>
+            الشهادات الصادرة لا تتغير عند تعديل هذه البيانات لاحقًا.
+          </Txt>
+
           {validationError ? (
             <Txt size={12} color={colors.stateDanger} style={{ marginTop: 10 }}>
               {validationError}
@@ -289,6 +358,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.input,
     fontFamily: fonts.body,
     fontSize: 16,
+    color: colors.textInk,
+  },
+  detailInput: {
+    minHeight: 42,
+    backgroundColor: colors.surfaceWhite,
+    borderWidth: 1.5,
+    borderColor: colors.borderSand2,
+    borderRadius: radius.input,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontFamily: fonts.body,
+    fontSize: 14,
     color: colors.textInk,
   },
   presets: { flexDirection: 'row', gap: 6, marginRight: 8 } as ViewStyle,

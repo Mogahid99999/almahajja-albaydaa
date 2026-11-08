@@ -489,6 +489,9 @@ function NotificationsBootstrap() {
         }
         // 0166 «تم تصحيح اختبارك»: the cached result / quiz cards still say
         // «بانتظار التصحيح» — refetch them so the tap lands on the final result.
+        if ((data.route ?? '').startsWith('/certificate/')) {
+          void queryClient.invalidateQueries({ queryKey: ['certificates'] });
+        }
         if ((data.route ?? '').startsWith('/quiz-result/')) {
           void queryClient.invalidateQueries({ queryKey: ['quizzes'] });
           void queryClient.invalidateQueries({ queryKey: ['section'] });

@@ -27,6 +27,7 @@ const base: SaveSectionCertificateInput = {
   lecturePct: null,
   quizRule: 'none',
   quizIds: [],
+  certificateTitle: '', author: '', presenterName: 'فضيلة الشيخ', presentationForm: 'بشرح', customText: '',
 };
 
 beforeEach(() => rpc.mockReset());
@@ -126,6 +127,11 @@ describe('parsers', () => {
       lectureRule: 'all',
       lecturePct: null,
       quizRule: 'none',
+      certificateTitle: '',
+      author: '',
+      presenterName: '',
+      presentationForm: 'بشرح',
+      customText: '',
       quizzes: [
         { id: 'q1', title: 'اختبار', sectionId: 's2', sectionTitle: 'فرع', published: false, selected: true },
       ],

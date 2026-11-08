@@ -3,6 +3,8 @@ import { useMemo } from 'react';
 
 import {
   getCertificateEligibility,
+  getCertificateFiles,
+  getMyCertificate,
   getMyCertificates,
   getSectionCertificateSettings,
   saveSectionCertificateSettings,
@@ -78,4 +80,25 @@ export function useCertificateCardIds(): Set<string> {
 export function useCertificateSectionIds(): Set<string> {
   const { data } = useMyCertificates();
   return useMemo(() => new Set((data ?? []).map((c) => c.sectionId)), [data]);
+}
+
+/** One issued certificate. Polls briefly while the server is still rendering its PDF. */
+export function useMyCertificate(id: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.myCertificate(id ?? ''),
+    queryFn: () => getMyCertificate(id ?? ''),
+    enabled: !!id,
+    refetchInterval: (q) => (q.state.data && !q.state.data.ready && q.state.data.status === 'valid' ? 4000 : false),
+  });
+}
+
+/** Signed links last five minutes, so they are refetched well before that. */
+export function useCertificateFiles(id: string | undefined, ready: boolean) {
+  return useQuery({
+    queryKey: queryKeys.certificateFiles(id ?? ''),
+    queryFn: () => getCertificateFiles(id ?? ''),
+    enabled: !!id && ready,
+    staleTime: 3 * 60_000,
+    gcTime: 4 * 60_000,
+  });
 }

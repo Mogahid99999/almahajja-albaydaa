@@ -31,6 +31,7 @@ export const notificationTypeLabel: Record<NotificationType, string> = {
   live_reminder: 'تذكير بمجلس مباشر',
   live_invite: 'دعوة رفيق إلى بث مباشر',
   quiz_graded: 'تصحيح اختبارك',
+  certificate_issued: 'إصدار شهادتك',
 };
 
 /** One-line explanation shown under each toggle. */
@@ -56,6 +57,7 @@ export const notificationTypeDescription: Record<NotificationType, string> = {
   live_reminder: 'قبيل بدء مجلس طلبت التذكير به، وعند بدئه',
   live_invite: 'عند دعوة رفيقك لك إلى مجلس يُبث الآن',
   quiz_graded: 'عند اعتماد تصحيح إجاباتك النصية في اختبار',
+  certificate_issued: 'عند صدور شهادة إتمام لك',
 };
 
 /** Calm Feather icon per type (rhombus-framed in the row). */
@@ -81,6 +83,7 @@ export const notificationTypeIcon: Record<NotificationType, FeatherName> = {
   live_reminder: 'bell',
   live_invite: 'user-plus',
   quiz_graded: 'check-square',
+  certificate_issued: 'award',
 };
 
 /**
@@ -106,6 +109,7 @@ export const NOTIFICATION_TYPE_ORDER: NotificationType[] = [
   'buddy_request',
   'question_answered',
   'quiz_graded',
+  'certificate_issued',
   'question_received',
 ];
 

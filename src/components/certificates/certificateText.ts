@@ -6,7 +6,7 @@
  * `met` / `eligible` are the server's verdict. Nothing here decides
  * eligibility; it only says what the server returned, in calm Arabic.
  */
-import type { CertificateContentScope, CertificateEligibility } from '@/api/certificates';
+import type { CertificateContentScope, CertificateEligibility, IssuedCertificate } from '@/api/certificates';
 import { arLectureCount, arNum } from '@/lib/format';
 
 /** "اختبار واحد" / "اختباران" / "٣ اختبارات" / "١١ اختبارًا". */
@@ -36,6 +36,13 @@ export function lectureRequirementLine(e: CertificateEligibility): string {
     return `المطلوب إكمال ${arNum(e.lectures.pct)}٪ من محاضرات ${where} (${arNum(e.lectures.required)} من ${arNum(e.lectures.total)})`;
   }
   return `المطلوب إكمال جميع محاضرات ${where}`;
+}
+
+/** The state of an earned certificate. `null` = earned, the server has not issued it yet. */
+export function issuedStatusLine(issued: IssuedCertificate | null): string {
+  if (!issued) return 'جارٍ إصدار شهادتك';
+  if (issued.status !== 'valid') return 'أُلغيت هذه الشهادة';
+  return 'تم إصدار شهادتك';
 }
 
 export type QuizState = 'passed' | 'pending' | 'todo';

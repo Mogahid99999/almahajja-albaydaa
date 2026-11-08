@@ -277,6 +277,11 @@ function SectionEditor({
         lecturePct: c.lecturePct,
         quizRule: c.quizRule,
         quizIds: c.quizzes.filter((q) => q.selected).map((q) => q.id),
+        certificateTitle: c.certificateTitle || node.title,
+        author: c.author,
+        presenterName: c.presenterName,
+        presentationForm: c.presentationForm,
+        customText: c.customText,
       });
     }
   }, [certQuery.data, cert]);
@@ -382,6 +387,11 @@ function SectionEditor({
         value={
           cert ?? {
             enabled: false,
+            certificateTitle: '',
+            author: '',
+            presenterName: '',
+            presentationForm: 'بشرح',
+            customText: '',
             contentScope: 'section',
             lectureRule: 'all',
             lecturePct: null,

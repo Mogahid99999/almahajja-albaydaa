@@ -9,24 +9,26 @@
  * earn). Guests get a calm invitation instead (certificates belong to an
  * account, like رحلتي العلمية).
  *
- * Earned: a brass seal «استوفيت شروط الشهادة» — issuing the certificate itself
- * (PDF / number / QR) is the next phase.
+ * Issued (0170): «تم إصدار شهادتك» with view / PDF; the certificate itself is
+ * rendered on the server.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
 
-import type { CertificateEligibility } from '@/api/certificates';
+import type { CertificateEligibility, IssuedCertificate } from '@/api/certificates';
 import { colors, radius } from '@/constants/theme';
-import { useCertificateEligibility } from '@/hooks/useCertificates';
+import { useCertificateEligibility, useMyCertificates } from '@/hooks/useCertificates';
 import { arNum, arPercent } from '@/lib/format';
 import { Card } from '@/components/ui/Card';
 import { Divider } from '@/components/ui/Divider';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Txt } from '@/components/ui/Txt';
 
+import { CertificateActions } from './CertificateActions';
 import { CERTIFICATE_LABEL } from './CertificateTag';
 import {
+  issuedStatusLine,
   lectureProgress,
   lectureRequirementLine,
   QUIZ_STATE_LABEL,
@@ -64,7 +66,7 @@ function Header({ right }: { right?: React.ReactNode }) {
   );
 }
 
-export function CertificateProgressView({ e }: { e: CertificateEligibility }) {
+export function CertificateProgressView({ e, issued = null }: { e: CertificateEligibility; issued?: IssuedCertificate | null }) {
   const router = useRouter();
   const progress = lectureProgress(e);
 
@@ -169,12 +171,13 @@ export function CertificateProgressView({ e }: { e: CertificateEligibility }) {
         >
           {remainingSummary(e)}
         </Txt>
-        {e.eligible ? (
+        {e.eligible || issued ? (
           <Txt size={11.5} color={colors.textMuted}>
-            سيُتاح إصدار الشهادة قريبًا بإذن الله
+            {issuedStatusLine(issued)}
           </Txt>
         ) : null}
       </View>
+      {issued?.status === 'valid' ? <CertificateActions certificate={issued} /> : null}
     </Card>
   );
 }
@@ -182,6 +185,8 @@ export function CertificateProgressView({ e }: { e: CertificateEligibility }) {
 export function CertificateProgressCard({ sectionId, isGuest }: { sectionId: string; isGuest: boolean }) {
   const router = useRouter();
   const { data } = useCertificateEligibility(sectionId, { enabled: !isGuest });
+  const { data: mine } = useMyCertificates({ enabled: !isGuest });
+  const issued = mine?.find((c) => c.sectionId === sectionId)?.issued ?? null;
 
   if (isGuest) {
     return (
@@ -204,5 +209,5 @@ export function CertificateProgressCard({ sectionId, isGuest }: { sectionId: str
   }
 
   if (!data || !data.enabled || data.lectures.total === 0) return null;
-  return <CertificateProgressView e={data} />;
+  return <CertificateProgressView e={data} issued={issued} />;
 }

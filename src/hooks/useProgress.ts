@@ -36,6 +36,8 @@ export function useSaveProgress() {
       qc.invalidateQueries({ queryKey: queryKeys.home });
       // The same save feeds daily_listening + badge evaluation (رحلتي العلمية).
       qc.invalidateQueries({ queryKey: queryKeys.journey });
+      // Only a completion can issue a certificate (0170); position saves must not refetch.
+      if (vars.justCompleted) qc.invalidateQueries({ queryKey: ['certificates'] });
       qc.invalidateQueries({ queryKey: queryKeys.badges });
       // ...and may flip today's streak state (26.1) — refresh the home card.
       qc.invalidateQueries({ queryKey: queryKeys.streak });

@@ -42,6 +42,8 @@ export const queryKeys = {
   // Certificates «شهادة إتمام القسم» (0168) — settings (admin) + eligibility
   sectionCertificate: (sectionId: string) => ['certificates', 'settings', sectionId] as const,
   myCertificates: ['certificates', 'mine'] as const,
+  myCertificate: (id: string) => ['certificates', 'one', id] as const,
+  certificateFiles: (id: string) => ['certificates', 'files', id] as const,
   certificateEligibility: (sectionId: string, userId?: string) =>
     ['certificates', 'eligibility', sectionId, userId ?? 'me'] as const,
   seriesBenefits: (sectionId: string) => ['journey', 'seriesBenefits', sectionId] as const,

@@ -34,6 +34,16 @@ export type SectionCertificateSettings = {
   lecturePct: number | null;
   quizRule: CertificateQuizRule;
   quizzes: CertificateQuizOption[];
+} & CertificateDetails;
+
+/** What the certificate prints (0170). Blank title = the section's title; no author = no line. */
+export type CertificateDetails = {
+  certificateTitle: string;
+  author: string;
+  presenterName: string;
+  /** «بشرح» / «تقديم» / any other wording. */
+  presentationForm: string;
+  customText: string;
 };
 
 export type SaveSectionCertificateInput = {
@@ -44,7 +54,7 @@ export type SaveSectionCertificateInput = {
   lecturePct: number | null;
   quizRule: CertificateQuizRule;
   quizIds: string[];
-};
+} & CertificateDetails;
 
 export type CertificateEligibility = {
   sectionId: string;
@@ -89,6 +99,11 @@ export function parseCertificateSettings(raw: unknown, sectionId: string): Secti
     lectureRule: rule,
     lecturePct: rule === 'percent' && typeof r.lecture_pct === 'number' ? r.lecture_pct : null,
     quizRule: quizRule(r.quiz_rule),
+    certificateTitle: typeof r.certificate_title === 'string' ? r.certificate_title : '',
+    author: typeof r.author === 'string' ? r.author : '',
+    presenterName: typeof r.presenter_name === 'string' ? r.presenter_name : '',
+    presentationForm: typeof r.presentation_form === 'string' && r.presentation_form ? r.presentation_form : 'بشرح',
+    customText: typeof r.custom_text === 'string' ? r.custom_text : '',
     quizzes: Array.isArray(r.quizzes)
       ? r.quizzes.map((q: Record<string, any>) => ({
           id: String(q.id),
@@ -146,6 +161,7 @@ export function parseCertificateEligibility(raw: unknown): CertificateEligibilit
  */
 export function certificateSettingsError(input: SaveSectionCertificateInput): string | null {
   if (!input.enabled) return null; // turning it off never blocks saving the section
+  if (!input.presenterName?.trim()) return 'اكتب اسم مقدم المادة كما يظهر على الشهادة';
   if (input.lectureRule === 'percent') {
     const p = input.lecturePct;
     if (p === null || !Number.isInteger(p) || p < 1 || p > 100) {
@@ -159,12 +175,16 @@ export function certificateSettingsError(input: SaveSectionCertificateInput): st
 }
 
 export async function getSectionCertificateSettings(sectionId: string): Promise<SectionCertificateSettings> {
-  const { data, error } = await supabase.rpc(
-    'get_section_certificate_settings' as never,
-    { p_section: sectionId } as never,
+  const [settings, details] = await Promise.all([
+    supabase.rpc('get_section_certificate_settings' as never, { p_section: sectionId } as never),
+    supabase.rpc('get_section_certificate_details' as never, { p_section: sectionId } as never),
+  ]);
+  if (settings.error) throw settings.error;
+  if (details.error) throw details.error;
+  return parseCertificateSettings(
+    { ...(settings.data as object), ...(details.data as object) },
+    sectionId,
   );
-  if (error) throw error;
-  return parseCertificateSettings(data, sectionId);
 }
 
 export async function saveSectionCertificateSettings(input: SaveSectionCertificateInput): Promise<void> {
@@ -185,6 +205,18 @@ export async function saveSectionCertificateSettings(input: SaveSectionCertifica
     } as never,
   );
   if (error) throw error;
+  const { error: detailsError } = await supabase.rpc(
+    'set_section_certificate_details' as never,
+    {
+      p_section: input.sectionId,
+      p_certificate_title: input.certificateTitle,
+      p_author: input.author,
+      p_presenter_name: input.presenterName,
+      p_presentation_form: input.presentationForm,
+      p_custom_text: input.customText,
+    } as never,
+  );
+  if (detailsError) throw detailsError;
 }
 
 /**
@@ -212,7 +244,42 @@ export type MyCertificate = {
   /** Every section above this one: they carry the «شهادة إتمام» mark on their cards. */
   ancestorIds: string[];
   eligibility: CertificateEligibility;
+  /** The certificate already issued for this section, if any (0170). */
+  issued: IssuedCertificate | null;
 };
+
+/** An issued certificate, as the server describes it. The app never draws it. */
+export type IssuedCertificate = {
+  id: string;
+  status: 'valid' | 'revoked' | 'void';
+  sectionId: string | null;
+  title: string;
+  authorLine: string | null;
+  presenterLine: string | null;
+  studentName: string | null;
+  issuedAt: string;
+  issueDateText: string | null;
+  /** The PDF has been rendered on the server. */
+  ready: boolean;
+};
+
+export function parseIssuedCertificate(raw: unknown): IssuedCertificate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, any>;
+  if (typeof r.id !== 'string') return null;
+  return {
+    id: r.id,
+    status: r.status === 'revoked' ? 'revoked' : r.status === 'void' ? 'void' : 'valid',
+    sectionId: typeof r.section_id === 'string' ? r.section_id : null,
+    title: String(r.title ?? ''),
+    authorLine: typeof r.author_line === 'string' ? r.author_line : null,
+    presenterLine: typeof r.presenter_line === 'string' ? r.presenter_line : null,
+    studentName: typeof r.student_name === 'string' ? r.student_name : null,
+    issuedAt: String(r.issued_at ?? ''),
+    issueDateText: typeof r.issue_date_text === 'string' ? r.issue_date_text : null,
+    ready: r.ready === true,
+  };
+}
 
 /** get_my_certificates jsonb → client rows. Exported for tests. */
 export function parseMyCertificates(raw: unknown): MyCertificate[] {
@@ -223,6 +290,7 @@ export function parseMyCertificates(raw: unknown): MyCertificate[] {
     parentTitle: typeof r.parent_title === 'string' && r.parent_title ? r.parent_title : null,
     ancestorIds: Array.isArray(r.ancestor_ids) ? r.ancestor_ids.map(String) : [],
     eligibility: parseCertificateEligibility(r.eligibility),
+    issued: parseIssuedCertificate(r.issued),
   }));
 }
 
@@ -235,4 +303,20 @@ export async function getMyCertificates(): Promise<MyCertificate[]> {
   const { data, error } = await supabase.rpc('get_my_certificates' as never);
   if (error) throw error;
   return parseMyCertificates(data);
+}
+
+/** One of the signed-in student's own certificates; null when it is not theirs. */
+export async function getMyCertificate(id: string): Promise<IssuedCertificate | null> {
+  const { data, error } = await supabase.rpc('get_my_certificate' as never, { p_id: id } as never);
+  if (error) throw error;
+  return parseIssuedCertificate(data);
+}
+
+export type CertificateFiles = { pdfUrl: string; previewUrl: string };
+
+/** Short-lived links to the server-rendered files (owner or content staff only). */
+export async function getCertificateFiles(id: string): Promise<CertificateFiles> {
+  const { data, error } = await supabase.functions.invoke('certificate-files', { body: { id } });
+  if (error) throw error;
+  return { pdfUrl: String(data.pdf_url), previewUrl: String(data.preview_url) };
 }

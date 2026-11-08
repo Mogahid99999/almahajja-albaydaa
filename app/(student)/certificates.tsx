@@ -6,8 +6,8 @@
  *
  * Two groups, both straight from get_my_certificates (0169), i.e. one
  * certificate_eligibility per certificate section the student can reach:
- *   «شهاداتي»     — earned (eligible): a brass seal, «مستحقة». Issuing the
- *                    certificate itself (PDF / number / QR) is the next phase.
+ *   «شهاداتي»     — issued or earned: a brass seal, the status, view / PDF. The
+ *                    certificate itself is rendered on the server (0170).
  *   «قيد الإنجاز» — the rest, with a compact progress line (the same figures the
  *                    section page shows) and what is left.
  * Tapping a row opens that section. Guests get the account invitation.
@@ -23,7 +23,8 @@ import { useMyCertificates } from '@/hooks/useCertificates';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { arPercent } from '@/lib/format';
-import { lectureProgress, remainingSummary } from '@/components/certificates/certificateText';
+import { CertificateActions } from '@/components/certificates/CertificateActions';
+import { issuedStatusLine, lectureProgress, remainingSummary } from '@/components/certificates/certificateText';
 import { JourneyGate } from '@/components/journey/JourneyGate';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
@@ -40,14 +41,20 @@ function openSection(router: ReturnType<typeof useRouter>, id: string) {
 
 function EarnedCard({ c }: { c: MyCertificate }) {
   const router = useRouter();
+  const issued = c.issued?.status === 'valid' ? c.issued : null;
   return (
     <Pressable
-      onPress={() => openSection(router, c.sectionId)}
+      onPress={() =>
+        issued
+          ? router.push(`/certificate/${issued.id}` as Parameters<typeof router.push>[0])
+          : c.sectionId && openSection(router, c.sectionId)
+      }
       accessibilityRole="button"
-      accessibilityLabel={`${c.title} — شهادة مستحقة`}
+      accessibilityLabel={`${c.title} — ${issuedStatusLine(c.issued)}`}
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
-      <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Card>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         {/* Brass seal — the app's completion emblem */}
         <View
           style={{
@@ -72,10 +79,12 @@ function EarnedCard({ c }: { c: MyCertificate }) {
             {c.title}
           </Txt>
           <Txt size={11.5} color={colors.textMuted}>
-            مستحقة — سيُتاح إصدارها قريبًا بإذن الله
+            {issuedStatusLine(c.issued)}
           </Txt>
         </View>
         <Feather name="chevron-left" size={18} color={colors.textGhost} />
+      </View>
+      {issued ? <CertificateActions certificate={issued} /> : null}
       </Card>
     </Pressable>
   );
@@ -135,8 +144,8 @@ export default function CertificatesScreen() {
   });
   const { refreshing, onRefresh } = usePullToRefresh([refetch]);
 
-  const earned = (data ?? []).filter((c) => c.eligibility.eligible);
-  const inProgress = (data ?? []).filter((c) => !c.eligibility.eligible);
+  const earned = (data ?? []).filter((c) => c.eligibility.eligible || c.issued);
+  const inProgress = (data ?? []).filter((c) => !c.eligibility.eligible && !c.issued);
 
   return (
     <Screen
@@ -179,7 +188,7 @@ export default function CertificatesScreen() {
           {earned.length > 0 ? (
             <View style={{ gap: 12, marginBottom: 24 }}>
               {earned.map((c) => (
-                <EarnedCard key={c.sectionId} c={c} />
+                <EarnedCard key={c.issued?.id ?? c.sectionId} c={c} />
               ))}
             </View>
           ) : (

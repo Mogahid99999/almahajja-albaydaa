@@ -1,0 +1,35 @@
+# /opt/almahajja-certs/docker-compose.yml: certificate rendering + public verification.
+# SHARED VPS rules: only under /opt/almahajja-*, on almahajja_net, project-unique names, no host ports.
+# Staging has its OWN tunnel, so nothing here touches the production tunnel's routes.
+# The production service and its route are NOT here yet: see README.md.
+name: almahajja-certs
+
+services:
+  almahajja-certs-stg:
+    image: almahajja-certs:${CERTS_TAG_STG}
+    container_name: almahajja-certs-stg
+    restart: unless-stopped
+    env_file: ./.env.stg
+    init: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+      - /home/node:size=64m,uid=1000,gid=1000
+    shm_size: 256m
+    mem_limit: 900m
+    cpus: 1.0
+    networks: [almahajja_net]
+
+  almahajja-certs-stg-tunnel:
+    image: cloudflare/cloudflared:2025.10.0
+    container_name: almahajja-certs-stg-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CERTS_STG_TUNNEL_TOKEN}
+    read_only: true
+    networks: [almahajja_net]
+
+networks:
+  almahajja_net:
+    external: true

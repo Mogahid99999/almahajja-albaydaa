@@ -49,6 +49,7 @@ function Harness({ initial, error = null }: { initial: CertificateFormValue; err
 }
 
 const off: CertificateFormValue = {
+  certificateTitle: '', author: '', presenterName: 'فضيلة الشيخ', presentationForm: 'بشرح', customText: '',
   enabled: false,
   contentScope: 'section',
   lectureRule: 'all',

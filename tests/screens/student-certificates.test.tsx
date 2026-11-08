@@ -74,6 +74,7 @@ const row = (sectionId: string, title: string, e: CertificateEligibility, parent
   parentTitle,
   ancestorIds: [],
   eligibility: e,
+  issued: null,
 });
 
 beforeEach(() => {
@@ -168,7 +169,7 @@ describe('section page card', () => {
     );
     expect(screen.getByText('مستحقة')).toBeTruthy();
     expect(screen.getByText('استوفيت شروط الشهادة')).toBeTruthy();
-    expect(screen.getByText('سيُتاح إصدار الشهادة قريبًا بإذن الله')).toBeTruthy();
+    expect(screen.getByText('جارٍ إصدار شهادتك')).toBeTruthy();
   });
 
   test('a guest is invited to register', async () => {
@@ -195,7 +196,7 @@ describe('«شهاداتي» screen', () => {
     expect(screen.getByText('قيد الإنجاز')).toBeTruthy();
     expect(screen.getByText('كتاب التوحيد')).toBeTruthy();
     expect(screen.getByText('العقيدة')).toBeTruthy();
-    expect(screen.getByText('مستحقة — سيُتاح إصدارها قريبًا بإذن الله')).toBeTruthy();
+    expect(screen.getByText('جارٍ إصدار شهادتك')).toBeTruthy();
     expect(screen.getByText('الأصول الثلاثة')).toBeTruthy();
     expect(screen.getByText('المحاضرات ٥٠٪')).toBeTruthy();
     expect(screen.getByText('المتبقي: ٥ محاضرات')).toBeTruthy();
@@ -226,5 +227,30 @@ describe('«شهاداتي» screen', () => {
     mockUser.current = { isGuest: true };
     await render(<CertificatesScreen />);
     expect(screen.getByText('سجّل لتحصل على شهاداتك')).toBeTruthy();
+  });
+});
+
+describe('issued certificate (0170)', () => {
+  const issued = {
+    id: 'MAH-7K3F-Q9XW-2MTC', status: 'valid' as const, sectionId: 'a', title: 'كتاب التوحيد',
+    authorLine: null, presenterLine: 'بشرح الشيخ', studentName: 'أحمد', issuedAt: '2026-11-09T10:00:00Z',
+    issueDateText: '٢٩ جمادى الأولى ١٤٤٨هـ', ready: true,
+  };
+
+  test('«شهاداتي»: issued state with view and PDF; the old promise is gone', async () => {
+    mockList.current = [{ ...row('a', 'كتاب التوحيد', make({ eligible: true, lectures: { completed: 10, met: true } })), issued }];
+    await render(<CertificatesScreen />);
+    expect(screen.getByText('تم إصدار شهادتك')).toBeTruthy();
+    expect(screen.getByText('عرض الشهادة')).toBeTruthy();
+    expect(screen.getByText('تحميل PDF')).toBeTruthy();
+    expect(screen.queryByText(/قريبًا/)).toBeNull();
+    await fireEvent.press(screen.getByText('عرض الشهادة'));
+    expect(mockPush).toHaveBeenCalledWith('/certificate/MAH-7K3F-Q9XW-2MTC');
+  });
+
+  test('still rendering: PDF button says so', async () => {
+    mockList.current = [{ ...row('a', 'كتاب التوحيد', make({ eligible: true, lectures: { completed: 10, met: true } })), issued: { ...issued, ready: false } }];
+    await render(<CertificatesScreen />);
+    expect(screen.getByText('جارٍ تجهيز الملف')).toBeTruthy();
   });
 });
