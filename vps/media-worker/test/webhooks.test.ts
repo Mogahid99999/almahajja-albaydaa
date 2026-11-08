@@ -254,7 +254,55 @@ describe('room lifecycle → live_room_event', () => {
     const body = roomEventBody(event, 'stg_room1', identity, num);
     const r = await handleWebhook(deps, body, await sign(body));
     expect(r.status).toBe(200);
-    expect(db.roomEvents).toEqual([{ room: 'stg_room1', event, identity: identity ?? null, num }]);
+    const conn =
+      event === 'participant_joined' || event === 'participant_left'
+        ? { sid: 'PA_1', joinedAt: null, eventAt: null }
+        : null;
+    expect(db.roomEvents).toEqual([{ room: 'stg_room1', event, identity: identity ?? null, num, conn }]);
+  });
+
+  // 0167 live attendance: the connection (sid + LiveKit server times) reaches the DB.
+  it.each(['participant_joined', 'participant_left'] as const)(
+    '%s carries the connection sid, joinedAtMs and the event createdAt',
+    async (event) => {
+      const body = JSON.stringify({
+        event,
+        id: 'EV_3',
+        createdAt: '1794166596',
+        room: { name: 'stg_room1', numParticipants: 4 },
+        participant: { identity: 'a1b2c3d4e5f60718', sid: 'PA_i4LLbs6jyAfB', joinedAt: '1794166000', joinedAtMs: '1794166000250' },
+      });
+      const r = await handleWebhook(deps, body, await sign(body));
+      expect(r.status).toBe(200);
+      expect(db.roomEvents).toEqual([
+        {
+          room: 'stg_room1',
+          event,
+          identity: 'a1b2c3d4e5f60718',
+          num: 4,
+          conn: {
+            sid: 'PA_i4LLbs6jyAfB',
+            joinedAt: new Date(1794166000250).toISOString(),
+            eventAt: new Date(1794166596000).toISOString(),
+          },
+        },
+      ]);
+    },
+  );
+
+  it('falls back to joinedAt seconds when joinedAtMs is absent; no sid → no connection', async () => {
+    const withSecs = JSON.stringify({
+      event: 'participant_left',
+      room: { name: 'stg_room1' },
+      participant: { identity: 'a1b2c3d4e5f60718', sid: 'PA_x', joinedAt: '1794166000' },
+    });
+    await handleWebhook(deps, withSecs, await sign(withSecs));
+    const noSid = JSON.stringify({ event: 'participant_left', room: { name: 'stg_room1' }, participant: { identity: 'a1b2c3d4e5f60718' } });
+    await handleWebhook(deps, noSid, await sign(noSid));
+    expect(db.roomEvents.map((e) => e.conn)).toEqual([
+      { sid: 'PA_x', joinedAt: new Date(1794166000000).toISOString(), eventAt: null },
+      null,
+    ]);
   });
 
   it('room_finished also clears the egress deferral for that room', async () => {

@@ -5,6 +5,7 @@ import type {
   FailOutcome,
   JobDb,
   LectureNaming,
+  LiveConnection,
   LiveNaming,
   LivePartRawDue,
   LiveRawDue,
@@ -169,7 +170,13 @@ export class FakeDb implements JobDb {
   liveNaming: LiveNaming = { sectionTitle: 'السيرة النبوية', title: 'مجلس الخميس', roomName: 'stg_abc123' };
   /** enqueue_live_recording result (null = session still live). */
   enqueueResult: string | null = 'job-live-1';
-  roomEvents: Array<{ room: string; event: string; identity: string | null; num: number | null }> = [];
+  roomEvents: Array<{
+    room: string;
+    event: string;
+    identity: string | null;
+    num: number | null;
+    conn?: LiveConnection | null;
+  }> = [];
   roomEventResult: RoomEventResult | null = null;
   roomEventError: Error | null = null;
   rawsDue: LiveRawDue[] = [];
@@ -250,8 +257,14 @@ export class FakeDb implements JobDb {
     this.liveCreated.push({ jobId, key, durationSec, size, backup });
     return 'lec-live-1';
   }
-  async liveRoomEvent(room: string, event: string, identity: string | null, num: number | null) {
-    this.roomEvents.push({ room, event, identity, num });
+  async liveRoomEvent(
+    room: string,
+    event: string,
+    identity: string | null,
+    num: number | null,
+    conn?: LiveConnection | null,
+  ) {
+    this.roomEvents.push({ room, event, identity, num, conn: conn ?? null });
     if (this.roomEventError) throw this.roomEventError;
     return this.roomEventResult;
   }

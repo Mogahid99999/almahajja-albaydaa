@@ -45,6 +45,17 @@ export interface LiveNaming {
   roomName: string;
 }
 
+/**
+ * 0167: the LiveKit connection behind a participant event — one attendance
+ * interval per participant sid. Timestamps are ISO strings from the LiveKit
+ * server clock (joinedAtMs / the webhook's createdAt).
+ */
+export interface LiveConnection {
+  sid: string;
+  joinedAt: string | null;
+  eventAt: string | null;
+}
+
 /** `live_room_event(...)` jsonb result; null when the room has no session. */
 export interface RoomEventResult {
   sessionId: string;
@@ -140,6 +151,7 @@ export interface JobDb {
     event: string,
     identity: string | null,
     numParticipants: number | null,
+    conn?: LiveConnection | null,
   ): Promise<RoomEventResult | null>;
   liveRawsDueForDeletion(): Promise<LiveRawDue[]>;
   markLiveRawDeleted(sessionId: string): Promise<void>;
@@ -290,13 +302,21 @@ export function createSupabaseDb(url: string, serviceRoleKey: string): JobDb {
       return data ? String(data) : null;
     },
 
-    async liveRoomEvent(roomName, event, identity, numParticipants) {
-      const { data, error } = await sb.rpc('live_room_event', {
+    async liveRoomEvent(roomName, event, identity, numParticipants, conn) {
+      const base = {
         p_room_name: roomName,
         p_event: event,
         p_identity: identity,
         p_num_participants: numParticipants,
-      });
+      };
+      let { data, error } = await sb.rpc(
+        'live_room_event',
+        conn
+          ? { ...base, p_participant_sid: conn.sid, p_joined_at: conn.joinedAt, p_event_at: conn.eventAt }
+          : base,
+      );
+      // 0167 not applied yet (PostgREST knows no such signature): presence still works.
+      if (error?.code === 'PGRST202' && conn) ({ data, error } = await sb.rpc('live_room_event', base));
       if (error) fail('live_room_event', error);
       const r = data as { session_id?: string | null; status?: string; is_host?: boolean; host_present?: boolean } | null;
       if (!r || !r.session_id) return null;

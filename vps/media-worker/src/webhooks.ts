@@ -18,10 +18,12 @@
 // still live (RPC → null) also pokes the guard (resume).
 //
 // Room lifecycle events go to `live_room_event(...)`; its result feeds the D4
-// host-absence watch (hostWatch.ts).
+// host-absence watch (hostWatch.ts). 0167: participant_joined / _left also carry
+// the connection (participant sid, joinedAtMs, event createdAt) — the server-side
+// source of live attendance intervals (no client heartbeat).
 
 import type { WorkerEnv } from './config.js';
-import type { JobDb, RoomEventResult } from './db.js';
+import type { JobDb, LiveConnection, RoomEventResult } from './db.js';
 import type { EgressTracker } from './egressTracker.js';
 import { errorMessage, type Logger, silentLogger } from './log.js';
 import type { RecordingsDir } from './recordings.js';
@@ -30,8 +32,12 @@ import type { RecordingsDir } from './recordings.js';
 export interface LkEventLike {
   event: string;
   id?: string;
+  /** Unix seconds (int64 → bigint in the SDK) when LiveKit created the event. */
+  createdAt?: bigint | number | undefined;
   room?: { name?: string; numParticipants?: number } | undefined;
-  participant?: { identity?: string } | undefined;
+  participant?:
+    | { identity?: string; sid?: string; joinedAt?: bigint | number; joinedAtMs?: bigint | number }
+    | undefined;
   egressInfo?:
     | {
         egressId?: string;
@@ -112,6 +118,32 @@ export function rawPathOf(info: LkEventLike['egressInfo']): string | null {
 
 export function roomNameOf(ev: LkEventLike): string {
   return ev.room?.name || ev.egressInfo?.roomName || '';
+}
+
+/** Positive int64 (bigint / number) → ISO timestamp, or null. */
+function isoFrom(value: bigint | number | undefined, unitMs: number): string | null {
+  if (value === undefined || value === null) return null;
+  const n = Number(value) * unitMs;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const d = new Date(n);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/**
+ * 0167: the connection behind participant_joined / participant_left (live
+ * attendance intervals): sid + joinedAtMs (falls back to joinedAt seconds) +
+ * the event's createdAt. Null for other events or a participant without a sid.
+ */
+export function connectionOf(ev: LkEventLike): LiveConnection | null {
+  if (ev.event !== 'participant_joined' && ev.event !== 'participant_left') return null;
+  const sid = (ev.participant?.sid ?? '').trim();
+  if (!sid) return null;
+  const p = ev.participant;
+  return {
+    sid,
+    joinedAt: isoFrom(p?.joinedAtMs, 1) ?? isoFrom(p?.joinedAt, 1000),
+    eventAt: isoFrom(ev.createdAt, 1000),
+  };
 }
 
 function baseNameOf(p: string): string {
@@ -231,7 +263,7 @@ async function roomEvent(deps: WebhookDeps, log: Logger, ev: LkEventLike, room: 
   const num = typeof ev.room?.numParticipants === 'number' ? ev.room.numParticipants : null;
   let result: RoomEventResult | null;
   try {
-    result = await deps.db.liveRoomEvent(room, ev.event, identity, num);
+    result = await deps.db.liveRoomEvent(room, ev.event, identity, num, connectionOf(ev));
   } catch (err) {
     // Informational for most events; room_finished is re-derived by the next
     // lifecycle call anyway. Return 500 so LiveKit may redeliver.
