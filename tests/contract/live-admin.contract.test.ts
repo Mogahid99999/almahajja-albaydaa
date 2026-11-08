@@ -7,12 +7,14 @@
  *   - admin_live_overview: content managers + sheikhs; a sheikh sees only his own
  *     scheduled / ended sessions; no raw paths / room names / egress ids leak;
  *     the recording job (status, progress) rides along.
- *   - admin_live_inbox: content managers only; needs_title drafts with a sheikh
+ *   - admin_live_inbox: lecture managers (admin / publisher / sheikh since 0160);
+ *     needs_title drafts with a sheikh
  *     suggestion; recordings still being compressed as `pending`.
  *   - get_live_interventions: staff only; real names (D2) incl. a hidden sister;
  *     stints from live_moderation_log approve → demote/step_down as offsets from
  *     started_at; the host is not an «intervention».
- *   - admin_save_live_lecture: content managers only; the two required fields;
+ *   - admin_save_live_lecture: lecture managers (admin / publisher / sheikh since
+ *     0160); the two required fields;
  *     «حفظ دون نشر» keeps a draft; «نشر بدون إشعار» publishes quietly; «تغيير»
  *     the section re-orders to the end of the new one; only live lectures.
  *
@@ -313,17 +315,24 @@ describe('who may call what', () => {
     }
   });
 
-  test('a sheikh reads the overview and interventions, but not the inbox or save', async () => {
+  // 0160 (owner 2026-10-25): the sheikh manages every lecture, so the inbox and
+  // «حفظ» (is_lecture_manager) are his too — he is no longer refused.
+  test('a sheikh reads the overview, interventions and the inbox, and may save (0160)', async () => {
     expect((await sheikh.rpc('admin_live_overview')).error).toBeNull();
     expect((await sheikh.rpc('get_live_interventions', { p_session: readySess })).error).toBeNull();
     const inbox = await sheikh.rpc('admin_live_inbox');
-    expect(inbox.error!.message).toContain(DENIED);
+    expect(inbox.error).toBeNull();
+    expect(inbox.data).not.toBeNull();
+    // Past the permission check: a too-short title reaches the field validation
+    // (and changes nothing — lectureA is still needed as a needs_title draft below).
     const save = await sheikh.rpc('admin_save_live_lecture', {
       p_lecture: lectureA,
-      p_title: 'تجربة عنوان',
+      p_title: 'ab',
       p_sheikh: sheikhRowId,
     });
-    expect(save.error!.message).toContain(DENIED);
+    expect(save.error!.message).not.toContain(DENIED);
+    expect(save.error!.message).toContain('العنوان بين');
+    expect((await lectureRow(lectureA)).review_state).toBe('needs_title');
   });
 
   test('the internal helpers stay closed', async () => {
