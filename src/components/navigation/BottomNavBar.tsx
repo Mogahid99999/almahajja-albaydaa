@@ -58,6 +58,7 @@ const SECTION_PREFIXES: { prefix: string; tabKey: string }[] = [
   { prefix: '/badges', tabKey: 'journey' },
   { prefix: '/harvest', tabKey: 'journey' },
   { prefix: '/bookmarks', tabKey: 'journey' },
+  { prefix: '/certificates', tabKey: 'journey' },
   // Profile (user) section
   { prefix: '/profile', tabKey: 'profile' },
   { prefix: '/downloads', tabKey: 'profile' },

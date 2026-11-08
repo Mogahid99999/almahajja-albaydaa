@@ -20,6 +20,8 @@ import { SectionIcon } from '@/components/ui/SectionIcon';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Txt } from '@/components/ui/Txt';
 import { SectionStatusTag } from '@/components/section/SectionStatusTag';
+import { CertificateTag } from '@/components/certificates/CertificateTag';
+import { useCertificateCardIds } from '@/hooks/useCertificates';
 import type { SectionCard } from '@/api/types';
 
 type Props = {
@@ -28,6 +30,7 @@ type Props = {
 
 export function SubsectionsScroller({ subsections }: Props) {
   const router = useRouter();
+  const certificateIds = useCertificateCardIds();
 
   // Warm every child section that's rendered in the scroller, so drilling in is
   // instant (V10 Perf C). prefetch is a no-op while a page is still fresh.
@@ -112,8 +115,9 @@ export function SubsectionsScroller({ subsections }: Props) {
                 {arLectureCount(sub.lectureCount)}
               </Txt>
 
-              {/* «مستمر» / «منتهي» (0164) — pushed to the row's far end */}
-              <View style={{ marginStart: 'auto' }}>
+              {/* «مستمر» / «منتهي» (0164) + «شهادة إتمام» (0169) — at the row's far end */}
+              <View style={{ marginStart: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {certificateIds.has(sub.id) ? <CertificateTag size="sm" /> : null}
                 <SectionStatusTag status={sub.seriesStatus} size="sm" />
               </View>
             </View>

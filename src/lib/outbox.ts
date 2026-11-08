@@ -133,6 +133,7 @@ async function doFlush(): Promise<void> {
   }
   if (didActivity) {
     void queryClient.invalidateQueries({ queryKey: ['section'] });
+    void queryClient.invalidateQueries({ queryKey: ['certificates'] });
   }
   for (const id of noteIds) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.lectureNote(id) });

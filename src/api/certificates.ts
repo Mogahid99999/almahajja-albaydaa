@@ -202,3 +202,37 @@ export async function getCertificateEligibility(
   if (error) throw error;
   return parseCertificateEligibility(data);
 }
+
+/** One certificate section of «شهاداتي» (0169 get_my_certificates). */
+export type MyCertificate = {
+  sectionId: string;
+  title: string;
+  /** The parent section's title (context for a sub-section); null at the top level. */
+  parentTitle: string | null;
+  /** Every section above this one: they carry the «شهادة إتمام» mark on their cards. */
+  ancestorIds: string[];
+  eligibility: CertificateEligibility;
+};
+
+/** get_my_certificates jsonb → client rows. Exported for tests. */
+export function parseMyCertificates(raw: unknown): MyCertificate[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((r: Record<string, any>) => ({
+    sectionId: String(r.section_id ?? ''),
+    title: String(r.title ?? ''),
+    parentTitle: typeof r.parent_title === 'string' && r.parent_title ? r.parent_title : null,
+    ancestorIds: Array.isArray(r.ancestor_ids) ? r.ancestor_ids.map(String) : [],
+    eligibility: parseCertificateEligibility(r.eligibility),
+  }));
+}
+
+/**
+ * The signed-in student's certificate sections: enabled, visible to him, with
+ * at least one lecture to complete — each with its certificate_eligibility.
+ * Earned first. Also the source of the «شهادة إتمام» marks on section cards.
+ */
+export async function getMyCertificates(): Promise<MyCertificate[]> {
+  const { data, error } = await supabase.rpc('get_my_certificates' as never);
+  if (error) throw error;
+  return parseMyCertificates(data);
+}

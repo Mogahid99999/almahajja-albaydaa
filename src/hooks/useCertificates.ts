@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
 import {
   getCertificateEligibility,
+  getMyCertificates,
   getSectionCertificateSettings,
   saveSectionCertificateSettings,
   type SaveSectionCertificateInput,
 } from '@/api/certificates';
 import { queryKeys } from '@/constants/queryKeys';
+import { useCurrentUser } from '@/hooks/useAuth';
 
 /** The section's certificate settings + its subtree quizzes (admin section editor). */
 export function useSectionCertificateSettings(sectionId: string | undefined) {
@@ -43,4 +46,36 @@ export function useCertificateEligibility(
     enabled: (options?.enabled ?? true) && !!sectionId,
     staleTime: 30_000,
   });
+}
+
+/**
+ * «شهاداتي» (0169): the student's certificate sections, each with its
+ * certificate_eligibility. Shared by the screen and the «شهادة إتمام» marks, so
+ * one cached call serves every section card. Needs a session (guests have one).
+ */
+export function useMyCertificates(options?: { enabled?: boolean; refetchOnMount?: boolean | 'always' }) {
+  const { data: user } = useCurrentUser();
+  return useQuery({
+    queryKey: queryKeys.myCertificates,
+    queryFn: getMyCertificates,
+    enabled: (options?.enabled ?? true) && !!user,
+    staleTime: 5 * 60_000,
+    refetchOnMount: options?.refetchOnMount ?? true,
+  });
+}
+
+/**
+ * Ids of the section CARDS that carry the «شهادة إتمام» mark: the sections that
+ * grant a certificate and every section above them, so a main section with no
+ * certificate of its own still shows that one waits inside.
+ */
+export function useCertificateCardIds(): Set<string> {
+  const { data } = useMyCertificates();
+  return useMemo(() => new Set((data ?? []).flatMap((c) => [c.sectionId, ...c.ancestorIds])), [data]);
+}
+
+/** Ids of the sections that themselves grant this student a certificate (section page). */
+export function useCertificateSectionIds(): Set<string> {
+  const { data } = useMyCertificates();
+  return useMemo(() => new Set((data ?? []).map((c) => c.sectionId)), [data]);
 }

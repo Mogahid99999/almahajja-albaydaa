@@ -609,6 +609,7 @@ export function playPrev() {
  */
 function invalidateProgressViews() {
   void queryClient.invalidateQueries({ queryKey: queryKeys.home });
+  void queryClient.invalidateQueries({ queryKey: ['certificates'] }); // certificate progress
   if (currentSectionId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.section(currentSectionId) });
   }

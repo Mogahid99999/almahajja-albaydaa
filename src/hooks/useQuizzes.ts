@@ -78,6 +78,7 @@ function useInvalidateQuizStatus() {
   return () => {
     qc.invalidateQueries({ queryKey: ['quizzes'] });
     qc.invalidateQueries({ queryKey: ['section'] });
+    qc.invalidateQueries({ queryKey: ['certificates'] }); // «شهادة إتمام» quiz states
   };
 }
 

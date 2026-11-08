@@ -9,6 +9,7 @@
  *   SectionHeaderBadge   (conditional on section.showHeader)
  *   meta row             (sheikh Chips + lecture count)
  *   ProgressCard
+ *   CertificateProgressCard (only when the section grants a certificate — 0168/0169)
  *   SubsectionsScroller  (conditional on subsections.length > 0)
  *   <SectionTitle> "محاضرات القسم"
  *   <Card padded={false}>  ← all lectures, separated by <Divider />
@@ -25,6 +26,8 @@ import { colors, spacing } from '@/constants/theme';
 import { seriesCelebration } from '@/constants/badges';
 import { celebrate } from '@/stores/celebrationStore';
 import { useSectionPage } from '@/hooks/useSections';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { useCertificateSectionIds } from '@/hooks/useCertificates';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useRefreshAll } from '@/hooks/useRefreshAll';
@@ -48,6 +51,8 @@ import { SubsectionsScroller } from '@/components/section/SubsectionsScroller';
 import { LiveSectionPin } from '@/components/live/LiveSectionPin';
 import { AttachmentList } from '@/components/attachments/AttachmentList';
 import { QuizListCard } from '@/components/quiz/QuizListCard';
+import { CertificateTag } from '@/components/certificates/CertificateTag';
+import { CertificateProgressCard } from '@/components/certificates/CertificateProgressCard';
 
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -55,6 +60,11 @@ export default function SectionScreen() {
   const { data, isLoading, refetch } = useSectionPage(id ?? '');
   const refreshAll = useRefreshAll();
   const lectures = data?.lectures ?? [];
+  // «شهادة إتمام» (0169): only sections that grant THIS student a certificate
+  // (enabled, visible to him, something to complete) — else nothing is shown.
+  const { data: user } = useCurrentUser();
+  const isGuest = user?.isGuest ?? true;
+  const hasCertificate = useCertificateSectionIds().has(id ?? '');
 
   // Whole-series completion (recursive subtree rollup from the RPC): the seal +
   // closing-summary entry, and a once-ever server-deduped celebration. A section
@@ -163,6 +173,7 @@ export default function SectionScreen() {
       >
         {/* «مستمر» / «منتهي» (0164) — first, so a student sees it at once */}
         <SectionStatusTag status={section.seriesStatus} />
+        {hasCertificate ? <CertificateTag /> : null}
         {sheikhNames.map((name) => (
           <Chip key={name} label={name} bullet />
         ))}
@@ -184,6 +195,13 @@ export default function SectionScreen() {
           total={rollup.total}
         />
       </View>
+
+      {/* ── «شهادة إتمام» progress — certificate_eligibility, its own scope ───── */}
+      {hasCertificate ? (
+        <View style={{ paddingHorizontal: spacing.screenH }}>
+          <CertificateProgressCard sectionId={section.id} isGuest={isGuest} />
+        </View>
+      ) : null}
 
       {/* ── Series-complete seal → «ملخص إتمام السلسلة» (V20 · Feature A) ─────── */}
       {seriesComplete ? (

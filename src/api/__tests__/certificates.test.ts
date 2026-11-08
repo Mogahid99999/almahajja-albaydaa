@@ -12,6 +12,7 @@ import {
   getCertificateEligibility,
   parseCertificateEligibility,
   parseCertificateSettings,
+  parseMyCertificates,
   saveSectionCertificateSettings,
   type SaveSectionCertificateInput,
 } from '@/api/certificates';
@@ -97,6 +98,12 @@ describe('saveSectionCertificateSettings', () => {
 });
 
 describe('parsers', () => {
+  test('my certificates carry the sections above them', () => {
+    const [c] = parseMyCertificates([{ section_id: 's', title: 'ق', parent_title: null, ancestor_ids: ['m', 'r'] }]);
+    expect(c.ancestorIds).toEqual(['m', 'r']);
+    expect(parseMyCertificates([{ section_id: 's' }])[0].ancestorIds).toEqual([]);
+  });
+
   test('settings: defaults for a never-configured section; picker rows', () => {
     const s = parseCertificateSettings(
       {

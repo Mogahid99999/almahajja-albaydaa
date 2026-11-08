@@ -294,6 +294,12 @@ export default function ProfileScreen() {
         />
         <Divider />
         <LinkRow
+          icon="award"
+          label="شهاداتي"
+          onPress={() => router.push('/(student)/certificates' as Parameters<typeof router.push>[0])}
+        />
+        <Divider />
+        <LinkRow
           icon="calendar"
           label="الجدول الأسبوعي"
           onPress={() => router.push('/(student)/schedule' as Parameters<typeof router.push>[0])}

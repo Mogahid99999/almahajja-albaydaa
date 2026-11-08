@@ -12,7 +12,14 @@ import { Txt } from '@/components/ui/Txt';
  * notifications) stays open. This is a calm, non-gamified invitation, not a wall:
  * no pressure, no comparison, no counts.
  */
-export function JourneyGate() {
+export function JourneyGate({
+  title = 'سجّل لفتح رحلتك العلمية',
+  body = 'تتبّع دروسك المكتملة وتقدّمك عبر أجهزتك، بهدوء ودون مقارنة مع أحد. يبقى كل ما بدأته محفوظًا معك.',
+}: {
+  /** Reused by «شهاداتي» with its own wording. */
+  title?: string;
+  body?: string;
+} = {}) {
   const router = useRouter();
   return (
     <View style={{ paddingTop: 24, alignItems: 'center' }}>
@@ -35,7 +42,7 @@ export function JourneyGate() {
         </View>
 
         <Txt weight="display" size={19} color={colors.primaryTeal} align="center">
-          سجّل لفتح رحلتك العلمية
+          {title}
         </Txt>
         <Txt
           size={13}
@@ -43,8 +50,7 @@ export function JourneyGate() {
           align="center"
           style={{ marginTop: 10, lineHeight: 22 }}
         >
-          تتبّع دروسك المكتملة وتقدّمك عبر أجهزتك، بهدوء ودون مقارنة مع أحد. يبقى كل ما بدأته
-          محفوظًا معك.
+          {body}
         </Txt>
 
         <Pressable
