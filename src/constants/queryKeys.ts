@@ -68,6 +68,7 @@ export const queryKeys = {
   adminQuiz: (quizId: string) => ['admin', 'quiz', quizId] as const,
   adminQuizResults: (quizId: string) => ['admin', 'quizResults', quizId] as const,
   adminQuizAttempt: (attemptId: string) => ['admin', 'quizAttempt', attemptId] as const,
+  adminPendingGradings: ['admin', 'pendingGradings'] as const,
 
   // Admin
   adminLectures: ['admin', 'lectures'] as const,

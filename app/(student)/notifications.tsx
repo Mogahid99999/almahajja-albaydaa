@@ -11,6 +11,7 @@
  */
 import { ActivityIndicator, Alert, FlatList, Platform, Pressable, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { memo, useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -119,6 +120,7 @@ const NotificationRow = memo(function NotificationRow({
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useNotifications();
   const unread = useUnreadCount();
   const markRead = useMarkRead();
@@ -164,10 +166,15 @@ export default function NotificationsScreen() {
       } else if (item.data.sectionId) {
         router.push(`/(student)/section/${item.data.sectionId}`);
       } else if (item.data.route) {
+        // 0166 «تم تصحيح اختبارك»: drop the cached «بانتظار التصحيح» first.
+        if (item.data.route.startsWith('/quiz-result/')) {
+          void queryClient.invalidateQueries({ queryKey: ['quizzes'] });
+          void queryClient.invalidateQueries({ queryKey: ['section'] });
+        }
         router.push(item.data.route as Parameters<typeof router.push>[0]);
       }
     },
-    [markRead, router, openLectureGuarded],
+    [markRead, router, openLectureGuarded, queryClient],
   );
 
   const items = data?.pages.flatMap((p) => p.items) ?? [];

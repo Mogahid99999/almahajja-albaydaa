@@ -17,6 +17,7 @@ import { colors, radius, shadows } from '@/constants/theme';
 import {
   useAdminQuizzes,
   useDeleteQuiz,
+  usePendingGradings,
   useSetQuizAvailability,
   useSetQuizStatus,
 } from '@/hooks/useQuizzes';
@@ -149,6 +150,8 @@ function QuizRow({
 export default function AdminQuizzesScreen() {
   const router = useRouter();
   const { data: quizzes = [], isLoading } = useAdminQuizzes();
+  // 0166: written answers waiting for a grader (admin · sheikh · publisher).
+  const { data: pendingGradings = [] } = usePendingGradings();
   const deleteQuiz = useDeleteQuiz();
   const setStatus = useSetQuizStatus();
   const setAvailability = useSetQuizAvailability();
@@ -211,16 +214,43 @@ export default function AdminQuizzesScreen() {
 
   const header = (
     <View style={styles.pageHeader}>
-      <Pressable
-        onPress={() => router.push('/admin/quiz-edit' as Parameters<typeof router.push>[0])}
-        style={({ pressed }) => [styles.createBtn, pressed && { opacity: 0.85 }]}
-        accessibilityRole="button"
-      >
-        <Feather name="plus" size={16} color={colors.onTealPrimary} style={{ marginLeft: 6 }} />
-        <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
-          اختبار جديد
-        </Txt>
-      </Pressable>
+      <View style={styles.headerActions}>
+        <Pressable
+          onPress={() => router.push('/admin/quiz-edit' as Parameters<typeof router.push>[0])}
+          style={({ pressed }) => [styles.createBtn, pressed && { opacity: 0.85 }]}
+          accessibilityRole="button"
+        >
+          <Feather name="plus" size={16} color={colors.onTealPrimary} style={{ marginLeft: 6 }} />
+          <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+            اختبار جديد
+          </Txt>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push('/admin/quiz-grading' as Parameters<typeof router.push>[0])}
+          style={({ pressed }) => [
+            styles.gradingBtn,
+            pendingGradings.length > 0 && styles.gradingBtnActive,
+            pressed && { opacity: 0.85 },
+          ]}
+          accessibilityRole="button"
+        >
+          <Feather
+            name="edit-3"
+            size={15}
+            color={pendingGradings.length > 0 ? colors.accentBrassMuted : colors.textMuted}
+            style={{ marginLeft: 6 }}
+          />
+          <Txt
+            weight="semibold"
+            size={13.5}
+            color={pendingGradings.length > 0 ? colors.accentBrassMuted : colors.textMuted}
+          >
+            {pendingGradings.length > 0
+              ? `بانتظار التصحيح (${arNum(pendingGradings.length)})`
+              : 'بانتظار التصحيح'}
+          </Txt>
+        </Pressable>
+      </View>
       <View>
         <Txt weight="display" size={27} color={colors.primaryTeal}>
           الاختبارات
@@ -304,6 +334,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 28,
+  } as ViewStyle,
+
+  headerActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 10,
+    flexShrink: 1,
+  } as ViewStyle,
+
+  gradingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+    paddingHorizontal: 16,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.borderSand2,
+  } as ViewStyle,
+
+  gradingBtnActive: {
+    borderColor: colors.accentBrassMuted,
+    backgroundColor: 'rgba(176,137,79,0.08)',
   } as ViewStyle,
 
   createBtn: {

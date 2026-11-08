@@ -22,6 +22,7 @@ const STATUS_LABEL: Record<AdminResultStatus, { label: string; color: string }> 
   failed: { label: 'لم يجتز', color: colors.stateDanger },
   incomplete: { label: 'لم يكمل', color: colors.accentBrassMuted },
   exhausted: { label: 'استنفد المحاولات', color: colors.textMuted },
+  pending: { label: 'بانتظار التصحيح', color: colors.accentBrassMuted },
 };
 
 function formatDate(iso: string): string {
@@ -81,6 +82,13 @@ export default function QuizResultsScreen() {
           <Tile label="دخلوا الاختبار" value={arNum(summary.entered)} />
           <Tile label="اجتازوا" value={arNum(summary.passedCount)} color={colors.stateSuccess} />
           <Tile label="لم يجتازوا" value={arNum(summary.failedCount)} color={colors.stateDanger} />
+          {summary.pendingCount > 0 ? (
+            <Tile
+              label="بانتظار التصحيح"
+              value={arNum(summary.pendingCount)}
+              color={colors.accentBrassMuted}
+            />
+          ) : null}
           <Tile label="لم يكملوا" value={arNum(summary.incompleteCount)} color={colors.accentBrassMuted} />
           <Tile label="لم يدخلوا (من المتابعين)" value={arNum(summary.notTaken)} color={colors.textMuted} />
           <Tile

@@ -13,6 +13,7 @@ import { deriveAvailability } from '@/components/quiz/quizAvailability';
 import { supabase } from '@/lib/supabase';
 import type {
   AdminAttemptDetail,
+  AdminPendingGrading,
   AdminQuizDetail,
   AdminQuizResultRow,
   AdminQuizRow,
@@ -25,10 +26,12 @@ import type {
   QuizQuestionInput,
   QuizResult,
   QuizStatus,
+  QuizWrittenGrade,
 } from './types';
 
 export type {
   AdminAttemptDetail,
+  AdminPendingGrading,
   AdminQuizDetail,
   AdminQuizResultRow,
   AdminQuizRow,
@@ -41,6 +44,7 @@ export type {
   QuizQuestionInput,
   QuizResult,
   QuizStatus,
+  QuizWrittenGrade,
 } from './types';
 
 // ─── Student ─────────────────────────────────────────────────────────────────
@@ -66,11 +70,16 @@ export type RawStatusRow = {
   availability: import('./types').QuizAvailability;
   available_from: string | null;
   available_until: string | null;
+  /** 0166 — absent from older servers. */
+  pending_review?: boolean;
 };
 
 function deriveStatus(r: RawStatusRow): QuizStatus {
   if (r.in_progress_attempt_id) return 'in_progress';
   if (r.passed) return 'passed';
+  // A submitted attempt awaiting a grader: no result yet, so neither failed
+  // nor exhausted (0166).
+  if (r.pending_review) return 'pending_review';
   if ((r.attempts_used ?? 0) === 0) return 'not_started';
   if (r.attempts_left === 0) return 'exhausted';
   return 'failed';
@@ -170,7 +179,23 @@ export async function saveAnswer(
   if (error) throw error;
 }
 
-/** Grade server-side and finalize (idempotent on double-submit). */
+/** Save one written answer (upsert; empty text clears it; 0166). */
+export async function saveTextAnswer(
+  attemptId: string,
+  questionId: string,
+  text: string,
+): Promise<void> {
+  if (USE_MOCK) return;
+  const { error } = await supabase.rpc('save_quiz_text_answer', {
+    p_attempt_id: attemptId,
+    p_question_id: questionId,
+    p_text: text,
+  });
+  if (error) throw error;
+}
+
+/** Grade server-side and finalize (idempotent on double-submit). A quiz with
+ *  written questions comes back `gradingStatus: 'pending'` instead (0166). */
 export async function submitAttempt(attemptId: string): Promise<QuizResult> {
   if (USE_MOCK) return emptyResult(attemptId);
   const { data, error } = await supabase.rpc('submit_quiz_attempt', {
@@ -217,6 +242,8 @@ function emptyResult(attemptId: string): QuizResult {
     correctCount: null,
     wrongCount: null,
     details: null,
+    gradingStatus: null,
+    hasWritten: false,
   };
 }
 
@@ -265,7 +292,7 @@ export async function adminGetQuiz(quizId: string): Promise<AdminQuizDetail> {
       .single(),
     supabase
       .from('quiz_questions')
-      .select('id, text, points, order, quiz_options(id, text, is_correct, order)')
+      .select('id, text, points, order, kind, model_answer, quiz_options(id, text, is_correct, order)')
       .eq('quiz_id', quizId)
       .order('order'),
   ]);
@@ -291,6 +318,8 @@ export async function adminGetQuiz(quizId: string): Promise<AdminQuizDetail> {
       text: q.text,
       points: q.points,
       order: q.order,
+      kind: (((q as any).kind ?? 'mcq') as QuizQuestionInput['kind']),
+      modelAnswer: ((q as any).model_answer ?? null) as string | null,
       options: (q.quiz_options ?? [])
         .slice()
         .sort((a, b) => a.order - b.order)
@@ -327,13 +356,20 @@ async function writeQuestions(quizId: string, questions: QuizQuestionInput[]): P
     if (questionId) {
       const { error } = await supabase
         .from('quiz_questions')
-        .update({ text: q.text, points: q.points, order: q.order })
+        .update({ text: q.text, points: q.points, order: q.order, kind: q.kind, model_answer: q.modelAnswer })
         .eq('id', questionId);
       if (error) throw error;
     } else {
       const { data, error } = await supabase
         .from('quiz_questions')
-        .insert({ quiz_id: quizId, text: q.text, points: q.points, order: q.order })
+        .insert({
+          quiz_id: quizId,
+          text: q.text,
+          points: q.points,
+          order: q.order,
+          kind: q.kind,
+          model_answer: q.modelAnswer,
+        })
         .select('id')
         .single();
       if (error || !data) throw error ?? new Error('insert question failed');
@@ -467,6 +503,7 @@ export async function getQuizResultsSummary(quizId: string): Promise<AdminQuizSu
       avgScore: null,
       maxScore: null,
       minScore: null,
+      pendingCount: 0,
     };
   }
   const { data, error } = await supabase.rpc('get_quiz_results_summary', {
@@ -483,6 +520,7 @@ export async function getQuizResultsSummary(quizId: string): Promise<AdminQuizSu
     avgScore: r?.avg_score != null ? Number(r.avg_score) : null,
     maxScore: r?.max_score ?? null,
     minScore: r?.min_score ?? null,
+    pendingCount: (r as any)?.pending_count ?? 0,
   };
 }
 
@@ -512,4 +550,39 @@ export async function getAttemptDetail(attemptId: string): Promise<AdminAttemptD
   });
   if (error) throw error;
   return data as unknown as AdminAttemptDetail;
+}
+
+/** 0166 «بانتظار التصحيح»: every attempt whose written answers await a grader. */
+export async function listPendingGradings(): Promise<AdminPendingGrading[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase.rpc('list_pending_gradings');
+  if (error) throw error;
+  return ((data ?? []) as any[]).map((r) => ({
+    attemptId: r.attempt_id,
+    quizId: r.quiz_id,
+    quizTitle: r.quiz_title,
+    sectionTitle: r.section_title ?? null,
+    displayName: r.display_name,
+    attemptNo: r.attempt_no,
+    submittedAt: r.submitted_at,
+    writtenCount: r.written_count ?? 0,
+  }));
+}
+
+/**
+ * 0166 «اعتماد التصحيح وإرسال النتيجة». The server re-checks everything (role,
+ * every written question graded, 0 ≤ points ≤ max), finalizes the score and
+ * notifies the student.
+ */
+export async function gradeAttempt(
+  attemptId: string,
+  grades: QuizWrittenGrade[],
+): Promise<{ score: number; totalScore: number; passScore: number; passed: boolean }> {
+  if (USE_MOCK) return { score: 0, totalScore: 0, passScore: 0, passed: false };
+  const { data, error } = await supabase.rpc('grade_quiz_attempt', {
+    p_attempt_id: attemptId,
+    p_grades: grades,
+  });
+  if (error) throw error;
+  return data as unknown as { score: number; totalScore: number; passScore: number; passed: boolean };
 }

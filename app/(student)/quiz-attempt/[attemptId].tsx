@@ -6,27 +6,48 @@
  * a confirmation sheet before the final submit, and — when the quiz is timed —
  * a calm countdown seeded from the SERVER's remaining seconds that auto-submits
  * at zero. Already-submitted attempts redirect straight to their result.
+ *
+ * 0166 «إجابة نصية»: a written question shows a multiline RTL field instead of
+ * options. Typing autosaves (debounced), moving to another question saves at
+ * once, and submit saves every unsaved draft first — so an answer survives
+ * navigation, leaving and resuming. A quiz with written questions comes back
+ * «بانتظار التصحيح» from submit; the result screen shows that state.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, Pressable, View } from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  Modal,
+  Pressable,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Screen, Txt } from '@/components/ui';
-import { colors, radius, shadows } from '@/constants/theme';
-import { useAttemptQuestions, useSaveAnswer, useSubmitAttempt } from '@/hooks/useQuizzes';
+import { colors, fonts, radius, shadows } from '@/constants/theme';
+import {
+  useAttemptQuestions,
+  useSaveAnswer,
+  useSaveTextAnswer,
+  useSubmitAttempt,
+} from '@/hooks/useQuizzes';
 import { arabicOr } from '@/lib/errorText';
 import { arDuration, arNum } from '@/lib/format';
 import { useCelebrationStore } from '@/stores/celebrationStore';
 
 const SAVE_WARNING_GENERIC = 'تعذّر حفظ الإجابة — تحقق من الاتصال، وسيُعاد الحفظ عند التسليم.';
+/** Typing pause before a written answer autosaves. */
+const TEXT_SAVE_DEBOUNCE_MS = 900;
 
 export default function QuizAttemptScreen() {
   const { attemptId } = useLocalSearchParams<{ attemptId: string }>();
   const router = useRouter();
   const { data, isLoading, isError } = useAttemptQuestions(attemptId ?? '');
   const saveAnswer = useSaveAnswer();
+  const saveText = useSaveTextAnswer();
   const submitAttempt = useSubmitAttempt();
 
   const [index, setIndex] = useState(0);
@@ -38,6 +59,13 @@ export default function QuizAttemptScreen() {
   // What the server has confirmed saved — resave any drift before submitting.
   const savedRef = useRef<Record<string, string>>({});
   const submittedRef = useRef(false);
+  // Written answers (0166): the live drafts (state for rendering + a ref the
+  // timer-driven auto-submit can read without a stale closure), what the server
+  // has confirmed, and one pending debounce timer per question.
+  const [texts, setTexts] = useState<Record<string, string>>({});
+  const textsRef = useRef<Record<string, string>>({});
+  const savedTextRef = useRef<Record<string, string>>({});
+  const textTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Hold back any achievement celebration while the student is answering (§15
   // "لا يظهر قبل إعلان نتيجة الاختبار"). Cleared on unmount — leaving for the
@@ -59,11 +87,16 @@ export default function QuizAttemptScreen() {
   useEffect(() => {
     if (!data) return;
     const seeded: Record<string, string> = {};
+    const seededTexts: Record<string, string> = {};
     for (const q of data.questions) {
       if (q.selectedOptionId) seeded[q.id] = q.selectedOptionId;
+      if (q.kind === 'text' && q.textAnswer) seededTexts[q.id] = q.textAnswer;
     }
     setAnswers((prev) => ({ ...seeded, ...prev }));
     savedRef.current = { ...seeded, ...savedRef.current };
+    textsRef.current = { ...seededTexts, ...textsRef.current };
+    setTexts({ ...textsRef.current });
+    savedTextRef.current = { ...seededTexts, ...savedTextRef.current };
     deadlineRef.current =
       data.remainingSec == null ? null : Date.now() + data.remainingSec * 1000;
     setRemaining(data.remainingSec);
@@ -104,8 +137,55 @@ export default function QuizAttemptScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.remainingSec]);
 
-  const answeredCount = questions.filter((q) => answers[q.id]).length;
+  // Leaving the screen (back) must not drop a draft still waiting for its
+  // debounce — save those right away.
+  useEffect(() => {
+    const timers = textTimersRef.current;
+    return () => {
+      for (const qId of Object.keys(timers)) {
+        clearTimeout(timers[qId]);
+        void flushText(qId);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isAnswered = (q: (typeof questions)[number]) =>
+    q.kind === 'text' ? (texts[q.id] ?? '').trim().length > 0 : !!answers[q.id];
+  const answeredCount = questions.filter(isAnswered).length;
   const current = questions[index];
+
+  /** Save one written draft now if the server doesn't have it yet. */
+  async function flushText(questionId: string): Promise<void> {
+    const timer = textTimersRef.current[questionId];
+    if (timer) clearTimeout(timer);
+    delete textTimersRef.current[questionId];
+    const text = (textsRef.current[questionId] ?? '').trim();
+    if ((savedTextRef.current[questionId] ?? '').trim() === text || !attemptId) return;
+    try {
+      await saveText.mutateAsync({ attemptId, questionId, text });
+      savedTextRef.current[questionId] = text;
+      setSaveWarning(null);
+    } catch (err) {
+      setSaveWarning(arabicOr(err, SAVE_WARNING_GENERIC));
+    }
+  }
+
+  function changeText(questionId: string, text: string) {
+    textsRef.current = { ...textsRef.current, [questionId]: text };
+    setTexts(textsRef.current);
+    const timer = textTimersRef.current[questionId];
+    if (timer) clearTimeout(timer);
+    textTimersRef.current[questionId] = setTimeout(() => {
+      void flushText(questionId);
+    }, TEXT_SAVE_DEBOUNCE_MS);
+  }
+
+  /** Move between questions; a written draft on the one being left saves now. */
+  function goTo(next: number) {
+    if (current?.kind === 'text') void flushText(current.id);
+    setIndex(next);
+  }
 
   function pickOption(questionId: string, optionId: string) {
     setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
@@ -142,6 +222,10 @@ export default function QuizAttemptScreen() {
           ),
       );
     }
+    // Written drafts go up first even on the timer's auto-submit: typing is
+    // continuous, so the last words are usually still unsaved (the server keeps
+    // a 30 s grace after the deadline for exactly this).
+    await Promise.all(Object.keys(textsRef.current).map((qId) => flushText(qId)));
     submitAttempt.mutate(attemptId, {
       onSuccess: () =>
         router.replace(`/quiz-result/${attemptId}` as Parameters<typeof router.replace>[0]),
@@ -214,9 +298,16 @@ export default function QuizAttemptScreen() {
   }
 
   const isLast = index === questions.length - 1;
+  const isTextQuestion = current.kind === 'text';
 
   return (
-    <Screen scroll padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
+    <Screen
+      scroll
+      padded
+      bottomPad={40 + BOTTOM_NAV_CLEARANCE}
+      keyboardAvoiding
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Top bar: exit + progress + timer */}
       <View
         style={{
@@ -328,9 +419,47 @@ export default function QuizAttemptScreen() {
         </Txt>
       </Card>
 
+      {/* Written answer (0166) */}
+      {isTextQuestion ? (
+        <View style={{ marginTop: 14 }}>
+          <TextInput
+            key={current.id}
+            value={texts[current.id] ?? ''}
+            onChangeText={(t) => changeText(current.id, t)}
+            onBlur={() => void flushText(current.id)}
+            placeholder="اكتب إجابتك هنا..."
+            placeholderTextColor={colors.textGhost}
+            multiline
+            textAlign="right"
+            textAlignVertical="top"
+            maxLength={8000}
+            accessibilityLabel="إجابتك"
+            style={{
+              minHeight: 170,
+              maxHeight: 360,
+              backgroundColor: colors.surfaceCard,
+              borderWidth: 1.5,
+              borderColor: (texts[current.id] ?? '').trim() ? colors.primaryTeal : colors.borderSand,
+              borderRadius: radius.card,
+              paddingHorizontal: 16,
+              paddingTop: 14,
+              paddingBottom: 14,
+              fontFamily: fonts.body,
+              fontSize: 15,
+              lineHeight: 26,
+              color: colors.textInk,
+              writingDirection: 'rtl',
+            }}
+          />
+          <Txt size={11.5} color={colors.textGhost} style={{ marginTop: 6 }}>
+            تُحفظ إجابتك تلقائيًا أثناء الكتابة.
+          </Txt>
+        </View>
+      ) : null}
+
       {/* Options */}
       <View style={{ marginTop: 14, gap: 10 }}>
-        {current.options.map((option) => {
+        {(isTextQuestion ? [] : current.options).map((option) => {
           const selected = answers[current.id] === option.id;
           return (
             <Pressable
@@ -396,7 +525,7 @@ export default function QuizAttemptScreen() {
       {/* Prev / Next / Submit */}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
         <Pressable
-          onPress={() => setIndex((i) => Math.max(0, i - 1))}
+          onPress={() => goTo(Math.max(0, index - 1))}
           disabled={index === 0}
           style={({ pressed }) => [
             {
@@ -452,7 +581,7 @@ export default function QuizAttemptScreen() {
           </Pressable>
         ) : (
           <Pressable
-            onPress={() => setIndex((i) => Math.min(questions.length - 1, i + 1))}
+            onPress={() => goTo(Math.min(questions.length - 1, index + 1))}
             style={({ pressed }) => [
               {
                 flex: 1,
@@ -481,10 +610,12 @@ export default function QuizAttemptScreen() {
       {!isLast ? (
         <Pressable
           onPress={() => setConfirmOpen(true)}
-          style={({ pressed }) => [{ alignSelf: 'center', marginTop: 16, opacity: pressed ? 0.7 : 1 }]}
+          // Stretched + centered: a content-sized RTL Text clipped to «تسليم» on
+          // Android after a re-render (seen on R5CX10P3BPL).
+          style={({ pressed }) => [{ alignSelf: 'stretch', marginTop: 16, opacity: pressed ? 0.7 : 1 }]}
           accessibilityRole="button"
         >
-          <Txt size={13} weight="semibold" color={colors.accentBrassMuted}>
+          <Txt size={13} weight="semibold" color={colors.accentBrassMuted} align="center">
             تسليم الاختبار
           </Txt>
         </Pressable>

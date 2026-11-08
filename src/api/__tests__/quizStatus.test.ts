@@ -79,3 +79,23 @@ describe('field mapping', () => {
     expect(card.passScore).toBe(5);
   });
 });
+
+describe('0166 «بانتظار التصحيح»', () => {
+  test('a submitted attempt awaiting a grader is pending — not failed, not exhausted', () => {
+    expect(mapCard(row({ pending_review: true, attempts_used: 1, attempts_left: 2 })).status).toBe(
+      'pending_review',
+    );
+    expect(mapCard(row({ pending_review: true, attempts_used: 3, attempts_left: 0 })).status).toBe(
+      'pending_review',
+    );
+  });
+
+  test('a pass already earned still reads passed; an in-progress attempt still wins', () => {
+    expect(mapCard(row({ pending_review: true, passed: true, attempts_used: 2 })).status).toBe('passed');
+    expect(mapCard(row({ pending_review: true, in_progress_attempt_id: 'a2' })).status).toBe('in_progress');
+  });
+
+  test('an older server without the field keeps the historic statuses', () => {
+    expect(mapCard(row({ attempts_used: 1, attempts_left: 2 })).status).toBe('failed');
+  });
+});

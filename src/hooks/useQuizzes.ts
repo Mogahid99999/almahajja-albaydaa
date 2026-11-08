@@ -12,15 +12,18 @@ import {
   getQuizIntro,
   getQuizResultsSummary,
   getSectionQuizzes,
+  gradeAttempt,
+  listPendingGradings,
   listQuizResultRows,
   saveAnswer,
+  saveTextAnswer,
   setQuizAvailability,
   setQuizStatus,
   startAttempt,
   submitAttempt,
   updateQuiz,
 } from '@/api/quizzes';
-import type { QuizInput, QuizQuestionInput, QuizResult } from '@/api/types';
+import type { QuizInput, QuizQuestionInput, QuizResult, QuizWrittenGrade } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
 
 // ─── Student ─────────────────────────────────────────────────────────────────
@@ -54,6 +57,10 @@ export function useAttemptResult(attemptId: string, options?: { enabled?: boolea
     queryKey: queryKeys.quizResult(attemptId),
     queryFn: () => getAttemptResult(attemptId),
     enabled: (options?.enabled ?? true) && !!attemptId,
+    // 0166: a result awaiting a grader can turn final at any moment (often
+    // opened straight from the «تم تصحيح اختبارك» notification) — never serve
+    // a cached «بانتظار التصحيح» as fresh.
+    staleTime: (q) => (q.state.data?.gradingStatus === 'pending' ? 0 : 30 * 60_000),
   });
 }
 
@@ -86,6 +93,14 @@ export function useSaveAnswer() {
   return useMutation({
     mutationFn: (vars: { attemptId: string; questionId: string; optionId: string }) =>
       saveAnswer(vars.attemptId, vars.questionId, vars.optionId),
+  });
+}
+
+/** 0166: save one written answer (the solver debounces typing into this). */
+export function useSaveTextAnswer() {
+  return useMutation({
+    mutationFn: (vars: { attemptId: string; questionId: string; text: string }) =>
+      saveTextAnswer(vars.attemptId, vars.questionId, vars.text),
   });
 }
 
@@ -194,5 +209,28 @@ export function useAdminAttemptDetail(attemptId: string) {
     queryKey: queryKeys.adminQuizAttempt(attemptId),
     queryFn: () => getAttemptDetail(attemptId),
     enabled: !!attemptId,
+  });
+}
+
+/** 0166 «بانتظار التصحيح» queue (admin · sheikh · publisher). */
+export function usePendingGradings() {
+  return useQuery({
+    queryKey: queryKeys.adminPendingGradings,
+    queryFn: listPendingGradings,
+    staleTime: 60_000,
+  });
+}
+
+/** 0166 «اعتماد التصحيح وإرسال النتيجة». */
+export function useGradeAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { attemptId: string; grades: QuizWrittenGrade[] }) =>
+      gradeAttempt(vars.attemptId, vars.grades),
+    onSuccess: (_r, vars) => {
+      qc.invalidateQueries({ queryKey: queryKeys.adminQuizAttempt(vars.attemptId) });
+      qc.invalidateQueries({ queryKey: queryKeys.adminPendingGradings });
+      qc.invalidateQueries({ queryKey: ['admin', 'quizResults'] });
+    },
   });
 }

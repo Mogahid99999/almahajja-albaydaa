@@ -1,5 +1,13 @@
 import type { ReactNode } from 'react';
-import { Platform, RefreshControl, ScrollView, StatusBar, View, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/constants/theme';
@@ -23,6 +31,8 @@ export function Screen({
   refreshing,
   onRefresh,
   topInset: applyTopInset = true,
+  keyboardShouldPersistTaps,
+  keyboardAvoiding = false,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -36,6 +46,13 @@ export function Screen({
    * top inset (e.g. Home's sticky header) — skips the status-bar padding/scrim
    * so content doesn't get double-spaced under it. */
   topInset?: boolean;
+  /** Scroll branch only: 'handled' lets a button work in one tap while the
+   *  keyboard is open (e.g. «التالي» from a written quiz answer). */
+  keyboardShouldPersistTaps?: 'always' | 'never' | 'handled';
+  /** Scroll branch only: the app is edge-to-edge, so the keyboard OVERLAYS the
+   *  view — 'padding' lifts the scroll area above it (same approach as the
+   *  lesson-note editor) so a text field mid-page stays reachable. */
+  keyboardAvoiding?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   // On Android, insets.top can briefly read 0 on first paint before the safe-area
@@ -97,7 +114,7 @@ export function Screen({
       </View>
     );
   }
-  return (
+  const scrolling = (
     <View style={{ flex: 1, backgroundColor: background }}>
       <ScrollView
         style={{ flex: 1 }}
@@ -108,6 +125,7 @@ export function Screen({
         showsVerticalScrollIndicator={false}
         persistentScrollbar={false}
         overScrollMode="never"
+        keyboardShouldPersistTaps={keyboardShouldPersistTaps}
         refreshControl={
           onRefresh ? (
             <RefreshControl
@@ -134,5 +152,12 @@ export function Screen({
       </ScrollView>
       {iosStatusBarScrim}
     </View>
+  );
+  return keyboardAvoiding ? (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      {scrolling}
+    </KeyboardAvoidingView>
+  ) : (
+    scrolling
   );
 }

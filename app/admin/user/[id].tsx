@@ -458,14 +458,29 @@ export default function AdminUserDetailScreen() {
                       style={[
                         styles.badge,
                         {
-                          backgroundColor: q.passed
-                            ? 'rgba(31,138,91,0.12)'
-                            : 'rgba(184,92,74,0.12)',
+                          // passed is null only while written answers await a
+                          // grader (0166) — never read that as راسب.
+                          backgroundColor:
+                            q.passed == null
+                              ? 'rgba(176,137,79,0.12)'
+                              : q.passed
+                                ? 'rgba(31,138,91,0.12)'
+                                : 'rgba(184,92,74,0.12)',
                         },
                       ]}
                     >
-                      <Txt size={11} weight="semibold" color={q.passed ? colors.stateSuccess : colors.stateDanger}>
-                        {q.passed ? 'ناجح' : 'راسب'}
+                      <Txt
+                        size={11}
+                        weight="semibold"
+                        color={
+                          q.passed == null
+                            ? colors.accentBrassMuted
+                            : q.passed
+                              ? colors.stateSuccess
+                              : colors.stateDanger
+                        }
+                      >
+                        {q.passed == null ? 'بانتظار التصحيح' : q.passed ? 'ناجح' : 'راسب'}
                       </Txt>
                     </View>
                     <View style={{ flex: 1 }}>

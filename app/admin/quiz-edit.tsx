@@ -5,6 +5,10 @@
  * with the publish toggle. Total score is always the live sum of question
  * points (derived, never stored). Saving diff-upserts questions so existing
  * student answers survive unrelated edits (see src/api/quizzes.ts).
+ *
+ * 0166: each question is «اختيار من متعدد» (options + one correct, graded on
+ * submit) or «إجابة نصية» (no options; an optional model answer for the grader,
+ * graded by hand from «بانتظار التصحيح»). One quiz may mix both.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,7 +23,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import type { QuizAvailabilityMode, QuizQuestionInput } from '@/api/types';
+import type { QuizAvailabilityMode, QuizQuestionInput, QuizQuestionKind } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { PublishToggle } from '@/components/admin/PublishToggle';
@@ -32,7 +36,20 @@ import { useAdminQuiz, useCreateQuiz, useUpdateQuiz } from '@/hooks/useQuizzes';
 import { arNum, toArabicDigits } from '@/lib/format';
 
 type EditableOption = { key: string; id?: string; text: string; isCorrect: boolean };
-type EditableQuestion = { key: string; id?: string; text: string; points: string; options: EditableOption[] };
+type EditableQuestion = {
+  key: string;
+  id?: string;
+  text: string;
+  points: string;
+  kind: QuizQuestionKind;
+  modelAnswer: string;
+  options: EditableOption[];
+};
+
+const KIND_LABEL: Record<QuizQuestionKind, string> = {
+  mcq: 'اختيار من متعدد',
+  text: 'إجابة نصية',
+};
 
 let keySeq = 0;
 const nextKey = () => `k${++keySeq}`;
@@ -46,6 +63,8 @@ function blankQuestion(): EditableQuestion {
     key: nextKey(),
     text: '',
     points: '1',
+    kind: 'mcq',
+    modelAnswer: '',
     options: [blankOption(true), blankOption()],
   };
 }
@@ -146,7 +165,11 @@ export default function QuizEditScreen() {
             id: q.id,
             text: q.text,
             points: String(q.points),
-            options: q.options.map((o) => ({
+            kind: q.kind,
+            modelAnswer: q.modelAnswer ?? '',
+            // A written question keeps two blank options in reserve, so
+            // switching it back to MCQ starts from the usual empty pair.
+            options: q.kind === 'text' ? [blankOption(true), blankOption()] : q.options.map((o) => ({
               key: nextKey(),
               id: o.id,
               text: o.text,
@@ -202,6 +225,7 @@ export default function QuizEditScreen() {
       const q = questions[i];
       if (!q.text.trim()) return `أدخل نص السؤال ${toArabicDigits(i + 1)}.`;
       if ((Number(q.points) || 0) <= 0) return `أدخل درجة صحيحة للسؤال ${toArabicDigits(i + 1)}.`;
+      if (q.kind === 'text') continue; // no options to check
       const filled = q.options.filter((o) => o.text.trim());
       if (filled.length < 2) return `أضف خيارين على الأقل للسؤال ${toArabicDigits(i + 1)}.`;
       if (!q.options.some((o) => o.isCorrect && o.text.trim()))
@@ -258,7 +282,10 @@ export default function QuizEditScreen() {
       text: q.text.trim(),
       points: Number(q.points) || 1,
       order: qi,
-      options: q.options
+      kind: q.kind,
+      modelAnswer: q.kind === 'text' ? q.modelAnswer.trim() || null : null,
+      // Saving a written question removes any options it had (diff-upsert).
+      options: (q.kind === 'text' ? [] : q.options)
         .filter((o) => o.text.trim())
         .map((o, oi) => ({
           id: o.id,
@@ -415,7 +442,7 @@ export default function QuizEditScreen() {
             />
             <CheckRow
               label="إظهار الإجابات الصحيحة"
-              hint="يرى الطالب تصحيح كل سؤال بعد التسليم."
+              hint="يرى الطالب تصحيح كل سؤال بعد التسليم، والإجابة النموذجية للأسئلة النصية بعد اعتماد التصحيح."
               value={showCorrectAnswers}
               onToggle={() => setShowCorrectAnswers((v) => !v)}
             />
@@ -491,6 +518,39 @@ export default function QuizEditScreen() {
                   </Txt>
                 </View>
 
+                {/* 0166 نوع السؤال */}
+                <View style={styles.kindRow}>
+                  <Txt size={12.5} color={colors.textMuted}>
+                    نوع السؤال
+                  </Txt>
+                  <View style={styles.kindChips}>
+                    {(['mcq', 'text'] as const).map((k) => {
+                      const on = q.kind === k;
+                      return (
+                        <Pressable
+                          key={k}
+                          onPress={() => patchQuestion(q.key, { kind: k })}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: on }}
+                          style={({ pressed }) => [
+                            styles.kindChip,
+                            on && styles.kindChipOn,
+                            pressed && { opacity: 0.8 },
+                          ]}
+                        >
+                          <Txt
+                            size={12.5}
+                            weight={on ? 'semibold' : 'regular'}
+                            color={on ? colors.onTealPrimary : colors.textSlate}
+                          >
+                            {KIND_LABEL[k]}
+                          </Txt>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
                 <TextInput
                   value={q.text}
                   onChangeText={(t) => patchQuestion(q.key, { text: t })}
@@ -518,84 +578,106 @@ export default function QuizEditScreen() {
                   <Divider />
                 </View>
 
-                <View style={{ gap: 8 }}>
-                  {q.options.map((o) => (
-                    <View key={o.key} style={styles.optionRow}>
-                      <Pressable
-                        onPress={() => markCorrect(q.key, o.key)}
-                        hitSlop={6}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: o.isCorrect }}
-                        accessibilityLabel="الإجابة الصحيحة"
-                        style={styles.radioOuter}
-                      >
-                        <View
-                          style={[
-                            styles.radioRing,
-                            o.isCorrect && { borderColor: colors.stateSuccess },
-                          ]}
-                        >
-                          {o.isCorrect ? <View style={styles.radioDot} /> : null}
-                        </View>
-                      </Pressable>
-                      <TextInput
-                        value={o.text}
-                        onChangeText={(t) => patchOption(q.key, o.key, { text: t })}
-                        placeholder="نص الخيار..."
-                        placeholderTextColor={colors.textGhost}
-                        textAlign="right"
-                        style={[styles.input, { flex: 1, height: 42 }]}
-                      />
-                      {q.options.length > 2 ? (
+                {q.kind === 'text' ? (
+                  <View>
+                    <FieldLabel>الإجابة النموذجية (اختياري)</FieldLabel>
+                    <TextInput
+                      value={q.modelAnswer}
+                      onChangeText={(t) => patchQuestion(q.key, { modelAnswer: t })}
+                      placeholder="مرجع للمصحح..."
+                      placeholderTextColor={colors.textGhost}
+                      textAlign="right"
+                      multiline
+                      maxLength={5000}
+                      style={[styles.input, { minHeight: 80, paddingTop: 12, textAlignVertical: 'top' }]}
+                    />
+                    <Txt size={11} color={colors.textGhost} style={{ marginTop: 8, lineHeight: 18 }}>
+                      يكتب الطالب إجابته نصًا، ويُصحَّح السؤال يدويًا من «بانتظار التصحيح». تظهر الإجابة
+                      النموذجية للطالب بعد التصحيح فقط إذا فُعّل «إظهار الإجابات الصحيحة».
+                    </Txt>
+                  </View>
+                ) : (
+                  <>
+                  <View style={{ gap: 8 }}>
+                    {q.options.map((o) => (
+                      <View key={o.key} style={styles.optionRow}>
                         <Pressable
-                          onPress={() =>
-                            setQuestions((prev) =>
-                              prev.map((x) =>
-                                x.key === q.key
-                                  ? {
-                                      ...x,
-                                      options: (() => {
-                                        const rest = x.options.filter((y) => y.key !== o.key);
-                                        return o.isCorrect && rest.length > 0
-                                          ? rest.map((y, yi) => ({ ...y, isCorrect: yi === 0 }))
-                                          : rest;
-                                      })(),
-                                    }
-                                  : x,
-                              ),
-                            )
-                          }
+                          onPress={() => markCorrect(q.key, o.key)}
                           hitSlop={6}
-                          style={styles.smallIconBtn}
-                          accessibilityLabel="حذف الخيار"
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: o.isCorrect }}
+                          accessibilityLabel="الإجابة الصحيحة"
+                          style={styles.radioOuter}
                         >
-                          <Feather name="x" size={15} color={colors.textGhost} />
+                          <View
+                            style={[
+                              styles.radioRing,
+                              o.isCorrect && { borderColor: colors.stateSuccess },
+                            ]}
+                          >
+                            {o.isCorrect ? <View style={styles.radioDot} /> : null}
+                          </View>
                         </Pressable>
-                      ) : null}
-                    </View>
-                  ))}
-                </View>
+                        <TextInput
+                          value={o.text}
+                          onChangeText={(t) => patchOption(q.key, o.key, { text: t })}
+                          placeholder="نص الخيار..."
+                          placeholderTextColor={colors.textGhost}
+                          textAlign="right"
+                          style={[styles.input, { flex: 1, height: 42 }]}
+                        />
+                        {q.options.length > 2 ? (
+                          <Pressable
+                            onPress={() =>
+                              setQuestions((prev) =>
+                                prev.map((x) =>
+                                  x.key === q.key
+                                    ? {
+                                        ...x,
+                                        options: (() => {
+                                          const rest = x.options.filter((y) => y.key !== o.key);
+                                          return o.isCorrect && rest.length > 0
+                                            ? rest.map((y, yi) => ({ ...y, isCorrect: yi === 0 }))
+                                            : rest;
+                                        })(),
+                                      }
+                                    : x,
+                                ),
+                              )
+                            }
+                            hitSlop={6}
+                            style={styles.smallIconBtn}
+                            accessibilityLabel="حذف الخيار"
+                          >
+                            <Feather name="x" size={15} color={colors.textGhost} />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
 
-                <Pressable
-                  onPress={() =>
-                    setQuestions((prev) =>
-                      prev.map((x) =>
-                        x.key === q.key ? { ...x, options: [...x.options, blankOption()] } : x,
-                      ),
-                    )
-                  }
-                  style={({ pressed }) => [styles.addOptionBtn, pressed && { opacity: 0.7 }]}
-                  accessibilityRole="button"
-                >
-                  <Feather name="plus" size={13} color={colors.primaryTeal} />
-                  <Txt size={12.5} weight="semibold" color={colors.primaryTeal} style={{ marginRight: 6 }}>
-                    إضافة خيار
+                  <Pressable
+                    onPress={() =>
+                      setQuestions((prev) =>
+                        prev.map((x) =>
+                          x.key === q.key ? { ...x, options: [...x.options, blankOption()] } : x,
+                        ),
+                      )
+                    }
+                    style={({ pressed }) => [styles.addOptionBtn, pressed && { opacity: 0.7 }]}
+                    accessibilityRole="button"
+                  >
+                    <Feather name="plus" size={13} color={colors.primaryTeal} />
+                    <Txt size={12.5} weight="semibold" color={colors.primaryTeal} style={{ marginRight: 6 }}>
+                      إضافة خيار
+                    </Txt>
+                  </Pressable>
+
+                  <Txt size={11} color={colors.textGhost} style={{ marginTop: 8 }}>
+                    حدد الدائرة بجانب الإجابة الصحيحة (إجابة واحدة لكل سؤال).
                   </Txt>
-                </Pressable>
-
-                <Txt size={11} color={colors.textGhost} style={{ marginTop: 8 }}>
-                  حدد الدائرة بجانب الإجابة الصحيحة (إجابة واحدة لكل سؤال).
-                </Txt>
+                  </>
+                )}
               </View>
             ))}
           </View>
@@ -819,6 +901,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSandRaised,
     padding: 14,
   } as ViewStyle,
+
+  kindRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 10,
+  } as ViewStyle,
+
+  kindChips: { flexDirection: 'row', gap: 6 } as ViewStyle,
+
+  kindChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceInset,
+  } as ViewStyle,
+
+  kindChipOn: { backgroundColor: colors.primaryTeal } as ViewStyle,
 
   questionTopRow: {
     flexDirection: 'row',

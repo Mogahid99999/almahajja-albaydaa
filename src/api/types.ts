@@ -324,7 +324,10 @@ export type NotificationType =
   // (gated by the buddy_activity pref).
   | 'live_start'
   | 'live_reminder'
-  | 'live_invite';
+  | 'live_invite'
+  // 0166: a grader approved the written answers of a quiz attempt — a personal
+  // inbox row (kept, never pruned) whose route opens that attempt's result.
+  | 'quiz_graded';
 
 /**
  * Every notification type, in a stable order. Single source of truth for the
@@ -352,6 +355,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'live_start',
   'live_reminder',
   'live_invite',
+  'quiz_graded',
 ];
 
 /**
@@ -512,7 +516,17 @@ export type LecturePlayback = {
  * Personal quiz status, derived from the DEFINER RPC status fields — best
  * score drives it and a pass is sticky (never un-passed by a later attempt).
  */
-export type QuizStatus = 'not_started' | 'in_progress' | 'passed' | 'failed' | 'exhausted';
+export type QuizStatus =
+  | 'not_started'
+  | 'in_progress'
+  | 'passed'
+  | 'failed'
+  | 'exhausted'
+  // 0166: a submitted attempt's written answers await a grader.
+  | 'pending_review';
+
+/** 0166: «اختيار من متعدد» (every pre-0166 question) or «إجابة نصية». */
+export type QuizQuestionKind = 'mcq' | 'text';
 
 /**
  * Admin-set availability mode (independent of draft/published content status).
@@ -572,7 +586,11 @@ export type QuizQuestionView = {
   text: string;
   points: number;
   order: number;
+  /** Absent from pre-0166 servers → 'mcq'. Text questions have no options. */
+  kind?: QuizQuestionKind;
   selectedOptionId: string | null;
+  /** The saved written answer (text questions). */
+  textAnswer?: string | null;
   options: QuizOptionView[];
 };
 
@@ -598,6 +616,14 @@ export type QuizResultDetail = {
   correctOptionId: string | null;
   correctOptionText: string | null;
   isCorrect: boolean;
+  /** 0166 — written rows: the student's answer, the grade (null when the quiz
+   *  hides results), the grader's note, and the model answer (only with
+   *  «إظهار الإجابات الصحيحة»). */
+  kind?: QuizQuestionKind;
+  textAnswer?: string | null;
+  awardedPoints?: number | null;
+  graderNote?: string | null;
+  modelAnswer?: string | null;
 };
 
 /**
@@ -621,6 +647,11 @@ export type QuizResult = {
   correctCount: number | null;
   wrongCount: number | null;
   details: QuizResultDetail[] | null;
+  /** 0166: null = auto-graded (MCQ only); 'pending' = written answers await a
+   *  grader (no score / pass / details yet); 'graded' = approved. */
+  gradingStatus?: 'pending' | 'graded' | null;
+  /** The quiz has written questions → the summary is the score, not counts. */
+  hasWritten?: boolean;
 };
 
 /** Quiet Journey line (§12.4): personal counts only, never compared. */
@@ -642,6 +673,10 @@ export type QuizQuestionInput = {
   text: string;
   points: number;
   order: number;
+  kind: QuizQuestionKind;
+  /** Written questions: the grader's reference (optional). */
+  modelAnswer: string | null;
+  /** Empty for written questions. */
   options: QuizOptionInput[];
 };
 
@@ -697,9 +732,11 @@ export type AdminQuizSummary = {
   avgScore: number | null;
   maxScore: number | null;
   minScore: number | null;
+  /** 0166: students whose written answers await a grader (not passed yet). */
+  pendingCount: number;
 };
 
-export type AdminResultStatus = 'passed' | 'failed' | 'incomplete' | 'exhausted';
+export type AdminResultStatus = 'passed' | 'failed' | 'incomplete' | 'exhausted' | 'pending';
 
 /** One student row in the admin results table. */
 export type AdminQuizResultRow = {
@@ -719,6 +756,13 @@ export type AdminAttemptAnswer = {
   selectedOptionText: string | null;
   correctOptionText: string | null;
   isCorrect: boolean;
+  /** 0166 */
+  kind?: QuizQuestionKind;
+  textAnswer?: string | null;
+  modelAnswer?: string | null;
+  /** MCQ: the system's points (all or nothing); written: the grader's (null = not yet). */
+  awardedPoints?: number | null;
+  graderNote?: string | null;
 };
 
 /** §12.5 drill-down: one attempt with per-question right/wrong. */
@@ -735,6 +779,11 @@ export type AdminAttemptDetail = {
   passed: boolean | null;
   totalScore: number;
   passScore: number;
+  /** 0166: the auto-graded MCQ points the written scores are added to. */
+  mcqScore?: number;
+  gradingStatus?: 'pending' | 'graded' | null;
+  gradedAt?: string | null;
+  gradedByName?: string | null;
   answers: AdminAttemptAnswer[];
   otherAttempts: {
     attemptId: string;
@@ -742,8 +791,24 @@ export type AdminAttemptDetail = {
     score: number | null;
     passed: boolean | null;
     submittedAt: string | null;
+    gradingStatus?: 'pending' | 'graded' | null;
   }[];
 };
+
+/** 0166 «بانتظار التصحيح» queue row. */
+export type AdminPendingGrading = {
+  attemptId: string;
+  quizId: string;
+  quizTitle: string;
+  sectionTitle: string | null;
+  displayName: string;
+  attemptNo: number;
+  submittedAt: string;
+  writtenCount: number;
+};
+
+/** 0166 one written question's grade, sent on «اعتماد التصحيح». */
+export type QuizWrittenGrade = { questionId: string; points: number; note?: string | null };
 
 // --- Admin -------------------------------------------------------------------
 export type FlatSectionNode = {

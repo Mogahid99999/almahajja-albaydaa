@@ -20,6 +20,8 @@ type AttemptData = {
   questions: {
     id: string;
     text: string;
+    kind?: 'mcq' | 'text';
+    textAnswer?: string | null;
     options: { id: string; text: string }[];
     selectedOptionId: string | null;
   }[];
@@ -32,10 +34,12 @@ const mockAttemptQuery: { data: AttemptData | undefined; isLoading: boolean; isE
 };
 const mockSaveAnswer = { mutate: jest.fn(), mutateAsync: jest.fn(async () => undefined) };
 const mockSubmitAttempt = { mutate: jest.fn(), isPending: false };
+const mockSaveText = { mutateAsync: jest.fn(async (_v: unknown) => undefined) };
 
 jest.mock('@/hooks/useQuizzes', () => ({
   useAttemptQuestions: () => mockAttemptQuery,
   useSaveAnswer: () => mockSaveAnswer,
+  useSaveTextAnswer: () => mockSaveText,
   useSubmitAttempt: () => mockSubmitAttempt,
 }));
 
@@ -77,6 +81,81 @@ beforeEach(() => {
   mockSaveAnswer.mutate.mockReset();
   mockSaveAnswer.mutateAsync.mockReset().mockResolvedValue(undefined);
   mockSubmitAttempt.mutate.mockReset();
+  mockSaveText.mutateAsync.mockReset().mockResolvedValue(undefined);
+});
+
+/** 0166: an MCQ question followed by a written one. */
+const mixed = (textAnswer: string | null = null): AttemptData => ({
+  remainingSec: null,
+  submittedAt: null,
+  questions: [
+    { ...twoQuestions().questions[0] },
+    { id: 'q2', text: 'اشرح معنى التوحيد', kind: 'text', textAnswer, options: [], selectedOptionId: null },
+  ],
+});
+
+describe('written answers (0166)', () => {
+  test('a text question shows the multiline field (no options); typing autosaves after a pause', async () => {
+    jest.useFakeTimers();
+    try {
+      mockAttemptQuery.data = mixed();
+      const { getByText, getByPlaceholderText, queryByText } = await render(<QuizAttemptScreen />);
+      await fireEvent.press(getByText('التالي'));
+      expect(getByText('اشرح معنى التوحيد')).toBeTruthy();
+      expect(queryByText('خيار أ')).toBeNull();
+      const field = getByPlaceholderText('اكتب إجابتك هنا...');
+      await fireEvent.changeText(field, 'إفراد الله بالعبادة');
+      expect(mockSaveText.mutateAsync).not.toHaveBeenCalled(); // debounced
+      await act(() => jest.advanceTimersByTime(1_000));
+      expect(mockSaveText.mutateAsync).toHaveBeenCalledWith({
+        attemptId: 'a1',
+        questionId: 'q2',
+        text: 'إفراد الله بالعبادة',
+      });
+      expect(getByText('أجبت عن ١ من ٢')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('moving to another question saves the draft at once and keeps it on return', async () => {
+    mockAttemptQuery.data = mixed();
+    const { getByText, getByPlaceholderText, getByDisplayValue } = await render(<QuizAttemptScreen />);
+    await fireEvent.press(getByText('التالي'));
+    await fireEvent.changeText(getByPlaceholderText('اكتب إجابتك هنا...'), 'إجابتي');
+    await fireEvent.press(getByText('السابق'));
+    expect(mockSaveText.mutateAsync).toHaveBeenCalledWith({ attemptId: 'a1', questionId: 'q2', text: 'إجابتي' });
+    await fireEvent.press(getByText('التالي'));
+    expect(getByDisplayValue('إجابتي')).toBeTruthy();
+  });
+
+  test('a saved answer is restored on resume and not re-sent', async () => {
+    mockAttemptQuery.data = mixed('محفوظة من قبل');
+    const { getByText, getByDisplayValue } = await render(<QuizAttemptScreen />);
+    await fireEvent.press(getByText('التالي'));
+    expect(getByDisplayValue('محفوظة من قبل')).toBeTruthy();
+    await fireEvent.press(getByText('السابق'));
+    expect(mockSaveText.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  test('submit sends an unsaved draft before submitting', async () => {
+    mockAttemptQuery.data = mixed();
+    const order: string[] = [];
+    mockSaveText.mutateAsync.mockImplementation(async () => {
+      order.push('save');
+    });
+    mockSubmitAttempt.mutate.mockImplementation((_id, cbs) => {
+      order.push('submit');
+      cbs.onSuccess();
+    });
+    const { getByText, getAllByText, getByPlaceholderText } = await render(<QuizAttemptScreen />);
+    await fireEvent.press(getByText('التالي'));
+    await fireEvent.changeText(getByPlaceholderText('اكتب إجابتك هنا...'), 'آخر كلمة');
+    await fireEvent.press(getByText('تسليم الاختبار'));
+    await fireEvent.press(getAllByText('تسليم')[0]);
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1'));
+    expect(order).toEqual(['save', 'submit']);
+  });
 });
 
 afterEach(() => {

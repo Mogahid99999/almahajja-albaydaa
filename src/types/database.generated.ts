@@ -1312,18 +1312,27 @@ export type Database = {
       quiz_attempt_answers: {
         Row: {
           attempt_id: string
-          option_id: string
+          awarded_points: number | null
+          grader_note: string | null
+          option_id: string | null
           question_id: string
+          text_answer: string | null
         }
         Insert: {
           attempt_id: string
-          option_id: string
+          awarded_points?: number | null
+          grader_note?: string | null
+          option_id?: string | null
           question_id: string
+          text_answer?: string | null
         }
         Update: {
           attempt_id?: string
-          option_id?: string
+          awarded_points?: number | null
+          grader_note?: string | null
+          option_id?: string | null
           question_id?: string
+          text_answer?: string | null
         }
         Relationships: [
           {
@@ -1352,6 +1361,9 @@ export type Database = {
       quiz_attempts: {
         Row: {
           attempt_no: number
+          graded_at: string | null
+          graded_by: string | null
+          grading_status: string | null
           id: string
           passed: boolean | null
           quiz_id: string
@@ -1362,6 +1374,9 @@ export type Database = {
         }
         Insert: {
           attempt_no?: number
+          graded_at?: string | null
+          graded_by?: string | null
+          grading_status?: string | null
           id?: string
           passed?: boolean | null
           quiz_id: string
@@ -1372,6 +1387,9 @@ export type Database = {
         }
         Update: {
           attempt_no?: number
+          graded_at?: string | null
+          graded_by?: string | null
+          grading_status?: string | null
           id?: string
           passed?: boolean | null
           quiz_id?: string
@@ -1425,6 +1443,8 @@ export type Database = {
       quiz_questions: {
         Row: {
           id: string
+          kind: string
+          model_answer: string | null
           order: number
           points: number
           quiz_id: string
@@ -1432,6 +1452,8 @@ export type Database = {
         }
         Insert: {
           id?: string
+          kind?: string
+          model_answer?: string | null
           order?: number
           points?: number
           quiz_id: string
@@ -1439,6 +1461,8 @@ export type Database = {
         }
         Update: {
           id?: string
+          kind?: string
+          model_answer?: string | null
           order?: number
           points?: number
           quiz_id?: string
@@ -2553,6 +2577,7 @@ export type Database = {
           max_attempts: number
           pass_score: number
           passed: boolean
+          pending_review: boolean
           question_count: number
           section_id: string
           section_title: string
@@ -2572,6 +2597,7 @@ export type Database = {
           min_score: number
           not_taken: number
           passed_count: number
+          pending_count: number
         }[]
       }
       get_recent_lectures: {
@@ -2606,6 +2632,23 @@ export type Database = {
         }[]
       }
       get_section_page: { Args: { p_section_id: string }; Returns: Json }
+      grade_quiz_attempt: {
+        Args: { p_attempt_id: string; p_grades: Json }
+        Returns: Json
+      }
+      list_pending_gradings: {
+        Args: never
+        Returns: {
+          attempt_id: string
+          attempt_no: number
+          display_name: string
+          quiz_id: string
+          quiz_title: string
+          section_title: string
+          submitted_at: string
+          written_count: number
+        }[]
+      }
       get_section_quizzes: {
         Args: { p_section_id: string }
         Returns: {
@@ -2622,6 +2665,7 @@ export type Database = {
           max_attempts: number
           pass_score: number
           passed: boolean
+          pending_review: boolean
           question_count: number
           sort_order: number
           time_limit_sec: number
@@ -2831,6 +2875,14 @@ export type Database = {
           p_attempt_id: string
           p_option_id: string
           p_question_id: string
+        }
+        Returns: undefined
+      }
+      save_quiz_text_answer: {
+        Args: {
+          p_attempt_id: string
+          p_question_id: string
+          p_text: string
         }
         Returns: undefined
       }

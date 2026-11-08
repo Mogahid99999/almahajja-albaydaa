@@ -84,6 +84,10 @@ export default function QuizIntroScreen() {
 
   const exhausted = quiz.status === 'exhausted';
   const inProgress = quiz.status === 'in_progress';
+  // 0166: a submitted attempt awaits a grader — no new attempt until it is
+  // graded (the server refuses too); «عرض آخر نتيجة» shows its pending state.
+  const pendingReview = quiz.status === 'pending_review';
+  const startBlocked = exhausted || pendingReview;
   const canViewLastResult = quiz.lastResultAttemptId != null;
 
   // Availability gates only the START of a new attempt. A student already
@@ -113,11 +117,13 @@ export default function QuizIntroScreen() {
     ? 'جارٍ التحضير...'
     : inProgress
       ? 'تابع الاختبار'
-      : exhausted
-        ? 'استنفدت المحاولات'
-        : quiz.attemptsUsed > 0
-          ? 'إعادة المحاولة'
-          : 'ابدأ الاختبار';
+      : pendingReview
+        ? 'بانتظار التصحيح'
+        : exhausted
+          ? 'استنفدت المحاولات'
+          : quiz.attemptsUsed > 0
+            ? 'إعادة المحاولة'
+            : 'ابدأ الاختبار';
 
   function handleStart() {
     setStartError('');
@@ -285,16 +291,16 @@ export default function QuizIntroScreen() {
         ) : (
           <Pressable
             onPress={handleStart}
-            disabled={exhausted || startAttempt.isPending}
+            disabled={startBlocked || startAttempt.isPending}
             style={({ pressed }) => [
               {
-                backgroundColor: exhausted ? colors.surfaceInset : colors.primaryTeal,
+                backgroundColor: startBlocked ? colors.surfaceInset : colors.primaryTeal,
                 height: 50,
                 borderRadius: radius.sm,
                 alignItems: 'center',
                 justifyContent: 'center',
                 opacity: pressed || startAttempt.isPending ? 0.85 : 1,
-                ...(exhausted ? null : shadows.button),
+                ...(startBlocked ? null : shadows.button),
               },
             ]}
             accessibilityRole="button"
@@ -302,7 +308,7 @@ export default function QuizIntroScreen() {
             <Txt
               weight="semibold"
               size={15}
-              color={exhausted ? colors.textMuted : colors.onTealPrimary}
+              color={startBlocked ? colors.textMuted : colors.onTealPrimary}
             >
               {primaryLabel}
             </Txt>
