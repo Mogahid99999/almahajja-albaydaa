@@ -272,6 +272,7 @@ function SectionEditor({
     if (c && cert === null) {
       setCert({
         enabled: c.enabled,
+        contentScope: c.contentScope,
         lectureRule: c.lectureRule,
         lecturePct: c.lecturePct,
         quizRule: c.quizRule,
@@ -378,7 +379,16 @@ function SectionEditor({
         شهادة الإتمام
       </Txt>
       <CertificateSettingsFields
-        value={cert ?? { enabled: false, lectureRule: 'all', lecturePct: null, quizRule: 'none', quizIds: [] }}
+        value={
+          cert ?? {
+            enabled: false,
+            contentScope: 'section',
+            lectureRule: 'all',
+            lecturePct: null,
+            quizRule: 'none',
+            quizIds: [],
+          }
+        }
         onChange={setCert}
         quizzes={certQuery.data?.quizzes ?? []}
         sectionId={node.id}

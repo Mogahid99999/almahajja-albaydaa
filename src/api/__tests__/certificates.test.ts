@@ -21,6 +21,7 @@ const rpc = supabase.rpc as unknown as jest.Mock;
 const base: SaveSectionCertificateInput = {
   sectionId: 's1',
   enabled: true,
+  contentScope: 'section',
   lectureRule: 'all',
   lecturePct: null,
   quizRule: 'none',
@@ -60,6 +61,7 @@ describe('saveSectionCertificateSettings', () => {
     rpc.mockResolvedValue({ data: null, error: null });
     await saveSectionCertificateSettings({
       ...base,
+      contentScope: 'subtree',
       lectureRule: 'percent',
       lecturePct: 80,
       quizRule: 'selected',
@@ -68,6 +70,7 @@ describe('saveSectionCertificateSettings', () => {
     expect(rpc).toHaveBeenCalledWith('set_section_certificate_settings', {
       p_section: 's1',
       p_enabled: true,
+      p_content_scope: 'subtree',
       p_lecture_rule: 'percent',
       p_lecture_pct: 80,
       p_quiz_rule: 'selected',
@@ -99,6 +102,7 @@ describe('parsers', () => {
       {
         section_id: 's1',
         enabled: false,
+        content_scope: 'section',
         lecture_rule: 'all',
         lecture_pct: null,
         quiz_rule: 'none',
@@ -111,6 +115,7 @@ describe('parsers', () => {
     expect(s).toEqual({
       sectionId: 's1',
       enabled: false,
+      contentScope: 'section',
       lectureRule: 'all',
       lecturePct: null,
       quizRule: 'none',
@@ -118,7 +123,13 @@ describe('parsers', () => {
         { id: 'q1', title: 'اختبار', sectionId: 's2', sectionTitle: 'فرع', published: false, selected: true },
       ],
     });
-    expect(parseCertificateSettings(null, 's9')).toMatchObject({ sectionId: 's9', enabled: false, quizzes: [] });
+    expect(parseCertificateSettings(null, 's9')).toMatchObject({
+      sectionId: 's9',
+      enabled: false,
+      contentScope: 'section', // the default scope
+      quizzes: [],
+    });
+    expect(parseCertificateSettings({ content_scope: 'subtree' }, 's9').contentScope).toBe('subtree');
   });
 
   test('eligibility breakdown', async () => {
@@ -128,7 +139,16 @@ describe('parsers', () => {
         user_id: 'u1',
         enabled: true,
         eligible: false,
-        lectures: { rule: 'percent', pct: 70, total: 10, completed: 7, required: 7, met: true },
+        lectures: {
+          scope: 'subtree',
+          rule: 'percent',
+          pct: 70,
+          total: 10,
+          completed: 7,
+          required: 7,
+          completed_pct: 70,
+          met: true,
+        },
         quizzes: {
           rule: 'selected',
           required_count: 1,
@@ -146,7 +166,16 @@ describe('parsers', () => {
       userId: 'u1',
       enabled: true,
       eligible: false,
-      lectures: { rule: 'percent', pct: 70, total: 10, completed: 7, required: 7, met: true },
+      lectures: {
+        scope: 'subtree',
+        rule: 'percent',
+        pct: 70,
+        total: 10,
+        completed: 7,
+        required: 7,
+        completedPct: 70,
+        met: true,
+      },
       quizzes: {
         rule: 'selected',
         requiredCount: 1,
@@ -155,6 +184,11 @@ describe('parsers', () => {
         items: [{ quizId: 'q1', title: 'اختبار', passed: false, pendingGrading: true }],
       },
     });
-    expect(parseCertificateEligibility(undefined).eligible).toBe(false);
+    expect(parseCertificateEligibility(undefined)).toMatchObject({
+      eligible: false,
+      lectures: { scope: 'section', completedPct: 0 },
+    });
+    // PostgREST may serialise numeric as a string
+    expect(parseCertificateEligibility({ lectures: { completed_pct: '83.33' } }).lectures.completedPct).toBe(83.33);
   });
 });

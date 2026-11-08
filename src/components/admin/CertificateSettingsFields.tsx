@@ -10,6 +10,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Switch, TextInput, View, type ViewStyle } from 'react-native';
 
 import type {
+  CertificateContentScope,
   CertificateLectureRule,
   CertificateQuizOption,
   CertificateQuizRule,
@@ -21,6 +22,10 @@ import { arNum } from '@/lib/format';
 
 export type CertificateFormValue = Omit<SaveSectionCertificateInput, 'sectionId'>;
 
+const SCOPE_OPTIONS: { value: CertificateContentScope; label: string }[] = [
+  { value: 'section', label: 'هذا القسم فقط' },
+  { value: 'subtree', label: 'هذا القسم وأقسامه الفرعية' },
+];
 const LECTURE_OPTIONS: { value: CertificateLectureRule; label: string }[] = [
   { value: 'all', label: 'إكمال جميع المحاضرات' },
   { value: 'percent', label: 'نسبة من المحاضرات' },
@@ -120,14 +125,25 @@ export function CertificateSettingsFields({
         />
         <View style={{ flex: 1, marginRight: 12 }}>
           <Txt size={13} weight="semibold" color={colors.textInk}>يمنح هذا القسم شهادة إتمام</Txt>
-          <Txt size={12} color={colors.textMuted} style={{ marginTop: 2 }}>
-            تُحتسب محاضرات القسم وأقسامه الفرعية المنشورة
-          </Txt>
         </View>
       </View>
 
       {value.enabled ? (
         <View style={styles.conditions}>
+          <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
+            نطاق محتوى الشهادة
+          </Txt>
+          <Segmented
+            options={SCOPE_OPTIONS}
+            value={value.contentScope}
+            onChange={(contentScope) => set({ contentScope })}
+          />
+          <Txt size={12} color={colors.textMuted} style={{ marginTop: 6 }}>
+            {value.contentScope === 'section'
+              ? 'تُحتسب المحاضرات المنشورة الموجودة مباشرة في هذا القسم'
+              : 'تُحتسب المحاضرات المنشورة في هذا القسم وفي كل الأقسام الفرعية تحته'}
+          </Txt>
+
           <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
             شرط إكمال المحاضرات
           </Txt>

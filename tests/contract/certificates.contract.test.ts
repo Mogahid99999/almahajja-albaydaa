@@ -3,23 +3,32 @@
  * central eligibility check, against the STAGING project.
  *
  * Fixture tree (all «تجربة», deleted in afterAll):
- *   root  (visibility all)   8 published lectures + 1 draft · quiz Q1 (published) · Q3 (draft)
- *   ├─ A  (visibility all)   2 published lectures           · quiz Q2 (published)
- *   └─ M  (brothers only)    2 published lectures
- *   other root section        quiz QX (not in the subtree)
- * ⇒ a brother counts 12 lectures, a sister 10 (M is hidden from her).
+ *   root  main, all        4 published + 1 draft lectures · quiz Q1 (published) · Q3 (draft)
+ *   ├─ A  sub, all         4 published                    · quiz Q2 (published)
+ *   │  └─ A1 sub-sub, all  2 published
+ *   └─ M  sub, brothers    2 published
+ *   E     main, all        no lecture of its own
+ *   └─ E1 sub, all         2 published
+ *   other main             quiz QX (not in root's subtree)
+ *
+ * «نطاق محتوى الشهادة» (content_scope):
+ *   root 'section' → 4 (both genders)   root 'subtree' → brother 12, sister 10 (M hidden)
+ *   A    'section' → 4 (A1 excluded)    A    'subtree' → 6
+ *   E    'section' → 0 (never eligible) E    'subtree' → 2
  *
  * Pins:
- *   - settings: content managers only; validation (pct 1–100, ≥ 1 quiz, quiz
- *     must be in the subtree); disabling keeps the conditions; the picker lists
- *     the subtree's quizzes (draft included, flagged).
- *   - lectures: whole subtree, published only, gender-visible only; completion
- *     from any source (recording or live 0167) counts; 'percent' needs
- *     ⌈total × pct ⁄ 100⌉ (70 % of 10 = 7 exactly); 'all' needs every one; an
- *     empty section never qualifies.
- *   - quizzes: passed = an attempt with passed = true; a failed attempt and a
- *     written-answer attempt still «بانتظار التصحيح» don't count until graded;
- *     a draft required quiz is not required until published.
+ *   - settings: content managers only; content_scope defaults to 'section';
+ *     validation (scope, pct 1–100, ≥ 1 quiz, quiz must be in the subtree);
+ *     disabling keeps the conditions; the quiz picker lists the subtree's
+ *     quizzes whatever the scope (draft included, flagged).
+ *   - lectures: published only, gender-visible only, of the configured scope;
+ *     total / completed / required / completed_pct / eligible all follow it;
+ *     completion from any source (recording or live 0167) counts; 'percent'
+ *     needs ⌈total × pct ⁄ 100⌉ (70 % of 10 = 7 exactly); 'all' needs every one;
+ *     no counted lecture ⇒ never eligible.
+ *   - quizzes (independent of the scope): passed = an attempt with passed =
+ *     true; a failed attempt and «بانتظار التصحيح» don't count until graded; a
+ *     draft required quiz is not required until published.
  *   - eligible = enabled ∧ lectures ∧ quizzes; another user's eligibility is
  *     staff-only; anon gets nothing.
  *
@@ -49,11 +58,16 @@ const clients: SupabaseClient[] = [];
 
 let root = '';
 let secA = '';
+let secA1 = '';
 let secM = '';
+let secE = '';
+let secE1 = '';
 let other = '';
-const rootLectures: string[] = [];
-const aLectures: string[] = [];
-const mLectures: string[] = [];
+let rootLectures: string[] = [];
+let aLectures: string[] = [];
+let a1Lectures: string[] = [];
+let mLectures: string[] = [];
+let e1Lectures: string[] = [];
 let draftLecture = '';
 let q1 = '';
 let q2 = '';
@@ -67,6 +81,16 @@ let brother: SupabaseClient;
 let sister: SupabaseClient;
 let brotherId = '';
 let sisterId = '';
+
+type Scope = 'section' | 'subtree';
+type Settings = {
+  enabled: boolean;
+  scope?: Scope;
+  lectureRule: 'all' | 'percent';
+  pct: number | null;
+  quizRule: 'none' | 'selected';
+  quizIds?: string[];
+};
 
 async function signIn(email: string, password: string): Promise<SupabaseClient> {
   const c = newClient();
@@ -170,19 +194,20 @@ async function attempt(
   return data.id as string;
 }
 
-async function saveSettings(
-  c: SupabaseClient,
-  s: { enabled: boolean; lectureRule: 'all' | 'percent'; pct: number | null; quizRule: 'none' | 'selected'; quizIds?: string[] },
-  sectionId = root,
-) {
+async function saveSettings(c: SupabaseClient, s: Settings, sectionId = root) {
   return c.rpc('set_section_certificate_settings', {
     p_section: sectionId,
     p_enabled: s.enabled,
+    p_content_scope: s.scope ?? 'section',
     p_lecture_rule: s.lectureRule,
     p_lecture_pct: s.pct,
     p_quiz_rule: s.quizRule,
     p_quiz_ids: s.quizIds ?? [],
   });
+}
+async function mustSave(s: Settings, sectionId = root) {
+  const { error } = await saveSettings(admin, s, sectionId);
+  if (error) throw error;
 }
 
 async function eligibility(c: SupabaseClient, userId?: string, sectionId = root): Promise<Record<string, any>> {
@@ -190,6 +215,7 @@ async function eligibility(c: SupabaseClient, userId?: string, sectionId = root)
   if (error) throw error;
   return data as Record<string, any>;
 }
+const lec = async (c: SupabaseClient, sectionId = root) => (await eligibility(c, undefined, sectionId)).lectures;
 
 beforeAll(async () => {
   if (!serviceKey) throw new Error('contract tests need SUPABASE_SECRET_KEY in .env.staging.local');
@@ -201,13 +227,18 @@ beforeAll(async () => {
 
   root = await section(`تجربة قسم الشهادة ${ts}`, null, 'all');
   secA = await section(`تجربة فرع عام ${ts}`, root, 'all');
+  secA1 = await section(`تجربة فرع الفرع ${ts}`, secA, 'all');
   secM = await section(`تجربة فرع الإخوة ${ts}`, root, 'male');
+  secE = await section(`تجربة قسم بلا محاضرات ${ts}`, null, 'all');
+  secE1 = await section(`تجربة فرع المسار ${ts}`, secE, 'all');
   other = await section(`تجربة قسم آخر ${ts}`, null, 'all');
 
-  rootLectures.push(...(await lectures(root, 8)));
+  rootLectures = await lectures(root, 4);
   [draftLecture] = await lectures(root, 1, 'draft');
-  aLectures.push(...(await lectures(secA, 2)));
-  mLectures.push(...(await lectures(secM, 2)));
+  aLectures = await lectures(secA, 4);
+  a1Lectures = await lectures(secA1, 2);
+  mLectures = await lectures(secM, 2);
+  e1Lectures = await lectures(secE1, 2);
 
   q1 = await quiz(root, 'تجربة اختبار الجذر', 'published');
   q2 = await quiz(secA, 'تجربة اختبار الفرع', 'published');
@@ -224,15 +255,24 @@ afterAll(async () => {
 });
 
 describe('settings — who and what', () => {
-  test('a never-configured section reads the defaults and lists the subtree quizzes only', async () => {
+  test('a never-configured section reads the defaults («هذا القسم فقط») and lists the subtree quizzes', async () => {
     const { data, error } = await admin.rpc('get_section_certificate_settings', { p_section: root });
     expect(error).toBeNull();
     const s = data as Record<string, any>;
-    expect(s).toMatchObject({ enabled: false, lecture_rule: 'all', lecture_pct: null, quiz_rule: 'none' });
+    expect(s).toMatchObject({
+      enabled: false,
+      content_scope: 'section',
+      lecture_rule: 'all',
+      lecture_pct: null,
+      quiz_rule: 'none',
+    });
     const ids = (s.quizzes as any[]).map((q) => q.id).sort();
     expect(ids).toEqual([q1, q2, q3].sort());
     expect((s.quizzes as any[]).find((q) => q.id === q3).status).toBe('draft');
     expect((s.quizzes as any[]).find((q) => q.id === q2).section_title).toBe(`تجربة فرع عام ${ts}`);
+    // a sub-section lists its own subtree only
+    const sub = (await admin.rpc('get_section_certificate_settings', { p_section: secA })).data as any;
+    expect((sub.quizzes as any[]).map((q) => q.id)).toEqual([q2]);
   });
 
   test('students, sheikhs and anon cannot read or write the settings', async () => {
@@ -250,101 +290,139 @@ describe('settings — who and what', () => {
     }
   });
 
-  test('validation: percentage 1–100, at least one quiz, quizzes of this subtree only', async () => {
-    const bad = [
+  test('validation: scope, percentage 1–100, at least one quiz, quizzes of this subtree only', async () => {
+    const bad: [Settings | Record<string, unknown>, string][] = [
+      [{ enabled: true, scope: 'everything', lectureRule: 'all', pct: null, quizRule: 'none' }, 'نطاق محتوى الشهادة'],
       [{ enabled: true, lectureRule: 'percent', pct: 0, quizRule: 'none' }, 'بين ١ و١٠٠'],
       [{ enabled: true, lectureRule: 'percent', pct: 101, quizRule: 'none' }, 'بين ١ و١٠٠'],
       [{ enabled: true, lectureRule: 'percent', pct: null, quizRule: 'none' }, 'بين ١ و١٠٠'],
       [{ enabled: true, lectureRule: 'all', pct: null, quizRule: 'selected', quizIds: [] }, 'اختبارًا واحدًا'],
       [{ enabled: true, lectureRule: 'all', pct: null, quizRule: 'selected', quizIds: [q1, qx] }, 'ليس من اختبارات هذا القسم'],
-    ] as const;
+    ];
     for (const [s, msg] of bad) {
-      const { error } = await saveSettings(admin, s as any);
+      const { error } = await saveSettings(admin, s as Settings);
       expect({ s, msg: error?.message.includes(msg) }).toEqual({ s, msg: true });
     }
     expect((await service.from('section_certificate_settings').select('*').eq('section_id', root)).data).toHaveLength(0);
   });
 
-  test('saving stores the rule; "all" stores no percentage; disabling keeps the conditions', async () => {
-    expect((await saveSettings(admin, { enabled: true, lectureRule: 'all', pct: 50, quizRule: 'none' })).error).toBeNull();
+  test('saving stores scope and rule; "all" stores no percentage; disabling keeps the conditions', async () => {
+    await mustSave({ enabled: true, lectureRule: 'all', pct: 50, quizRule: 'none' });
     let s = (await admin.rpc('get_section_certificate_settings', { p_section: root })).data as any;
-    expect(s).toMatchObject({ enabled: true, lecture_rule: 'all', lecture_pct: null, quiz_rule: 'none' });
+    expect(s).toMatchObject({ enabled: true, content_scope: 'section', lecture_rule: 'all', lecture_pct: null });
 
-    expect(
-      (await saveSettings(admin, { enabled: true, lectureRule: 'percent', pct: 70, quizRule: 'selected', quizIds: [q1, q1, q2] }))
-        .error,
-    ).toBeNull();
-    expect(
-      (await saveSettings(admin, { enabled: false, lectureRule: 'percent', pct: 70, quizRule: 'selected', quizIds: [q1, q2] }))
-        .error,
-    ).toBeNull();
+    await mustSave({ enabled: true, scope: 'subtree', lectureRule: 'percent', pct: 70, quizRule: 'selected', quizIds: [q1, q1, q2] });
+    await mustSave({ enabled: false, scope: 'subtree', lectureRule: 'percent', pct: 70, quizRule: 'selected', quizIds: [q1, q2] });
     s = (await admin.rpc('get_section_certificate_settings', { p_section: root })).data as any;
-    expect(s).toMatchObject({ enabled: false, lecture_rule: 'percent', lecture_pct: 70, quiz_rule: 'selected' });
+    expect(s).toMatchObject({
+      enabled: false,
+      content_scope: 'subtree',
+      lecture_rule: 'percent',
+      lecture_pct: 70,
+      quiz_rule: 'selected',
+    });
     expect((s.quizzes as any[]).filter((q) => q.selected).map((q) => q.id).sort()).toEqual([q1, q2].sort());
   });
 });
 
-describe('eligibility — lectures', () => {
+describe('eligibility — main section, «هذا القسم فقط»', () => {
   test('disabled: the breakdown is there but nobody is eligible', async () => {
     const e = await eligibility(sister);
     expect(e.enabled).toBe(false);
     expect(e.eligible).toBe(false);
-    expect(e.lectures).toMatchObject({ rule: 'percent', pct: 70, total: 10, completed: 0, required: 7, met: false });
+    expect(e.lectures).toMatchObject({ scope: 'subtree', total: 10, completed: 0, required: 7, met: false });
   });
 
-  test('subtree, published, gender-visible: a brother counts 12, a sister 10 (draft never)', async () => {
-    await saveSettings(admin, { enabled: true, lectureRule: 'percent', pct: 70, quizRule: 'none' });
-    expect((await eligibility(brother)).lectures).toMatchObject({ total: 12, required: 9 });
-    expect((await eligibility(sister)).lectures).toMatchObject({ total: 10, required: 7 });
-    await complete(sisterId, [draftLecture, ...mLectures]); // neither counts for her
-    expect((await eligibility(sister)).lectures.completed).toBe(0);
-  });
+  test("only the main section's own published lectures count — not its sub-sections, not the draft", async () => {
+    await mustSave({ enabled: true, scope: 'section', lectureRule: 'all', pct: null, quizRule: 'none' });
+    expect(await lec(brother)).toMatchObject({ scope: 'section', total: 4, required: 4, completed: 0 });
+    expect(await lec(sister)).toMatchObject({ scope: 'section', total: 4, required: 4 });
 
-  test('percent: 6 of 10 is not enough, exactly 70 % (7 of 10) is — any completion source counts', async () => {
-    await complete(sisterId, rootLectures.slice(0, 5));
-    await complete(sisterId, [aLectures[0]], 'live'); // completed by attending the live (0167)
-    let e = await eligibility(sister);
-    expect(e.lectures).toMatchObject({ completed: 6, met: false });
-    expect(e.eligible).toBe(false);
-    await complete(sisterId, [aLectures[1]]);
-    e = await eligibility(sister);
-    expect(e.lectures).toMatchObject({ completed: 7, required: 7, met: true });
+    await complete(sisterId, [draftLecture, ...aLectures.slice(0, 2), mLectures[0]]); // none is in scope
+    expect(await lec(sister)).toMatchObject({ completed: 0, completed_pct: 0, met: false });
+
+    await complete(sisterId, rootLectures.slice(0, 3));
+    expect(await lec(sister)).toMatchObject({ completed: 3, completed_pct: 75, met: false });
+    await complete(sisterId, [rootLectures[3]], 'live'); // completed by attending the live (0167)
+    const e = await eligibility(sister);
+    expect(e.lectures).toMatchObject({ completed: 4, completed_pct: 100, met: true });
     expect(e.eligible).toBe(true);
   });
 
-  test('a brother needs ⌈12 × 70 ⁄ 100⌉ = 9', async () => {
-    await complete(brotherId, [...rootLectures]);
-    expect((await eligibility(brother)).lectures).toMatchObject({ completed: 8, met: false });
+  test('a main section with no lecture of its own never qualifies on «هذا القسم فقط»', async () => {
+    await mustSave({ enabled: true, scope: 'section', lectureRule: 'all', pct: null, quizRule: 'none' }, secE);
+    await complete(sisterId, e1Lectures);
+    const e = await eligibility(sister, undefined, secE);
+    expect(e.lectures).toMatchObject({ scope: 'section', total: 0, completed: 0, completed_pct: 0, met: false });
+    expect(e.eligible).toBe(false);
+  });
+});
+
+describe('eligibility — main section, «هذا القسم وأقسامه الفرعية» (the whole path)', () => {
+  test('recursive and gender-visible: a brother counts 12, a sister 10', async () => {
+    await mustSave({ enabled: true, scope: 'subtree', lectureRule: 'percent', pct: 70, quizRule: 'none' });
+    expect(await lec(brother)).toMatchObject({ scope: 'subtree', total: 12, required: 9 });
+    // sister: 4 root + 2 A (A1 nothing yet) done; M is hidden from her even though she has one done
+    expect(await lec(sister)).toMatchObject({ total: 10, required: 7, completed: 6, completed_pct: 60, met: false });
+  });
+
+  test('exactly 70 %: the 7th lecture deep in the tree (A1) qualifies her', async () => {
+    await complete(sisterId, [a1Lectures[0]]);
+    const e = await eligibility(sister);
+    expect(e.lectures).toMatchObject({ completed: 7, required: 7, completed_pct: 70, met: true });
+    expect(e.eligible).toBe(true);
+  });
+
+  test('a brother needs ⌈12 × 70 ⁄ 100⌉ = 9 — the brothers-only sub-section counts for him', async () => {
+    await complete(brotherId, [...rootLectures, ...aLectures]);
+    expect(await lec(brother)).toMatchObject({ completed: 8, met: false });
     await complete(brotherId, [mLectures[0]]);
     const e = await eligibility(brother);
     expect(e.lectures).toMatchObject({ completed: 9, met: true });
     expect(e.eligible).toBe(true);
   });
 
-  test("'all': every counted lecture", async () => {
-    await saveSettings(admin, { enabled: true, lectureRule: 'all', pct: null, quizRule: 'none' });
-    let e = await eligibility(sister);
-    expect(e.lectures).toMatchObject({ rule: 'all', total: 10, completed: 7, required: 10, met: false });
-    await complete(sisterId, rootLectures.slice(5));
-    e = await eligibility(sister);
-    expect(e.lectures).toMatchObject({ completed: 10, met: true });
+  test('a main section without lectures of its own qualifies through its path', async () => {
+    await mustSave({ enabled: true, scope: 'subtree', lectureRule: 'all', pct: null, quizRule: 'none' }, secE);
+    const e = await eligibility(sister, undefined, secE);
+    expect(e.lectures).toMatchObject({ scope: 'subtree', total: 2, completed: 2, met: true });
     expect(e.eligible).toBe(true);
-  });
-
-  test('a section with no lectures never qualifies', async () => {
-    const empty = await section(`تجربة قسم فارغ ${ts}`, null, 'all');
-    expect((await saveSettings(admin, { enabled: true, lectureRule: 'all', pct: null, quizRule: 'none' }, empty)).error).toBeNull();
-    const e = await eligibility(sister, undefined, empty);
-    expect(e.lectures).toMatchObject({ total: 0, met: false });
-    expect(e.eligible).toBe(false);
   });
 });
 
-describe('eligibility — quizzes', () => {
+describe('eligibility — sub-section', () => {
+  test("«هذا القسم فقط»: the sub-section's own lectures (its child A1 excluded)", async () => {
+    await mustSave({ enabled: true, scope: 'section', lectureRule: 'all', pct: null, quizRule: 'none' }, secA);
+    let e = await eligibility(sister, undefined, secA);
+    expect(e.lectures).toMatchObject({ scope: 'section', total: 4, completed: 2, required: 4, completed_pct: 50, met: false });
+    await complete(sisterId, aLectures.slice(2));
+    e = await eligibility(sister, undefined, secA);
+    expect(e.lectures).toMatchObject({ total: 4, completed: 4, met: true });
+    expect(e.eligible).toBe(true);
+  });
+
+  test('«هذا القسم وأقسامه الفرعية»: A + A1', async () => {
+    await mustSave({ enabled: true, scope: 'subtree', lectureRule: 'all', pct: null, quizRule: 'none' }, secA);
+    let e = await eligibility(sister, undefined, secA);
+    expect(e.lectures).toMatchObject({ scope: 'subtree', total: 6, completed: 5, required: 6, completed_pct: 83.33, met: false });
+    expect(e.eligible).toBe(false);
+    await complete(sisterId, [a1Lectures[1]]);
+    e = await eligibility(sister, undefined, secA);
+    expect(e.lectures).toMatchObject({ total: 6, completed: 6, completed_pct: 100, met: true });
+    expect(e.eligible).toBe(true);
+  });
+
+  test("«نسبة»: 70 % of the sub-section's 4 own lectures = 3", async () => {
+    await mustSave({ enabled: true, scope: 'section', lectureRule: 'percent', pct: 70, quizRule: 'none' }, secA);
+    expect((await eligibility(brother, undefined, secA)).lectures).toMatchObject({ total: 4, required: 3, completed: 4, met: true });
+  });
+});
+
+describe('eligibility — quizzes (independent of the scope)', () => {
   test('required = the picks that are published (a draft pick waits), each passed on its own pass score', async () => {
-    await saveSettings(admin, { enabled: true, lectureRule: 'all', pct: null, quizRule: 'selected', quizIds: [q1, q2, q3] });
+    await mustSave({ enabled: true, scope: 'section', lectureRule: 'all', pct: null, quizRule: 'selected', quizIds: [q1, q2, q3] });
     const e = await eligibility(sister);
-    expect(e.lectures.met).toBe(true);
+    expect(e.lectures).toMatchObject({ scope: 'section', met: true });
     expect(e.quizzes).toMatchObject({ rule: 'selected', required_count: 2, passed_count: 0, met: false });
     expect(e.eligible).toBe(false);
   });
@@ -376,6 +454,14 @@ describe('eligibility — quizzes', () => {
     expect(e.eligible).toBe(true);
   });
 
+  test('switching the scope does not change the quiz requirement', async () => {
+    await mustSave({ enabled: true, scope: 'subtree', lectureRule: 'percent', pct: 70, quizRule: 'selected', quizIds: [q1, q2, q3] });
+    const e = await eligibility(sister);
+    expect(e.lectures).toMatchObject({ scope: 'subtree', met: true });
+    expect(e.quizzes).toMatchObject({ required_count: 2, passed_count: 2, met: true });
+    expect(e.eligible).toBe(true);
+  });
+
   test('publishing the draft pick makes it a requirement', async () => {
     const fe = await service.from('quizzes').update({ status: 'published' }).eq('id', q3);
     expect(fe.error).toBeNull();
@@ -385,7 +471,7 @@ describe('eligibility — quizzes', () => {
   });
 
   test("'none': quizzes are not required", async () => {
-    await saveSettings(admin, { enabled: true, lectureRule: 'all', pct: null, quizRule: 'none', quizIds: [q1] });
+    await mustSave({ enabled: true, scope: 'subtree', lectureRule: 'percent', pct: 70, quizRule: 'none', quizIds: [q1] });
     const e = await eligibility(sister);
     expect(e.quizzes).toMatchObject({ rule: 'none', required_count: 0, met: true });
     expect(e.eligible).toBe(true);
@@ -395,9 +481,9 @@ describe('eligibility — quizzes', () => {
 });
 
 describe('eligibility — access', () => {
-  test("a student cannot ask about another student; staff can; anon cannot ask at all", async () => {
-    const other = await brother.rpc('certificate_eligibility', { p_section: root, p_user: sisterId });
-    expect(other.error!.message).toContain(DENIED);
+  test('a student cannot ask about another student; staff and the service role can; anon cannot ask at all', async () => {
+    const otherUser = await brother.rpc('certificate_eligibility', { p_section: root, p_user: sisterId });
+    expect(otherUser.error!.message).toContain(DENIED);
     const staff = await eligibility(admin, sisterId);
     expect(staff.user_id).toBe(sisterId);
     expect(staff.eligible).toBe(true);

@@ -10,6 +10,8 @@
  */
 import { supabase } from '@/lib/supabase';
 
+/** «نطاق محتوى الشهادة»: this section's own lectures, or the whole path below it. */
+export type CertificateContentScope = 'section' | 'subtree';
 export type CertificateLectureRule = 'all' | 'percent';
 export type CertificateQuizRule = 'none' | 'selected';
 
@@ -26,6 +28,7 @@ export type CertificateQuizOption = {
 export type SectionCertificateSettings = {
   sectionId: string;
   enabled: boolean;
+  contentScope: CertificateContentScope;
   lectureRule: CertificateLectureRule;
   /** Required share of the lectures (1–100) when lectureRule = 'percent'; else null. */
   lecturePct: number | null;
@@ -36,6 +39,7 @@ export type SectionCertificateSettings = {
 export type SaveSectionCertificateInput = {
   sectionId: string;
   enabled: boolean;
+  contentScope: CertificateContentScope;
   lectureRule: CertificateLectureRule;
   lecturePct: number | null;
   quizRule: CertificateQuizRule;
@@ -48,12 +52,16 @@ export type CertificateEligibility = {
   enabled: boolean;
   eligible: boolean;
   lectures: {
+    /** Which lectures are counted: this section only, or its whole subtree. */
+    scope: CertificateContentScope;
     rule: CertificateLectureRule;
     pct: number | null;
     total: number;
     completed: number;
     /** Lectures the student must complete (all of them, or ⌈total × pct ⁄ 100⌉). */
     required: number;
+    /** completed ⁄ total × 100 (two decimals; 0 when there is no lecture). */
+    completedPct: number;
     met: boolean;
   };
   quizzes: {
@@ -66,6 +74,7 @@ export type CertificateEligibility = {
 };
 
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const contentScope = (v: unknown): CertificateContentScope => (v === 'subtree' ? 'subtree' : 'section');
 const lectureRule = (v: unknown): CertificateLectureRule => (v === 'percent' ? 'percent' : 'all');
 const quizRule = (v: unknown): CertificateQuizRule => (v === 'selected' ? 'selected' : 'none');
 
@@ -76,6 +85,7 @@ export function parseCertificateSettings(raw: unknown, sectionId: string): Secti
   return {
     sectionId: typeof r.section_id === 'string' ? r.section_id : sectionId,
     enabled: r.enabled === true,
+    contentScope: contentScope(r.content_scope),
     lectureRule: rule,
     lecturePct: rule === 'percent' && typeof r.lecture_pct === 'number' ? r.lecture_pct : null,
     quizRule: quizRule(r.quiz_rule),
@@ -103,11 +113,13 @@ export function parseCertificateEligibility(raw: unknown): CertificateEligibilit
     enabled: r.enabled === true,
     eligible: r.eligible === true,
     lectures: {
+      scope: contentScope(l.scope),
       rule: lectureRule(l.rule),
       pct: typeof l.pct === 'number' ? l.pct : null,
       total: num(l.total),
       completed: num(l.completed),
       required: num(l.required),
+      completedPct: num(Number(l.completed_pct)),
       met: l.met === true,
     },
     quizzes: {
@@ -165,6 +177,7 @@ export async function saveSectionCertificateSettings(input: SaveSectionCertifica
     {
       p_section: input.sectionId,
       p_enabled: input.enabled,
+      p_content_scope: input.contentScope,
       p_lecture_rule: keep ? input.lectureRule : 'all',
       p_lecture_pct: keep && input.lectureRule === 'percent' ? input.lecturePct : null,
       p_quiz_rule: keep ? input.quizRule : 'none',

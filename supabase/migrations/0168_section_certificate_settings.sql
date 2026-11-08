@@ -8,6 +8,12 @@
 --
 -- Settings (one row per section that has ever been configured):
 --   enabled       «يمنح هذا القسم شهادة إتمام»
+--   content_scope «نطاق محتوى الشهادة» — which lectures the certificate covers:
+--                 'section'  هذا القسم فقط (default): the lectures directly in
+--                            this section (most certificates: a sub-section, or a
+--                            main section that holds lectures itself)
+--                 'subtree'  هذا القسم وأقسامه الفرعية: this section and every
+--                            section under it, recursively (a whole path)
 --   lecture_rule  'all'      every lecture of the section must be completed
 --                 'percent'  lecture_pct % of them (1–100)
 --   quiz_rule     'none'     no quiz required
@@ -15,15 +21,16 @@
 -- Turning the certificate off keeps the conditions, so turning it on again
 -- restores them.
 --
--- "The section's lectures" = the published lectures of the section's WHOLE
--- subtree (the same set get_section_rollup counts), restricted to the sections
--- visible to that student's gender (section_visible_to_viewer, 0049) — a sister
--- is never required to finish a brothers-only sub-section she cannot open.
+-- "The certificate's lectures" = the published lectures of the section itself
+-- ('section') or of its whole subtree ('subtree', the set get_section_rollup
+-- counts), restricted to the sections visible to that student's gender
+-- (section_visible_to_viewer, 0049) — a sister is never required to finish a
+-- brothers-only sub-section she cannot open.
 -- Completed = user_lecture_progress.completed, whatever its source (recording
 -- or live attendance 0167); there is no per-source condition.
 --
--- "The section's quizzes" = quizzes attached to any section of the subtree; the
--- admin picks the required ones. Passed = an attempt with passed = true, using
+-- Quizzes are independent of content_scope: the admin explicitly picks the
+-- required ones among the quizzes attached to any section of the subtree. Passed = an attempt with passed = true, using
 -- the quiz's own pass_score (no certificate-level score). An attempt whose
 -- written answers still await a grader (grading_status 'pending', 0166) has
 -- passed = NULL and does not count until the grading is approved. A required
@@ -50,6 +57,7 @@
 create table if not exists public.section_certificate_settings (
   section_id   uuid primary key references public.sections (id) on delete cascade,
   enabled      boolean not null default false,
+  content_scope text not null default 'section' check (content_scope in ('section', 'subtree')),
   lecture_rule text not null default 'all' check (lecture_rule in ('all', 'percent')),
   lecture_pct  smallint check (lecture_pct between 1 and 100),
   quiz_rule    text not null default 'none' check (quiz_rule in ('none', 'selected')),
@@ -58,8 +66,20 @@ create table if not exists public.section_certificate_settings (
   constraint section_certificate_settings_pct_rule
     check ((lecture_rule = 'percent') = (lecture_pct is not null))
 );
+-- (staging received 0168 before content_scope existed — keep a re-run whole)
+alter table public.section_certificate_settings
+  add column if not exists content_scope text not null default 'section';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'section_certificate_settings_content_scope_check') then
+    alter table public.section_certificate_settings
+      add constraint section_certificate_settings_content_scope_check
+      check (content_scope in ('section', 'subtree'));
+  end if;
+end $$;
+
 comment on table public.section_certificate_settings is
-  '0168: completion-certificate conditions of a section (lectures all / percent, required quizzes). Written only via set_section_certificate_settings; eligibility via certificate_eligibility.';
+  '0168: completion-certificate conditions of a section (content scope section / subtree, lectures all / percent, required quizzes). Written only via set_section_certificate_settings; eligibility via certificate_eligibility.';
 
 create table if not exists public.section_certificate_quizzes (
   section_id uuid not null references public.section_certificate_settings (section_id) on delete cascade,
@@ -96,9 +116,9 @@ revoke all on function public.section_subtree_ids(uuid) from public, anon, authe
 grant execute on function public.section_subtree_ids(uuid) to service_role;
 
 -- 3. Admin: read the settings + the subtree's quizzes ---------------------------------
--- {section_id, enabled, lecture_rule, lecture_pct, quiz_rule, updated_at,
+-- {section_id, enabled, content_scope, lecture_rule, lecture_pct, quiz_rule, updated_at,
 --  quizzes: [{id, title, section_id, section_title, status, selected}]}
--- A section never configured returns the defaults (enabled false, all, none).
+-- A section never configured returns the defaults (enabled false, section, all, none).
 create or replace function public.get_section_certificate_settings(p_section uuid)
 returns jsonb
 language plpgsql stable security definer set search_path = public as $$
@@ -116,6 +136,7 @@ begin
   return jsonb_build_object(
     'section_id',   p_section,
     'enabled',      coalesce(c.enabled, false),
+    'content_scope', coalesce(c.content_scope, 'section'),
     'lecture_rule', coalesce(c.lecture_rule, 'all'),
     'lecture_pct',  c.lecture_pct,
     'quiz_rule',    coalesce(c.quiz_rule, 'none'),
@@ -141,13 +162,16 @@ revoke all on function public.get_section_certificate_settings(uuid) from public
 grant execute on function public.get_section_certificate_settings(uuid) to authenticated;
 
 -- 4. Admin: save (atomic; replaces the required-quiz list) ----------------------------
+-- (staging had the pre-content_scope signature)
+drop function if exists public.set_section_certificate_settings(uuid, boolean, text, int, text, uuid[]);
 create or replace function public.set_section_certificate_settings(
-  p_section      uuid,
-  p_enabled      boolean,
-  p_lecture_rule text,
-  p_lecture_pct  int,
-  p_quiz_rule    text,
-  p_quiz_ids     uuid[] default '{}'
+  p_section       uuid,
+  p_enabled       boolean,
+  p_content_scope text,
+  p_lecture_rule  text,
+  p_lecture_pct   int,
+  p_quiz_rule     text,
+  p_quiz_ids      uuid[] default '{}'
 )
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -161,6 +185,9 @@ begin
   end if;
   if not exists (select 1 from public.sections where id = p_section) then
     raise exception 'القسم غير موجود' using errcode = 'P0002';
+  end if;
+  if p_content_scope is null or p_content_scope not in ('section', 'subtree') then
+    raise exception 'اختر نطاق محتوى الشهادة';
   end if;
   if p_lecture_rule is null or p_lecture_rule not in ('all', 'percent') then
     raise exception 'اختر شرط إكمال المحاضرات';
@@ -194,10 +221,12 @@ begin
   end if;
 
   insert into public.section_certificate_settings as c
-    (section_id, enabled, lecture_rule, lecture_pct, quiz_rule, updated_at, updated_by)
-  values (p_section, coalesce(p_enabled, false), p_lecture_rule, v_pct, p_quiz_rule, now(), auth.uid())
+    (section_id, enabled, content_scope, lecture_rule, lecture_pct, quiz_rule, updated_at, updated_by)
+  values (p_section, coalesce(p_enabled, false), p_content_scope, p_lecture_rule, v_pct, p_quiz_rule,
+          now(), auth.uid())
   on conflict (section_id) do update
      set enabled      = excluded.enabled,
+         content_scope = excluded.content_scope,
          lecture_rule = excluded.lecture_rule,
          lecture_pct  = excluded.lecture_pct,
          quiz_rule    = excluded.quiz_rule,
@@ -211,15 +240,18 @@ begin
   on conflict do nothing;
 end;
 $$;
-revoke all on function public.set_section_certificate_settings(uuid, boolean, text, int, text, uuid[]) from public, anon;
-grant execute on function public.set_section_certificate_settings(uuid, boolean, text, int, text, uuid[]) to authenticated;
+revoke all on function public.set_section_certificate_settings(uuid, boolean, text, text, int, text, uuid[]) from public, anon;
+grant execute on function public.set_section_certificate_settings(uuid, boolean, text, text, int, text, uuid[]) to authenticated;
 
 -- 5. Eligibility (the single definition) -------------------------------------------
 -- p_user NULL = the caller. Returns
 -- { section_id, user_id, enabled, eligible,
---   lectures: { rule, pct, total, completed, required, met },
+--   lectures: { scope, rule, pct, total, completed, required, completed_pct, met },
 --   quizzes:  { rule, required_count, passed_count, met,
 --               items: [{ quiz_id, title, passed, pending_grading }] } }
+-- total / completed / required / completed_pct cover the lectures of
+-- content_scope ('section' = this section's own lectures, 'subtree' = the whole
+-- path below it). completed_pct = completed ⁄ total × 100 (0 when total = 0).
 -- eligible = enabled AND lectures.met AND quizzes.met. While enabled = false the
 -- breakdown is still computed (eligible stays false) so staff can preview it.
 create or replace function public.certificate_eligibility(p_section uuid, p_user uuid default null)
@@ -228,6 +260,7 @@ language plpgsql stable security definer set search_path = public as $$
 declare
   v_user      uuid := coalesce(p_user, auth.uid());
   c           public.section_certificate_settings%rowtype;
+  v_scope     text;
   v_gender    text;
   v_total     int;
   v_done      int;
@@ -252,11 +285,16 @@ begin
 
   select * into c from public.section_certificate_settings where section_id = p_section;
   select gender into v_gender from public.profiles where id = v_user;
+  v_scope := coalesce(c.content_scope, 'section');
 
-  -- Lectures: published, anywhere in the subtree, in sections this student may see.
+  -- Lectures: published, in the content scope (this section / its whole
+  -- subtree), in sections this student may see.
   with sec as (
-    select id from public.section_subtree_ids(p_section) id
-     where public.section_visible_to_viewer(id, v_gender)
+    select s.id
+      from (select p_section as id where v_scope = 'section'
+            union all
+            select t.id from public.section_subtree_ids(p_section) as t(id) where v_scope = 'subtree') s
+     where public.section_visible_to_viewer(s.id, v_gender)
   )
   select count(*)::int,
          count(*) filter (where p.completed)::int
@@ -312,11 +350,13 @@ begin
     'enabled',    coalesce(c.enabled, false),
     'eligible',   coalesce(c.enabled, false) and v_lect_met and v_quiz_met,
     'lectures', jsonb_build_object(
+      'scope',     v_scope,
       'rule',      coalesce(c.lecture_rule, 'all'),
       'pct',       c.lecture_pct,
       'total',     v_total,
       'completed', v_done,
       'required',  v_required,
+      'completed_pct', case when v_total > 0 then round(v_done * 100.0 / v_total, 2) else 0 end,
       'met',       v_lect_met),
     'quizzes', jsonb_build_object(
       'rule',           coalesce(c.quiz_rule, 'none'),
