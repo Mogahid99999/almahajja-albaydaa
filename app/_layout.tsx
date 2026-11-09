@@ -41,8 +41,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { onSessionLost, signOut } from '@/api/auth';
 import { isLectureVisibleToViewer } from '@/api/lectures';
-import { registerPushToken } from '@/api/notifications';
 import { getResumeTarget } from '@/api/progress';
+import { useCurrentUserId } from '@/hooks/useCurrentUserId';
+import { usePushTokenRegistration } from '@/hooks/usePushTokenRegistration';
 import { forcedSignOutCleanup, useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
 import { Logo } from '@/components/ui/Logo';
 import { StartHereCard } from '@/components/onboarding/StartHereCard';
@@ -53,16 +54,13 @@ import {
   addResponseListener,
   clearBadge,
   configureNotificationHandler,
-  ensurePermission,
   getInitialDeepLink,
-  getToken,
   NEAR_COMPLETION_PCT,
   RESUME_LONGGAP_HOURS,
 } from '@/lib/notifications';
 import { pickPhrase } from '@/lib/notificationPhrases';
 import { recordAppOpen } from '@/lib/notificationState';
 import { isBroadcastPush, runAppOpen } from '@/lib/appOpen';
-import { registerPushTokenIfChanged } from '@/lib/pushTokenRegistry';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
 import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
 import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
@@ -79,7 +77,6 @@ import { flushOutbox, startOutbox } from '@/lib/outbox';
 import { getMostRecentlyActiveLectureId } from '@/lib/resumeCache';
 import { APP_VERSION } from '@/lib/version';
 import { queryKeys } from '@/constants/queryKeys';
-import { useNotificationsStore } from '@/stores/notificationsStore';
 
 // Benign dev-only warning: expo-notifications flags 'default' as an unknown
 // custom sound even though it's the built-in system sound name.
@@ -410,10 +407,6 @@ function AuthGate() {
 function NotificationsBootstrap() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
-  const setPermission = useNotificationsStore((s) => s.setPermission);
-  const setToken = useNotificationsStore((s) => s.setToken);
-  const setRegistered = useNotificationsStore((s) => s.setRegistered);
-  const registered = useNotificationsStore((s) => s.registered);
   const [ratingPromptVisible, setRatingPromptVisible] = useState(false);
   // iOS deferred-gender flow: a women's-section lecture opened (via a
   // notification/deep link) by a user whose gender isn't set yet. Instead of
@@ -434,31 +427,7 @@ function NotificationsBootstrap() {
     configureNotificationHandler();
   }, []);
 
-  // Permission + token registration, once we have a signed-in user.
-  useEffect(() => {
-    if (!user || registered) return;
-    let cancelled = false;
-    (async () => {
-      const status = await ensurePermission();
-      if (cancelled) return;
-      setPermission(status as 'granted' | 'denied' | 'undetermined');
-      if (status !== 'granted') return;
-      const token = await getToken();
-      if (cancelled || !token) return;
-      setToken(token);
-      try {
-        // LOAD V24: only when the token/account changed or the last write is a
-        // week old — not an upsert on every cold start (`registered` is per run).
-        await registerPushTokenIfChanged(token, user.id, () => registerPushToken(token, Platform.OS));
-        if (!cancelled) setRegistered(true);
-      } catch {
-        // Registration failure is non-fatal — the inbox still works.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, registered, setPermission, setToken, setRegistered]);
+  usePushTokenRegistration(useCurrentUserId());
 
   // Deep-link notification taps (lecture → player, section → section page).
   // Handles BOTH a warm tap (listener) and the cold-start tap that launched the

@@ -22,9 +22,9 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { useMyCertificates } from '@/hooks/useCertificates';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { arPercent } from '@/lib/format';
+import { arNum, arPercent } from '@/lib/format';
 import { CertificateActions } from '@/components/certificates/CertificateActions';
-import { issuedStatusLine, lectureProgress, remainingSummary } from '@/components/certificates/certificateText';
+import { issuedStatusLine, lectureProgress, quizProgress, remainingSummary } from '@/components/certificates/certificateText';
 import { JourneyGate } from '@/components/journey/JourneyGate';
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card } from '@/components/ui/Card';
@@ -92,7 +92,8 @@ function EarnedCard({ c }: { c: MyCertificate }) {
 
 function InProgressRow({ c }: { c: MyCertificate }) {
   const router = useRouter();
-  const progress = lectureProgress(c.eligibility);
+  const quizOnly = c.eligibility.lectures.rule === 'none';
+  const progress = quizOnly ? quizProgress(c.eligibility) : lectureProgress(c.eligibility);
   return (
     <Pressable
       onPress={() => openSection(router, c.sectionId)}
@@ -113,7 +114,9 @@ function InProgressRow({ c }: { c: MyCertificate }) {
             </Txt>
           </View>
           <Txt size={13} weight="bold" color={colors.accentBrassMuted} tabular>
-            {`المحاضرات ${arPercent(progress * 100)}`}
+            {quizOnly
+              ? `الاختبارات ${arNum(c.eligibility.quizzes.passedCount)} من ${arNum(c.eligibility.quizzes.requiredCount)}`
+              : `المحاضرات ${arPercent(progress * 100)}`}
           </Txt>
         </View>
         <ProgressBar value={progress} height={5} tint="brass" />

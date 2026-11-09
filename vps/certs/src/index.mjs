@@ -2,25 +2,21 @@
 // One instance per environment; the environment is only its env vars.
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { chromium } from 'playwright-core';
+import fs from 'node:fs/promises';
 import { readFont, renderCertificate } from './render.mjs';
-import { CERTIFICATE_ID_RE, verificationPage } from './verify-page.mjs';
+import { CERTIFICATE_ID_RE, STORE_BADGES, verificationPage } from './verify-page.mjs';
 import { RateLimiter } from './rate-limit.mjs';
+import { contentType, readStoredFile, removeFile, saveFile, validLink } from './storage.mjs';
 
 const need = (k) => { const v = process.env[k]; if (!v) throw new Error(`missing env ${k}`); return v; };
 const SUPABASE_URL = need('SUPABASE_URL').replace(/\/$/, '');
 const SERVICE_KEY = need('SUPABASE_SERVICE_ROLE_KEY');
-const BUCKET = need('R2_BUCKET');
+const FILES_DIR = need('FILES_DIR');
+const FILES_SECRET = need('FILES_SECRET');
 const PORT = Number(process.env.PORT || 8080);
 const POLL_MS = Number(process.env.POLL_MS || 10000);
 const CHROME = process.env.CHROME_PATH || '/usr/bin/chromium';
-
-const s3 = new S3Client({
-  region: 'auto',
-  endpoint: need('R2_ENDPOINT'),
-  credentials: { accessKeyId: need('R2_ACCESS_KEY_ID'), secretAccessKey: need('R2_SECRET_ACCESS_KEY') },
-});
 
 async function rpc(name, args = {}) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
@@ -32,9 +28,6 @@ async function rpc(name, args = {}) {
   const text = await r.text();
   return text ? JSON.parse(text) : null;
 }
-
-const put = (Key, Body, ContentType) =>
-  s3.send(new PutObjectCommand({ Bucket: BUCKET, Key, Body, ContentType }));
 
 const templates = new Map();   // published versions are immutable, so this never goes stale
 async function template(version) {
@@ -61,8 +54,8 @@ async function renderOne(cert) {
     const token = randomUUID();   // never derived from the public certificate id
     const pdfKey = `certificates/${token}.pdf`;
     const previewKey = `certificates/${token}.jpg`;
-    await put(pdfKey, out.pdf, 'application/pdf');
-    await put(previewKey, out.preview, 'image/jpeg');
+    await saveFile(FILES_DIR, pdfKey, out.pdf);
+    await saveFile(FILES_DIR, previewKey, out.preview);
     await rpc('complete_certificate_render', { p_id: cert.id, p_pdf_key: pdfKey, p_preview_key: previewKey, p_issue_date_text: out.issueDateText });
     console.log('rendered', cert.id, Math.round(out.pdf.length / 1024), 'KB');
   } catch (e) {
@@ -77,8 +70,8 @@ async function tick() {
   for (const cert of claimed ?? []) await renderOne(cert);
   const gone = await rpc('take_void_certificate_files', { p_limit: 20 });
   for (const f of gone ?? []) {
-    for (const Key of [f.pdf_key, f.preview_key]) {
-      if (Key) await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key })).catch((e) => console.error('delete failed', e.message));
+    for (const key of [f.pdf_key, f.preview_key]) {
+      if (key) await removeFile(FILES_DIR, key).catch((e) => console.error('delete failed', e.message));
     }
   }
   return (claimed ?? []).length;
@@ -119,18 +112,41 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, body, { 'Content-Type': 'font/woff2', 'Cache-Control': 'public, max-age=31536000, immutable' });
     }
 
+    const asset = STORE_BADGES[url.pathname];
+    if (asset) {
+      return send(res, 200, await fs.readFile(new URL(`../assets/${asset.file}`, import.meta.url)), {
+        'Content-Type': asset.type,
+        'Cache-Control': 'public, max-age=604800',
+      });
+    }
+
+    if (url.pathname.startsWith('/files/')) {
+      const key = url.pathname.slice('/files/'.length);
+      const name = url.searchParams.get('name') ?? '';
+      if (!validLink(FILES_SECRET, key, url.searchParams.get('exp') ?? '', name, url.searchParams.get('sig'))) {
+        return send(res, 403, '', { 'Content-Type': 'text/plain' });
+      }
+      const body = await readStoredFile(FILES_DIR, key);
+      if (!body) return send(res, 404, '', { 'Content-Type': 'text/plain' });
+      return send(res, 200, body, {
+        'Content-Type': contentType(key),
+        ...(name ? { 'Content-Disposition': `attachment; filename="${name}"` } : {}),
+      });
+    }
+
     const m = url.pathname.match(/^\/c\/([^/]+)\/?$/);
-    if (!m) return send(res, 404, verificationPage(null));
+    const page = (result) => verificationPage(result, { userAgent: req.headers['user-agent'] });
+    if (!m) return send(res, 404, page(null));
 
     const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '');
-    if (!limiter.allow(ip)) return send(res, 429, verificationPage(null), { 'Retry-After': '60' });
+    if (!limiter.allow(ip)) return send(res, 429, page(null), { 'Retry-After': '60' });
 
     let id = '';
     try { id = decodeURIComponent(m[1]).toUpperCase(); } catch { /* malformed: not found */ }
-    if (!CERTIFICATE_ID_RE.test(id)) return send(res, 404, verificationPage(null));
+    if (!CERTIFICATE_ID_RE.test(id)) return send(res, 404, page(null));
 
     const result = await rpc('verify_certificate', { p_id: id });
-    return send(res, result ? 200 : 404, verificationPage(result));
+    return send(res, result ? 200 : 404, page(result));
   } catch (e) {
     console.error('request', e.message);
     return send(res, 503, verificationPage(null));

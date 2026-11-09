@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildView, fillTemplate } from '../src/render.mjs';
 import { formatIssueDate } from '../src/dates.mjs';
-import { CERTIFICATE_ID_RE, verificationPage } from '../src/verify-page.mjs';
+import { APP_STORE_URL, CERTIFICATE_ID_RE, GOOGLE_PLAY_URL, storeBadges, verificationPage } from '../src/verify-page.mjs';
 import { RateLimiter } from '../src/rate-limit.mjs';
+import os from 'node:os';
+import path from 'node:path';
+import { readStoredFile, removeFile, saveFile, signature, validLink } from '../src/storage.mjs';
 
 const template = fs.readFileSync(new URL('../templates/v1.html', import.meta.url), 'utf8');
 const cert = (over = {}) => ({
@@ -88,4 +91,47 @@ test('rate limit', () => {
   assert.ok(l.allow('b'));
   t = 1000;
   assert.ok(l.allow('a'));
+});
+
+const KEY = 'certificates/123e4567-e89b-42d3-a456-426614174000.pdf';
+
+test('files: stored on disk, read back, then removed', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'certs-'));
+  await saveFile(root, KEY, Buffer.from('pdf'));
+  assert.equal((await readStoredFile(root, KEY)).toString(), 'pdf');
+  await removeFile(root, KEY);
+  assert.equal(await readStoredFile(root, KEY), null);
+});
+
+test('files: keys outside the certificate shape are refused', async () => {
+  await assert.rejects(saveFile(os.tmpdir(), 'certificates/../../etc/passwd', Buffer.from('x')));
+  await assert.rejects(readStoredFile(os.tmpdir(), '../secret.pdf'));
+});
+
+test('files: a link holds only for its file, expiry and name, and until it expires', () => {
+  const sig = signature('s', KEY, '2000', 'a.pdf');
+  assert.equal(validLink('s', KEY, '2000', 'a.pdf', sig, 1000), true);
+  assert.equal(validLink('s', KEY, '2000', 'a.pdf', sig, 3000), false);
+  assert.equal(validLink('other', KEY, '2000', 'a.pdf', sig, 1000), false);
+  assert.equal(validLink('s', KEY, '2001', 'a.pdf', sig, 1000), false);
+  assert.equal(validLink('s', KEY, '2000', 'b.pdf', sig, 1000), false);
+  assert.equal(validLink('s', KEY, '2000', 'a.pdf', 'zz', 1000), false);
+});
+
+const validResult = { status: 'valid', id: 'MAH-7K3F-Q9XW-2MTC', student_name: 'فاطمة', gender: 'female', title: 'قصص الأنبياء', author: null, presenter_line: null, issued_at: '2026-11-09T10:00:00Z' };
+
+test('verify page: both stores in every state, official links, status first', () => {
+  for (const [result, status] of [[validResult, 'شهادة صالحة'], [{ status: 'revoked' }, 'شهادة غير صالحة'], [null, 'تعذّر التحقق']]) {
+    const h = verificationPage(result).replaceAll('&#x2F;', '/');
+    assert.ok(h.includes(GOOGLE_PLAY_URL) && h.includes(APP_STORE_URL));
+    assert.ok(h.indexOf(status) < h.indexOf('حمّل تطبيق'), status);
+  }
+});
+
+test('verify page: the visitor\'s store comes first, the other stays', () => {
+  const first = (ua) => storeBadges(ua).indexOf('apps.apple.com') < storeBadges(ua).indexOf('play.google.com') ? 'apple' : 'play';
+  assert.equal(first('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'apple');
+  assert.equal(first('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)'), 'apple');
+  assert.equal(first('Mozilla/5.0 (Linux; Android 15; SM-A546E)'), 'play');
+  assert.equal(first('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'play');
 });

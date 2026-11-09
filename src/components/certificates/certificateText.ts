@@ -22,6 +22,31 @@ export function scopeLabel(scope: CertificateContentScope): string {
   return scope === 'subtree' ? 'هذا القسم وأقسامه الفرعية' : 'هذا القسم';
 }
 
+/** Does the student have anything to work towards? (A section with nothing to count shows no card.) */
+export function certificateHasConditions(e: CertificateEligibility): boolean {
+  return e.lectures.rule === 'none' ? e.quizzes.requiredCount > 0 : e.lectures.total > 0;
+}
+
+/**
+ * Whether the section page draws the «شهادة إتمام» card, which then replaces
+ * «تقدّمك في القسم». `hasCertificate` means THIS section grants one: a mark that
+ * only says a sub-section has a certificate must not be passed here.
+ */
+export function showsCertificateCard(input: {
+  hasCertificate: boolean;
+  isGuest: boolean;
+  eligibility: CertificateEligibility | null | undefined;
+}): boolean {
+  if (!input.hasCertificate) return false;
+  if (input.isGuest) return true;
+  return !!input.eligibility?.enabled && certificateHasConditions(input.eligibility);
+}
+
+/** 0…1 — required quizzes passed. */
+export function quizProgress(e: CertificateEligibility): number {
+  return e.quizzes.requiredCount > 0 ? Math.min(1, e.quizzes.passedCount / e.quizzes.requiredCount) : 0;
+}
+
 /** 0…1 — how far along the lecture requirement (completed ⁄ required, capped). */
 export function lectureProgress(e: CertificateEligibility): number {
   const { completed, required } = e.lectures;

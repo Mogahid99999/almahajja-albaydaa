@@ -5,10 +5,13 @@
 import type { CertificateEligibility } from '@/api/certificates';
 import {
   arQuizCount,
+  certificateHasConditions,
+  quizProgress,
   lectureProgress,
   lectureRequirementLine,
   quizState,
   remainingSummary,
+  showsCertificateCard,
 } from '@/components/certificates/certificateText';
 
 type Over = {
@@ -117,5 +120,47 @@ describe('remainingSummary', () => {
     expect(remainingSummary(make({ eligible: true, lectures: { completed: 10, met: true } }))).toBe(
       'استوفيت شروط الشهادة',
     );
+  });
+});
+
+describe('no lecture condition (0173)', () => {
+  const quizOnly = (quizzes: Over['quizzes'], eligible = false) =>
+    make({ eligible, lectures: { rule: 'none', total: 0, completed: 0, required: 0, met: true }, quizzes: { rule: 'selected', ...quizzes } });
+  const item = (over = {}) => ({ quizId: 'q', title: 'اختبار', passed: false, pendingGrading: false, ...over });
+
+  test('what is left names only the quiz, never lectures', () => {
+    expect(remainingSummary(quizOnly({ requiredCount: 1, met: false, items: [item()] }))).toBe('المتبقي: اختبار واحد');
+  });
+
+  test('a written quiz awaiting grading is said as such', () => {
+    expect(remainingSummary(quizOnly({ requiredCount: 1, met: false, items: [item({ pendingGrading: true })] }))).toBe('المتبقي: اختبار واحد بانتظار التصحيح');
+  });
+
+  test('has conditions only while a quiz is really required', () => {
+    expect(certificateHasConditions(quizOnly({ requiredCount: 1 }))).toBe(true);
+    expect(certificateHasConditions(quizOnly({ requiredCount: 0 }))).toBe(false);
+    expect(certificateHasConditions(make())).toBe(true);
+    expect(certificateHasConditions(make({ lectures: { total: 0 } }))).toBe(false);
+  });
+
+  test('quiz progress', () => {
+    expect(quizProgress(quizOnly({ requiredCount: 2, passedCount: 1 }))).toBe(0.5);
+    expect(quizProgress(quizOnly({ requiredCount: 0 }))).toBe(0);
+  });
+});
+
+describe('showsCertificateCard: one card on the section page', () => {
+  test('a section granting a certificate shows that card', () => {
+    expect(showsCertificateCard({ hasCertificate: true, isGuest: false, eligibility: make() })).toBe(true);
+    expect(showsCertificateCard({ hasCertificate: true, isGuest: true, eligibility: undefined })).toBe(true);
+  });
+  test('a section with no certificate of its own keeps the progress card', () => {
+    expect(showsCertificateCard({ hasCertificate: false, isGuest: false, eligibility: make() })).toBe(false);
+    expect(showsCertificateCard({ hasCertificate: false, isGuest: true, eligibility: undefined })).toBe(false);
+  });
+  test('the progress card stays until the certificate card can really be drawn', () => {
+    expect(showsCertificateCard({ hasCertificate: true, isGuest: false, eligibility: undefined })).toBe(false);
+    expect(showsCertificateCard({ hasCertificate: true, isGuest: false, eligibility: { ...make(), enabled: false } })).toBe(false);
+    expect(showsCertificateCard({ hasCertificate: true, isGuest: false, eligibility: make({ lectures: { total: 0 } }) })).toBe(false);
   });
 });

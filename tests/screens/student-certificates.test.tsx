@@ -254,3 +254,32 @@ describe('issued certificate (0170)', () => {
     expect(screen.getByText('جارٍ تجهيز الملف')).toBeTruthy();
   });
 });
+
+describe('no lecture condition (0173)', () => {
+  const quizOnly = () =>
+    make({
+      lectures: { rule: 'none', total: 0, completed: 0, required: 0, completedPct: 0, met: true },
+      quizzes: {
+        rule: 'selected', requiredCount: 2, passedCount: 1, met: false,
+        items: [
+          { quizId: 'q1', title: 'الأول', passed: true, pendingGrading: false },
+          { quizId: 'q2', title: 'الثاني', passed: false, pendingGrading: false },
+        ],
+      },
+    });
+
+  test('section page: only the quizzes, no lecture progress', async () => {
+    await render(<CertificateProgressView e={quizOnly()} />);
+    expect(screen.queryByText('المحاضرات المكتملة')).toBeNull();
+    expect(screen.queryByText(/من ٠/)).toBeNull();
+    expect(screen.getByText('الاختبارات المطلوبة — ١ من ٢')).toBeTruthy();
+    expect(screen.getByText('المتبقي: اختبار واحد')).toBeTruthy();
+  });
+
+  test('«شهاداتي»: quiz progress in place of the lecture share', async () => {
+    mockList.current = [row('b', 'الأصول الثلاثة', quizOnly())];
+    await render(<CertificatesScreen />);
+    expect(screen.getByText('الاختبارات ١ من ٢')).toBeTruthy();
+    expect(screen.queryByText(/^المحاضرات/)).toBeNull();
+  });
+});

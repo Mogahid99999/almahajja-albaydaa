@@ -28,6 +28,7 @@ import { Txt } from '@/components/ui/Txt';
 import { CertificateActions } from './CertificateActions';
 import { CERTIFICATE_LABEL } from './CertificateTag';
 import {
+  certificateHasConditions,
   issuedStatusLine,
   lectureProgress,
   lectureRequirementLine,
@@ -95,7 +96,9 @@ export function CertificateProgressView({ e, issued = null }: { e: CertificateEl
         }
       />
 
-      {/* Lectures of the certificate's content scope */}
+      {/* Lectures of the certificate's content scope (no block when they are no condition) */}
+      {e.lectures.rule !== 'none' ? (
+      <>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
         <Txt size={12} weight="medium" color={colors.textMuted}>
           المحاضرات المكتملة
@@ -109,10 +112,12 @@ export function CertificateProgressView({ e, issued = null }: { e: CertificateEl
       <Txt size={11} color={colors.textGhost} style={{ marginTop: 8, lineHeight: 18 }}>
         {lectureRequirementLine(e)}
       </Txt>
+      </>
+      ) : null}
 
       {/* Required quizzes */}
       {e.quizzes.rule === 'selected' && e.quizzes.items.length > 0 ? (
-        <View style={{ marginTop: 12 }}>
+        <View style={{ marginTop: e.lectures.rule === 'none' ? 0 : 12 }}>
           <Txt size={12} weight="medium" color={colors.textMuted} style={{ marginBottom: 4 }}>
             {`الاختبارات المطلوبة — ${arNum(e.quizzes.passedCount)} من ${arNum(e.quizzes.requiredCount)}`}
           </Txt>
@@ -208,6 +213,6 @@ export function CertificateProgressCard({ sectionId, isGuest }: { sectionId: str
     );
   }
 
-  if (!data || !data.enabled || data.lectures.total === 0) return null;
+  if (!data || !data.enabled || !certificateHasConditions(data)) return null;
   return <CertificateProgressView e={data} issued={issued} />;
 }

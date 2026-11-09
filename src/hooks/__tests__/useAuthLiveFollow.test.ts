@@ -41,7 +41,7 @@ jest.mock('@/lib/audioController', () => ({ stop: jest.fn() }));
 jest.mock('@/lib/notifications', () => ({ cancelAllLocalNotifications: jest.fn(async () => undefined) }));
 jest.mock('@/lib/outbox', () => ({ clearOutbox: jest.fn(async () => undefined) }));
 jest.mock('@/stores/notificationsStore', () => ({
-  useNotificationsStore: { getState: () => ({ token: null, setRegistered: jest.fn() }) },
+  useNotificationsStore: { getState: () => ({ token: null, setRegisteredUserId: jest.fn() }) },
 }));
 jest.mock('@/stores/tourStore', () => ({ useTourStore: { getState: () => ({ start: jest.fn() }) } }));
 

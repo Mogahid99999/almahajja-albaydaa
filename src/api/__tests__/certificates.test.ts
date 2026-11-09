@@ -205,3 +205,23 @@ describe('parsers', () => {
     expect(parseCertificateEligibility({ lectures: { completed_pct: '83.33' } }).lectures.completedPct).toBe(83.33);
   });
 });
+
+describe('no lecture condition (0173)', () => {
+  const none: SaveSectionCertificateInput = { ...base, lectureRule: 'none', lecturePct: null };
+
+  test('a certificate needs at least one condition', () => {
+    expect(certificateSettingsError({ ...none, quizRule: 'none', quizIds: [] })).toContain('شرطًا واحدًا على الأقل');
+    expect(certificateSettingsError({ ...none, enabled: false, quizRule: 'none', quizIds: [] })).toBeNull();
+  });
+
+  test('a required quiz must be published when it is the only condition', () => {
+    const input = { ...none, quizRule: 'selected' as const, quizIds: ['q1'] };
+    expect(certificateSettingsError(input, [{ id: 'q1', published: false }])).toContain('منشورًا');
+    expect(certificateSettingsError(input, [{ id: 'q1', published: true }])).toBeNull();
+  });
+
+  test('the server value is read back, unknown values stay «all»', () => {
+    expect(parseCertificateEligibility({ lectures: { rule: 'none' } }).lectures.rule).toBe('none');
+    expect(parseCertificateEligibility({ lectures: { rule: 'x' } }).lectures.rule).toBe('all');
+  });
+});

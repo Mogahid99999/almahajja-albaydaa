@@ -7,7 +7,7 @@ Server-only. The mobile app holds no template and draws nothing.
 | Issuing, snapshot, access rules | `supabase/migrations/0170_certificate_issuance.sql` |
 | Template source (Mustache HTML + fit script) | `vps/certs/templates/vN.html`, stored in `certificate_templates` |
 | PDF + preview rendering, `/c/{id}` page | this service (Chromium in a container) |
-| Files | R2, `certificates/<random uuid>.pdf` and `.jpg`; keys are never sent to a client |
+| Files | VPS disk, `/opt/almahajja-certs/files-{prd,stg}/certificates/<random uuid>.pdf` and `.jpg`; opened only through 5-minute links signed by `certificate-files` (service `FILES_SECRET` = function `CERT_FILES_SECRET`) |
 | Signed links for the app | Edge Function `certificate-files` |
 
 ## Changing the design
@@ -41,19 +41,17 @@ tar -C vps/certs --exclude=node_modules --exclude=test -cf - . | ssh ... 'tar -C
 docker build -t almahajja-certs:<tag> /opt/almahajja-certs/src   # then set CERTS_TAG_STG in .env
 docker compose up -d --no-deps almahajja-certs-stg
 ```
-`.env` and `.env.stg` (mode 600) hold the tunnel token, service key and R2 keys, one environment each.
+`.env`, `.env.prd` and `.env.stg` (mode 600) hold the tunnel tokens, service keys and file-link secrets.
+
+A lost file can be rebuilt from its snapshot: clear `pdf_key` and `render_attempts` as above.
 
 ## Staging
 `https://certs-stg.almahajja.app/c/{id}`: own tunnel `almahajja-certs-stg`, own DNS record, staging
-Supabase and bucket. `app_config.certificate_verify_base` sets the URL printed on new certificates.
+Supabase and files directory. `app_config.certificate_verify_base` sets the URL printed on new certificates.
 
-## Production (not done; needs the owner's approval)
-1. Apply 0170 and publish template v1 on production; do **not** set `certificate_verify_base`
-   (the default is `https://almahajja.app/c/`). Deploy `certificate-files`.
-2. Add `almahajja-certs` (production env, `R2_BUCKET=almahajja-media`) beside the staging service.
-3. Route `almahajja.app/c/*` to it. The apex is an `AAAA 100::` proxied record, so a Worker or
-   Pages project answers it, and the tokens in `.env` cannot read Workers routes or Pages. The
-   route needs a token with Workers Routes edit, or adding `/c/*` in whatever serves the apex.
-   Add a hostname `certs.almahajja.app` on a dedicated tunnel and have a route-scoped Worker
-   on `almahajja.app/c/*` forward to it, leaving every other path untouched.
-4. Verify a real certificate's QR and link before enabling any section.
+## Production (live since 2026-11-09)
+`https://certs.almahajja.app/c/{id}`: tunnel `almahajja-certs`, service `almahajja-certs` (`.env.prd`), image tag `CERTS_TAG` in `.env`. Production leaves
+`certificate_verify_base` unset, so certificates print `https://almahajja.app/c/{id}`.
+
+`almahajja.app` is a Worker Custom Domain, so `/c/*` is a Cloudflare Single Redirect (302) to
+`certs.almahajja.app`, rule "Certificate verification links". Every other path is untouched.

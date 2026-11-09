@@ -286,7 +286,7 @@ function SectionEditor({
     }
   }, [certQuery.data, cert]);
   const certInput: SaveSectionCertificateInput | null = cert ? { sectionId: node.id, ...cert } : null;
-  const certError = certInput ? certificateSettingsError(certInput) : null;
+  const certError = certInput ? certificateSettingsError(certInput, certQuery.data?.quizzes) : null;
 
   // Forbid reparenting under self or a descendant (would orphan/cycle the
   // subtree — F-1001: previously only the self case was actually guarded,

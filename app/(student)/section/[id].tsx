@@ -27,7 +27,7 @@ import { seriesCelebration } from '@/constants/badges';
 import { celebrate } from '@/stores/celebrationStore';
 import { useSectionPage } from '@/hooks/useSections';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useCertificateSectionIds } from '@/hooks/useCertificates';
+import { useCertificateEligibility, useCertificateSectionIds } from '@/hooks/useCertificates';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useRefreshAll } from '@/hooks/useRefreshAll';
@@ -53,6 +53,7 @@ import { AttachmentList } from '@/components/attachments/AttachmentList';
 import { QuizListCard } from '@/components/quiz/QuizListCard';
 import { CertificateTag } from '@/components/certificates/CertificateTag';
 import { CertificateProgressCard } from '@/components/certificates/CertificateProgressCard';
+import { showsCertificateCard } from '@/components/certificates/certificateText';
 
 export default function SectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -65,6 +66,16 @@ export default function SectionScreen() {
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
   const hasCertificate = useCertificateSectionIds().has(id ?? '');
+  const { data: certificateEligibility } = useCertificateEligibility(id ?? '', {
+    enabled: hasCertificate && !isGuest,
+  });
+  // One card, never two: the certificate card replaces «تقدّمك في القسم» only once
+  // it can really be drawn, so a failed load still leaves the normal progress card.
+  const certificateCardShown = showsCertificateCard({
+    hasCertificate,
+    isGuest,
+    eligibility: certificateEligibility,
+  });
 
   // Whole-series completion (recursive subtree rollup from the RPC): the seal +
   // closing-summary entry, and a once-ever server-deduped celebration. A section
@@ -188,13 +199,15 @@ export default function SectionScreen() {
       </View>
 
       {/* ── Progress card ───────────────────────────────────────────────────── */}
-      <View style={{ paddingHorizontal: spacing.screenH }}>
-        <ProgressCard
-          progressPct={rollup.progressPct}
-          completed={rollup.completed}
-          total={rollup.total}
-        />
-      </View>
+      {certificateCardShown ? null : (
+        <View style={{ paddingHorizontal: spacing.screenH }}>
+          <ProgressCard
+            progressPct={rollup.progressPct}
+            completed={rollup.completed}
+            total={rollup.total}
+          />
+        </View>
+      )}
 
       {/* ── «شهادة إتمام» progress — certificate_eligibility, its own scope ───── */}
       {hasCertificate ? (

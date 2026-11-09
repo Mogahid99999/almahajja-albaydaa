@@ -82,7 +82,7 @@ async function stopDeviceSideEffects(): Promise<void> {
   // Force the NEXT signed-in/guest session to register its own push token
   // rather than silently skipping it (NotificationsBootstrap only registers
   // once per JS run via this `registered` flag).
-  useNotificationsStore.getState().setRegistered(false);
+  useNotificationsStore.getState().setRegisteredUserId(null);
 }
 
 /**

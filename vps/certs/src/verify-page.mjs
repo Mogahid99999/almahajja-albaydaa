@@ -7,6 +7,21 @@ export const CERTIFICATE_ID_RE = /^MAH-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{
 
 const LOGO = `<svg role="img" aria-label="شعار المحجة البيضاء" width="44" height="52" viewBox="130 160 252 300"><polygon points="206,171 254,193 254,215 206,192" fill="#b0894f"/><polygon points="258,193 306,171 306,192 258,215" fill="#b0894f"/><polygon points="226,232 286,232 370,450 142,450" fill="#1f4a42"/></svg>`;
 
+export const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.riwaqalilm.app';
+export const APP_STORE_URL = 'https://apps.apple.com/us/app/%D8%A7%D9%84%D9%85%D8%AD%D8%AC%D8%A9-%D8%A7%D9%84%D8%A8%D9%8A%D8%B6%D8%A7%D8%A1/id6791291132';
+export const STORE_BADGES = {
+  '/assets/google-play.png': { file: 'google-play-badge-en.png', type: 'image/png' },
+  '/assets/app-store.svg': { file: 'app-store-badge-en.svg', type: 'image/svg+xml' },
+};
+
+const PLAY_BADGE = `<a class="store play" href="${GOOGLE_PLAY_URL}" rel="noopener"><img src="/assets/google-play.png" width="170" height="66" alt="Get it on Google Play"></a>`;
+const APPLE_BADGE = `<a class="store" href="${APP_STORE_URL}" rel="noopener"><img src="/assets/app-store.svg" width="132" height="44" alt="Download on the App Store"></a>`;
+
+// Android sees Google Play first, iPhone and iPad the App Store. Both are always there.
+export function storeBadges(userAgent = '') {
+  return /iPhone|iPad|iPod/i.test(userAgent) ? APPLE_BADGE + PLAY_BADGE : PLAY_BADGE + APPLE_BADGE;
+}
+
 const PAGE = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -33,6 +48,14 @@ dt{font-size:13px;color:#6b6253;margin-bottom:3px}
 dd{margin:0;font-size:18px;line-height:1.7;overflow-wrap:anywhere}
 dd.title{font-family:Amiri,serif;font-size:24px;font-weight:700;color:#1f4a42}
 dd.id{direction:ltr;text-align:right;font-size:15px}
+.app{margin-top:26px;padding-top:22px;border-top:1px solid #cbb98e}
+.app h2{font-family:Amiri,serif;font-size:21px;line-height:1.6;color:#1f4a42;margin:0}
+.app p{color:#5c5343;font-size:14px;line-height:1.9;margin:4px 0 0}
+.stores{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 14px;margin-top:12px}
+.store{display:block;border-radius:7px}
+.store img{display:block}
+.store.play{margin:-11px}
+.store:focus-visible{outline:2px solid #1f4a42;outline-offset:2px}
 </style>
 </head>
 <body>
@@ -62,13 +85,20 @@ dd.id{direction:ltr;text-align:right;font-size:15px}
   <h1>لم نجد شهادة بهذا الرقم</h1>
   <p class="note">تأكد من مسح الرمز كاملًا أو من كتابة الرابط كما هو مطبوع على الشهادة.</p>
   {{/missing}}
+  <section class="app" dir="rtl">
+    <h2>حمّل تطبيق المَحجّة البَيْضَاء</h2>
+    <p>دروس في العلوم الشرعية تدرسها بترتيب وهدوء، وتتابع فيها تقدمك.</p>
+    <div class="stores" dir="ltr">{{{store_badges}}}</div>
+  </section>
 </main>
 </body>
 </html>`;
 
-export function verificationPage(result) {
+export function verificationPage(result, { userAgent = '' } = {}) {
+  const store_badges = storeBadges(userAgent);
   if (result?.status === 'valid') {
     return Mustache.render(PAGE, {
+      store_badges,
       page_title: 'شهادة موثقة',
       valid: true,
       student_label: result.gender === 'female' ? 'الطالبة' : 'الطالب',
@@ -80,6 +110,6 @@ export function verificationPage(result) {
       date: result.issue_date_text || formatIssueDate(result.issued_at),
     });
   }
-  if (result?.status) return Mustache.render(PAGE, { page_title: 'شهادة غير صالحة', revoked: true });
-  return Mustache.render(PAGE, { page_title: 'تعذّر التحقق', missing: true });
+  if (result?.status) return Mustache.render(PAGE, { store_badges, page_title: 'شهادة غير صالحة', revoked: true });
+  return Mustache.render(PAGE, { store_badges, page_title: 'تعذّر التحقق', missing: true });
 }

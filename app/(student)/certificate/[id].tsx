@@ -6,7 +6,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Image, View } from 'react-native';
 
+import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { CertificateActions } from '@/components/certificates/CertificateActions';
+import { CertificateShareActions } from '@/components/certificates/CertificateShareActions';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
@@ -22,7 +24,7 @@ export default function CertificateScreen() {
   const { data: files } = useCertificateFiles(id, valid && !!certificate?.ready);
 
   return (
-    <Screen padded>
+    <Screen padded bottomPad={24 + BOTTOM_NAV_CLEARANCE}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 18 }}>
         <IconButton icon="chevron-right" onPress={() => router.back()} accessibilityLabel="رجوع" />
         <Txt size={22} weight="display" color={colors.primaryTeal} style={{ flex: 1 }}>
@@ -79,6 +81,7 @@ export default function CertificateScreen() {
             {[certificate.title, certificate.issueDateText].filter(Boolean).join(' · ')}
           </Txt>
           <CertificateActions certificate={certificate} showView={false} />
+          <CertificateShareActions certificate={certificate} shareText={files?.shareText} />
         </>
       )}
     </Screen>

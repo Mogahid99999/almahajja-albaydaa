@@ -1,16 +1,15 @@
 // =============================================================================
-// certificate-files: short-lived signed URLs for a certificate's PDF and preview.
+// certificate-files: short-lived signed URLs for a certificate's PDF and image, and its share wording.
 // verify_jwt=true. Only the owner or content staff, only a valid certificate
-// (certificate_files_for, 0170). The R2 keys never reach the client.
+// (certificate_files_for, 0170). Files are on the VPS; links expire in minutes.
 // =============================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { GetObjectCommand, S3Client } from "npm:@aws-sdk/client-s3@3";
-import { getSignedUrl } from "npm:@aws-sdk/s3-request-presigner@3";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const R2_BUCKET = Deno.env.get("R2_BUCKET")!;
+const FILES_BASE = Deno.env.get("CERT_FILES_BASE")!.replace(/\/$/, "");
+const FILES_SECRET = Deno.env.get("CERT_FILES_SECRET")!;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -19,14 +18,21 @@ const CORS = {
 };
 const EXPIRES_SECONDS = 300;
 
-const s3 = new S3Client({
-  region: "auto",
-  endpoint: Deno.env.get("R2_ENDPOINT")!,
-  credentials: {
-    accessKeyId: Deno.env.get("R2_ACCESS_KEY_ID")!,
-    secretAccessKey: Deno.env.get("R2_SECRET_ACCESS_KEY")!,
-  },
-});
+// Same string as vps/certs/src/storage.mjs.
+async function signedLink(key: string, name = ""): Promise<string> {
+  const exp = String(Math.floor(Date.now() / 1000) + EXPIRES_SECONDS);
+  const hmac = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(FILES_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const raw = await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(`${key}\n${exp}\n${name}`));
+  const sig = [...new Uint8Array(raw)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const query = new URLSearchParams({ exp, sig, ...(name ? { name } : {}) });
+  return `${FILES_BASE}/files/${key}?${query}`;
+}
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -62,15 +68,12 @@ Deno.serve(async (req) => {
   if (error) return json({ error: "unavailable" }, 500);
   if (!data) return json({ error: "forbidden" }, 403); // same answer for "not yours" and "no such id"
 
-  const sign = (Key: string, disposition?: string) =>
-    getSignedUrl(
-      s3,
-      new GetObjectCommand({ Bucket: R2_BUCKET, Key, ResponseContentDisposition: disposition }),
-      { expiresIn: EXPIRES_SECONDS },
-    );
   return json({
-    pdf_url: await sign(data.pdf_key, `attachment; filename="certificate-${id.toUpperCase()}.pdf"`),
-    preview_url: await sign(data.preview_key),
+    pdf_url: await signedLink(data.pdf_key, `certificate-${id.trim().toUpperCase()}.pdf`),
+    preview_url: await signedLink(data.preview_key),
+    share_text: data.title && data.verification_url
+      ? `الحمد لله، أتممت دراسة «${data.title}» عبر تطبيق المَحجّة البَيْضَاء، وحصلت على شهادة إتمام.\n\nللتحقق من الشهادة:\n${data.verification_url}`
+      : null,
     expires_in: EXPIRES_SECONDS,
   });
 });

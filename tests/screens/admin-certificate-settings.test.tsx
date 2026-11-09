@@ -2,7 +2,7 @@
  * «شهادة الإتمام» block of the admin section editor (0168 —
  * CertificateSettingsFields). Pins the Arabic copy and the controlled flow:
  * conditions appear only when the toggle is on; «نطاق محتوى الشهادة» defaults to
- * «هذا القسم فقط» and switches to the whole subtree; «نسبة من المحاضرات» reveals the
+ * «هذا القسم فقط» and switches to the whole subtree; «إكمال نسبة محددة» reveals the
  * percentage (presets + Arabic digits accepted); «اختبارات محددة» lists the
  * subtree quizzes (sub-section / draft flagged) and toggles picks.
  */
@@ -84,7 +84,7 @@ test('«نطاق محتوى الشهادة»: «هذا القسم فقط» by de
 test('turning it on shows both conditions with the defaults', async () => {
   await render(<Harness initial={off} />);
   await fireEvent(screen.getByLabelText('يمنح هذا القسم شهادة إتمام'), 'valueChange', true);
-  expect(screen.getByText('شرط إكمال المحاضرات')).toBeTruthy();
+  expect(screen.getByText('شرط المحاضرات')).toBeTruthy();
   expect(screen.getByText('إكمال جميع المحاضرات')).toBeTruthy();
   expect(screen.getByText('شرط الاختبارات')).toBeTruthy();
   expect(screen.getByText('لا يشترط اختبارات')).toBeTruthy();
@@ -96,7 +96,7 @@ test('turning it on shows both conditions with the defaults', async () => {
 
 test('«نسبة من المحاضرات»: 80 by default, presets and typed Arabic digits', async () => {
   await render(<Harness initial={{ ...off, enabled: true }} />);
-  await fireEvent.press(screen.getByText('نسبة من المحاضرات'));
+  await fireEvent.press(screen.getByText('إكمال نسبة محددة'));
   expect(mockLast).toMatchObject({ lectureRule: 'percent', lecturePct: 80 });
   await fireEvent.press(screen.getByText('٩٠٪'));
   expect(mockLast!.lecturePct).toBe(90);
@@ -133,4 +133,12 @@ test('parsePct', () => {
   expect(parsePct('٨٠')).toBe(80);
   expect(parsePct('70%')).toBe(70);
   expect(parsePct('')).toBeNull();
+});
+
+test('«بدون شرط للمحاضرات»: a real rule, no percentage, no lecture scope', async () => {
+  await render(<Harness initial={{ ...off, enabled: true, lectureRule: 'percent', lecturePct: 70 }} />);
+  await fireEvent.press(screen.getByText('بدون شرط للمحاضرات'));
+  expect(mockLast).toMatchObject({ lectureRule: 'none', lecturePct: null });
+  expect(screen.queryByText('نطاق محتوى الشهادة')).toBeNull();
+  expect(screen.getByText('لا تُحتسب المحاضرات، وتصدر الشهادة عند اجتياز الاختبارات المطلوبة')).toBeTruthy();
 });

@@ -12,7 +12,8 @@ import { supabase } from '@/lib/supabase';
 
 /** «نطاق محتوى الشهادة»: this section's own lectures, or the whole path below it. */
 export type CertificateContentScope = 'section' | 'subtree';
-export type CertificateLectureRule = 'all' | 'percent';
+/** 'none': lectures are no condition at all; the certificate rests on its quizzes (0173). */
+export type CertificateLectureRule = 'none' | 'all' | 'percent';
 export type CertificateQuizRule = 'none' | 'selected';
 
 /** A quiz of the section's subtree, as offered in the settings picker. */
@@ -85,7 +86,7 @@ export type CertificateEligibility = {
 
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const contentScope = (v: unknown): CertificateContentScope => (v === 'subtree' ? 'subtree' : 'section');
-const lectureRule = (v: unknown): CertificateLectureRule => (v === 'percent' ? 'percent' : 'all');
+const lectureRule = (v: unknown): CertificateLectureRule => (v === 'percent' || v === 'none' ? v : 'all');
 const quizRule = (v: unknown): CertificateQuizRule => (v === 'selected' ? 'selected' : 'none');
 
 /** get_section_certificate_settings jsonb → client shape. Exported for tests. */
@@ -159,7 +160,10 @@ export function parseCertificateEligibility(raw: unknown): CertificateEligibilit
  * editor can explain the problem before saving. Null = valid. (The server stays
  * authoritative.)
  */
-export function certificateSettingsError(input: SaveSectionCertificateInput): string | null {
+export function certificateSettingsError(
+  input: SaveSectionCertificateInput,
+  quizzes?: Pick<CertificateQuizOption, 'id' | 'published'>[],
+): string | null {
   if (!input.enabled) return null; // turning it off never blocks saving the section
   if (!input.presenterName?.trim()) return 'اكتب اسم مقدم المادة كما يظهر على الشهادة';
   if (input.lectureRule === 'percent') {
@@ -170,6 +174,14 @@ export function certificateSettingsError(input: SaveSectionCertificateInput): st
   }
   if (input.quizRule === 'selected' && input.quizIds.length === 0) {
     return 'اختر اختبارًا واحدًا على الأقل';
+  }
+  if (input.lectureRule === 'none') {
+    if (input.quizRule === 'none') {
+      return 'الشهادة تحتاج شرطًا واحدًا على الأقل: حدّد شرطًا للمحاضرات أو اختبارًا مطلوبًا';
+    }
+    if (quizzes && !quizzes.some((q) => q.published && input.quizIds.includes(q.id))) {
+      return 'اختر اختبارًا منشورًا واحدًا على الأقل، فالشهادة بلا شرط للمحاضرات تعتمد على الاختبارات';
+    }
   }
   return null;
 }
@@ -312,11 +324,20 @@ export async function getMyCertificate(id: string): Promise<IssuedCertificate | 
   return parseIssuedCertificate(data);
 }
 
-export type CertificateFiles = { pdfUrl: string; previewUrl: string };
+export type CertificateFiles = {
+  pdfUrl: string;
+  previewUrl: string;
+  /** The server's wording for sharing, with the verification link in it. */
+  shareText: string | null;
+};
 
 /** Short-lived links to the server-rendered files (owner or content staff only). */
 export async function getCertificateFiles(id: string): Promise<CertificateFiles> {
   const { data, error } = await supabase.functions.invoke('certificate-files', { body: { id } });
   if (error) throw error;
-  return { pdfUrl: String(data.pdf_url), previewUrl: String(data.preview_url) };
+  return {
+    pdfUrl: String(data.pdf_url),
+    previewUrl: String(data.preview_url),
+    shareText: typeof data.share_text === 'string' ? data.share_text : null,
+  };
 }

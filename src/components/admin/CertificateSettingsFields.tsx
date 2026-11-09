@@ -27,8 +27,9 @@ const SCOPE_OPTIONS: { value: CertificateContentScope; label: string }[] = [
   { value: 'subtree', label: 'هذا القسم وأقسامه الفرعية' },
 ];
 const LECTURE_OPTIONS: { value: CertificateLectureRule; label: string }[] = [
+  { value: 'none', label: 'بدون شرط للمحاضرات' },
   { value: 'all', label: 'إكمال جميع المحاضرات' },
-  { value: 'percent', label: 'نسبة من المحاضرات' },
+  { value: 'percent', label: 'إكمال نسبة محددة' },
 ];
 const QUIZ_OPTIONS: { value: CertificateQuizRule; label: string }[] = [
   { value: 'none', label: 'لا يشترط اختبارات' },
@@ -149,22 +150,26 @@ export function CertificateSettingsFields({
 
       {value.enabled ? (
         <View style={styles.conditions}>
-          <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
-            نطاق محتوى الشهادة
-          </Txt>
-          <Segmented
-            options={SCOPE_OPTIONS}
-            value={value.contentScope}
-            onChange={(contentScope) => set({ contentScope })}
-          />
-          <Txt size={12} color={colors.textMuted} style={{ marginTop: 6 }}>
-            {value.contentScope === 'section'
-              ? 'تُحتسب المحاضرات المنشورة الموجودة مباشرة في هذا القسم'
-              : 'تُحتسب المحاضرات المنشورة في هذا القسم وفي كل الأقسام الفرعية تحته'}
-          </Txt>
+          {value.lectureRule !== 'none' ? (
+            <>
+              <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
+                نطاق محتوى الشهادة
+              </Txt>
+              <Segmented
+                options={SCOPE_OPTIONS}
+                value={value.contentScope}
+                onChange={(contentScope) => set({ contentScope })}
+              />
+              <Txt size={12} color={colors.textMuted} style={{ marginTop: 6 }}>
+                {value.contentScope === 'section'
+                  ? 'تُحتسب المحاضرات المنشورة الموجودة مباشرة في هذا القسم'
+                  : 'تُحتسب المحاضرات المنشورة في هذا القسم وفي كل الأقسام الفرعية تحته'}
+              </Txt>
+            </>
+          ) : null}
 
           <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
-            شرط إكمال المحاضرات
+            شرط المحاضرات
           </Txt>
           <Segmented
             options={LECTURE_OPTIONS}
@@ -205,7 +210,9 @@ export function CertificateSettingsFields({
             </View>
           ) : null}
           <Txt size={12} color={colors.textMuted} style={{ marginTop: 6 }}>
-            المحاضرة المكتملة تُحتسب سواء أُكملت من التسجيل أو بحضور البث المباشر
+            {value.lectureRule === 'none'
+              ? 'لا تُحتسب المحاضرات، وتصدر الشهادة عند اجتياز الاختبارات المطلوبة'
+              : 'المحاضرة المكتملة تُحتسب سواء أُكملت من التسجيل أو بحضور البث المباشر'}
           </Txt>
 
           <Txt weight="semibold" size={13} color={colors.textSlate} style={styles.label}>
