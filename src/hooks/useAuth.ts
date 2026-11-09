@@ -144,8 +144,8 @@ export function useSignIn() {
     // staleTime (30 min), and queued guest writes would replay under the new
     // account's uid. Order matters: outbox first (its entries are the guest's),
     // then the cache reset, then the fresh user primed before any refetch.
-    mutationFn: async (vars: { identifier: string; password: string }) => {
-      const user = await signIn(vars.identifier, vars.password);
+    mutationFn: async (vars: { identifier: string; password: string; countryCode?: string }) => {
+      const user = await signIn(vars.identifier, vars.password, vars.countryCode);
       await clearOutbox();
       qc.clear();
       qc.setQueryData(queryKeys.currentUser, user);

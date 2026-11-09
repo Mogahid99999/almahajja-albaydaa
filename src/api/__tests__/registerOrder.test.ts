@@ -97,7 +97,7 @@ describe('Android (phone present): phone+password first, email best-effort after
     await register('محمد', '0912345678', '249', 'a@example.com', 'password123', 'male');
     expect(mockCalls).toEqual(['updateUser', 'register-set-email']);
     expect(mockUpdateUser).toHaveBeenCalledWith({
-      phone: '249912345678',
+      phone: '+249912345678',
       password: 'password123',
       data: { display_name: 'محمد', gender: 'male' },
     });

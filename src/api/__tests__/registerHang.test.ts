@@ -66,6 +66,7 @@ test('a stalled updateUser rejects with an Arabic error instead of spinning fore
 test('a failed set_own_profile is retried, so name/gender/oath still land', async () => {
   mockUpdateUser.mockResolvedValue({ data: { user }, error: null });
   mockRpc
+    .mockResolvedValueOnce({ data: false, error: null }) // phone_registration_conflict
     .mockResolvedValueOnce({ data: null, error: { message: 'Network request failed' } })
     .mockResolvedValueOnce({ data: null, error: null });
 

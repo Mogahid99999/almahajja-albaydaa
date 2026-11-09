@@ -1,8 +1,8 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
 
-import { COUNTRIES, findCountry } from '@/constants/countries';
+import { COUNTRIES, findCountry, searchCountries } from '@/constants/countries';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { Txt } from './Txt';
 
@@ -31,24 +31,50 @@ export function PhoneInput({
   placeholder?: string;
   height?: number;
 }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <CountryCodeButton countryCode={countryCode} onChange={onChangeCountryCode} height={height} />
+
+      <TextInput
+        value={value}
+        onChangeText={(t) => onChangeValue(t.replace(/[^0-9]/g, ''))}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textGhost}
+        keyboardType="phone-pad"
+        style={[styles.input, { height }]}
+      />
+    </View>
+  );
+}
+
+/** The flag + calling code trigger and its country list. */
+export function CountryCodeButton({
+  countryCode,
+  onChange: onChangeCountryCode,
+  height = 44,
+}: {
+  countryCode: string;
+  onChange: (code: string) => void;
+  height?: number;
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const selected = findCountry(countryCode);
+  // Several countries share a calling code, so the chosen row is remembered for its flag.
+  const [pickedIso, setPickedIso] = useState<string | null>(null);
+  const picked = COUNTRIES.find((c) => c.iso === pickedIso && c.code === countryCode);
+  const selected = picked ?? findCountry(countryCode);
 
-  const candidates = useMemo(() => {
-    const q = query.trim();
-    if (!q) return COUNTRIES;
-    return COUNTRIES.filter((c) => c.name.includes(q) || c.code.includes(q));
-  }, [query]);
+  const candidates = useMemo(() => searchCountries(query), [query]);
 
-  function handleSelect(code: string) {
+  function handleSelect(iso: string, code: string) {
+    setPickedIso(iso);
     onChangeCountryCode(code);
     setOpen(false);
     setQuery('');
   }
 
   return (
-    <View style={{ flexDirection: 'row', gap: 8 }}>
+    <>
       <Pressable
         onPress={() => setOpen(true)}
         accessibilityRole="button"
@@ -62,16 +88,8 @@ export function PhoneInput({
         <Feather name="chevron-down" size={14} color={colors.textMuted} />
       </Pressable>
 
-      <TextInput
-        value={value}
-        onChangeText={(t) => onChangeValue(t.replace(/[^0-9]/g, ''))}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textGhost}
-        keyboardType="phone-pad"
-        style={[styles.input, { height }]}
-      />
-
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
           <View style={styles.overlay} onStartShouldSetResponder={() => true}>
             <View style={styles.searchRow}>
@@ -79,7 +97,7 @@ export function PhoneInput({
               <TextInput
                 value={query}
                 onChangeText={setQuery}
-                placeholder="ابحث عن الدولة..."
+                placeholder="ابحث بالدولة أو الرمز..."
                 placeholderTextColor={colors.textGhost}
                 style={styles.searchInput}
                 autoFocus
@@ -89,21 +107,26 @@ export function PhoneInput({
 
             <View style={{ height: 1, backgroundColor: colors.borderHair }} />
 
-            <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-              {candidates.length === 0 ? (
+            <FlatList
+              style={styles.list}
+              data={candidates}
+              keyExtractor={(c) => c.iso}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={15}
+              ListEmptyComponent={
                 <View style={styles.emptyRow}>
                   <Txt size={13} color={colors.textGhost} align="center">
                     لا توجد نتائج
                   </Txt>
                 </View>
-              ) : null}
-              {candidates.map((c) => {
-                const active = c.code === countryCode;
+              }
+              renderItem={({ item: c }) => {
+                const active = c.iso === selected.iso;
                 return (
                   <Pressable
-                    key={c.code}
-                    onPress={() => handleSelect(c.code)}
+                    onPress={() => handleSelect(c.iso, c.code)}
                     accessibilityRole="button"
+                    accessibilityLabel={`${c.name} +${c.code}`}
                     accessibilityState={{ selected: active }}
                     style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
                   >
@@ -117,17 +140,18 @@ export function PhoneInput({
                       {c.name}
                     </Txt>
                     <Txt size={12.5} color={colors.textMuted} tabular>
-                      +{c.code}
+                      {`+${c.code}`}
                     </Txt>
                     {active ? <Feather name="check" size={15} color={colors.primaryTeal} /> : null}
                   </Pressable>
                 );
-              })}
-            </ScrollView>
+              }}
+            />
           </View>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </>
   );
 }
 
@@ -169,6 +193,7 @@ const styles = StyleSheet.create({
     width: 380,
     maxWidth: '100%',
     maxHeight: 440,
+    flexShrink: 1,
     backgroundColor: colors.surfaceWhite,
     borderRadius: radius.card,
     borderWidth: 1,
@@ -196,6 +221,7 @@ const styles = StyleSheet.create({
 
   list: {
     maxHeight: 370,
+    flexShrink: 1,
   } as ViewStyle,
 
   row: {

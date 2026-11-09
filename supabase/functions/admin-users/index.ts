@@ -23,6 +23,7 @@
 //         (metadata verify_jwt=true) — mirrors notify-on-publish.
 // =============================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { parsePhoneNumberFromString } from "npm:libphonenumber-js@1.13.15/min";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -34,17 +35,18 @@ const VALID_ROLES = ["student", "publisher", "admin", "sheikh"];
 const DEFAULT_COUNTRY_CODE = "249";
 
 /**
- * Mirrors src/api/auth.ts's normalizePhone — reshapes into valid E.164 (phone
- * is never OTP-verified). `countryCode` comes from the admin panel's country
- * picker (src/components/ui/PhoneInput.tsx); falls back to Sudan only when a
- * caller doesn't send one.
+ * Same rule as toInternationalPhone (src/lib/phone.ts). `countryCode` comes from
+ * the admin panel's picker; Sudan only when a caller doesn't send one.
+ * Returns "" for an empty or impossible number.
  */
-function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTRY_CODE): string {
+function internationalPhone(raw: string, countryCode: string = DEFAULT_COUNTRY_CODE): string {
   const digits = raw.replace(/[^0-9]/g, "");
-  if (!digits) return digits;
-  const local = digits.startsWith("0") ? digits.slice(1) : digits;
-  if (local.startsWith(countryCode) || local.length > 9) return local;
-  return countryCode + local;
+  if (!digits) return "";
+  const national = parsePhoneNumberFromString(digits, { defaultCallingCode: countryCode });
+  const full = digits.startsWith(countryCode) ? parsePhoneNumberFromString(`+${digits}`) : undefined;
+  const best = (national?.isValid() && national) || (full?.isValid() && full) ||
+    (national?.isPossible() && national) || null;
+  return best ? best.number : "";
 }
 
 const CORS = {
@@ -101,11 +103,11 @@ Deno.serve(async (req) => {
   // createUser is the one action that has no target userId yet.
   if (action === "createUser") {
     const email = (body.email ?? "").trim().toLowerCase();
-    const phone = normalizePhone(body.phone ?? "", body.countryCode);
+    const phone = internationalPhone(body.phone ?? "", body.countryCode);
     // At least one identifier is required — mirrors self-registration, which
     // now requires a phone (email optional).
     if (email && !/.+@.+\..+/.test(email)) return json({ error: "invalid email" }, 400);
-    if (!email && phone.length < 8) return json({ error: "email or phone required" }, 400);
+    if (!email && !phone) return json({ error: "email or phone required" }, 400);
     // Same minimum as self-registration (app/(auth)/register.tsx) and the
     // admin form's «٦ أحرف على الأقل» label — they previously disagreed (6 vs
     // 8), so valid submissions failed with an opaque "password too short".
@@ -188,8 +190,8 @@ Deno.serve(async (req) => {
         return json({ ok: true });
       }
       case "updatePhone": {
-        const phone = normalizePhone(body.phone ?? "", body.countryCode);
-        if (phone.length < 8) return json({ error: "invalid phone" }, 400);
+        const phone = internationalPhone(body.phone ?? "", body.countryCode);
+        if (!phone) return json({ error: "رقم الهاتف غير صحيح لهذه الدولة" }, 400);
         // phone_confirm:true — admin edits never trigger an SMS/OTP (matches
         // updateEmail's email_confirm:true instant-apply).
         await mustUpdate(admin, userId, { phone, phone_confirm: true });

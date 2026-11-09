@@ -23,6 +23,7 @@ import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Card, Divider, IconButton, ProgressBar, Txt } from '@/components/ui';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { splitPhone } from '@/constants/countries';
+import { isPhoneEntryValid } from '@/lib/phone';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { useAdminLiveSpeaker, useAdminUserActions, useAdminUserDetail } from '@/hooks/useAdminUsers';
@@ -142,7 +143,7 @@ function PhoneEditableField({
   const [local, setLocal] = useState(start.local);
   const [countryCode, setCountryCode] = useState(start.countryCode);
   const ok =
-    local.length >= 8 &&
+    isPhoneEntryValid(local, countryCode) &&
     (local !== start.local || countryCode !== start.countryCode) &&
     !pending;
   return (

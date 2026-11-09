@@ -134,11 +134,20 @@ export async function getQuizIntro(quizId: string): Promise<QuizIntro | null> {
   };
 }
 
+/** The statement to accept before this quiz, or null when it needs none (0175). */
+export async function getQuizIntegrity(quizId: string): Promise<{ version: number; body: string } | null> {
+  if (USE_MOCK) return null;
+  const { data, error } = await supabase.rpc('get_quiz_integrity', { p_quiz_id: quizId });
+  if (error) throw error;
+  return (data ?? null) as { version: number; body: string } | null;
+}
+
 /** Start (or resume) an attempt — gates + max_attempts enforced server-side. */
-export async function startAttempt(quizId: string): Promise<string> {
+export async function startAttempt(quizId: string, integrityVersion?: number): Promise<string> {
   if (USE_MOCK) return '';
   const { data, error } = await supabase.rpc('start_quiz_attempt', {
     p_quiz_id: quizId,
+    ...(integrityVersion == null ? {} : { p_integrity_version: integrityVersion }),
   });
   if (error) throw error;
   return data as string;
@@ -203,6 +212,31 @@ export async function submitAttempt(attemptId: string): Promise<QuizResult> {
   });
   if (error) throw error;
   return data as unknown as QuizResult;
+}
+
+/**
+ * Send every answer and finish the attempt in one transaction (0174). Safe to
+ * repeat: an attempt already submitted returns its result unchanged.
+ */
+export async function finalizeAttempt(
+  attemptId: string,
+  answers: { questionId: string; optionId?: string; text?: string }[],
+  clientFinishedAt: string | null,
+): Promise<QuizResult> {
+  if (USE_MOCK) return emptyResult(attemptId);
+  const { data, error } = await supabase.rpc('finalize_quiz_attempt', {
+    p_attempt_id: attemptId,
+    p_answers: answers,
+    ...(clientFinishedAt ? { p_client_finished_at: clientFinishedAt } : {}),
+  });
+  if (error) throw error;
+  return data as unknown as QuizResult;
+}
+
+/** The signed-in account, read from the device: works with no connection. */
+export async function getSessionUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
 }
 
 /** Re-open the result of an own, already-submitted attempt. */

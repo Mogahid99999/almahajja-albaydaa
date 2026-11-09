@@ -1,71 +1,62 @@
 /**
  * Quiz solver — /quiz-attempt/[attemptId] (PRD §12.3).
  *
- * One question at a time with its options, prev/next navigation, an answered
- * counter, answers saved as picked (server refuses saves past the deadline),
- * a confirmation sheet before the final submit, and — when the quiz is timed —
- * a calm countdown seeded from the SERVER's remaining seconds that auto-submits
- * at zero. Already-submitted attempts redirect straight to their result.
+ * One question at a time, prev/next, an answered counter and a confirmation
+ * before the final submit. 0166: written questions show a multiline field.
  *
- * 0166 «إجابة نصية»: a written question shows a multiline RTL field instead of
- * options. Typing autosaves (debounced), moving to another question saves at
- * once, and submit saves every unsaved draft first — so an answer survives
- * navigation, leaving and resuming. A quiz with written questions comes back
- * «بانتظار التصحيح» from submit; the result screen shows that state.
+ * 0174: the attempt lives on the device (useQuizSession), so it can be finished
+ * with no connection. The countdown cannot be reset by leaving or reopening, and
+ * at zero the attempt locks and is delivered now or when the connection returns.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  AppState,
-  Modal,
-  Pressable,
-  TextInput,
-  View,
-} from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Modal, Pressable, TextInput, View } from 'react-native';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
-import {
-  useAttemptQuestions,
-  useSaveAnswer,
-  useSaveTextAnswer,
-  useSubmitAttempt,
-} from '@/hooks/useQuizzes';
-import { arabicOr } from '@/lib/errorText';
-import { arDuration, arNum } from '@/lib/format';
+import { useQuizSession } from '@/hooks/useQuizSession';
+import { arCountdown, arNum } from '@/lib/format';
 import { useCelebrationStore } from '@/stores/celebrationStore';
 
-const SAVE_WARNING_GENERIC = 'تعذّر حفظ الإجابة — تحقق من الاتصال، وسيُعاد الحفظ عند التسليم.';
-/** Typing pause before a written answer autosaves. */
-const TEXT_SAVE_DEBOUNCE_MS = 900;
+/** Calm notice for the last five minutes; a clearer state for the last one. */
+const CALM_WARNING_SEC = 300;
+const URGENT_WARNING_SEC = 60;
+
+function lockedMessage(reason: 'timeout' | 'manual' | null, online: boolean, failed: boolean): string {
+  if (!online) {
+    return reason === 'timeout'
+      ? 'انتهى وقت الاختبار، وسيتم إرسال إجاباتك تلقائيًا عند عودة الاتصال.'
+      : 'تم حفظ إجاباتك، وسيتم إرسالها تلقائيًا عند عودة الاتصال.';
+  }
+  if (failed) return 'تعذّر إرسال إجاباتك الآن، وهي محفوظة وسيُعاد إرسالها تلقائيًا.';
+  return reason === 'timeout' ? 'انتهى وقت الاختبار، جارٍ تسليم إجاباتك...' : 'جارٍ تسليم إجاباتك...';
+}
 
 export default function QuizAttemptScreen() {
   const { attemptId } = useLocalSearchParams<{ attemptId: string }>();
   const router = useRouter();
-  const { data, isLoading, isError } = useAttemptQuestions(attemptId ?? '');
-  const saveAnswer = useSaveAnswer();
-  const saveText = useSaveTextAnswer();
-  const submitAttempt = useSubmitAttempt();
+  const {
+    status,
+    questions,
+    options: answers,
+    texts,
+    remaining,
+    finishReason,
+    saveWarning,
+    syncFailed,
+    online,
+    pickOption,
+    changeText,
+    flushDrafts,
+    submit,
+    retrySync,
+  } = useQuizSession(attemptId ?? '');
 
   const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [remaining, setRemaining] = useState<number | null>(null);
-  const [saveWarning, setSaveWarning] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  // What the server has confirmed saved — resave any drift before submitting.
-  const savedRef = useRef<Record<string, string>>({});
-  const submittedRef = useRef(false);
-  // Written answers (0166): the live drafts (state for rendering + a ref the
-  // timer-driven auto-submit can read without a stale closure), what the server
-  // has confirmed, and one pending debounce timer per question.
-  const [texts, setTexts] = useState<Record<string, string>>({});
-  const textsRef = useRef<Record<string, string>>({});
-  const savedTextRef = useRef<Record<string, string>>({});
-  const textTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const redirectedRef = useRef(false);
 
   // Hold back any achievement celebration while the student is answering (§15
   // "لا يظهر قبل إعلان نتيجة الاختبار"). Cleared on unmount — leaving for the
@@ -76,172 +67,39 @@ export default function QuizAttemptScreen() {
     return () => setCelebrationSuppressed(false);
   }, [setCelebrationSuppressed]);
 
-  // Wall-clock deadline (audit F-051): the countdown recomputes from this every
-  // tick instead of decrementing a counter — RN timers freeze in background, so
-  // a decrement silently under-counts time away and never reaches zero.
-  const deadlineRef = useRef<number | null>(null);
-
-  const questions = useMemo(() => data?.questions ?? [], [data]);
-
-  // Seed local answers + saved map from the server payload (resume support).
   useEffect(() => {
-    if (!data) return;
-    const seeded: Record<string, string> = {};
-    const seededTexts: Record<string, string> = {};
-    for (const q of data.questions) {
-      if (q.selectedOptionId) seeded[q.id] = q.selectedOptionId;
-      if (q.kind === 'text' && q.textAnswer) seededTexts[q.id] = q.textAnswer;
-    }
-    setAnswers((prev) => ({ ...seeded, ...prev }));
-    savedRef.current = { ...seeded, ...savedRef.current };
-    textsRef.current = { ...seededTexts, ...textsRef.current };
-    setTexts({ ...textsRef.current });
-    savedTextRef.current = { ...seededTexts, ...savedTextRef.current };
-    deadlineRef.current =
-      data.remainingSec == null ? null : Date.now() + data.remainingSec * 1000;
-    setRemaining(data.remainingSec);
-  }, [data]);
-
-  // Already submitted (reopened link) → straight to the result.
-  useEffect(() => {
-    if (data?.submittedAt && !submittedRef.current) {
-      submittedRef.current = true;
+    if (status === 'submitted' && !redirectedRef.current) {
+      redirectedRef.current = true;
       router.replace(`/quiz-result/${attemptId}` as Parameters<typeof router.replace>[0]);
     }
-  }, [data?.submittedAt, attemptId, router]);
+  }, [status, attemptId, router]);
 
-  // Calm countdown on the server's clock (seeded via deadlineRef), recomputed
-  // from the wall clock every tick AND on foreground so time spent backgrounded
-  // is accounted for — the old decrementing counter froze in background, showed
-  // phantom time on return, and its zero (the auto-submit trigger) never fired
-  // (audit F-051). Auto-submits at zero; a failed auto-submit retries on the
-  // next tick (handleSubmit no-ops while pending/submitted).
   useEffect(() => {
-    if (data?.remainingSec == null) return;
-    const tick = () => {
-      const dl = deadlineRef.current;
-      if (dl == null) return;
-      const r = Math.max(0, Math.ceil((dl - Date.now()) / 1000));
-      setRemaining(r);
-      if (r <= 0) void handleSubmit(true);
-    };
-    tick();
-    const iv = setInterval(tick, 1000);
-    const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') tick();
-    });
-    return () => {
-      clearInterval(iv);
-      sub.remove();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.remainingSec]);
-
-  // Leaving the screen (back) must not drop a draft still waiting for its
-  // debounce — save those right away.
-  useEffect(() => {
-    const timers = textTimersRef.current;
-    return () => {
-      for (const qId of Object.keys(timers)) {
-        clearTimeout(timers[qId]);
-        void flushText(qId);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (status === 'locked') setConfirmOpen(false);
+  }, [status]);
 
   const isAnswered = (q: (typeof questions)[number]) =>
     q.kind === 'text' ? (texts[q.id] ?? '').trim().length > 0 : !!answers[q.id];
   const answeredCount = questions.filter(isAnswered).length;
   const current = questions[index];
 
-  /** Save one written draft now if the server doesn't have it yet. */
-  async function flushText(questionId: string): Promise<void> {
-    const timer = textTimersRef.current[questionId];
-    if (timer) clearTimeout(timer);
-    delete textTimersRef.current[questionId];
-    const text = (textsRef.current[questionId] ?? '').trim();
-    if ((savedTextRef.current[questionId] ?? '').trim() === text || !attemptId) return;
-    try {
-      await saveText.mutateAsync({ attemptId, questionId, text });
-      savedTextRef.current[questionId] = text;
-      setSaveWarning(null);
-    } catch (err) {
-      setSaveWarning(arabicOr(err, SAVE_WARNING_GENERIC));
-    }
-  }
-
-  function changeText(questionId: string, text: string) {
-    textsRef.current = { ...textsRef.current, [questionId]: text };
-    setTexts(textsRef.current);
-    const timer = textTimersRef.current[questionId];
-    if (timer) clearTimeout(timer);
-    textTimersRef.current[questionId] = setTimeout(() => {
-      void flushText(questionId);
-    }, TEXT_SAVE_DEBOUNCE_MS);
-  }
-
-  /** Move between questions; a written draft on the one being left saves now. */
   function goTo(next: number) {
-    if (current?.kind === 'text') void flushText(current.id);
+    flushDrafts();
     setIndex(next);
   }
 
-  function pickOption(questionId: string, optionId: string) {
-    setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
-    saveAnswer.mutate(
-      { attemptId: attemptId!, questionId, optionId },
-      {
-        onSuccess: () => {
-          savedRef.current[questionId] = optionId;
-          setSaveWarning(null);
-        },
-        // The server raises calm Arabic reasons («انتهى وقت الاختبار», «تم
-        // تسليم هذه المحاولة») — show those verbatim; anything else (network,
-        // English PostgREST noise) gets the generic connectivity line.
-        onError: (err) => setSaveWarning(arabicOr(err, SAVE_WARNING_GENERIC)),
-      },
-    );
+  function goBack() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
   }
 
-  async function handleSubmit(auto = false) {
-    if (submittedRef.current || submitAttempt.isPending || !attemptId) return;
-    submittedRef.current = true;
+  const handleSubmit = () => {
     setConfirmOpen(false);
-    setSubmitError(null);
-    // Resave anything the server hasn't confirmed (drops silently if the
-    // deadline passed — the server grades only in-time answers).
-    if (!auto) {
-      await Promise.all(
-        Object.entries(answers)
-          .filter(([qId, oId]) => savedRef.current[qId] !== oId)
-          .map(([qId, oId]) =>
-            saveAnswer
-              .mutateAsync({ attemptId, questionId: qId, optionId: oId })
-              .catch(() => undefined),
-          ),
-      );
-    }
-    // Written drafts go up first even on the timer's auto-submit: typing is
-    // continuous, so the last words are usually still unsaved (the server keeps
-    // a 30 s grace after the deadline for exactly this).
-    await Promise.all(Object.keys(textsRef.current).map((qId) => flushText(qId)));
-    submitAttempt.mutate(attemptId, {
-      onSuccess: () =>
-        router.replace(`/quiz-result/${attemptId}` as Parameters<typeof router.replace>[0]),
-      // Audit F-053: a failed submit was completely silent (the ref just reset)
-      // — offline users thought they had submitted. Surface it and keep retry open.
-      onError: (err) => {
-        submittedRef.current = false;
-        setSubmitError(arabicOr(err, 'تعذّر تسليم الاختبار — تحقق من الاتصال ثم أعد المحاولة.'));
-      },
-    });
-  }
+    void submit();
+  };
 
-  // Audit F-052: a failed load (bad/foreign attempt id from a deep link, or a
-  // network error on first open) used to spin forever — `!data` kept the
-  // loading branch. Give it a calm exit.
-  if (isError) {
+  // Audit F-052: a failed load must never spin forever.
+  if (status === 'error') {
     return (
       <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
@@ -252,7 +110,7 @@ export default function QuizAttemptScreen() {
             تحقق من الاتصال، أو عد إلى صفحة الاختبار وحاول من جديد.
           </Txt>
           <Pressable
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            onPress={goBack}
             style={({ pressed }) => [
               {
                 marginTop: 10,
@@ -275,11 +133,58 @@ export default function QuizAttemptScreen() {
     );
   }
 
-  if (isLoading || !data) {
+  if (status === 'loading' || status === 'submitted') {
     return (
       <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={colors.primaryTeal} />
+        </View>
+      </Screen>
+    );
+  }
+
+  // The attempt is over: no question is reachable from here.
+  if (status === 'locked') {
+    return (
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          <Feather name={online ? 'clock' : 'wifi-off'} size={26} color={colors.accentBrassMuted} />
+          {finishReason === 'timeout' ? (
+            <Txt size={22} weight="semibold" color={colors.textSlate} tabular>
+              {arCountdown(0)}
+            </Txt>
+          ) : null}
+          <Txt
+            size={15}
+            weight="semibold"
+            color={colors.textMuted}
+            align="center"
+            style={{ alignSelf: 'stretch', lineHeight: 26 }}
+          >
+            {lockedMessage(finishReason, online, syncFailed)}
+          </Txt>
+          {online && syncFailed ? (
+            <Pressable
+              onPress={() => void retrySync()}
+              style={({ pressed }) => ({
+                paddingVertical: 12,
+                paddingHorizontal: 28,
+                borderRadius: radius.sm,
+                backgroundColor: colors.primaryTeal,
+                opacity: pressed ? 0.85 : 1,
+              })}
+              accessibilityRole="button"
+            >
+              <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+                إعادة الإرسال
+              </Txt>
+            </Pressable>
+          ) : null}
+          <Pressable onPress={goBack} style={{ padding: 8 }} accessibilityRole="button">
+            <Txt size={13} weight="semibold" color={colors.primaryTeal}>
+              العودة
+            </Txt>
+          </Pressable>
         </View>
       </Screen>
     );
@@ -299,6 +204,8 @@ export default function QuizAttemptScreen() {
 
   const isLast = index === questions.length - 1;
   const isTextQuestion = current.kind === 'text';
+  const urgent = remaining != null && remaining <= URGENT_WARNING_SEC;
+  const calm = remaining != null && !urgent && remaining <= CALM_WARNING_SEC;
 
   return (
     <Screen
@@ -326,24 +233,31 @@ export default function QuizAttemptScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               gap: 6,
-              backgroundColor: remaining <= 60 ? 'rgba(184,92,74,0.1)' : colors.bgSandRaised,
+              backgroundColor: urgent
+                ? 'rgba(184,92,74,0.14)'
+                : calm
+                  ? 'rgba(176,137,79,0.12)'
+                  : colors.bgSandRaised,
+              borderWidth: urgent ? 1 : 0,
+              borderColor: colors.stateDanger,
               borderRadius: radius.pill,
               paddingHorizontal: 12,
               paddingVertical: 5,
             }}
+            accessibilityLabel="الوقت المتبقي"
           >
             <Feather
               name="clock"
               size={13}
-              color={remaining <= 60 ? colors.stateDanger : colors.textMuted}
+              color={urgent ? colors.stateDanger : calm ? colors.accentBrassMuted : colors.textMuted}
             />
             <Txt
-              size={13}
+              size={urgent ? 15 : 13}
               weight="semibold"
-              color={remaining <= 60 ? colors.stateDanger : colors.textSlate}
+              color={urgent ? colors.stateDanger : calm ? colors.accentBrassMuted : colors.textSlate}
               tabular
             >
-              {arDuration(remaining)}
+              {arCountdown(remaining)}
             </Txt>
           </View>
         ) : null}
@@ -383,31 +297,12 @@ export default function QuizAttemptScreen() {
           }}
         >
           <Feather
-            name={saveWarning === SAVE_WARNING_GENERIC ? 'wifi-off' : 'alert-circle'}
+            name="alert-circle"
             size={14}
             color={colors.accentBrassMuted}
           />
           <Txt size={12} color={colors.textMuted} style={{ flex: 1 }}>
             {saveWarning}
-          </Txt>
-        </View>
-      ) : null}
-
-      {submitError ? (
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: 'rgba(184,92,74,0.09)',
-            borderRadius: radius.sm,
-            padding: 10,
-            gap: 8,
-            marginTop: 12,
-          }}
-        >
-          <Feather name="alert-circle" size={14} color={colors.stateDanger} />
-          <Txt size={12} color={colors.stateDanger} style={{ flex: 1 }}>
-            {submitError}
           </Txt>
         </View>
       ) : null}
@@ -426,7 +321,7 @@ export default function QuizAttemptScreen() {
             key={current.id}
             value={texts[current.id] ?? ''}
             onChangeText={(t) => changeText(current.id, t)}
-            onBlur={() => void flushText(current.id)}
+            onBlur={flushDrafts}
             placeholder="اكتب إجابتك هنا..."
             placeholderTextColor={colors.textGhost}
             multiline
@@ -560,8 +455,7 @@ export default function QuizAttemptScreen() {
         {isLast ? (
           <Pressable
             onPress={() => setConfirmOpen(true)}
-            disabled={submitAttempt.isPending}
-            style={({ pressed }) => [
+                        style={({ pressed }) => [
               {
                 flex: 1,
                 height: 48,
@@ -569,14 +463,14 @@ export default function QuizAttemptScreen() {
                 backgroundColor: colors.primaryTeal,
                 alignItems: 'center',
                 justifyContent: 'center',
-                opacity: pressed || submitAttempt.isPending ? 0.85 : 1,
+                opacity: pressed ? 0.85 : 1,
                 ...shadows.button,
               },
             ]}
             accessibilityRole="button"
           >
-            <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
-              {submitAttempt.isPending ? 'جارٍ التسليم...' : 'تسليم الاختبار'}
+            <Txt weight="semibold" size={14} color={colors.onTealPrimary} align="center" style={{ alignSelf: 'stretch' }}>
+              تسليم الاختبار
             </Txt>
           </Pressable>
         ) : (
@@ -648,7 +542,7 @@ export default function QuizAttemptScreen() {
             ) : null}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
               <Pressable
-                onPress={() => void handleSubmit()}
+                onPress={handleSubmit}
                 style={({ pressed }) => [
                   {
                     flex: 1,

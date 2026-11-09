@@ -14,7 +14,7 @@
  * Accepted tradeoffs (by design, per the plan): a lost-ack retry can double-credit
  * a few seconds (bounded by the server's 6h/day clamp); a replayed completion
  * stamps midnight of its (past) day — now() only when replayed the same server
- * day (0046 rule, preserved by 0090); quizzes stay online-only.
+ * day (0046 rule, preserved by 0090). Finished quiz attempts travel here too (0174).
  */
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/constants/queryKeys';
@@ -23,6 +23,7 @@ import { replayActivity } from '@/api/progress';
 import { replayBookmark } from '@/api/bookmarks';
 import { saveMyNote } from '@/api/notes';
 import { recordQuranWirdDay, setWeeklyGoal } from '@/api/journey';
+import { recoverQuizAttempts, setQuizFlushTrigger, syncQuizAttempt } from '@/lib/quizSync';
 import {
   hasPending,
   loadQueue,
@@ -59,6 +60,8 @@ export function flushOutbox(): Promise<void> {
 }
 
 async function doFlush(): Promise<void> {
+  // Finds attempts whose time ran out while the app was closed.
+  await recoverQuizAttempts().catch(() => false);
   const q = await loadQueue();
   if (q.length === 0) {
     stopHeartbeat();
@@ -100,6 +103,8 @@ async function doFlush(): Promise<void> {
       } else if (entry.kind === 'wird') {
         await recordQuranWirdDay(entry.day);
         didGoal = true;
+      } else if (entry.kind === 'quiz_submit') {
+        await syncQuizAttempt(entry.attemptId);
       } else {
         await setWeeklyGoal(entry.metric, entry.target);
         didGoal = true;
@@ -173,6 +178,9 @@ function stopHeartbeat(): void {
 // for the next foreground/reconnect trigger) — matches the pre-split behavior
 // where enqueue and the heartbeat lived in the same module.
 setOnEnqueue(scheduleHeartbeat);
+setQuizFlushTrigger(() => {
+  void flushOutbox();
+});
 
 let started = false;
 
@@ -188,10 +196,8 @@ export function startOutbox(): void {
   onReconnect(() => {
     void flushOutbox();
   });
-  void (async () => {
-    if (await hasPending()) {
-      scheduleHeartbeat();
-      void flushOutbox();
-    }
-  })();
+  // Unconditional: recovery may find an attempt that expired while the app was closed.
+  void flushOutbox().then(async () => {
+    if (await hasPending()) scheduleHeartbeat();
+  });
 }

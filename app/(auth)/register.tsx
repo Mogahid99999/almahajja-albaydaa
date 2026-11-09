@@ -8,6 +8,7 @@ import { Card, ConcentricMotif, Logo, Screen, SheetModal, Txt } from '@/componen
 import { GenderPills } from '@/components/ui/GenderPills';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
+import { isPhoneEntryValid } from '@/lib/phone';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser, useRegister } from '@/hooks/useAuth';
 import { arabicAuthError } from '@/lib/authErrors';
@@ -57,7 +58,7 @@ export default function RegisterScreen() {
   const emailOk = IS_IOS
     ? trimmedEmail.includes('@')
     : trimmedEmail.length === 0 || trimmedEmail.includes('@');
-  const phoneOk = IS_IOS || trimmedPhone.replace(/[^0-9]/g, '').length >= 8;
+  const phoneOk = IS_IOS || isPhoneEntryValid(trimmedPhone, countryCode);
   const passwordsMatch = password === confirmPassword;
   // Min 8 matches the server (Supabase password_min_length) — a shorter gate
   // here let 6–7-char passwords through to a raw English server rejection.

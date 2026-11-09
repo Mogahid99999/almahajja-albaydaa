@@ -24,6 +24,7 @@ import { CountryFilter } from '@/components/admin/CountryFilter';
 import { Card, Txt } from '@/components/ui';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
+import { isPhoneEntryValid } from '@/lib/phone';
 import { colors, radius } from '@/constants/theme';
 import { useAdminOnly } from '@/hooks/useAdminGuard';
 import { useAdminCountryCounts, useAdminUsers, useCreateUser } from '@/hooks/useAdminUsers';
@@ -152,7 +153,7 @@ function CreateUserModal({ visible, onClose }: { visible: boolean; onClose: () =
   const emailOk = email.trim().length === 0 || /.+@.+\..+/.test(email.trim());
   const phoneDigits = phone.replace(/[^0-9]/g, '');
   // At least one identifier is required — mirrors self-registration (phone required, email optional).
-  const hasIdentifier = /.+@.+\..+/.test(email.trim()) || phoneDigits.length >= 8;
+  const hasIdentifier = /.+@.+\..+/.test(email.trim()) || isPhoneEntryValid(phoneDigits, countryCode);
   const valid = emailOk && hasIdentifier && password.trim().length >= 6 && !!gender;
 
   const submit = () => {

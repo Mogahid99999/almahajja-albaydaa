@@ -176,6 +176,7 @@ describe('parsers', () => {
     expect(rpc).toHaveBeenCalledWith('certificate_eligibility', { p_section: 's1', p_user: null });
     expect(e).toEqual({
       sectionId: 's1',
+      seriesOngoing: false,
       userId: 'u1',
       enabled: true,
       eligible: false,

@@ -52,6 +52,7 @@ function make({ enabled = true, eligible = false, lectures, quizzes }: Over = {}
     sectionId: 's',
     userId: 'u',
     enabled,
+    seriesOngoing: false,
     eligible,
     lectures: {
       scope: 'section',

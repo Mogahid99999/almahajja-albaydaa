@@ -32,6 +32,7 @@ import { useRouter } from 'expo-router';
 import type { Gender } from '@/api/types';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { splitPhone } from '@/constants/countries';
+import { isPhoneEntryValid } from '@/lib/phone';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useChangePassword,
@@ -131,7 +132,7 @@ export default function EditProfileScreen() {
   const phoneDigits = phone.replace(/[^0-9]/g, '');
   const storedPhone = splitPhone(user?.phone ?? '');
   const phoneChanged =
-    phoneDigits.length >= 8 &&
+    isPhoneEntryValid(phoneDigits, phoneCountryCode) &&
     (phoneDigits !== storedPhone.local || phoneCountryCode !== storedPhone.countryCode);
   const onSavePhone = () => {
     if (!phoneChanged) return;

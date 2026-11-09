@@ -9,9 +9,11 @@ import {
   getAttemptQuestions,
   getAttemptResult,
   getMyQuizStats,
+  getQuizIntegrity,
   getQuizIntro,
   getQuizResultsSummary,
   getSectionQuizzes,
+  getSessionUserId,
   gradeAttempt,
   listPendingGradings,
   listQuizResultRows,
@@ -25,6 +27,8 @@ import {
 } from '@/api/quizzes';
 import type { QuizInput, QuizQuestionInput, QuizResult, QuizWrittenGrade } from '@/api/types';
 import { queryKeys } from '@/constants/queryKeys';
+import { createLocalAttempt, getLocalAttempt, listLocalAttempts } from '@/lib/quizAttemptStore';
+import { clockSample } from '@/lib/quizClock';
 
 // ─── Student ─────────────────────────────────────────────────────────────────
 
@@ -85,8 +89,47 @@ function useInvalidateQuizStatus() {
 export function useStartAttempt() {
   const invalidate = useInvalidateQuizStatus();
   return useMutation({
-    mutationFn: (quizId: string) => startAttempt(quizId),
+    mutationFn: async ({ quizId, integrityVersion }: { quizId: string; integrityVersion?: number }) => {
+      const attemptId = await startAttempt(quizId, integrityVersion);
+      // Downloaded now, so a connection lost from here on no longer matters.
+      await primeLocalAttempt(attemptId).catch(() => undefined);
+      return attemptId;
+    },
     onSuccess: invalidate,
+  });
+}
+
+async function primeLocalAttempt(attemptId: string): Promise<void> {
+  const userId = await getSessionUserId();
+  if (!userId || (await getLocalAttempt(userId, attemptId))) return;
+  const data = await getAttemptQuestions(attemptId);
+  if (!data.submittedAt) await createLocalAttempt(userId, data, clockSample());
+}
+
+export function useQuizIntegrity(quizId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['quizzes', 'integrity', quizId],
+    queryFn: () => getQuizIntegrity(quizId),
+    enabled: enabled && !!quizId,
+    staleTime: 0,
+  });
+}
+
+/** An attempt of this quiz still held on the device, in progress or awaiting delivery. */
+export function useLocalQuizAttempt(quizId: string) {
+  return useQuery({
+    queryKey: ['quizzes', 'local', quizId],
+    queryFn: async () => {
+      const userId = await getSessionUserId();
+      if (!userId) return null;
+      const attempts = await listLocalAttempts(userId);
+      const found = attempts.find((a) => a.quizId === quizId);
+      return found ? { attemptId: found.attemptId, phase: found.phase } : null;
+    },
+    enabled: !!quizId,
+    networkMode: 'always',
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 

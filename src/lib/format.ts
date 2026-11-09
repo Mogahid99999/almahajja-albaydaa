@@ -32,6 +32,15 @@ export function arDuration(totalSec: number): string {
   return toArabicDigits(core);
 }
 
+/** Quiz countdown, always two-digit minutes: "٢٩:٤٢", "٠٠:٠٠", "١:٠٥:٠٠". */
+export function arCountdown(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec));
+  const h = Math.floor(s / 3600);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const mmss = `${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+  return toArabicDigits(h > 0 ? `${h}:${mmss}` : mmss);
+}
+
 /** "٤٢ درساً" / "درس واحد" / "درسان" — Arabic-aware lecture count label. */
 export function arLectureCount(n: number): string {
   if (n === 0) return 'لا محاضرات';

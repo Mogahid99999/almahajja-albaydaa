@@ -62,6 +62,8 @@ export type CertificateEligibility = {
   userId: string;
   enabled: boolean;
   eligible: boolean;
+  /** 0176: the section is «مستمر», so nothing is issued until it ends. */
+  seriesOngoing: boolean;
   lectures: {
     /** Which lectures are counted: this section only, or its whole subtree. */
     scope: CertificateContentScope;
@@ -128,6 +130,7 @@ export function parseCertificateEligibility(raw: unknown): CertificateEligibilit
     userId: String(r.user_id ?? ''),
     enabled: r.enabled === true,
     eligible: r.eligible === true,
+    seriesOngoing: r.series_ongoing === true,
     lectures: {
       scope: contentScope(l.scope),
       rule: lectureRule(l.rule),

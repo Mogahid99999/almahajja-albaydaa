@@ -63,6 +63,8 @@ export function lectureRequirementLine(e: CertificateEligibility): string {
   return `المطلوب إكمال جميع محاضرات ${where}`;
 }
 
+export const SERIES_ONGOING_NOTE = 'ستُتاح الشهادة بعد اكتمال الدورة.';
+
 /** The state of an earned certificate. `null` = earned, the server has not issued it yet. */
 export function issuedStatusLine(issued: IssuedCertificate | null): string {
   if (!issued) return 'جارٍ إصدار شهادتك';
@@ -100,6 +102,8 @@ export function remainingSummary(e: CertificateEligibility): string {
     if (todo > 0) parts.push(arQuizCount(todo));
     if (pending > 0) parts.push(`${arQuizCount(pending)} بانتظار التصحيح`);
   }
-  if (parts.length === 0) return 'لم تكتمل الشروط بعد';
+  if (parts.length === 0) {
+    return e.seriesOngoing ? 'استوفيت الشروط الحالية' : 'لم تكتمل الشروط بعد';
+  }
   return `المتبقي: ${parts.join(' و')}`;
 }

@@ -25,6 +25,7 @@ function make({ eligible = false, lectures, quizzes }: Over = {}): CertificateEl
     sectionId: 's',
     userId: 'u',
     enabled: true,
+    seriesOngoing: false,
     eligible,
     lectures: {
       scope: 'section',
@@ -163,4 +164,9 @@ describe('showsCertificateCard: one card on the section page', () => {
     expect(showsCertificateCard({ hasCertificate: true, isGuest: false, eligibility: { ...make(), enabled: false } })).toBe(false);
     expect(showsCertificateCard({ hasCertificate: true, isGuest: false, eligibility: make({ lectures: { total: 0 } }) })).toBe(false);
   });
+});
+
+test('an ongoing section with every condition met says so, and never reads as unfinished (0176)', () => {
+  const e = { ...make({ lectures: { met: true, completed: 10 }, quizzes: { met: true } }), seriesOngoing: true };
+  expect(remainingSummary(e)).toBe('استوفيت الشروط الحالية');
 });

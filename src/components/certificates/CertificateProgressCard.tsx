@@ -35,6 +35,7 @@ import {
   QUIZ_STATE_LABEL,
   quizState,
   remainingSummary,
+  SERIES_ONGOING_NOTE,
   type QuizState,
 } from './certificateText';
 
@@ -179,6 +180,10 @@ export function CertificateProgressView({ e, issued = null }: { e: CertificateEl
         {e.eligible || issued ? (
           <Txt size={11.5} color={colors.textMuted}>
             {issuedStatusLine(issued)}
+          </Txt>
+        ) : e.seriesOngoing ? (
+          <Txt size={11.5} color={colors.textMuted}>
+            {SERIES_ONGOING_NOTE}
           </Txt>
         ) : null}
       </View>
