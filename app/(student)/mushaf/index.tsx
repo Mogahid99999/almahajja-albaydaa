@@ -4,8 +4,8 @@
  * appear while typing, no «انتقال» button) · السور / الأجزاء / العلامات.
  */
 import Feather from '@expo/vector-icons/Feather';
-import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,7 +13,7 @@ import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { IconButton, Screen, Txt } from '@/components/ui';
 import { colors, fonts } from '@/constants/theme';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
-import { openMushafReader } from '@/mushaf/open';
+import { openMushafReader, takeIndexSearchRequest } from '@/mushaf/open';
 import { initPack, usePackStore } from '@/mushaf/pack';
 import {
   ar,
@@ -95,6 +95,18 @@ export default function MushafIndex() {
     touchMushafUsage();
   }, []);
 
+  // Reached from the reader's search button: focus the box once the
+  // transition has settled (focusing mid-animation drops the keyboard).
+  const searchRef = useRef<TextInput>(null);
+  useFocusEffect(
+    useCallback(() => {
+      if (!takeIndexSearchRequest()) return;
+      setTab('suras');
+      const t = setTimeout(() => searchRef.current?.focus(), 350);
+      return () => clearTimeout(t);
+    }, []),
+  );
+
   const open = (p: number) => {
     Keyboard.dismiss(); // never carry the search keyboard over a mushaf page
     openMushafReader(router, p);
@@ -146,6 +158,7 @@ export default function MushafIndex() {
       <View style={styles.search}>
         <Feather name="search" size={16} color={colors.textGhost} />
         <TextInput
+          ref={searchRef}
           value={q}
           onChangeText={setQ}
           placeholder="اسم السورة، أو رقم صفحة أو جزء"

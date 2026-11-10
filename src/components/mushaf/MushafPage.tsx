@@ -22,12 +22,15 @@ import {
   BASMALA,
   FIXED,
   isOpeningPage,
+  pageInfo,
   pageLines,
   suraName,
   tokenWords,
   type Line,
 } from '@/mushaf/quran';
 import { FONT_LEVELS } from '@/mushaf/store';
+
+import { MushafSheet, sheetGeometry, TEXT_H, TEXT_W } from './MushafFrame';
 
 export type MushafMode = 'print' | 'simple' | 'flex';
 export const HAFS_FAMILY = 'UthmanicHafsV22';
@@ -37,6 +40,8 @@ const INK = '#231f1b';
 const MARK = '#8a6a35';
 const PAGE_W = FIXED.width; // 340
 const PAGE_H = 588;
+// The frame is drawn around exactly this box; a mismatch would shift lines.
+if (PAGE_W !== TEXT_W || PAGE_H !== TEXT_H) throw new Error('mushaf text box and frame disagree');
 const LINE_H = PAGE_H / 15;
 const FLEX_BASE = 20.5;
 
@@ -96,7 +101,8 @@ function FixedPage({
   const fontReady = usePageFont(packUri, page, print);
   const lines = pageLines(page);
   const opening = isOpeningPage(page);
-  const k = Math.min(width / (PAGE_W + 12), (height - 36) / (PAGE_H + 4));
+  const geo = sheetGeometry(width, height);
+  const info = pageInfo(page);
   const shown = opening ? lines.filter((l) => l.t !== 'e') : lines;
 
   const renderText = (l: Extract<Line, { t: 'x' }>, li: number) => {
@@ -134,12 +140,12 @@ function FixedPage({
   };
 
   return (
-    <View style={{ width, height, alignItems: 'center', justifyContent: 'center', paddingBottom: 30 }}>
+    <View style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
+      <MushafSheet geo={geo} page={page} suraTitle={`سُورَةُ ${info.suraName}`} juz={info.juz}>
       <View
         style={{
           width: PAGE_W,
           height: PAGE_H,
-          transform: [{ scale: k }],
           justifyContent: opening ? 'center' : 'space-between',
           gap: opening ? 2 : 0,
         }}
@@ -176,6 +182,7 @@ function FixedPage({
           );
         })}
       </View>
+      </MushafSheet>
     </View>
   );
 }

@@ -16,6 +16,19 @@ export function canReadNow(): boolean {
   return state === 'ready' || state === 'unsupported' || useMushafStore.getState().preferSimple;
 }
 
+// The reader's search button opens the index with its search box focused. The
+// index may already be the screen underneath (reached by going back), so the
+// request travels as a one-shot flag rather than a route param.
+let searchRequested = false;
+export function requestIndexSearch() {
+  searchRequested = true;
+}
+export function takeIndexSearchRequest(): boolean {
+  const r = searchRequested;
+  searchRequested = false;
+  return r;
+}
+
 export function openMushafReader(router: Pick<ReturnType<typeof useRouter>, 'push'>, page?: number) {
   if (!canReadNow()) {
     router.push('/mushaf/prepare');
