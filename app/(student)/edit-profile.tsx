@@ -182,7 +182,7 @@ export default function EditProfileScreen() {
         password section is the tallest expandable row (3 fields + button) and
         without this its Save button could land under the system nav bar with
         no more room to scroll past it. */}
-    <Screen bottomPad={(miniPad || 24) + 60 + BOTTOM_NAV_CLEARANCE} padded>
+    <Screen bottomPad={(miniPad || 24) + 60 + BOTTOM_NAV_CLEARANCE} padded keyboardShouldPersistTaps="handled">
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{

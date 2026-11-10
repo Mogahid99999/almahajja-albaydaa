@@ -1,6 +1,6 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useMemo, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type ViewStyle } from 'react-native';
 
 import { COUNTRIES, findCountry, searchCountries } from '@/constants/countries';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
@@ -65,6 +65,15 @@ export function CountryCodeButton({
   const selected = picked ?? findCountry(countryCode);
 
   const candidates = useMemo(() => searchCountries(query), [query]);
+  // Pinned near the top and short enough to clear the keyboard: when the list
+  // moved with the keyboard, the tap that closed it slid off its row and chose nothing.
+  const { height: screenHeight } = useWindowDimensions();
+  const listHeight = Math.min(440, Math.round(screenHeight * 0.45));
+
+  function close() {
+    setOpen(false);
+    setQuery('');
+  }
 
   function handleSelect(iso: string, code: string) {
     setPickedIso(iso);
@@ -88,10 +97,9 @@ export function CountryCodeButton({
         <Feather name="chevron-down" size={14} color={colors.textMuted} />
       </Pressable>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
-          <View style={styles.overlay} onStartShouldSetResponder={() => true}>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+        <Pressable style={styles.backdrop} onPress={close}>
+          <View style={[styles.overlay, { maxHeight: listHeight }]} onStartShouldSetResponder={() => true}>
             <View style={styles.searchRow}>
               <Feather name="search" size={15} color={colors.textMuted} style={{ marginLeft: 8 }} />
               <TextInput
@@ -111,7 +119,7 @@ export function CountryCodeButton({
               style={styles.list}
               data={candidates}
               keyExtractor={(c) => c.iso}
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               initialNumToRender={15}
               ListEmptyComponent={
                 <View style={styles.emptyRow}>
@@ -149,7 +157,6 @@ export function CountryCodeButton({
             />
           </View>
         </Pressable>
-        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -184,15 +191,15 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     padding: 20,
+    paddingTop: 64,
   } as ViewStyle,
 
   overlay: {
     width: 380,
     maxWidth: '100%',
-    maxHeight: 440,
     flexShrink: 1,
     backgroundColor: colors.surfaceWhite,
     borderRadius: radius.card,
@@ -220,7 +227,6 @@ const styles = StyleSheet.create({
   },
 
   list: {
-    maxHeight: 370,
     flexShrink: 1,
   } as ViewStyle,
 

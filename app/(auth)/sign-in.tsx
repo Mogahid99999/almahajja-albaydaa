@@ -48,7 +48,7 @@ export default function SignInScreen() {
     // centered layout cut off the bottom links on a 720×1280 screen, and the
     // keyboard buried the password field + «دخول» with no scroll escape.
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40}>
+    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40} keyboardShouldPersistTaps="handled">
       {/* Brand — marginTop (not container paddingTop, which would displace the
           status-bar scrim) gives the logo breathing room from the top edge. */}
       <View style={{ alignItems: 'center', marginTop: 28, marginBottom: 28 }}>

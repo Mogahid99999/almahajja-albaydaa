@@ -2,6 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Gender } from '@/api/types';
 import { Card, ConcentricMotif, Logo, Screen, SheetModal, Txt } from '@/components/ui';
@@ -17,9 +18,11 @@ import { arabicAuthError } from '@/lib/authErrors';
 // data-minimisation): email replaces phone as the required identifier, and
 // gender is captured later only when a gender-scoped feature needs it.
 const OATH_TEXT_IOS =
-  'بمجرد إنشاء الحساب، سيتم اعتماد الاسم الذي أدخلته بشكل نهائي ولا يمكن تعديله لاحقًا. بالمتابعة، أنت تُقسم بالله أن ما أدخلته صحيح وأنك مسؤول عن ذلك أمام الله.';
+  'بمجرد إنشاء الحساب، سيتم اعتماد الاسم الذي أدخلته بشكل نهائي ولا يمكن تعديله لاحقًا.';
 const OATH_TEXT_DEFAULT =
-  'بمجرد إنشاء الحساب، سيتم اعتماد البيانات التي أدخلتها (الاسم والجنس) بشكل نهائي ولا يمكن تعديلها لاحقًا. بالمتابعة، أنت تُقسم بالله أن ما أدخلته صحيح وأنك مسؤول عن ذلك أمام الله.';
+  'بمجرد إنشاء الحساب، سيتم اعتماد البيانات التي أدخلتها (الاسم والجنس) بشكل نهائي ولا يمكن تعديلها لاحقًا.';
+const DECLARATION_TEXT =
+  'أُقرّ بصحة بياناتي، وأتعهد باختيار الجنس الصحيح وعدم التحايل للوصول إلى محتوى غير مخصص لي.';
 
 /**
  * Register — إنشاء حساب (Task 2).
@@ -49,6 +52,8 @@ export default function RegisterScreen() {
 
   const IS_IOS = Platform.OS === 'ios';
   const OATH_TEXT = IS_IOS ? OATH_TEXT_IOS : OATH_TEXT_DEFAULT;
+  // The sheet sits on the screen's bottom edge: keep «رجوع» above the navigation bar.
+  const insets = useSafeAreaInsets();
 
   const trimmedName = name.trim();
   const trimmedPhone = phone.trim();
@@ -119,7 +124,7 @@ export default function RegisterScreen() {
         half-cut at the bottom on a real 720px phone. bottomPad 40 keeps the
         last control comfortably above the system nav bar even when the
         safe-area bottom inset reads 0 on 3-button-nav devices. */}
-    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40}>
+    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40} keyboardShouldPersistTaps="handled">
       {/* Brand — marginTop (not container paddingTop, which would displace the
           status-bar scrim) gives the logo breathing room from the top edge. */}
       <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 12 }}>
@@ -316,7 +321,7 @@ export default function RegisterScreen() {
           borderTopRightRadius: radius.artwork,
           paddingHorizontal: 22,
           paddingTop: 22,
-          paddingBottom: 28,
+          paddingBottom: 28 + insets.bottom,
           gap: 16,
         }}
       >
@@ -325,6 +330,9 @@ export default function RegisterScreen() {
         </Txt>
         <Txt size={13.5} color={colors.textMuted} align="right" style={{ lineHeight: 23 }}>
           {OATH_TEXT}
+        </Txt>
+        <Txt size={14} weight="medium" color={colors.textInk} align="right" style={{ lineHeight: 24 }}>
+          {DECLARATION_TEXT}
         </Txt>
 
         <Pressable
@@ -346,7 +354,7 @@ export default function RegisterScreen() {
             {oathChecked ? <Feather name="check" size={14} color={colors.onTealPrimary} /> : null}
           </View>
           <Txt size={13} weight="medium" color={colors.textInk} style={{ flex: 1 }}>
-            أقسم بالله أن هذه البيانات صحيحة
+            أوافق على الإقرار
           </Txt>
         </Pressable>
 

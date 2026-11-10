@@ -123,12 +123,14 @@ describe('oath sheet (F-032) and submission', () => {
     await fireEvent.press(api.getByText('أنثى'));
     await fireEvent.press(api.getByText('إنشاء الحساب'));
     expect(api.getByText('تأكيد البيانات')).toBeTruthy();
+    expect(api.getByText('أُقرّ بصحة بياناتي، وأتعهد باختيار الجنس الصحيح وعدم التحايل للوصول إلى محتوى غير مخصص لي.')).toBeTruthy();
+    expect(api.queryByText(/أقسم بالله|تُقسم بالله/)).toBeNull();
 
     // متابعة without the checkbox does nothing.
     await fireEvent.press(api.getByText('متابعة'));
     expect(mockAuth.register.mutate).not.toHaveBeenCalled();
 
-    await fireEvent.press(api.getByText('أقسم بالله أن هذه البيانات صحيحة'));
+    await fireEvent.press(api.getByText('أوافق على الإقرار'));
     await fireEvent.press(api.getByText('متابعة'));
     expect(mockAuth.register.mutate).toHaveBeenCalledWith(
       {
@@ -148,7 +150,7 @@ describe('oath sheet (F-032) and submission', () => {
     await fillValidForm(api);
     await fireEvent.press(api.getByText('ذكر'));
     await fireEvent.press(api.getByText('إنشاء الحساب'));
-    await fireEvent.press(api.getByText('أقسم بالله أن هذه البيانات صحيحة'));
+    await fireEvent.press(api.getByText('أوافق على الإقرار'));
     await fireEvent.press(api.getByText('رجوع'));
     // Reopen: checkbox must be unchecked again → متابعة inert.
     await fireEvent.press(api.getByText('إنشاء الحساب'));
@@ -201,7 +203,7 @@ describe('iOS registration — no phone, no gender, email required', () => {
     // No gender step on iOS — the oath opens straight away.
     await fireEvent.press(api.getByText('إنشاء الحساب'));
     expect(api.getByText('تأكيد البيانات')).toBeTruthy();
-    await fireEvent.press(api.getByText('أقسم بالله أن هذه البيانات صحيحة'));
+    await fireEvent.press(api.getByText('أوافق على الإقرار'));
     await fireEvent.press(api.getByText('متابعة'));
     expect(mockAuth.register.mutate).toHaveBeenCalledWith(
       {
