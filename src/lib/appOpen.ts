@@ -8,7 +8,9 @@
  * The decision logic is pure (decideAppOpenEffects) and unit-tested; runAppOpen
  * wires it to the query cache, the reminder scheduler and the sign-out path.
  */
-import { appOpen, type AppOpenBuddyCounts, type AppOpenResult } from '@/api/appOpen';
+import { appOpen, type AppOpenBuddyCounts, type AppOpenProfile, type AppOpenResult } from '@/api/appOpen';
+import type { AppRole, CurrentUser } from '@/api/auth';
+import type { Gender } from '@/api/types';
 import { parseLiveNow } from '@/api/live';
 import { queryKeys } from '@/constants/queryKeys';
 import { cancelDailyReminder, scheduleDailyReminder } from '@/lib/notifications';
@@ -95,6 +97,34 @@ export function decideAppOpenEffects(r: AppOpenResult, view: AppOpenCacheView): 
   };
 }
 
+const ROLES: readonly string[] = ['student', 'publisher', 'sheikh', 'admin'];
+
+/**
+ * 0178: the cached user with the server's current profile folded in, or null
+ * when nothing differs (no cache write, no re-render). The cached user is read
+ * from the locally stored session, which keeps the name / gender / role / email /
+ * phone from sign-in until a token refresh — an admin edit never reached it.
+ * Guests are left alone (no profile to show); an unknown role is ignored.
+ */
+export function mergeServerProfile(user: CurrentUser | null | undefined, p: AppOpenProfile | null): CurrentUser | null {
+  if (!user || user.isGuest || !p) return null;
+  const next: CurrentUser = {
+    ...user,
+    displayName: p.displayName ?? user.displayName,
+    gender: p.gender === 'male' || p.gender === 'female' ? (p.gender as Gender) : user.gender,
+    role: p.role && ROLES.includes(p.role) ? (p.role as AppRole) : user.role,
+    email: p.email ?? user.email,
+    phone: p.phone ?? user.phone,
+  };
+  const changed =
+    next.displayName !== user.displayName ||
+    next.gender !== user.gender ||
+    next.role !== user.role ||
+    next.email !== user.email ||
+    next.phone !== user.phone;
+  return changed ? next : null;
+}
+
 type InboxCache = { pages?: { items?: { createdAt?: string; read?: boolean }[] }[] };
 
 function readCacheView(): AppOpenCacheView {
@@ -146,6 +176,11 @@ export function runAppOpen(opts: { force?: boolean; onSignedOut: () => Promise<v
     queryClient.setQueryData(queryKeys.liveNow, parseLiveNow(result.live));
     queryClient.setQueryData(['appVersionGate'], result.version);
     queryClient.setQueryData(BUDDY_OPEN_COUNTS_KEY, result.buddy);
+    const patched = mergeServerProfile(
+      queryClient.getQueryData<CurrentUser | null>(queryKeys.currentUser),
+      result.profile,
+    );
+    if (patched) queryClient.setQueryData(queryKeys.currentUser, patched);
     if (effects.refetchInbox) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
       void queryClient.invalidateQueries({ queryKey: queryKeys.homeBroadcasts });

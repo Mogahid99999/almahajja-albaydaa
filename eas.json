@@ -23,9 +23,15 @@
       "ios": { "buildConfiguration": "Release" }
     }
   },
-  "submit": {
-    "production": {
-      "android": { "track": "internal", "releaseStatus": "completed" }
+ "submit": {
+  "production": {
+    "android": {
+      "track": "internal",
+      "releaseStatus": "completed"
+    },
+    "ios": {
+      "ascAppId": "6791291132"
     }
   }
+}
 }

@@ -27,6 +27,20 @@ export type AppOpenResult = {
   version: AppVersionGate;
   /** 0158: «الجدول الأسبوعي» version stamp — refetch get_schedule only when it moves. */
   scheduleVersion: string | null;
+  /**
+   * 0178: the caller's own profile as the server has it now. null = older server
+   * (no key). The app patches its cached user from this, so an admin rename /
+   * gender / role / email / phone edit shows up without a re-login.
+   */
+  profile: AppOpenProfile | null;
+};
+
+export type AppOpenProfile = {
+  displayName: string | null;
+  gender: string | null;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
 };
 
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -48,6 +62,7 @@ export function parseAppOpen(raw: unknown): AppOpenResult | null {
       live: null,
       version: { minVersion: null, downloadUrl: null, latestVersion: null, latestReleasedAt: null },
       scheduleVersion: null,
+      profile: null,
     };
   }
   const b = (r.buddy ?? {}) as Record<string, unknown>;
@@ -68,6 +83,19 @@ export function parseAppOpen(raw: unknown): AppOpenResult | null {
       latestReleasedAt: str(v.latest_released_at),
     },
     scheduleVersion: str(r.schedule_version),
+    profile: parseProfile(r.profile),
+  };
+}
+
+function parseProfile(raw: unknown): AppOpenProfile | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const p = raw as Record<string, unknown>;
+  return {
+    displayName: str(p.display_name),
+    gender: str(p.gender),
+    role: str(p.role),
+    email: str(p.email),
+    phone: str(p.phone),
   };
 }
 

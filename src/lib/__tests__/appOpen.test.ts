@@ -172,3 +172,50 @@ describe('runAppOpen', () => {
     expect(queryClient.getQueryState(BUDDY_OPEN_COUNTS_KEY)?.isInvalidated).toBe(false);
   });
 });
+
+describe('0178 — admin profile edits reach the cached user', () => {
+  const me = {
+    id: 'u1',
+    email: 'a@x.com',
+    phone: '249912345678',
+    role: 'student' as const,
+    isGuest: false,
+    displayName: 'الاسم القديم',
+    gender: 'male' as const,
+  };
+  const withProfile = (profile: Record<string, unknown>) =>
+    parseAppOpen({ ...RAW, profile })!;
+
+  beforeEach(() => {
+    __resetAppOpenForTests();
+    queryClient.clear();
+  });
+
+  test('an admin rename replaces the stale session name', async () => {
+    queryClient.setQueryData(queryKeys.currentUser, me);
+    mockAppOpen.mockResolvedValueOnce(
+      withProfile({ display_name: 'عبد الله أحمد', gender: 'male', role: 'student', email: 'a@x.com', phone: '249912345678' }),
+    );
+    await runAppOpen({ force: true, onSignedOut: jest.fn() });
+    expect(queryClient.getQueryData<typeof me>(queryKeys.currentUser)?.displayName).toBe('عبد الله أحمد');
+  });
+
+  test('gender / role / email edits are folded in too', () => {
+    const { mergeServerProfile } = jest.requireActual('@/lib/appOpen');
+    const p = withProfile({ display_name: 'الاسم القديم', gender: 'female', role: 'publisher', email: 'b@x.com', phone: null }).profile;
+    expect(mergeServerProfile(me, p)).toEqual({ ...me, gender: 'female', role: 'publisher', email: 'b@x.com' });
+  });
+
+  test('nothing differs → no cache write', () => {
+    const { mergeServerProfile } = jest.requireActual('@/lib/appOpen');
+    const p = withProfile({ display_name: 'الاسم القديم', gender: 'male', role: 'student', email: 'a@x.com', phone: '249912345678' }).profile;
+    expect(mergeServerProfile(me, p)).toBeNull();
+  });
+
+  test('guests, an older server (no key) and an unknown role are left alone', () => {
+    const { mergeServerProfile } = jest.requireActual('@/lib/appOpen');
+    expect(mergeServerProfile({ ...me, isGuest: true }, withProfile({ display_name: 'x' }).profile)).toBeNull();
+    expect(parseAppOpen(RAW)!.profile).toBeNull();
+    expect(mergeServerProfile(me, withProfile({ display_name: 'الاسم القديم', role: 'root' }).profile)).toBeNull();
+  });
+});
