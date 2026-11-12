@@ -6,7 +6,7 @@ import { chromium } from 'playwright-core';
 import { renderCertificate } from '../src/render.mjs';
 
 const out = process.argv[2];
-const template = fs.readFileSync(new URL(`../templates/${process.argv[3] || 'v2'}.html`, import.meta.url), 'utf8');
+const template = fs.readFileSync(new URL(`../templates/${process.argv[3] || 'v3'}.html`, import.meta.url), 'utf8');
 const base = {
   student_name: 'أحمد محمد عبدالله', gender: 'male', title: 'كِتَابُ التَّوْحِيدِ',
   author_line: 'للإمام محمد بن عبد الوهاب رحمه الله',

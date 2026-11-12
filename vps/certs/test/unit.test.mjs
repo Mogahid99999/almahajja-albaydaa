@@ -10,7 +10,7 @@ import path from 'node:path';
 import { readStoredFile, removeFile, saveFile, signature, validLink } from '../src/storage.mjs';
 
 // Published versions stay renderable for their certificates, so every version keeps its tests.
-const TEMPLATES = ['v1', 'v2'].map((v) => [v, fs.readFileSync(new URL(`../templates/${v}.html`, import.meta.url), 'utf8')]);
+const TEMPLATES = ['v1', 'v2', 'v3'].map((v) => [v, fs.readFileSync(new URL(`../templates/${v}.html`, import.meta.url), 'utf8')]);
 const cert = (over = {}) => ({
   id: 'MAH-7K3F-Q9XW-2MTC',
   issued_at: '2026-11-09T10:00:00Z',
@@ -63,8 +63,8 @@ test(`${v} template: the printed link is a real link`, async () => {
 });
 }
 
-test('template v2: sheikh signature and name, no external image', async () => {
-  const h = fillTemplate(TEMPLATES[1][1], await buildView(cert()));
+test('template v2+: sheikh signature and name, no external image', async () => {
+  const h = fillTemplate(TEMPLATES[2][1], await buildView(cert()));
   assert.match(h, /data-slot="signature"[\s\S]*src="data:image\/png;base64,[\s\S]*>النذير محمد فرح</);
   assert.doesNotMatch(TEMPLATES[0][1], /data-slot="signature"/);
 });
