@@ -9,7 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { readStoredFile, removeFile, saveFile, signature, validLink } from '../src/storage.mjs';
 
-const template = fs.readFileSync(new URL('../templates/v1.html', import.meta.url), 'utf8');
+// Published versions stay renderable for their certificates, so every version keeps its tests.
+const TEMPLATES = ['v1', 'v2'].map((v) => [v, fs.readFileSync(new URL(`../templates/${v}.html`, import.meta.url), 'utf8')]);
 const cert = (over = {}) => ({
   id: 'MAH-7K3F-Q9XW-2MTC',
   issued_at: '2026-11-09T10:00:00Z',
@@ -20,9 +21,10 @@ const cert = (over = {}) => ({
     verification_url: 'https://almahajja.app/c/MAH-7K3F-Q9XW-2MTC', ...over,
   },
 });
+for (const [v, template] of TEMPLATES) {
 const fill = async (c) => fillTemplate(template, await buildView(c));
 
-test('template: male wording', async () => {
+test(`${v} template: male wording`, async () => {
   const h = await fill(cert());
   assert.match(h, /بأن الطالب</);
   assert.match(h, /قد أتمّ بحمد/);
@@ -31,7 +33,7 @@ test('template: male wording', async () => {
   assert.doesNotMatch(h, /الطالبة|أتمّت|استوفت|ينفعها/);
 });
 
-test('template: female wording', async () => {
+test(`${v} template: female wording`, async () => {
   const h = await fill(cert({ gender: 'female' }));
   assert.match(h, /بأن الطالبة</);
   assert.match(h, /قد أتمّت بحمد/);
@@ -39,25 +41,32 @@ test('template: female wording', async () => {
   assert.match(h, /ينفعها بما تعلّمت، وأن يزيدها/);
 });
 
-test('template: no author, no line', async () => {
+test(`${v} template: no author, no line`, async () => {
   const h = await fill(cert({ author_line: null, presenter_line: 'تقديم فضيلة الشيخ' }));
   assert.doesNotMatch(h, /data-slot="author"/);
   assert.match(h, /تقديم فضيلة الشيخ/);
 });
 
-test('template: names are escaped', async () => {
+test(`${v} template: names are escaped`, async () => {
   const h = await fill(cert({ student_name: '<img src=x onerror=alert(1)>' }));
   assert.doesNotMatch(h, /<img src=x/);
 });
 
-test('template: custom text replaces the default closing', async () => {
+test(`${v} template: custom text replaces the default closing`, async () => {
   const h = await fill(cert({ custom_text: 'نص خاص' }));
   assert.match(h, /نص خاص/);
   assert.doesNotMatch(h, /سائلين الله/);
 });
 
-test('template: the printed link is a real link', async () => {
+test(`${v} template: the printed link is a real link`, async () => {
   assert.match((await fill(cert())).replaceAll('&#x2F;', '/'), /<a data-slot="verify"[^>]*href="https:\/\/almahajja\.app\/c\/MAH-7K3F-Q9XW-2MTC"/);
+});
+}
+
+test('template v2: sheikh signature and name, no external image', async () => {
+  const h = fillTemplate(TEMPLATES[1][1], await buildView(cert()));
+  assert.match(h, /data-slot="signature"[\s\S]*src="data:image\/png;base64,[\s\S]*>النذير محمد فرح</);
+  assert.doesNotMatch(TEMPLATES[0][1], /data-slot="signature"/);
 });
 
 test('issue date is Umm al-Qura in Makkah time', () => {

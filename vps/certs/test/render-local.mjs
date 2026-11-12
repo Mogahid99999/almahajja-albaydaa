@@ -1,12 +1,12 @@
 // Local visual check: renders the hard cases with the same code the worker uses.
-// Usage: node test/render-local.mjs <output dir>
+// Usage: node test/render-local.mjs <output dir> [template version, default v2]
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { renderCertificate } from '../src/render.mjs';
 
 const out = process.argv[2];
-const template = fs.readFileSync(new URL('../templates/v1.html', import.meta.url), 'utf8');
+const template = fs.readFileSync(new URL(`../templates/${process.argv[3] || 'v2'}.html`, import.meta.url), 'utf8');
 const base = {
   student_name: 'أحمد محمد عبدالله', gender: 'male', title: 'كِتَابُ التَّوْحِيدِ',
   author_line: 'للإمام محمد بن عبد الوهاب رحمه الله',
@@ -21,6 +21,7 @@ const cases = {
   fatima: { student_name: 'فاطمة أحمد', gender: 'female' },
   longtitle: { title: 'شَرْحُ العَقِيدَةِ الوَاسِطِيَّةِ لِشَيْخِ الإِسْلَامِ ابْنِ تَيْمِيَّةَ رَحِمَهُ اللهُ' },
   verylong: { title: 'الدُّرَرُ البَهِيَّةُ فِي شَرْحِ مَسَائِلِ العَقِيدَةِ وَالتَّوْحِيدِ وَأُصُولِ الدِّينِ عَلَى مَنْهَجِ السَّلَفِ الصَّالِحِ مِنْ أَهْلِ السُّنَّةِ وَالجَمَاعَةِ', student_name: 'عبد الرحمن بن محمد بن عبد الله بن إبراهيم العبدالكريم' },
+  longpresenter: { presenter_line: 'بشرح وتعليق فضيلة الشيخ الدكتور النذير محمد فرح حفظه الله ونفع بعلمه' },
   custom: { custom_text: 'وقد اجتاز جميع المتطلبات المقررة للبرنامج العلمي، سائلين الله له التوفيق والسداد في العلم والعمل.' },
 };
 const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
@@ -28,6 +29,7 @@ for (const [name, over] of Object.entries(cases)) {
   const r = await renderCertificate(b, template, { id: 'MAH-7K3F-Q9XW-2MTC', issued_at: '2026-11-09T10:00:00Z', snapshot: { ...base, ...over } });
   fs.writeFileSync(path.join(out, `${name}.pdf`), r.pdf);
   fs.writeFileSync(path.join(out, `${name}.jpg`), r.preview);
+  if (!r.layout?.ok) process.exitCode = 1;
   console.log(name, Math.round(r.pdf.length / 1024) + 'KB', JSON.stringify(r.layout), r.issueDateText);
 }
 await b.close();
