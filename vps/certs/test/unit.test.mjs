@@ -144,3 +144,60 @@ test('verify page: the visitor\'s store comes first, the other stays', () => {
   assert.equal(first('Mozilla/5.0 (Linux; Android 15; SM-A546E)'), 'play');
   assert.equal(first('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'play');
 });
+
+// ---- 0180 certificate email -------------------------------------------------------------------
+import { certificateEmail, emailLinkSig, shareCaption, validEmailLink } from '../src/email.mjs';
+import { SHARE_JS, sharePage } from '../src/share-page.mjs';
+
+const mail = (over = {}) => certificateEmail({
+  id: 'MAH-7K3F-Q9XW-2MTC', studentName: 'أحمد محمد', gender: 'male', title: 'كتاب التوحيد',
+  date: '٢٩ جمادى الأولى ١٤٤٨هـ', verifyUrl: 'https://almahajja.app/c/MAH-7K3F-Q9XW-2MTC',
+  downloadUrl: 'https://certs.almahajja.app/d/MAH-7K3F-Q9XW-2MTC?sig=aa', shareUrl: 'https://certs.almahajja.app/s/MAH-7K3F-Q9XW-2MTC?sig=bb',
+  imageUrl: 'cid:certificate-preview', base: 'https://certs.almahajja.app/', ...over,
+});
+
+test('email: subject, greeting, both links, inline image, no link-card share buttons', () => {
+  const e = mail();
+  assert.equal(e.subject, 'شهادتك في «كتاب التوحيد» — المَحجّة البَيْضَاء');
+  assert.match(e.html, /بارك الله لك يا أحمد محمد/);
+  assert.match(e.html, /src="cid:certificate-preview"/);
+  assert.match(e.html, /href="https:&#x2F;&#x2F;certs.almahajja.app&#x2F;d&#x2F;MAH-7K3F-Q9XW-2MTC\?sig&#x3D;aa"/);
+  assert.match(e.html, />مشاركة صورة الشهادة</);
+  assert.doesNotMatch(e.html, /wa\.me|facebook\.com|t\.me\//);
+  assert.match(e.text, /تحميل الشهادة \(PDF\): https:\/\/certs\.almahajja\.app\/d\/MAH-7K3F-Q9XW-2MTC\?sig=aa/);
+  assert.match(e.text, /مشاركة صورة الشهادة: https:\/\/certs\.almahajja\.app\/s\//);
+});
+
+test('email: female wording', () => {
+  const e = mail({ gender: 'female', studentName: 'فاطمة' });
+  assert.match(e.html, /بارك الله لكِ يا فاطمة/);
+  assert.match(e.html, /أتممتِ بحمد الله/);
+  assert.match(e.html, /ينفعكِ بما تعلّمتِ/);
+});
+
+test('email: names and titles are escaped in the HTML', () => {
+  const e = mail({ studentName: '<img src=x onerror=alert(1)>', title: 'كتاب "<b>"' });
+  assert.doesNotMatch(e.html, /<img src=x/);
+  assert.doesNotMatch(e.html, /<b>/);
+});
+
+test('email links: one signature per purpose and certificate', () => {
+  const s = 'secret';
+  const id = 'MAH-7K3F-Q9XW-2MTC';
+  assert.ok(validEmailLink(s, 'share', id, emailLinkSig(s, 'share', id)));
+  assert.ok(!validEmailLink(s, 'download', id, emailLinkSig(s, 'share', id)), 'a share link never opens the PDF');
+  assert.ok(!validEmailLink(s, 'share', 'MAH-AAAA-AAAA-AAAA', emailLinkSig(s, 'share', id)));
+  assert.ok(!validEmailLink('other', 'share', id, emailLinkSig(s, 'share', id)));
+  assert.ok(!validEmailLink(s, 'share', id, 'zz'));
+  assert.ok(!validEmailLink(s, 'share', id, undefined));
+});
+
+test('share page: image and save link carry the signature, caption has no link, title escaped', () => {
+  const h = sharePage({ id: 'MAH-7K3F-Q9XW-2MTC', sig: 'ab'.repeat(32), title: 'كتاب <التوحيد>', caption: shareCaption('كتاب <التوحيد>') });
+  assert.match(h, /src="&#x2F;s&#x2F;MAH-7K3F-Q9XW-2MTC&#x2F;image\?sig&#x3D;(ab){32}"/);
+  assert.match(h, /save&#x3D;1/);
+  assert.doesNotMatch(h, /<التوحيد>/);
+  assert.match(h, /<script src="\/assets\/share.js"><\/script>/);
+  assert.doesNotMatch(shareCaption('x'), /https?:/);
+  assert.match(SHARE_JS, /navigator\.share\(\{files:\[file\]/);
+});

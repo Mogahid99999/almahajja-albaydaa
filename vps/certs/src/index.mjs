@@ -8,6 +8,9 @@ import { readFont, renderCertificate } from './render.mjs';
 import { CERTIFICATE_ID_RE, STORE_BADGES, verificationPage } from './verify-page.mjs';
 import { RateLimiter } from './rate-limit.mjs';
 import { contentType, readStoredFile, removeFile, saveFile, validLink } from './storage.mjs';
+import { certificateEmail, emailLinkSig, shareCaption, validEmailLink } from './email.mjs';
+import { SHARE_JS, sharePage } from './share-page.mjs';
+import { formatIssueDate } from './dates.mjs';
 
 const need = (k) => { const v = process.env[k]; if (!v) throw new Error(`missing env ${k}`); return v; };
 const SUPABASE_URL = need('SUPABASE_URL').replace(/\/$/, '');
@@ -17,12 +20,18 @@ const FILES_SECRET = need('FILES_SECRET');
 const PORT = Number(process.env.PORT || 8080);
 const POLL_MS = Number(process.env.POLL_MS || 10000);
 const CHROME = process.env.CHROME_PATH || '/usr/bin/chromium';
+// Certificate emails: off unless the public base is set. The Resend key stays an Edge Function
+// secret (send-certificate-email); this service only builds the message.
+const PUBLIC_BASE = (process.env.PUBLIC_BASE || '').replace(/\/$/, '');
+const EMAIL_FUNCTION = process.env.EMAIL_FUNCTION_URL || `${SUPABASE_URL}/functions/v1/send-certificate-email`;
+const LOGO_PNG = await fs.readFile(new URL('../assets/email-logo.png', import.meta.url));
 
 async function rpc(name, args = {}) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: 'POST',
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
+    signal: AbortSignal.timeout(30000),
   });
   if (!r.ok) throw new Error(`${name}: ${r.status}`);
   const text = await r.text();
@@ -64,10 +73,49 @@ async function renderOne(cert) {
   }
 }
 
+async function emailOne(m) {
+  try {
+    const s = m.snapshot ?? {};
+    const [pdf, preview] = await Promise.all([readStoredFile(FILES_DIR, m.pdf_key), readStoredFile(FILES_DIR, m.preview_key)]);
+    if (!pdf || !preview) throw new Error('files missing');
+    const link = (kind, purpose) => `${PUBLIC_BASE}/${kind}/${m.id}?sig=${emailLinkSig(FILES_SECRET, purpose, m.id)}`;
+    const e = certificateEmail({
+      id: m.id, studentName: s.student_name, gender: s.gender, title: s.title,
+      date: m.issue_date_text || formatIssueDate(m.issued_at), verifyUrl: s.verification_url,
+      downloadUrl: link('d', 'download'), shareUrl: link('s', 'share'),
+      imageUrl: 'cid:certificate-preview', base: PUBLIC_BASE,
+    });
+    const r = await fetch(EMAIL_FUNCTION, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: m.email, subject: e.subject, html: e.html.replace(/src="[^"]*email-logo\.png"/, 'src="cid:almahajja-logo"'), text: e.text,
+        idempotency_key: `certificate-email/${m.id}`,
+        attachments: [
+          { filename: `certificate-${m.id}.pdf`, content: pdf.toString('base64') },
+          { filename: `certificate-${m.id}.jpg`, content: preview.toString('base64'), content_id: 'certificate-preview' },
+          { filename: 'almahajja.png', content: LOGO_PNG.toString('base64'), content_id: 'almahajja-logo' },
+        ],
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!r.ok) throw new Error(`send ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    await rpc('complete_certificate_email', { p_id: m.id, p_error: null });
+    console.log('emailed', m.id);
+  } catch (e) {
+    console.error('email failed', m.id, e.message);
+    await rpc('complete_certificate_email', { p_id: m.id, p_error: String(e.message) }).catch(() => {});
+  }
+}
+
 let stopping = false;
 async function tick() {
   const claimed = await rpc('claim_certificate_renders', { p_limit: 3 });
   for (const cert of claimed ?? []) await renderOne(cert);
+  if (PUBLIC_BASE) {
+    const mails = await rpc('claim_certificate_emails', { p_limit: 5 });
+    for (const m of mails ?? []) await emailOne(m);
+  }
   const gone = await rpc('take_void_certificate_files', { p_limit: 20 });
   for (const f of gone ?? []) {
     for (const key of [f.pdf_key, f.preview_key]) {
@@ -117,6 +165,40 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, await fs.readFile(new URL(`../assets/${asset.file}`, import.meta.url)), {
         'Content-Type': asset.type,
         'Cache-Control': 'public, max-age=604800',
+      });
+    }
+
+    if (url.pathname === '/assets/share.js') {
+      return send(res, 200, SHARE_JS, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    }
+
+    // Durable links from the certificate email: /d/{id} (PDF), /s/{id} (share page), /s/{id}/image.
+    const em = url.pathname.match(/^\/(d|s)\/([^/]+?)(\/image)?\/?$/);
+    if (em && !(em[1] === 'd' && em[3])) {
+      const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '');
+      if (!limiter.allow(ip)) return send(res, 429, verificationPage(null), { 'Retry-After': '60' });
+      let id = '';
+      try { id = decodeURIComponent(em[2]).toUpperCase(); } catch { /* malformed */ }
+      const purpose = em[1] === 'd' ? 'download' : 'share';
+      if (!CERTIFICATE_ID_RE.test(id) || !validEmailLink(FILES_SECRET, purpose, id, url.searchParams.get('sig'))) {
+        return send(res, 403, '', { 'Content-Type': 'text/plain' });
+      }
+      const f = await rpc('certificate_email_files', { p_id: id });
+      if (!f) return send(res, 410, verificationPage({ status: 'revoked' }));   // revoked or void
+      if (em[1] === 'd' || em[3]) {
+        const key = em[1] === 'd' ? f.pdf_key : f.preview_key;
+        const body = await readStoredFile(FILES_DIR, key);
+        if (!body) return send(res, 404, '', { 'Content-Type': 'text/plain' });
+        const name = `certificate-${id}.${em[1] === 'd' ? 'pdf' : 'jpg'}`;
+        const attach = em[1] === 'd' || url.searchParams.get('save') === '1';
+        return send(res, 200, body, {
+          'Content-Type': contentType(key),
+          'Cache-Control': 'private, max-age=300',
+          'Content-Disposition': `${attach ? 'attachment' : 'inline'}; filename="${name}"`,
+        });
+      }
+      return send(res, 200, sharePage({ id, sig: url.searchParams.get('sig'), title: f.title, caption: shareCaption(f.title) }), {
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; connect-src 'self'",
       });
     }
 
