@@ -10,14 +10,19 @@ const MAX_BYTES = 6_000_000;
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-// verify_jwt=true: the gateway has already checked the token's signature, so its role claim
-// can be trusted. Only the service role (the certificate service) may send.
-function isServiceRole(bearer: string): boolean {
-  const part = bearer.split(".")[1];
-  if (!part) return false;
+// Deployed with --no-verify-jwt: production's service key is the new non-JWT format
+// (sb_secret_…), which the gateway's JWT check rejects. Instead the caller's key is accepted
+// only if Supabase itself accepts it for an admin-only call (legacy service_role JWT or secret key).
+// Only the certificate service holds such a key.
+async function isServiceKey(key: string): Promise<boolean> {
+  if (!key) return false;
   try {
-    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "="));
-    return JSON.parse(json).role === "service_role";
+    const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/auth/v1/admin/users?per_page=1`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    await r.body?.cancel();
+    return r.ok;
   } catch {
     return false;
   }
@@ -30,8 +35,8 @@ Deno.serve(async (req) => {
   // Read the body before any early answer: a large unread request body (the PDF) stalls the
   // gateway until the caller times out, instead of returning the 403/503.
   const raw = await req.text();
-  const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!isServiceRole(bearer)) return json({ error: "forbidden" }, 403);
+  const key = req.headers.get("apikey") ?? (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!(await isServiceKey(key))) return json({ error: "forbidden" }, 403);
 
   const resendKey = Deno.env.get("RESEND_API_KEY");
   if (!resendKey) return json({ error: "no_resend_key" }, 503);
