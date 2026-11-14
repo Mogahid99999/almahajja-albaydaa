@@ -402,12 +402,22 @@ func (s *session) finish() {
 	} else {
 		filt = append(filt, fmt.Sprintf("%samix=inputs=%d:normalize=0:dropout_transition=0[m]", labels, len(tracks)))
 	}
-	args = append(args, "-filter_complex", strings.Join(filt, ";"), "-map", "[m]", "-ac", "1", "-c:a", "libopus", "-b:a", "32k",
-		filepath.Join(s.dir, "mix.ogg"))
+	// Written as mix.part.ogg and renamed when complete: the media worker takes mix.ogg as the
+	// live lecture's source as soon as it exists, so it must never see a half-written file.
+	// mix.failed tells it the mix will never come (it then uses the egress recording).
+	part := filepath.Join(s.dir, "mix.part.ogg")
+	args = append(args, "-filter_complex", strings.Join(filt, ";"), "-map", "[m]", "-ac", "1", "-c:a", "libopus", "-b:a", "32k", part)
 	start := time.Now()
 	cmd := exec.Command("nice", append([]string{"-n", "15", "ffmpeg"}, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Printf("[%s] mix failed: %v %s", s.room, err, strings.TrimSpace(string(out)))
+		_ = os.Remove(part)
+		_ = os.WriteFile(filepath.Join(s.dir, "mix.failed"), []byte(err.Error()+"\n"), 0o664)
+		return
+	}
+	if err := os.Rename(part, filepath.Join(s.dir, "mix.ogg")); err != nil {
+		log.Printf("[%s] mix rename failed: %v", s.room, err)
+		_ = os.WriteFile(filepath.Join(s.dir, "mix.failed"), []byte(err.Error()+"\n"), 0o664)
 		return
 	}
 	log.Printf("[%s] mixed %d tracks in %s → %s", s.room, len(tracks), time.Since(start).Round(time.Second), filepath.Join(s.dir, "mix.ogg"))
