@@ -10,7 +10,7 @@
  * The room itself (LiveKit) lives in src/lib/liveClient.ts; the store in
  * src/stores/liveStore.ts.
  */
-import { supabase } from '@/lib/supabase';
+import { invokeFunction, supabase } from '@/lib/supabase';
 
 export type LiveStatus =
   | 'scheduled'
@@ -349,7 +349,7 @@ export async function fetchLiveToken(
   let result: { data: unknown; error: unknown };
   try {
     result = await withDeadline(
-      supabase.functions.invoke('live-token', {
+      invokeFunction('live-token', {
         body: identityChoice ? { sessionId, identityChoice } : { sessionId },
         timeout: LIVE_TOKEN_TIMEOUT_MS,
       }),
@@ -449,7 +449,7 @@ export async function invokeLiveControl(
   let result: { data: unknown; error: unknown };
   try {
     result = await withDeadline(
-      supabase.functions.invoke('live-control', {
+      invokeFunction('live-control', {
         body: { ...body, action },
         timeout: LIVE_CONTROL_TIMEOUT_MS,
       }),

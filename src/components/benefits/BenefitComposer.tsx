@@ -54,7 +54,7 @@ export function BenefitComposer({ onPosted }: { onPosted?: () => void }) {
         placeholder="اكتب الفائدة، ويحسن أن تنسبها إلى قائلها..."
         placeholderTextColor={colors.textGhost}
         multiline
-        maxLength={1000}
+        maxLength={3000}
         textAlign="right"
         textAlignVertical="top"
         style={styles.input}

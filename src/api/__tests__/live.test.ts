@@ -13,6 +13,7 @@ const mockInvoke = jest.fn();
 const mockRpc = jest.fn();
 const mockFrom = jest.fn();
 jest.mock('@/lib/supabase', () => ({
+  invokeFunction: (...a: unknown[]) => mockInvoke(...a),
   supabase: {
     functions: { invoke: (...a: unknown[]) => mockInvoke(...a) },
     rpc: (...a: unknown[]) => mockRpc(...a),

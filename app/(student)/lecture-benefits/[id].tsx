@@ -80,6 +80,7 @@ function Composer({ lectureId }: { lectureId: string }) {
         placeholder="اكتب الفائدة هنا..."
         placeholderTextColor={colors.textGhost}
         multiline
+        maxLength={3000}
         textAlign="right"
         textAlignVertical="top"
         style={styles.composerInput}
