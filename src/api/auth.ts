@@ -8,6 +8,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 
 import { DEMO_ACCOUNTS, USE_MOCK } from '@/config';
 import { normalizePhone, phoneLoginCandidates, toInternationalPhone } from '@/lib/phone';
@@ -102,6 +103,9 @@ const MOCK_SESSION_KEY = 'mock-auth-session';
  * instead of force-stopping. Generous enough for a slow-but-working connection.
  */
 const AUTH_OP_TIMEOUT_MS = 20_000;
+
+/** Pause before the one sign-in retry after a network failure. */
+const SIGN_IN_RETRY_DELAY_MS = 800;
 
 /**
  * Reject with a clear Arabic error if `p` hasn't settled within `ms` — used to
@@ -464,6 +468,13 @@ export async function signIn(
     ? [{ email: e, password }]
     : phoneLoginCandidates(raw, countryCode).map((phone) => ({ phone, password }));
   let result = await withAuthTimeout(supabase.auth.signInWithPassword(credentials[0]));
+  // A network failure right after a long background is usually a dead pooled
+  // connection (2026-11-15): one quiet retry on a fresh one before showing
+  // «تعذّر الاتصال بالخادم».
+  if (isAuthRetryableFetchError(result.error)) {
+    await new Promise((r) => setTimeout(r, SIGN_IN_RETRY_DELAY_MS));
+    result = await withAuthTimeout(supabase.auth.signInWithPassword(credentials[0]));
+  }
   // Only a wrong-credentials answer moves on to the next stored form.
   for (const next of credentials.slice(1)) {
     if (result.error?.code !== 'invalid_credentials') break;

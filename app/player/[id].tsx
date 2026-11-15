@@ -183,6 +183,7 @@ export default function PlayerScreen() {
   const retry = () => {
     if (!id) return;
     void qc.invalidateQueries({ queryKey: queryKeys.lecture(id) });
+    setUnavailable(false);
     stop();
     playLecture(id).catch(() => setUnavailable(true));
   };
@@ -342,6 +343,16 @@ export default function PlayerScreen() {
                 </Txt>
               </View>
             ) : null}
+            <Pressable
+              onPress={retry}
+              accessibilityRole="button"
+              accessibilityLabel="إعادة المحاولة"
+              style={({ pressed }) => [styles.retryButton, pressed && { opacity: 0.8 }]}
+            >
+              <Txt size={13} weight="semibold" color={colors.primaryTealDeep}>
+                إعادة المحاولة
+              </Txt>
+            </Pressable>
           </View>
         ) : loadError ? (
           <View style={styles.offlineNotice}>

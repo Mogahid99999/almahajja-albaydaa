@@ -11,7 +11,7 @@
  */
 import { onlineManager } from '@tanstack/react-query';
 import * as Network from 'expo-network';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 /**
  * A state counts as "online" when there is an active connection AND the internet
@@ -86,11 +86,34 @@ export function initConnectivity(): void {
   });
 
   // The listener may not fire immediately, so seed the current state once.
-  void Network.getNetworkStateAsync()
-    .then((state) => onlineManager.setOnline(deriveOnline(state)))
-    .catch(() => {
-      /* keep the default (online) if the probe fails */
+  void refreshOnline();
+
+  // A frozen background app can miss the "back online" event: the state then
+  // stayed «offline» until a restart (players showed «تحتاج اتصالاً», lists
+  // stopped loading; reported 2026-11-15). Re-read the real state each time
+  // the app comes back to the foreground.
+  try {
+    AppState.addEventListener('change', (s) => {
+      if (s === 'active') void refreshOnline();
     });
+  } catch {
+    /* AppState unavailable — the listener above still applies */
+  }
+}
+
+/**
+ * Re-read the device's connectivity now and push it into `onlineManager`
+ * (bypassing the debounce). Fails open: a probe error leaves the state as is.
+ * Resolves to the best-known online state afterwards.
+ */
+export async function refreshOnline(): Promise<boolean> {
+  if (Platform.OS === 'web') return true;
+  try {
+    onlineManager.setOnline(deriveOnline(await Network.getNetworkStateAsync()));
+  } catch {
+    /* keep the current state */
+  }
+  return onlineManager.isOnline();
 }
 
 /**
