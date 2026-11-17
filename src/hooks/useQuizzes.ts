@@ -216,8 +216,8 @@ export function useDeleteQuiz() {
 export function useSetQuizStatus() {
   const invalidate = useInvalidateAdminQuizzes();
   return useMutation({
-    mutationFn: (vars: { quizId: string; status: 'draft' | 'published' }) =>
-      setQuizStatus(vars.quizId, vars.status),
+    mutationFn: (vars: { quizId: string; status: 'draft' | 'published'; notifyOnPublish?: boolean }) =>
+      setQuizStatus(vars.quizId, vars.status, vars.notifyOnPublish),
     onSuccess: invalidate,
   });
 }

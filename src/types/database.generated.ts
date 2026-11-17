@@ -1487,6 +1487,7 @@ export type Database = {
           description: string | null
           id: string
           max_attempts: number | null
+          notify_on_publish: boolean
           order: number
           pass_score: number
           section_id: string
@@ -1505,6 +1506,7 @@ export type Database = {
           description?: string | null
           id?: string
           max_attempts?: number | null
+          notify_on_publish?: boolean
           order?: number
           pass_score?: number
           section_id: string
@@ -1523,6 +1525,7 @@ export type Database = {
           description?: string | null
           id?: string
           max_attempts?: number | null
+          notify_on_publish?: boolean
           order?: number
           pass_score?: number
           section_id?: string

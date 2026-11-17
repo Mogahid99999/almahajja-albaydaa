@@ -160,13 +160,25 @@ export default function AdminQuizzesScreen() {
   // (0018_quiz_publish_notify.sql) — confirm before that transition, same as
   // lectures. Unpublishing never notifies, so it goes through immediately.
   const [pendingPublish, setPendingPublish] = useState<AdminQuizRow | null>(null);
+  // Unpublishing hides the quiz from every student at once. It used to be one
+  // tap on the list icon, and quizzes were turned into drafts by accident from
+  // the app (2026-11-15, 2026-11-17), so it asks first too.
+  const [pendingUnpublish, setPendingUnpublish] = useState<AdminQuizRow | null>(null);
 
   function handleTogglePublish(quiz: AdminQuizRow) {
     if (quiz.status === 'published') {
-      setStatus.mutate({ quizId: quiz.id, status: 'draft' });
+      setPendingUnpublish(quiz);
       return;
     }
     setPendingPublish(quiz);
+  }
+
+  function publish(notifyOnPublish: boolean) {
+    if (!pendingPublish) return;
+    setStatus.mutate(
+      { quizId: pendingPublish.id, status: 'published', notifyOnPublish },
+      { onSettled: () => setPendingPublish(null) },
+    );
   }
 
   function handleToggleAvailability(quiz: AdminQuizRow) {
@@ -311,18 +323,31 @@ export default function AdminQuizzesScreen() {
         visible={!!pendingPublish}
         destructive={false}
         title="نشر الاختبار؟"
-        message={`سيصل إشعار فوري إلى جميع الدارسين بأن اختبار «${pendingPublish?.title ?? ''}» متاح الآن.`}
-        confirmLabel="نشر"
+        message={`«نشر وإرسال إشعار» يرسل إشعارًا إلى جميع الدارسين بأن اختبار «${pendingPublish?.title ?? ''}» متاح الآن. «نشر بدون إشعار» يُظهره في صفحته دون أي إشعار.`}
+        confirmLabel="نشر وإرسال إشعار"
+        cancelLabel="تراجع"
+        secondaryLabel="نشر بدون إشعار"
+        pending={setStatus.isPending}
+        onConfirm={() => publish(true)}
+        onSecondary={() => publish(false)}
+        onCancel={() => setPendingPublish(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingUnpublish}
+        title="إلغاء نشر الاختبار؟"
+        message={`سيتحوّل «${pendingUnpublish?.title ?? ''}» إلى مسودة ويختفي عن جميع الدارسين حتى يُنشر من جديد.`}
+        confirmLabel="إلغاء النشر"
         cancelLabel="تراجع"
         pending={setStatus.isPending}
         onConfirm={() => {
-          if (!pendingPublish) return;
+          if (!pendingUnpublish) return;
           setStatus.mutate(
-            { quizId: pendingPublish.id, status: 'published' },
-            { onSettled: () => setPendingPublish(null) },
+            { quizId: pendingUnpublish.id, status: 'draft' },
+            { onSettled: () => setPendingUnpublish(null) },
           );
         }}
-        onCancel={() => setPendingPublish(null)}
+        onCancel={() => setPendingUnpublish(null)}
       />
     </AdminShell>
   );

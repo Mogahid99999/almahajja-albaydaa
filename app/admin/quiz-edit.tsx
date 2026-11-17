@@ -261,7 +261,9 @@ export default function QuizEditScreen() {
     doSave();
   }
 
-  function doSave() {
+  // notifyOnPublish comes only from the publish confirmation (0181); a plain
+  // save leaves the stored choice untouched.
+  function doSave(notifyOnPublish?: boolean) {
     const input = {
       sectionId: sectionId!,
       title: title.trim(),
@@ -276,6 +278,7 @@ export default function QuizEditScreen() {
       availabilityMode,
       availableFrom: availabilityMode === 'scheduled' ? availableFrom : null,
       availableUntil: availabilityMode === 'scheduled' ? availableUntil : null,
+      ...(notifyOnPublish === undefined ? {} : { notifyOnPublish }),
     };
     const payload: QuizQuestionInput[] = questions.map((q, qi) => ({
       id: q.id,
@@ -798,11 +801,13 @@ export default function QuizEditScreen() {
         visible={confirmingPublish}
         destructive={false}
         title="نشر الاختبار؟"
-        message="سيصل إشعار فوري إلى جميع الدارسين بأن هذا الاختبار متاح الآن."
-        confirmLabel="نشر"
+        message="«نشر وإرسال إشعار» يرسل إشعارًا إلى جميع الدارسين بأن هذا الاختبار متاح الآن. «نشر بدون إشعار» يُظهره في صفحته دون أي إشعار."
+        confirmLabel="نشر وإرسال إشعار"
         cancelLabel="تراجع"
+        secondaryLabel="نشر بدون إشعار"
         pending={saving}
-        onConfirm={doSave}
+        onConfirm={() => doSave(true)}
+        onSecondary={() => doSave(false)}
         onCancel={() => setConfirmingPublish(false)}
       />
     </AdminShell>

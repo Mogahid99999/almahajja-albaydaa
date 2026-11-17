@@ -699,6 +699,11 @@ export type QuizInput = {
   /** ISO datetimes; only meaningful in 'scheduled' mode. */
   availableFrom: string | null;
   availableUntil: string | null;
+  /**
+   * 0181: sent only from the publish confirmation — true «نشر وإرسال إشعار»,
+   * false «نشر بدون إشعار». Left undefined, a save keeps the stored choice.
+   */
+  notifyOnPublish?: boolean;
 };
 
 /** Admin quizzes list row (drafts visible; grouped by section client-side). */
