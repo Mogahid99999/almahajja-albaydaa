@@ -12,7 +12,8 @@ import { join } from 'node:path';
 export type ListenerMix = { path: string; size: number; dirName: string };
 export type ListenerState =
   | { state: 'ready'; mix: ListenerMix }
-  | { state: 'pending' }
+  /** `writtenAtMs`: last write of mix.part.ogg, when ffmpeg is mixing right now. */
+  | { state: 'pending'; writtenAtMs?: number }
   | { state: 'none'; reason: string };
 
 const ROOM_RE = /^(?:prd|stg)_[a-z0-9]+$/;
@@ -47,6 +48,12 @@ export class ListenerDir {
       if (st.isFile() && st.size > 0) return { state: 'ready', mix: { path: join(dir, 'mix.ogg'), size: st.size, dirName } };
       return { state: 'none', reason: 'mix.ogg is not a regular non-empty file' };
     } catch {
+      try {
+        const part = await lstat(join(dir, 'mix.part.ogg'));
+        if (part.isFile()) return { state: 'pending', writtenAtMs: part.mtimeMs };
+      } catch {
+        // the mix has not started yet
+      }
       return { state: 'pending' };
     }
   }
@@ -60,20 +67,50 @@ async function isFile(p: string): Promise<boolean> {
   }
 }
 
-/** Polls until the mix is ready, will never come, or `timeoutMs` passes (→ none). */
+/**
+ * The mix takes time in proportion to the live (2026-11-18: 3 h 14 min with 6 tracks took
+ * ~13 min of one core), so a fixed wait would give a long live to the egress fallback. Past
+ * `timeoutMs` the wait goes on while ffmpeg is still writing mix.part.ogg (a write within
+ * `stallMs`), up to `maxWaitMs` in all.
+ */
+export const LISTENER_STALL_MS = 5 * 60_000;
+export const LISTENER_MAX_WAIT_MS = 90 * 60_000;
+
+/** Polls until the mix is ready, will never come, or the wait runs out (→ none). */
 export async function waitListenerMix(
   dir: Pick<ListenerDir, 'state'>,
   room: string,
-  o: { timeoutMs: number; pollMs: number; signal?: AbortSignal; sleep?: (ms: number) => Promise<void>; now?: () => number },
+  o: {
+    timeoutMs: number;
+    pollMs: number;
+    stallMs?: number;
+    maxWaitMs?: number;
+    signal?: AbortSignal;
+    sleep?: (ms: number) => Promise<void>;
+    now?: () => number;
+  },
 ): Promise<ListenerState> {
   const now = o.now ?? Date.now;
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const deadline = now() + o.timeoutMs;
+  const start = now();
+  const deadline = start + o.timeoutMs;
+  const hardDeadline = start + Math.max(o.timeoutMs, o.maxWaitMs ?? LISTENER_MAX_WAIT_MS);
+  const stallMs = o.stallMs ?? LISTENER_STALL_MS;
   for (;;) {
     const s = await dir.state(room);
     if (s.state !== 'pending') return s;
     if (o.signal?.aborted) return { state: 'none', reason: 'aborted' };
-    if (now() >= deadline) return { state: 'none', reason: 'listener mix not ready in time' };
+    const t = now();
+    if (t >= deadline) {
+      const mixing = s.writtenAtMs !== undefined && t - s.writtenAtMs < stallMs;
+      if (!mixing) {
+        return {
+          state: 'none',
+          reason: s.writtenAtMs !== undefined ? 'listener mix stalled' : 'listener mix not ready in time',
+        };
+      }
+      if (t >= hardDeadline) return { state: 'none', reason: 'listener mix still running at the longest wait' };
+    }
     await sleep(o.pollMs);
   }
 }

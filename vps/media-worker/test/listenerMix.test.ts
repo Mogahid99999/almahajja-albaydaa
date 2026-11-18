@@ -1,5 +1,5 @@
 // The listener-rec mix as the live lecture's primary source (owner, 2026-11-14), egress as fallback.
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -96,8 +96,16 @@ describe('live lecture source', () => {
     expect(source()).toMatchObject({ source: 'egress', reason: 'no listener recording' });
   });
 
-  it('falls back when the mix is still being written after the wait (mix.part.ogg only)', async () => {
+  it('falls back when the mix stopped being written (stale mix.part.ogg) after the wait', async () => {
     await writeMix('mix.part.ogg');
+    const old = new Date(Date.now() - 10 * 60_000);
+    await utimes(join(lisDir, MIX_DIR, 'mix.part.ogg'), old, old);
+    await runJob(liveJob(), deps());
+    expect(source()).toMatchObject({ source: 'egress', reason: 'listener mix stalled' });
+  });
+
+  it('falls back when the mix never started after the wait', async () => {
+    await mkdir(join(lisDir, MIX_DIR), { recursive: true });
     await runJob(liveJob(), deps());
     expect(source()).toMatchObject({ source: 'egress', reason: 'listener mix not ready in time' });
   });
@@ -141,5 +149,49 @@ describe('waitListenerMix', () => {
     const s = await waitListenerMix(dir, ROOM, { timeoutMs: 60_000, pollMs: 10_000, now: () => t, sleep: async (ms) => void (t += ms) });
     expect(s.state).toBe('ready');
     expect(t).toBe(20_000);
+  });
+
+  // 2026-11-18: a 3 h 14 min live took ~13 min to mix, close to the old fixed 15-min wait.
+  const clock = () => {
+    let t = 0;
+    return { now: () => t, sleep: async (ms: number) => void (t += ms), at: () => t };
+  };
+  const MIN = 60_000;
+
+  it('a long mix: keeps waiting past the wait while mix.part.ogg is still being written', async () => {
+    const c = clock();
+    const doneAt = 40 * MIN; // e.g. a 6-hour live
+    const dir = {
+      state: async () =>
+        c.at() >= doneAt
+          ? ({ state: 'ready', mix: { path: '/m', size: 1, dirName: 'd' } } as const)
+          : ({ state: 'pending', writtenAtMs: c.at() - 5_000 } as const),
+    };
+    const s = await waitListenerMix(dir, ROOM, { timeoutMs: 15 * MIN, pollMs: 10_000, now: c.now, sleep: c.sleep });
+    expect(s.state).toBe('ready');
+    expect(c.at()).toBe(doneAt);
+  });
+
+  it('a stuck mix: gives up once mix.part.ogg has not grown for 5 minutes', async () => {
+    const c = clock();
+    const dir = { state: async () => ({ state: 'pending', writtenAtMs: Math.min(c.at(), 20 * MIN) } as const) };
+    const s = await waitListenerMix(dir, ROOM, { timeoutMs: 15 * MIN, pollMs: 10_000, now: c.now, sleep: c.sleep });
+    expect(s).toEqual({ state: 'none', reason: 'listener mix stalled' });
+    expect(c.at()).toBe(25 * MIN);
+  });
+
+  it('never waits past the longest wait (90 min), even while ffmpeg keeps writing', async () => {
+    const c = clock();
+    const dir = { state: async () => ({ state: 'pending', writtenAtMs: c.at() } as const) };
+    const s = await waitListenerMix(dir, ROOM, { timeoutMs: 15 * MIN, pollMs: 10_000, now: c.now, sleep: c.sleep });
+    expect(s).toEqual({ state: 'none', reason: 'listener mix still running at the longest wait' });
+    expect(c.at()).toBe(90 * MIN);
+  });
+
+  it('ListenerDir reports when mix.part.ogg was last written', async () => {
+    await writeMix('mix.part.ogg');
+    const s = await new ListenerDir(lisDir).state(ROOM);
+    expect(s.state).toBe('pending');
+    expect(s.state === 'pending' && typeof s.writtenAtMs).toBe('number');
   });
 });
