@@ -711,7 +711,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
         نعتذر عن هذا العارض، جرّب المحاولة مرة أخرى.
       </Text>
       {__DEV__ ? (
-        <Text style={{ color: colors.textGhost, fontSize: 11, textAlign: 'center' }}>
+        <Text allowFontScaling={false} style={{ color: colors.textGhost, fontSize: 11, textAlign: 'center' }}>
           {error.message}
         </Text>
       ) : null}
@@ -726,7 +726,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
           opacity: pressed ? 0.85 : 1,
         })}
       >
-        <Text style={{ color: colors.onTealPrimary, fontSize: 15, fontWeight: '600' }}>
+        <Text allowFontScaling={false} style={{ color: colors.onTealPrimary, fontSize: 15, fontWeight: '600' }}>
           إعادة المحاولة
         </Text>
       </Pressable>

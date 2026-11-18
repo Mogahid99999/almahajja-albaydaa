@@ -194,7 +194,7 @@ function FlexPage({ page, text, level, bottomPad }: { page: number; text: readon
   const flush = (key: string) => {
     if (!para.length) return;
     blocks.push(
-      <Text key={key} style={[styles.flexPara, { fontSize: size, lineHeight: size * 2.05 }]}>
+      <Text key={key} allowFontScaling={false} style={[styles.flexPara, { fontSize: size, lineHeight: size * 2.05 }]}>
         {para}
       </Text>,
     );
@@ -207,7 +207,7 @@ function FlexPage({ page, text, level, bottomPad }: { page: number; text: readon
     } else if (l.t === 'b') {
       flush(`p${i}`);
       blocks.push(
-        <Text key={`b${i}`} style={[styles.flexBasm, { fontSize: size, lineHeight: size * 2 }]}>
+        <Text key={`b${i}`} allowFontScaling={false} style={[styles.flexBasm, { fontSize: size, lineHeight: size * 2 }]}>
           {BASMALA}
         </Text>,
       );

@@ -21,6 +21,8 @@ import {
   type TextStyle,
 } from 'react-native';
 
+import { APP_FONT_SCALING } from './fontScaling';
+
 const FIXED_HEIGHT_FIX: TextStyle = { paddingVertical: 0, textAlignVertical: 'center' };
 
 export function needsFixedHeightFix(props: Pick<TextInputProps, 'multiline' | 'style'>, os = Platform.OS): boolean {
@@ -32,7 +34,8 @@ export function needsFixedHeightFix(props: Pick<TextInputProps, 'multiline' | 's
 
 export const TextInput = forwardRef<RNTextInput, TextInputProps>(function TextInput(props, ref) {
   const style = needsFixedHeightFix(props) ? [FIXED_HEIGHT_FIX, props.style] : props.style;
-  return <RNTextInput ref={ref} {...props} style={style} />;
+  // Same fixed text size as Txt (see APP_FONT_SCALING).
+  return <RNTextInput ref={ref} allowFontScaling={APP_FONT_SCALING} {...props} style={style} />;
 });
 
 /** So `useRef<TextInput>(null)` keeps working after the import switch. */

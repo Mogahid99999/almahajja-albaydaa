@@ -10,6 +10,8 @@ import {
 
 import { colors, fonts } from '@/constants/theme';
 
+import { APP_FONT_SCALING } from './fontScaling';
+
 type Weight = 'regular' | 'medium' | 'semibold' | 'bold' | 'display' | 'displayRegular';
 
 const FONT: Record<Weight, string> = {
@@ -74,6 +76,7 @@ export function Txt({
 }: TxtProps) {
   return (
     <Text
+      allowFontScaling={APP_FONT_SCALING}
       style={[
         {
           fontFamily: FONT[weight],
