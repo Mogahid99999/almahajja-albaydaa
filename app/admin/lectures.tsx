@@ -411,6 +411,10 @@ export default function LecturesScreen() {
       }
     | null
   >(null);
+  const [pendingEditUnpublish, setPendingEditUnpublish] = useState<{
+    row: AdminLectureRow;
+    input: { title: string; sectionId: string | null; sheikhId: string | null; order: number; status: AppLectureStatus };
+  } | null>(null);
 
   const counts = useMemo(() => {
     const c: Record<StatusFilter, number> = {
@@ -572,6 +576,11 @@ export default function LecturesScreen() {
             onSave={(input) => {
               if (input.status === 'published' && row.status !== 'published') {
                 setPendingPublish({ kind: 'edit', row, input });
+                return;
+              }
+              // Saving a published lecture as a draft hides it from everyone — ask.
+              if (row.status === 'published' && input.status !== 'published') {
+                setPendingEditUnpublish({ row, input });
                 return;
               }
               updateLecture.mutate({ id: row.id, input }, { onSuccess: () => setEditingId(null) });
@@ -755,6 +764,26 @@ export default function LecturesScreen() {
           );
         }}
         onCancel={() => setPendingUnpublish(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingEditUnpublish}
+        title="إلغاء نشر المحاضرة؟"
+        message={`ستتحوّل «${pendingEditUnpublish?.row.title ?? ''}» إلى مسودة وتختفي عن جميع الدارسين حتى تُنشر من جديد.`}
+        confirmLabel="حفظ كمسودة"
+        cancelLabel="تراجع"
+        pending={updateLecture.isPending}
+        onConfirm={() => {
+          if (!pendingEditUnpublish) return;
+          updateLecture.mutate(
+            { id: pendingEditUnpublish.row.id, input: pendingEditUnpublish.input },
+            {
+              onSuccess: () => setEditingId(null),
+              onSettled: () => setPendingEditUnpublish(null),
+            },
+          );
+        }}
+        onCancel={() => setPendingEditUnpublish(null)}
       />
     </AdminShell>
   );

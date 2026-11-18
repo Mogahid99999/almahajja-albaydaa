@@ -140,6 +140,7 @@ export default function QuizEditScreen() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [confirmingPublish, setConfirmingPublish] = useState(false);
+  const [confirmingHide, setConfirmingHide] = useState<'unpublish' | 'close' | null>(null);
   const hydratedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -258,7 +259,23 @@ export default function QuizEditScreen() {
       setConfirmingPublish(true);
       return;
     }
+    // Saving a published quiz as «مسودة», or switching it to «مغلق», hides it
+    // from every student at once — the owner's main worry (2026-11-18): ask
+    // first, like the list icons.
+    const hiding = hideOnSave();
+    if (hiding) {
+      setConfirmingHide(hiding);
+      return;
+    }
     doSave();
+  }
+
+  /** What this save would take away from students, if anything. */
+  function hideOnSave(): 'unpublish' | 'close' | null {
+    if (existing?.status !== 'published') return null;
+    if (status === 'draft') return 'unpublish';
+    if (availabilityMode === 'closed' && existing.availabilityMode !== 'closed') return 'close';
+    return null;
   }
 
   // notifyOnPublish comes only from the publish confirmation (0181); a plain
@@ -304,7 +321,10 @@ export default function QuizEditScreen() {
         {
           onSuccess: () => setSuccessMsg('تم حفظ التعديلات.'),
           onError: () => setError('تعذّر الحفظ. حاول مرة أخرى.'),
-          onSettled: () => setConfirmingPublish(false),
+          onSettled: () => {
+            setConfirmingPublish(false);
+            setConfirmingHide(null);
+          },
         },
       );
     } else {
@@ -318,7 +338,10 @@ export default function QuizEditScreen() {
             router.replace(`/admin/quiz-edit?id=${newId}` as Parameters<typeof router.replace>[0]);
           },
           onError: () => setError('تعذّر الحفظ. حاول مرة أخرى.'),
-          onSettled: () => setConfirmingPublish(false),
+          onSettled: () => {
+            setConfirmingPublish(false);
+            setConfirmingHide(null);
+          },
         },
       );
     }
@@ -798,6 +821,21 @@ export default function QuizEditScreen() {
       </View>
 
       {content}
+
+      <ConfirmDialog
+        visible={!!confirmingHide}
+        title={confirmingHide === 'close' ? 'إغلاق الاختبار؟' : 'إلغاء نشر الاختبار؟'}
+        message={
+          confirmingHide === 'close'
+            ? 'لن يستطيع أي دارس بدء هذا الاختبار حتى يُفتح من جديد. يبقى منشورًا ويبقى ما سُلِّم من إجابات.'
+            : 'سيتحوّل هذا الاختبار إلى مسودة ويختفي عن جميع الدارسين حتى يُنشر من جديد.'
+        }
+        confirmLabel={confirmingHide === 'close' ? 'حفظ وإغلاق' : 'حفظ كمسودة'}
+        cancelLabel="تراجع"
+        pending={saving}
+        onConfirm={() => doSave()}
+        onCancel={() => setConfirmingHide(null)}
+      />
 
       <ConfirmDialog
         visible={confirmingPublish}
