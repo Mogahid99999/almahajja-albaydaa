@@ -174,7 +174,6 @@ export function runAppOpen(opts: { force?: boolean; onSignedOut: () => Promise<v
     }
     // Seed what the open already answered, so no screen asks again.
     queryClient.setQueryData(queryKeys.liveNow, parseLiveNow(result.live));
-    queryClient.setQueryData(['appVersionGate'], result.version);
     queryClient.setQueryData(BUDDY_OPEN_COUNTS_KEY, result.buddy);
     const patched = mergeServerProfile(
       queryClient.getQueryData<CurrentUser | null>(queryKeys.currentUser),

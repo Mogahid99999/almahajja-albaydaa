@@ -3,13 +3,12 @@
  *
  * Replaces what every open used to fire separately: touch_last_opened, the
  * GoTrue /user ban check, notification_prefs, the resumable-lesson probe, the
- * inbox list, every cached buddy query, get_live_now and the UpdateGate config
- * read. The caller (src/lib/appOpen.ts) refetches only what this says changed.
+ * inbox list, every cached buddy query and get_live_now. The server still sends
+ * the old update-gate config (app 1.1.7 and older read it); this app ignores it
+ * (store update prompt, 2026-11-18). The caller (src/lib/appOpen.ts) refetches only what this says changed.
  */
 import { USE_MOCK } from '@/config';
 import { supabase } from '@/lib/supabase';
-
-import type { AppVersionGate } from './appVersion';
 
 export type AppOpenBuddyCounts = { incoming: number; outgoing: number; goalInvites: number };
 
@@ -24,7 +23,6 @@ export type AppOpenResult = {
   hasResumable: boolean;
   /** get_live_now() payload, same shape the liveNow query caches (raw). */
   live: unknown;
-  version: AppVersionGate;
   /** 0158: «الجدول الأسبوعي» version stamp — refetch get_schedule only when it moves. */
   scheduleVersion: string | null;
   /**
@@ -60,13 +58,11 @@ export function parseAppOpen(raw: unknown): AppOpenResult | null {
       dailyReminder: false,
       hasResumable: false,
       live: null,
-      version: { minVersion: null, downloadUrl: null, latestVersion: null, latestReleasedAt: null },
       scheduleVersion: null,
       profile: null,
     };
   }
   const b = (r.buddy ?? {}) as Record<string, unknown>;
-  const v = (r.version ?? {}) as Record<string, unknown>;
   return {
     userExists: true,
     banned: r.banned === true,
@@ -76,12 +72,6 @@ export function parseAppOpen(raw: unknown): AppOpenResult | null {
     dailyReminder: r.daily_reminder === true,
     hasResumable: r.has_resumable === true,
     live: r.live ?? null,
-    version: {
-      minVersion: str(v.min_app_version),
-      downloadUrl: str(v.app_download_url),
-      latestVersion: str(v.latest_app_version),
-      latestReleasedAt: str(v.latest_released_at),
-    },
     scheduleVersion: str(r.schedule_version),
     profile: parseProfile(r.profile),
   };

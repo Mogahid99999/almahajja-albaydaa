@@ -48,7 +48,7 @@ import { forcedSignOutCleanup, useCurrentUser, useEnsureSession } from '@/hooks/
 import { Logo } from '@/components/ui/Logo';
 import { StartHereCard } from '@/components/onboarding/StartHereCard';
 import { TourCard } from '@/components/onboarding/TourCard';
-import { UpdateGate } from '@/components/UpdateGate';
+import { StoreUpdatePrompt } from '@/components/StoreUpdatePrompt';
 import { colors, radius } from '@/constants/theme';
 import {
   addResponseListener,
@@ -65,6 +65,7 @@ import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/
 import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
 import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
 import { useLiveStore } from '@/stores/liveStore';
+import { storeUpdatePromptPending } from '@/stores/storeUpdateStore';
 import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { AchievementCelebration } from '@/components/celebration/AchievementCelebration';
 import { NOTIF_TEST_MODE } from '@/config';
@@ -109,7 +110,6 @@ const PERSISTED_QUERY_ROOTS = new Set<string>([
   // (src/lib/appOpen.ts) invalidates them when its counts/timestamps say they changed.
   'buddy', // my buddy card state + the last app_open buddy counts (never search results)
   'broadcasts', // Home «التذكيرات النافعة» card
-  'appVersionGate', // UpdateGate config, also seeded by app_open
   'schedule', // «الجدول الأسبوعي» (0158) — works offline, refetched when its version moves
 ]);
 
@@ -557,9 +557,9 @@ function NotificationsBootstrap() {
     const maybePrompt = () => {
       // Never over a live majlis (it popped up over the halaqa on the device,
       // 2026-09-30); the next return to the app asks again.
-      if (useLiveStore.getState().session) return;
+      if (useLiveStore.getState().session || storeUpdatePromptPending()) return;
       void shouldShowRatingPrompt().then((show) => {
-        if (show && !useLiveStore.getState().session) setRatingPromptVisible(true);
+        if (show && !useLiveStore.getState().session && !storeUpdatePromptPending()) setRatingPromptVisible(true);
       });
     };
     maybePrompt();
@@ -776,11 +776,12 @@ export default function RootLayout() {
               edge-to-edge is always on) — the status-bar fog is Screen.tsx's job. */}
           <StatusBar style="dark" />
           <SessionGate fontsLoaded={fontsLoaded || !!fontError}>
-            <UpdateGate>
+            <>
               <AuthGate />
               <NotificationsBootstrap />
               <TourCard />
               <StartHereCard />
+              <StoreUpdatePrompt />
               <Stack
                 screenOptions={{
                   headerShown: false,
@@ -840,7 +841,7 @@ export default function RootLayout() {
                   the Stack so it overlays every screen; it self-hides when the
                   celebration queue is empty. */}
               <AchievementCelebration />
-            </UpdateGate>
+            </>
           </SessionGate>
         </SafeAreaProvider>
       </GestureHandlerRootView>

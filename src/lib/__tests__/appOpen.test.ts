@@ -141,16 +141,12 @@ describe('runAppOpen', () => {
     expect(mockAppOpen).toHaveBeenCalledTimes(2);
   });
 
-  test('seeds the live card, the version gate and the buddy counts — no separate fetches', async () => {
+  test('seeds the live card and the buddy counts — no separate fetches', async () => {
     mockAppOpen.mockResolvedValue(result());
     await runAppOpen({ force: true, onSignedOut: jest.fn() });
     expect(queryClient.getQueryData(queryKeys.liveNow)).toEqual({ live: null, upcoming: [], remindedIds: [], green: null });
-    expect(queryClient.getQueryData(['appVersionGate'])).toEqual({
-      minVersion: '1.0.0',
-      downloadUrl: null,
-      latestVersion: '1.1.4',
-      latestReleasedAt: '2026-10-05',
-    });
+    // The old update-gate config the server still sends is ignored (store update prompt).
+    expect(queryClient.getQueryData(['appVersionGate'])).toBeUndefined();
     expect(queryClient.getQueryData(BUDDY_OPEN_COUNTS_KEY)).toEqual({ incoming: 1, outgoing: 0, goalInvites: 0 });
     expect(mockCancel).toHaveBeenCalledTimes(1);
   });

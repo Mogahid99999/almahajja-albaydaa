@@ -188,10 +188,6 @@ const SETTINGS_KEYS = [
   ...QNA_KEYS,
   ...SHARE_KEYS,
   ...START_HERE_KEYS,
-  'min_app_version',
-  'app_download_url',
-  'latest_app_version',
-  'latest_released_at',
   'admin_notify_email',
   // V23 P7 rollout flag: 'off' | 'staff' | 'all' (missing row = 'off', 0145).
   LIVE_ENABLED_KEY,
