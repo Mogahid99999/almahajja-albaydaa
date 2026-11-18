@@ -25,11 +25,11 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
-  TextInput,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { LIVE_COMMENT_MAX_CHARS, liveCommentLength, type LiveComment } from '@/api/liveComments';
 import { Txt } from '@/components/ui';

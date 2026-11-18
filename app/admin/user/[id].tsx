@@ -11,12 +11,12 @@ import React, { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   type KeyboardTypeOptions,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';

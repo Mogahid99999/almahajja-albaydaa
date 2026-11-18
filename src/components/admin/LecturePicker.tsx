@@ -12,10 +12,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';

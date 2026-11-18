@@ -18,11 +18,11 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { uploadAnswerAudio } from '@/api/questions';
 import { type PickedFile } from '@/api/storage';

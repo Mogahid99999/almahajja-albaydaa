@@ -14,12 +14,12 @@ import {
   Image,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   type ImageStyle,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { FEEDBACK_LINK, type Broadcast, type BroadcastTarget } from '@/api/broadcasts';
 import { AdminShell } from '@/components/admin/AdminShell';

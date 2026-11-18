@@ -16,12 +16,12 @@ import {
   PanResponder,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { AdminLectureRow } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';

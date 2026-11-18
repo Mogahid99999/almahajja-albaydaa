@@ -26,7 +26,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { useRouter } from 'expo-router';
 
 import type { Gender } from '@/api/types';

@@ -23,11 +23,11 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { RAW_MAX_BYTES, RawUploadAbortedError, RawUploadError } from '@/api/mediaJobs';
 import { AdminShell } from '@/components/admin/AdminShell';

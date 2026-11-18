@@ -17,7 +17,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, TextInput, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { LiveInboxDraft } from '@/api/liveAdmin';
 import type { SheikhOption } from '@/api/types';

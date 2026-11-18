@@ -7,7 +7,15 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 
 import type { AdminQuizRow } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
@@ -23,6 +31,9 @@ import {
 } from '@/hooks/useQuizzes';
 import { QUIZ_AVAILABILITY_META } from '@/components/quiz/quizAvailability';
 import { arNum, arQuestionCount } from '@/lib/format';
+
+/** Same breakpoint as the lectures list: below it, row buttons get their own line. */
+const ROW_COMPACT_BREAKPOINT = 640;
 
 function StatusPill({ status }: { status: 'draft' | 'published' }) {
   const published = status === 'published';
@@ -76,12 +87,22 @@ function QuizRow({
   // toggle only flips open↔closed for the always-on modes.
   const canQuickToggle = quiz.availabilityMode !== 'scheduled';
   const isClosed = quiz.availabilityMode === 'closed';
+  // On a phone the title shared one line with two pills and five buttons and
+  // shrank to «اختبار ال.» (2026-11-18): there the buttons drop to their own
+  // line and the title may take two lines — same as the lectures list.
+  const compact = useWindowDimensions().width < ROW_COMPACT_BREAKPOINT;
 
   return (
-    <View style={styles.row}>
-      <View style={{ flex: 1, gap: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Txt size={14} weight="semibold" color={colors.textInk} numberOfLines={1} style={{ flexShrink: 1 }}>
+    <View style={[styles.row, compact && styles.rowCompact]}>
+      <View style={[{ gap: 4 }, compact ? null : { flex: 1 }]}>
+        <View style={styles.titleLine}>
+          <Txt
+            size={14}
+            weight="semibold"
+            color={colors.textInk}
+            numberOfLines={compact ? 2 : 1}
+            style={{ flexShrink: 1 }}
+          >
             {quiz.title}
           </Txt>
           <StatusPill status={quiz.status} />
@@ -92,7 +113,7 @@ function QuizRow({
         </Txt>
       </View>
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, compact && styles.actionsCompact]}>
         {canQuickToggle ? (
           <Pressable
             onPress={onToggleAvailability}
@@ -229,8 +250,18 @@ export default function AdminQuizzesScreen() {
     [],
   );
 
+  // Title first (the RTL start) and the buttons after it; on a phone the buttons
+  // wrap under the title instead of covering it (2026-11-18).
   const header = (
     <View style={styles.pageHeader}>
+      <View style={styles.headerTitle}>
+        <Txt weight="display" size={27} color={colors.primaryTeal}>
+          الاختبارات
+        </Txt>
+        <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
+          {`${arNum(quizzes.length)} اختبار · تُعرض للطلاب على صفحة القسم بعد النشر`}
+        </Txt>
+      </View>
       <View style={styles.headerActions}>
         <Pressable
           onPress={() => router.push('/admin/quiz-edit' as Parameters<typeof router.push>[0])}
@@ -267,14 +298,6 @@ export default function AdminQuizzesScreen() {
               : 'بانتظار التصحيح'}
           </Txt>
         </Pressable>
-      </View>
-      <View>
-        <Txt weight="display" size={27} color={colors.primaryTeal}>
-          الاختبارات
-        </Txt>
-        <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
-          {`${arNum(quizzes.length)} اختبار · تُعرض للطلاب على صفحة القسم بعد النشر`}
-        </Txt>
       </View>
     </View>
   );
@@ -378,9 +401,17 @@ export default function AdminQuizzesScreen() {
 const styles = StyleSheet.create({
   pageHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 14,
     marginBottom: 28,
+  } as ViewStyle,
+
+  headerTitle: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 260,
   } as ViewStyle,
 
   headerActions: {
@@ -388,7 +419,23 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: 10,
-    flexShrink: 1,
+  } as ViewStyle,
+
+  titleLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  } as ViewStyle,
+
+  rowCompact: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 6,
+  } as ViewStyle,
+
+  actionsCompact: {
+    alignSelf: 'flex-end',
   } as ViewStyle,
 
   gradingBtn: {

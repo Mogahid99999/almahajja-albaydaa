@@ -11,7 +11,8 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';
 import { Card, Screen, Txt } from '@/components/ui';

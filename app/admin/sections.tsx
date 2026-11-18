@@ -13,10 +13,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { AttachmentManager } from '@/components/admin/AttachmentManager';
@@ -141,7 +141,7 @@ function SectionTreeRow({
         weight={node.depth === 0 ? 'semibold' : 'regular'}
         color={node.depth === 0 ? colors.textInk : colors.textMuted}
         style={{ flex: 1 }}
-        numberOfLines={1}
+        numberOfLines={2}
       >
         {node.title}
       </Txt>
@@ -950,8 +950,10 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   } as ViewStyle,
 
+  // A fixed 200 px left section names a few letters on a phone (2026-11-18).
   treePath: {
-    maxWidth: 200,
+    maxWidth: '30%',
+    flexShrink: 1,
     marginLeft: 6,
   } as ViewStyle,
 

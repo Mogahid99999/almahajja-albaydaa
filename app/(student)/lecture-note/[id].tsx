@@ -14,11 +14,11 @@ import {
   KeyboardAvoidingView,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { Card, IconButton, ProgressBar, RhombusEmblem, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';

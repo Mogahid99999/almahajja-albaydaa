@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type ViewStyle } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { COUNTRIES, findCountry, searchCountries } from '@/constants/countries';
 import { colors, fonts, radius, shadows } from '@/constants/theme';

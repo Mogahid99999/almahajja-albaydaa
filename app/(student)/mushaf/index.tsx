@@ -6,7 +6,8 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Keyboard, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BOTTOM_NAV_CLEARANCE } from '@/components/navigation/BottomNavBar';

@@ -15,7 +15,8 @@
  * them in the browser's local time.
  */
 import React from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { QuizAvailabilityMode } from '@/api/types';
 import { Txt } from '@/components/ui';

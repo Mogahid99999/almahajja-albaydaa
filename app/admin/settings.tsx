@@ -14,7 +14,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Alert, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';

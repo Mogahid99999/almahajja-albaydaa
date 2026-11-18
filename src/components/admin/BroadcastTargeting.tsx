@@ -19,10 +19,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { BroadcastGender } from '@/api/broadcasts';
 import { Txt } from '@/components/ui';

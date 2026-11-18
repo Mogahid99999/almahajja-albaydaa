@@ -7,7 +7,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import React from 'react';
-import { Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type {
   CertificateContentScope,

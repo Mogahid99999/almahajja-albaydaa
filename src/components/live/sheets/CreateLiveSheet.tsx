@@ -15,7 +15,8 @@
  * The RPC's own Arabic message shows on failure (e.g. another live running).
  */
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { Divider, Txt, cardRowStyle, Toggle } from '@/components/ui';
 import { colors, fonts, radius } from '@/constants/theme';

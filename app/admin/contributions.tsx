@@ -168,7 +168,7 @@ function BenefitsTab({ isAdmin }: { isAdmin: boolean }) {
               size={12}
               color={colors.primaryTeal600}
             />
-            <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1}>
+            <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1} style={{ flexShrink: 1 }}>
               {!b.lectureId
                 ? 'فائدة عامة'
                 : b.sectionTitle
@@ -301,7 +301,7 @@ function QuestionsTab({ isAdmin }: { isAdmin: boolean }) {
           {q.lectureTitle ? (
             <View style={styles.lectureChip}>
               <Feather name="headphones" size={12} color={colors.primaryTeal600} />
-              <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1}>
+              <Txt size={11.5} weight="medium" color={colors.primaryTeal600} numberOfLines={1} style={{ flexShrink: 1 }}>
                 {q.sectionTitle ? `${q.sectionTitle} ← ${q.lectureTitle}` : q.lectureTitle}
               </Txt>
             </View>
@@ -440,6 +440,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
+    // A long «section ← lecture» ran off a phone screen (2026-11-18).
+    maxWidth: '100%',
     marginTop: 10,
     paddingVertical: 4,
     paddingHorizontal: 10,

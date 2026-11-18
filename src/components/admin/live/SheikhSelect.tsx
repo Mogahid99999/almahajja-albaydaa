@@ -6,7 +6,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { Fragment, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { SheikhOption } from '@/api/types';
 import { Divider, Txt } from '@/components/ui';

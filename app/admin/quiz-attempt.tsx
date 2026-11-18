@@ -14,7 +14,8 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { AdminAttemptAnswer } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';

@@ -1,7 +1,8 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { BackHandler, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { SupportContactLink } from '@/components/SupportContactLink';
 import { CountryCodeButton } from '@/components/ui/PhoneInput';

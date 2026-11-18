@@ -16,12 +16,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { QuizAvailabilityMode, QuizQuestionInput, QuizQuestionKind } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
@@ -386,7 +386,7 @@ export default function QuizEditScreen() {
           </Txt>
 
           <View style={styles.numRow}>
-            <View style={{ flex: 1 }}>
+            <View style={styles.numField}>
               <FieldLabel>درجة النجاح</FieldLabel>
               <TextInput
                 value={passScore}
@@ -398,7 +398,7 @@ export default function QuizEditScreen() {
                 style={styles.numInput}
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={styles.numField}>
               <FieldLabel>الزمن بالدقائق</FieldLabel>
               <TextInput
                 value={timeLimitMin}
@@ -410,7 +410,7 @@ export default function QuizEditScreen() {
                 style={styles.numInput}
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={styles.numField}>
               <FieldLabel>عدد المحاولات</FieldLabel>
               <TextInput
                 value={maxAttempts}
@@ -422,7 +422,7 @@ export default function QuizEditScreen() {
                 style={styles.numInput}
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={styles.numField}>
               <FieldLabel>الترتيب</FieldLabel>
               <TextInput
                 value={order}
@@ -776,7 +776,17 @@ export default function QuizEditScreen() {
       active="quizzes"
       breadcrumb={editingId ? 'الاختبارات / تعديل اختبار' : 'الاختبارات / اختبار جديد'}
     >
+      {/* Title first (RTL start), «رجوع» after it; the description shrinks and
+          wraps instead of running off a phone screen (2026-11-18). */}
       <View style={styles.pageHeader}>
+        <View style={styles.headerTitle}>
+          <Txt weight="display" size={27} color={colors.primaryTeal}>
+            {editingId ? 'تعديل اختبار' : 'اختبار جديد'}
+          </Txt>
+          <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
+            يتعلق الاختبار بقسم رئيسي أو عنصر داخلي، ويظهر على صفحته بعد النشر
+          </Txt>
+        </View>
         <Pressable
           onPress={() => router.back()}
           style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.7 }]}
@@ -785,14 +795,6 @@ export default function QuizEditScreen() {
             رجوع
           </Txt>
         </Pressable>
-        <View>
-          <Txt weight="display" size={27} color={colors.primaryTeal}>
-            {editingId ? 'تعديل اختبار' : 'اختبار جديد'}
-          </Txt>
-          <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
-            يتعلق الاختبار بقسم رئيسي أو عنصر داخلي، ويظهر على صفحته بعد النشر
-          </Txt>
-        </View>
       </View>
 
       {content}
@@ -819,7 +821,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 12,
     marginBottom: 28,
+  } as ViewStyle,
+
+  headerTitle: {
+    flex: 1,
   } as ViewStyle,
 
   cancelBtn: {
@@ -873,9 +880,15 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   } as ViewStyle,
 
+  // Four in a row when there is room, 2 × 2 on a phone (four 90 px minimums
+  // overflowed the card there, 2026-11-18). Labels sit on one line each.
+  numField: {
+    flexGrow: 1,
+    flexBasis: 130,
+  } as ViewStyle,
+
   numInput: {
     height: 46,
-    minWidth: 90,
     backgroundColor: colors.surfaceWhite,
     borderWidth: 1.5,
     borderColor: colors.borderSand2,

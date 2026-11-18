@@ -9,7 +9,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { Schedule, ScheduleAudience, ScheduleItem } from '@/api/schedule';
 import { TreePicker } from '@/components/admin/TreePicker';
