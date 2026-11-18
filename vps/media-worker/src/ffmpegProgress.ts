@@ -18,15 +18,19 @@ export function buildTranscodeArgs(opts: {
   input: string | readonly string[];
   output: string;
   loudnorm?: boolean;
+  /** Single input only: skip the first `startSec` seconds (the listener mix's waiting room). */
+  startSec?: number;
 }): string[] {
   const inputs = typeof opts.input === 'string' ? [opts.input] : [...opts.input];
   if (inputs.length === 0) throw new Error('buildTranscodeArgs: no input');
   const encode = ['-vn', '-codec:a', 'libmp3lame', '-q:a', '9', '-ac', '1', '-ar', '22050'];
   if (inputs.length === 1) {
+    const seek = opts.startSec && opts.startSec > 0 ? ['-ss', opts.startSec.toFixed(3)] : [];
     return [
       '-hide_banner',
       '-nostats',
       '-y',
+      ...seek,
       '-i', inputs[0] as string,
       ...encode,
       ...(opts.loudnorm ? ['-af', LOUDNORM_FILTER] : []),

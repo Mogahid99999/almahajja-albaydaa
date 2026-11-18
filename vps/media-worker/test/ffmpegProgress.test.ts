@@ -84,6 +84,12 @@ describe('buildTranscodeArgs', () => {
     expect(args.slice(args.indexOf('-af'), args.indexOf('-af') + 2)).toEqual(['-af', 'loudnorm=I=-18:TP=-2']);
     expect(args.at(-1)).toBe('o.mp3');
   });
+
+  it('startSec seeks the input before decoding (the listener mix waiting room)', () => {
+    const args = buildTranscodeArgs({ input: '/m/mix.ogg', output: 'o.mp3', startSec: 289.872 });
+    expect(args.slice(3, 7)).toEqual(['-ss', '289.872', '-i', '/m/mix.ogg']);
+    expect(buildTranscodeArgs({ input: 'i', output: 'o.mp3', startSec: 0 })).not.toContain('-ss');
+  });
 });
 
 describe('buildTranscodeArgs — live recording parts (0146)', () => {

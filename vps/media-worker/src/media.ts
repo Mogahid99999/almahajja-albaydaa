@@ -14,6 +14,8 @@ export interface TranscodeOptions {
   input: string | readonly string[];
   output: string;
   loudnorm: boolean;
+  /** Single input only: start this many seconds in. */
+  startSec?: number;
   /** Probed input duration (seconds) used to turn out_time into a fraction. */
   durationSec: number | null;
   /** Called with 0..1 as ffmpeg advances (only when the duration is known). */
@@ -81,7 +83,7 @@ export function createFfmpegTools(opts: FfmpegToolsOptions = {}): MediaTools {
     transcode(t) {
       return new Promise<void>((resolve, reject) => {
         if (t.signal?.aborted) return reject(new AbortedError());
-        const args = buildTranscodeArgs({ input: t.input, output: t.output, loudnorm: t.loudnorm });
+        const args = buildTranscodeArgs({ input: t.input, output: t.output, loudnorm: t.loudnorm, startSec: t.startSec });
         const [cmd, argv] = useNice ? ['nice', ['-n', '10', ffmpeg, ...args]] : [ffmpeg, args];
         const child = spawn(cmd, argv as string[], { stdio: ['ignore', 'pipe', 'pipe'] });
         const parser = new FfmpegProgressParser(t.durationSec);

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type JobRunnerDeps, runJob } from '../src/jobRunner.js';
-import { ListenerDir, roomFromRawName, waitListenerMix } from '../src/listenerMix.js';
+import { ListenerDir, rawStartUnixMs, roomFromRawName, waitListenerMix } from '../src/listenerMix.js';
 import { RecordingsDir } from '../src/recordings.js';
 import { FakeDb, FakeMedia, FakeStorage, makeJob } from './fakes.js';
 
@@ -47,6 +47,13 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
+});
+
+describe('rawStartUnixMs', () => {
+  it('reads the egress start (UTC) from the raw name', () => {
+    expect(rawStartUnixMs('prd_9bff3b061463-2026-11-18T190008.ogg')).toBe(Date.UTC(2026, 10, 18, 19, 0, 8));
+    expect(rawStartUnixMs('prd_9bff3b061463.ogg')).toBeNull();
+  });
 });
 
 describe('roomFromRawName', () => {
@@ -128,6 +135,48 @@ describe('live lecture source', () => {
     await runJob(liveJob(), deps({ listener: undefined }));
     expect(media.transcodes[0]!.input).not.toMatch(/mix\.ogg$/);
     expect(source()).toBeUndefined();
+  });
+
+  // 2026-11-18: the recorder joined in the waiting room 4 min 50 s before «بدء»; the published
+  // lecture started with pre-live talk. The lecture now starts where the egress started.
+  const writeManifest = (baseUnixMs: number) =>
+    writeFile(join(lisDir, MIX_DIR, 'manifest.json'), JSON.stringify({ baseUnixMs, room: ROOM, tracks: [] }));
+  const EGRESS_START = Date.UTC(2026, 8, 28, 19, 0, 0); // RAW_NAME …T190000
+
+  it('skips the waiting room: the lecture starts where the egress started', async () => {
+    await writeMix();
+    await writeManifest(EGRESS_START - 290_000);
+    media.probes.set('mix.ogg', 3895); // 290 s of waiting room + 3605 s
+    await runJob(liveJob(), deps());
+    expect(media.transcodes[0]).toMatchObject({ startSec: 290, durationSec: 3605 });
+    expect(media.transcodes[0]!.input).toMatch(/mix\.ogg$/);
+    expect(source()).toMatchObject({ source: 'listener', skip_sec: 290 });
+  });
+
+  it('judges «long enough» on what is left after the waiting room', async () => {
+    await writeMix();
+    await writeManifest(EGRESS_START - 600_000);
+    media.probes.set('mix.ogg', 3700); // only 3100 s after the waiting room, egress 3600 s
+    await runJob(liveJob(), deps());
+    expect(source()).toMatchObject({ source: 'egress' });
+    expect(String(source()?.reason)).toMatch(/too short/);
+  });
+
+  it('no manifest: nothing is skipped', async () => {
+    await writeMix();
+    media.probes.set('mix.ogg', 3605);
+    await runJob(liveJob(), deps());
+    expect(media.transcodes[0]!.startSec).toBeUndefined();
+    expect(source()).toMatchObject({ source: 'listener', skip_sec: 0 });
+  });
+
+  it('a recorder that joined after the egress started: nothing is skipped', async () => {
+    await writeMix();
+    await writeManifest(EGRESS_START + 7_000); // 11-14: the egress started 7 s before the recorder
+    media.probes.set('mix.ogg', 3605);
+    await runJob(liveJob(), deps());
+    expect(media.transcodes[0]!.startSec).toBeUndefined();
+    expect(source()).toMatchObject({ source: 'listener', skip_sec: 0 });
   });
 
   it('never picks another room or env folder', async () => {

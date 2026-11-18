@@ -6,10 +6,11 @@
 // Layout written by listener-rec: <LISTENER_DIR>/<room>-<YYYYMMDDTHHMMSSZ>/ with per-track
 // .ogg files, manifest.json, then mix.ogg — written as mix.part.ogg and renamed only when
 // ffmpeg has finished, so mix.ogg present = complete. mix.failed = the mix will never come.
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export type ListenerMix = { path: string; size: number; dirName: string };
+/** `baseUnixMs`: the wall-clock moment the mix's 0 s stands for (manifest.json), when known. */
+export type ListenerMix = { path: string; size: number; dirName: string; baseUnixMs?: number };
 export type ListenerState =
   | { state: 'ready'; mix: ListenerMix }
   /** `writtenAtMs`: last write of mix.part.ogg, when ffmpeg is mixing right now. */
@@ -45,7 +46,13 @@ export class ListenerDir {
     if (await isFile(join(dir, 'mix.failed'))) return { state: 'none', reason: 'listener mix failed' };
     try {
       const st = await lstat(join(dir, 'mix.ogg'));
-      if (st.isFile() && st.size > 0) return { state: 'ready', mix: { path: join(dir, 'mix.ogg'), size: st.size, dirName } };
+      if (st.isFile() && st.size > 0) {
+        const baseUnixMs = await readBaseUnixMs(join(dir, 'manifest.json'));
+        return {
+          state: 'ready',
+          mix: { path: join(dir, 'mix.ogg'), size: st.size, dirName, ...(baseUnixMs !== null ? { baseUnixMs } : {}) },
+        };
+      }
       return { state: 'none', reason: 'mix.ogg is not a regular non-empty file' };
     } catch {
       try {
@@ -57,6 +64,37 @@ export class ListenerDir {
       return { state: 'pending' };
     }
   }
+}
+
+async function readBaseUnixMs(p: string): Promise<number | null> {
+  try {
+    const m = JSON.parse(await readFile(p, 'utf8')) as { baseUnixMs?: unknown };
+    return typeof m.baseUnixMs === 'number' && Number.isFinite(m.baseUnixMs) && m.baseUnixMs > 0 ? m.baseUnixMs : null;
+  } catch {
+    return null;
+  }
+}
+
+/** When the egress started: `prd_x-2026-11-18T190008.ogg` → 2026-11-18T19:00:08Z (UTC). */
+export function rawStartUnixMs(name: string): number | null {
+  const m = /-(\d{4})-(\d{2})-(\d{2})T(\d{2})(\d{2})(\d{2})\.ogg$/.exec(name);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m.map(Number) as number[];
+  const t = Date.UTC(y!, mo! - 1, d!, h!, mi!, s!);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * The recorder joins the room in the waiting room («غرفة الانتظار»), minutes before «بدء»
+ * (2026-11-18: 4 min 50 s, with pre-live talk). The lecture starts where the egress started,
+ * as it always has: skip the mix up to there. 0 when either moment is unknown or the offset
+ * is implausible (negative, or more than an hour).
+ */
+export function waitingRoomOffsetSec(mix: ListenerMix, rawName: string): number {
+  const egressStart = rawStartUnixMs(rawName);
+  if (mix.baseUnixMs === undefined || egressStart === null) return 0;
+  const sec = (egressStart - mix.baseUnixMs) / 1000;
+  return sec > 0 && sec <= 3600 ? sec : 0;
 }
 
 async function isFile(p: string): Promise<boolean> {

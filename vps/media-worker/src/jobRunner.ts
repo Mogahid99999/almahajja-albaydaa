@@ -38,7 +38,7 @@ import { phaseProgress } from './ffmpegProgress.js';
 import { errorMessage, type Logger, silentLogger } from './log.js';
 import type { MediaTools } from './media.js';
 import { ProgressReporter, type ProgressReporterOptions } from './progressReporter.js';
-import { type ListenerDir, type ListenerMix, roomFromRawName, waitListenerMix } from './listenerMix.js';
+import { type ListenerDir, type ListenerMix, roomFromRawName, waitingRoomOffsetSec, waitListenerMix } from './listenerMix.js';
 import type { RecordingsDir } from './recordings.js';
 import { uniqueLectureKey } from './shared/lectureKey.js';
 import type { Storage } from './storage.js';
@@ -271,6 +271,7 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
 
     // 2b. live: prefer the listener-rec mix (no egress holes); the egress raw is the fallback.
     let listenerMix: ListenerMix | null = null;
+    let listenerSkipSec = 0;
     if (isLive && deps.listener) {
       const room = roomFromRawName(raws[0]?.name ?? '');
       const st = room
@@ -286,18 +287,21 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
       if (st.state === 'ready') {
         const d = await deps.media.probeDuration(st.mix.path, signal);
         if (signal.aborted) throw new AbortedError();
-        if (d !== null && (inputDuration === null || d >= inputDuration - LISTENER_MIN_SLACK_SEC)) {
+        const skip = d !== null ? waitingRoomOffsetSec(st.mix, raws[0]?.name ?? '') : 0;
+        const usable = d !== null && skip < d ? d - skip : d;
+        if (usable !== null && (inputDuration === null || usable >= inputDuration - LISTENER_MIN_SLACK_SEC)) {
           listenerMix = st.mix;
           inputPaths = [st.mix.path];
-          inputDuration = d;
+          inputDuration = usable;
+          listenerSkipSec = skip < (d ?? 0) ? skip : 0;
         } else {
-          reason = `listener mix too short (${d ?? 'unreadable'} s, egress ${inputDuration} s)`;
+          reason = `listener mix too short (${usable ?? 'unreadable'} s, egress ${inputDuration} s)`;
         }
       }
       log(listenerMix ? 'info' : 'warn', 'job.source', {
         id: job.id,
         source: listenerMix ? 'listener' : 'egress',
-        ...(listenerMix ? { mix: listenerMix.dirName } : { reason }),
+        ...(listenerMix ? { mix: listenerMix.dirName, skip_sec: Math.round(listenerSkipSec * 10) / 10 } : { reason }),
       });
     }
 
@@ -305,6 +309,7 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
       input: inputPaths.length === 1 ? (inputPaths[0] as string) : inputPaths,
       output: outputPath,
       loudnorm: isLive && deps.liveLoudnorm,
+      ...(listenerSkipSec > 0 ? { startSec: listenerSkipSec } : {}),
       durationSec: inputDuration,
       onProgress: (f) => reporter.report(phaseProgress('transcode', f)),
       signal,
