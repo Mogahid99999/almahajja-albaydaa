@@ -6,12 +6,12 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, Switch, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import type { ScheduleItem } from '@/api/schedule';
 import { LiveSheet } from '@/components/live/sheets/LiveSheet';
 import { liveRoomHref } from '@/components/live/liveUi';
-import { Txt } from '@/components/ui';
+import { Txt, Toggle } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';
 import { ensurePermission } from '@/lib/notifications';
 import {
@@ -258,7 +258,7 @@ function ReminderRow({ itemId }: { itemId: string }) {
           {SCHEDULE_COPY.remindSub}
         </Txt>
       </View>
-      <Switch
+      <Toggle
         value={on}
         onValueChange={(v) => void toggle(v)}
         accessibilityLabel={SCHEDULE_COPY.remind}

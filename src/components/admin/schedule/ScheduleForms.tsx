@@ -9,11 +9,11 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import type { Schedule, ScheduleAudience, ScheduleItem } from '@/api/schedule';
 import { TreePicker } from '@/components/admin/TreePicker';
-import { Card, Txt } from '@/components/ui';
+import { Card, Txt, Toggle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSheikhs } from '@/hooks/useAdmin';
 import { useSaveScheduleException, useSaveScheduleItem } from '@/hooks/useSchedule';
@@ -210,7 +210,7 @@ export function ScheduleItemForm({ item, onDone }: { item: ScheduleItem | null; 
           <Txt size={13.5} weight="semibold" style={{ flex: 1 }}>
             ظاهر للطلاب
           </Txt>
-          <Switch
+          <Toggle
             value={d.isActive}
             onValueChange={(v) => set('isActive', v)}
             accessibilityLabel="ظاهر للطلاب"

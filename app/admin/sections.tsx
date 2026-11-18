@@ -13,7 +13,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   TextInput,
   View,
   type ViewStyle,
@@ -27,7 +26,7 @@ import {
 } from '@/components/admin/CertificateSettingsFields';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { TreePicker } from '@/components/admin/TreePicker';
-import { Card, Divider, Rhombus, Txt } from '@/components/ui';
+import { Card, Divider, Rhombus, Txt, Toggle } from '@/components/ui';
 import { colors, fonts, radius, shadows, spacing } from '@/constants/theme';
 import {
   useAdminLectures,
@@ -365,7 +364,7 @@ function SectionEditor({
           />
         </View>
         <View style={[styles.toggleRow, { flex: 1, marginTop: 28 }]}>
-          <Switch
+          <Toggle
             value={showHeader}
             onValueChange={setShowHeader}
             thumbColor={showHeader ? colors.primaryTeal : colors.textGhost}
@@ -716,7 +715,7 @@ export default function SectionsScreen() {
 
         {/* Show header toggle */}
         <View style={styles.toggleRow}>
-          <Switch
+          <Toggle
             value={showHeader}
             onValueChange={setShowHeader}
             thumbColor={showHeader ? colors.primaryTeal : colors.textGhost}

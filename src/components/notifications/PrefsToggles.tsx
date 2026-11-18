@@ -4,7 +4,9 @@
  * Absence of a stored pref means ON, so toggles render enabled by default. No
  * counts, no badges — just quiet on/off control (CLAUDE.md calm tone).
  */
-import { Switch, View } from 'react-native';
+import { View } from 'react-native';
+
+import { Toggle } from '@/components/ui';
 import Feather from '@expo/vector-icons/Feather';
 
 import type { NotificationType } from '@/api/types';
@@ -66,7 +68,7 @@ function ToggleRow({
         </Txt>
       </View>
 
-      <Switch
+      <Toggle
         value={enabled}
         onValueChange={onToggle}
         trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}

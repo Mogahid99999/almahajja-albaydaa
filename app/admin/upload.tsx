@@ -23,7 +23,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Switch,
   TextInput,
   View,
   useWindowDimensions,
@@ -36,7 +35,7 @@ import { AttachmentManager } from '@/components/admin/AttachmentManager';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { PublishToggle } from '@/components/admin/PublishToggle';
 import { TreePicker } from '@/components/admin/TreePicker';
-import { Card, Divider, Rhombus, Txt } from '@/components/ui';
+import { Card, Divider, Rhombus, Txt, Toggle } from '@/components/ui';
 import { colors, fonts, radius, shadows, spacing } from '@/constants/theme';
 import type { AppLectureStatus } from '@/config';
 import { useCreateLecture, useNextLectureOrder, useSheikhs } from '@/hooks/useAdmin';
@@ -1059,7 +1058,7 @@ export default function UploadScreen() {
             /* «نشر بدون إشعار» — only meaningful once the lecture has a section,
                since an unclassified lecture never notifies anyone anyway. */
             <View style={styles.switchRow}>
-              <Switch
+              <Toggle
                 value={notifyStudents}
                 onValueChange={setNotifyStudents}
                 trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}

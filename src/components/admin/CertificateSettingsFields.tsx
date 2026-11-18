@@ -7,7 +7,7 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import React from 'react';
-import { Pressable, StyleSheet, Switch, TextInput, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
 
 import type {
   CertificateContentScope,
@@ -16,7 +16,7 @@ import type {
   CertificateQuizRule,
   SaveSectionCertificateInput,
 } from '@/api/certificates';
-import { Txt } from '@/components/ui';
+import { Txt, Toggle } from '@/components/ui';
 import { colors, fonts, radius } from '@/constants/theme';
 import { arNum } from '@/lib/format';
 
@@ -136,7 +136,7 @@ export function CertificateSettingsFields({
   return (
     <View style={styles.top}>
       <View style={styles.toggleRow}>
-        <Switch
+        <Toggle
           value={value.enabled}
           onValueChange={(enabled) => set({ enabled })}
           thumbColor={value.enabled ? colors.primaryTeal : colors.textGhost}

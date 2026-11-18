@@ -16,7 +16,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Switch,
   View,
   type TextStyle,
   type ViewStyle,
@@ -27,7 +26,7 @@ import { ShellLiveMiniBar, SidebarDrawer } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ModeratorAnswerComposer } from '@/components/questions/ModeratorAnswerComposer';
 import { AnswerThread } from '@/components/questions/AnswerThread';
-import { Card, Divider, Logo, Screen, Txt } from '@/components/ui';
+import { Card, Divider, Logo, Screen, Txt, Toggle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignOut } from '@/hooks/useAuth';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
@@ -296,7 +295,7 @@ export default function SheikhInboxScreen() {
                   إشعار عند وصول سؤال جديد من طالب علم
                 </Txt>
               </View>
-              <Switch
+              <Toggle
                 value={questionAlerts}
                 onValueChange={(next) =>
                   setPref.mutate({ type: 'question_received', enabled: next })
