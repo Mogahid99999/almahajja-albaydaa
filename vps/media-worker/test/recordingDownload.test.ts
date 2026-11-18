@@ -192,6 +192,36 @@ describe('GET /recordings/:sessionId — local raw deleted → R2 backup', () =>
     expect((await noFollow(`/recordings/${OTHER}`, admin)).status).toBe(302);
   });
 
+  // 2026-11-19: the owner downloaded the raw and heard the egress holes; the download is the
+  // processed lecture once it exists.
+  it('once the lecture exists, its processed MP3 is downloaded (even while the raw is still on disk)', async () => {
+    db.sessionRaws.set(SESSION, {
+      rawPath: join(stg, 'stg_live.ogg'),
+      rawBackupKey: 'live-raw/stg_live.ogg',
+      lecture: { audioPath: 'lectures/محاضرات متنوعة/وفاة النبي.mp3', title: 'وفاة النبي' },
+    });
+    const res = await noFollow(`/recordings/${SESSION}`, admin);
+    expect(res.status).toBe(302);
+    expect(storage.presigned).toEqual([
+      {
+        key: 'lectures/محاضرات متنوعة/وفاة النبي.mp3',
+        expiresInSec: 600,
+        contentDisposition: contentDisposition('وفاة النبي.mp3'),
+        contentType: 'audio/mpeg',
+      },
+    ]);
+  });
+
+  it('a lecture key outside lectures/ is never presigned: the raw is served as before', async () => {
+    db.sessionRaws.set(OTHER, {
+      rawPath: null,
+      rawBackupKey: 'live-raw/x.ogg',
+      lecture: { audioPath: 'live-raw/other.ogg', title: 't' },
+    });
+    expect((await noFollow(`/recordings/${OTHER}`, admin)).status).toBe(302);
+    expect(storage.presigned[0]?.key).toBe('live-raw/x.ogg');
+  });
+
   it('prefers the local file while it exists (no presign)', async () => {
     expect((await noFollow(`/recordings/${SESSION}`, admin)).status).toBe(200);
     expect(storage.presigned).toEqual([]);

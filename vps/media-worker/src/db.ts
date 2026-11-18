@@ -77,6 +77,8 @@ export interface LiveSessionRaw {
   rawPath: string | null;
   /** R2 copy (live-raw/<basename>), kept forever; null when not backed up yet. */
   rawBackupKey: string | null;
+  /** The processed lecture made from this live (the download serves it first); null before it exists. */
+  lecture?: { audioPath: string; title: string } | null;
 }
 
 export interface StaffIdentity {
@@ -343,15 +345,32 @@ export function createSupabaseDb(url: string, serviceRoleKey: string): JobDb {
     async liveSessionRaw(sessionId) {
       const { data, error } = await sb
         .from('live_sessions')
-        .select('raw_path, raw_backup_key, raw_deleted_at')
+        .select('raw_path, raw_backup_key, raw_deleted_at, lecture_id')
         .eq('id', sessionId)
         .maybeSingle();
       if (error) fail('live_sessions lookup', error);
-      const row = data as { raw_path: string | null; raw_backup_key: string | null; raw_deleted_at: string | null } | null;
+      const row = data as {
+        raw_path: string | null;
+        raw_backup_key: string | null;
+        raw_deleted_at: string | null;
+        lecture_id: string | null;
+      } | null;
       if (!row) return null;
+      let lecture: LiveSessionRaw['lecture'] = null;
+      if (row.lecture_id) {
+        const { data: l, error: le } = await sb
+          .from('lectures')
+          .select('audio_path, title')
+          .eq('id', row.lecture_id)
+          .maybeSingle();
+        if (le) fail('lectures lookup', le);
+        const lec = l as { audio_path: string | null; title: string | null } | null;
+        if (lec?.audio_path) lecture = { audioPath: lec.audio_path, title: lec.title ?? '' };
+      }
       return {
         rawPath: row.raw_deleted_at ? null : (row.raw_path ?? null),
         rawBackupKey: row.raw_backup_key ?? null,
+        lecture,
       };
     },
 
