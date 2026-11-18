@@ -28,7 +28,7 @@ import { saveLectureProgress } from '@/api/progress';
 import { badgeCelebration } from '@/constants/badges';
 import { celebrate } from '@/stores/celebrationStore';
 import { queryKeys } from '@/constants/queryKeys';
-import { isOnlineSync, onReconnect } from '@/lib/connectivity';
+import { isOnlineSync, onReconnect, refreshOnline } from '@/lib/connectivity';
 import {
   findDownloadedNeighbor,
   localUriFor,
@@ -609,6 +609,7 @@ export function playPrev() {
  */
 function invalidateProgressViews() {
   void queryClient.invalidateQueries({ queryKey: queryKeys.home });
+  void queryClient.invalidateQueries({ queryKey: ['certificates'] }); // certificate progress
   if (currentSectionId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.section(currentSectionId) });
   }
@@ -1017,7 +1018,9 @@ async function loadLectureBody(lectureId: string, gen: number, opts?: LoadOpts) 
   // show the calm "needs a connection" notice immediately instead of a
   // blank/spinning player. A DOWNLOADED lecture never reaches this line — it
   // already returned via the fast path above.
-  if (!localUri && !isOnlineSync()) {
+  // The cached state can be stale after a long background (a missed "back
+  // online" event), so re-read the real state before refusing.
+  if (!localUri && !isOnlineSync() && !(await refreshOnline())) {
     throw new Error('offline and lecture not downloaded');
   }
 

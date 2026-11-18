@@ -33,6 +33,13 @@ export interface Config {
   /** API pair for livekitApiUrl (defaults to the webhook pair — `almahajja_int`, internal only). */
   livekitApiKey: string;
   livekitApiSecret: string;
+  /**
+   * listener-rec output (`/recordings/listener`, mounted read-only): when set, a live lecture is
+   * made from the listener mix and the egress raw is the fallback. null = egress only (as before).
+   */
+  listenerDir: string | null;
+  /** How long a live job waits for the listener mix after the egress ended (LISTENER_WAIT_SEC, default 900). */
+  listenerWaitMs: number;
 }
 
 export class ConfigError extends Error {
@@ -140,6 +147,15 @@ export function loadConfig(
     problems.push('LIVE_LOUDNORM must be 0 or 1');
   }
 
+  const listenerDir = get('LISTENER_DIR').replace(/\/+$/, '');
+  if (listenerDir && (!listenerDir.startsWith('/') || listenerDir.split('/').includes('..'))) {
+    problems.push('LISTENER_DIR must be an absolute path without ".."');
+  }
+  const listenerWaitSec = Number(get('LISTENER_WAIT_SEC') || '900');
+  if (!Number.isInteger(listenerWaitSec) || listenerWaitSec < 0 || listenerWaitSec > 3600) {
+    problems.push('LISTENER_WAIT_SEC must be an integer 0..3600');
+  }
+
   if (problems.length) throw new ConfigError(problems);
 
   return {
@@ -160,5 +176,7 @@ export function loadConfig(
     livekitApiUrl: livekitApiUrl ? livekitApiUrl.replace(/\/+$/, '') : null,
     livekitApiKey: get('LIVEKIT_API_KEY') || get('LIVEKIT_WEBHOOK_KEY'),
     livekitApiSecret: get('LIVEKIT_API_SECRET') || get('LIVEKIT_WEBHOOK_SECRET'),
+    listenerDir: listenerDir || null,
+    listenerWaitMs: listenerWaitSec * 1000,
   };
 }

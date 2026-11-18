@@ -12,6 +12,8 @@ module.exports = {
   setupFiles: ['<rootDir>/tests/contract/setup.ts'],
   testMatch: ['<rootDir>/tests/contract/**/*.contract.test.ts'],
   modulePathIgnorePatterns: ['<rootDir>/.claude/'],
+  // Mirror tsconfig.json's `@/*` alias so a suite can drive the real src/api code.
+  moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
   testTimeout: 30000,
   // The suites share ONE staging project: the live flag suite switches
   // app_config.live_enabled ('staff' / 'off') while it runs, which breaks any

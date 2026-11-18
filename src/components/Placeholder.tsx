@@ -10,8 +10,8 @@ import { colors } from '@/constants/theme';
 export function Placeholder({ name }: { name: string }) {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{name}</Text>
-      <Text style={styles.subtitle}>placeholder · يُبنى لاحقاً</Text>
+      <Text allowFontScaling={false} style={styles.title}>{name}</Text>
+      <Text allowFontScaling={false} style={styles.subtitle}>placeholder · يُبنى لاحقاً</Text>
     </View>
   );
 }

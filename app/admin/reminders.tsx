@@ -14,13 +14,12 @@ import {
   Image,
   Pressable,
   StyleSheet,
-  Switch,
-  TextInput,
   View,
   type ImageStyle,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { FEEDBACK_LINK, type Broadcast, type BroadcastTarget } from '@/api/broadcasts';
 import { AdminShell } from '@/components/admin/AdminShell';
@@ -30,7 +29,7 @@ import {
   type TargetingState,
 } from '@/components/admin/BroadcastTargeting';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { Card, Divider, Rhombus, Txt, cardRowStyle } from '@/components/ui';
+import { Card, Divider, Rhombus, Txt, cardRowStyle, Toggle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useAdminBroadcasts,
@@ -515,7 +514,7 @@ export default function RemindersScreen() {
         ) : null}
 
         <View style={styles.switchRow}>
-          <Switch
+          <Toggle
             value={showOnHome}
             onValueChange={setShowOnHome}
             trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}

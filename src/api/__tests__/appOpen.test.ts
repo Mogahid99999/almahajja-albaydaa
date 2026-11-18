@@ -45,8 +45,8 @@ test('maps the payload; blanks become null', () => {
     dailyReminder: true,
     hasResumable: true,
     live: { live: null },
-    version: { minVersion: '1.0.0', downloadUrl: null, latestVersion: '1.1.4', latestReleasedAt: null },
     scheduleVersion: '1791180000000',
+    profile: null,
   });
 });
 

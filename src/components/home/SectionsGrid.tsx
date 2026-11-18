@@ -8,6 +8,8 @@ import { arLectureCount } from '@/lib/format';
 import { usePrefetchSection } from '@/hooks/useSections';
 import { Card, SectionIcon, SectionTitle, Txt } from '@/components/ui';
 import { SectionStatusTag } from '@/components/section/SectionStatusTag';
+import { CertificateTag } from '@/components/certificates/CertificateTag';
+import { useCertificateCardIds } from '@/hooks/useCertificates';
 
 type Props = {
   sections: SectionCard[];
@@ -22,6 +24,7 @@ type Props = {
 export function SectionsGrid({ sections }: Props) {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const certificateIds = useCertificateCardIds();
 
   if (sections.length === 0) return null;
 
@@ -47,6 +50,7 @@ export function SectionsGrid({ sections }: Props) {
             key={section.id}
             section={section}
             width={cardWidth}
+            hasCertificate={certificateIds.has(section.id)}
             onPress={() =>
               router.push({ pathname: '/section/[id]', params: { id: section.id } })
             }
@@ -60,10 +64,12 @@ export function SectionsGrid({ sections }: Props) {
 function SectionGridCard({
   section,
   width,
+  hasCertificate,
   onPress,
 }: {
   section: SectionCard;
   width: number;
+  hasCertificate: boolean;
   onPress: () => void;
 }) {
   // Warm this section's page while it's on screen, so the tap opens instantly.
@@ -123,8 +129,9 @@ function SectionGridCard({
             {arLectureCount(section.lectureCount)}
           </Txt>
 
-          {/* «مستمر» / «منتهي» (0164) — pushed to the row's far end */}
-          <View style={{ marginStart: 'auto' }}>
+          {/* «مستمر» / «منتهي» (0164) + «شهادة إتمام» (0169) — at the row's far end */}
+          <View style={{ marginStart: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            {hasCertificate ? <CertificateTag size="sm" /> : null}
             <SectionStatusTag status={section.seriesStatus} size="sm" />
           </View>
         </View>

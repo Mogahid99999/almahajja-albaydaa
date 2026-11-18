@@ -8,9 +8,9 @@
  * Names come resolved from the room (staff see real names — D2).
  */
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Switch, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 
-import { Divider, Txt, cardRowStyle } from '@/components/ui';
+import { Divider, Txt, cardRowStyle, Toggle } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { arNum } from '@/lib/format';
 import { useLiveStore } from '@/stores/liveStore';
@@ -111,7 +111,7 @@ export function ManageSheet({
               {value ? 'يرفع المستمعون أيديهم وتصلكم طلباتهم' : LIVE_P4_COPY.requestsClosed}
             </Txt>
           </View>
-          <Switch
+          <Toggle
             value={value}
             onValueChange={(v) => void toggle(v)}
             disabled={pending !== null}

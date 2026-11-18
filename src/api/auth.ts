@@ -8,8 +8,10 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 
 import { DEMO_ACCOUNTS, USE_MOCK } from '@/config';
+import { normalizePhone, phoneLoginCandidates, toInternationalPhone } from '@/lib/phone';
 import { LAST_SESSION_KEY, supabase } from '@/lib/supabase';
 import type { Gender } from './types';
 
@@ -54,22 +56,7 @@ export type CurrentUser = {
  */
 const DEFAULT_COUNTRY_CODE = '249';
 
-/**
- * Phone is a real sign-in credential (phone+password) but is NEVER OTP-verified
- * — the project has `sms_autoconfirm` on and no SMS provider configured, so
- * whatever the user types is accepted, just reshaped into valid E.164:
- * strip everything but digits, drop a local trunk "0" prefix if present, and
- * prepend `countryCode` unless the number is already long enough to plausibly
- * carry one (or already starts with it). "0912345678", "912345678", and
- * "+249 91 234 5678" all normalize to the same "249912345678".
- */
-export function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTRY_CODE): string {
-  const digits = raw.replace(/[^0-9]/g, '');
-  if (!digits) return digits;
-  const local = digits.startsWith('0') ? digits.slice(1) : digits;
-  if (local.startsWith(countryCode) || local.length > 9) return local;
-  return countryCode + local;
-}
+export { normalizePhone };
 
 /**
  * Sync gender/name into `profiles` (SECURITY DEFINER; students may set only
@@ -116,6 +103,9 @@ const MOCK_SESSION_KEY = 'mock-auth-session';
  * instead of force-stopping. Generous enough for a slow-but-working connection.
  */
 const AUTH_OP_TIMEOUT_MS = 20_000;
+
+/** Pause before the one sign-in retry after a network failure. */
+const SIGN_IN_RETRY_DELAY_MS = 800;
 
 /**
  * Reject with a clear Arabic error if `p` hasn't settled within `ms` — used to
@@ -435,7 +425,11 @@ export async function signInAnonymously(): Promise<CurrentUser> {
  * normalized to digits and sent as `phone` (Supabase's `signInWithPassword`
  * accepts either field, mutually exclusive).
  */
-export async function signIn(identifier: string, password: string): Promise<CurrentUser> {
+export async function signIn(
+  identifier: string,
+  password: string,
+  countryCode?: string,
+): Promise<CurrentUser> {
   const raw = identifier.trim();
   const isEmail = raw.includes('@');
   const e = isEmail ? raw.toLowerCase() : '';
@@ -470,11 +464,23 @@ export async function signIn(identifier: string, password: string): Promise<Curr
   // Bounded so a stuck GoTrue lock (a stalled auto-refresh holding it) can't
   // hang «جارٍ الدخول…» forever — on timeout this rejects and the button
   // re-enables for a retry instead of forcing the user to Force Stop the app.
-  const { data, error } = await withAuthTimeout(
-    supabase.auth.signInWithPassword(
-      isEmail ? { email: e, password } : { phone: normalizePhone(raw), password },
-    ),
-  );
+  const credentials = isEmail
+    ? [{ email: e, password }]
+    : phoneLoginCandidates(raw, countryCode).map((phone) => ({ phone, password }));
+  let result = await withAuthTimeout(supabase.auth.signInWithPassword(credentials[0]));
+  // A network failure right after a long background is usually a dead pooled
+  // connection (2026-11-15): one quiet retry on a fresh one before showing
+  // «تعذّر الاتصال بالخادم».
+  if (isAuthRetryableFetchError(result.error)) {
+    await new Promise((r) => setTimeout(r, SIGN_IN_RETRY_DELAY_MS));
+    result = await withAuthTimeout(supabase.auth.signInWithPassword(credentials[0]));
+  }
+  // Only a wrong-credentials answer moves on to the next stored form.
+  for (const next of credentials.slice(1)) {
+    if (result.error?.code !== 'invalid_credentials') break;
+    result = await withAuthTimeout(supabase.auth.signInWithPassword(next));
+  }
+  const { data, error } = result;
   if (error) throw error;
   const u = data.user!;
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();
@@ -540,6 +546,41 @@ async function setRegistrationEmail(email: string): Promise<Error | null> {
   return lastErr;
 }
 
+/** International form of a number being set on this account, or a clear refusal. */
+async function checkedInternationalPhone(phone: string, countryCode: string): Promise<string> {
+  const international = toInternationalPhone(phone, countryCode);
+  if (!international) throw new Error('رقم الهاتف غير صحيح لهذه الدولة.');
+  if (USE_MOCK) return international;
+  // Best-effort for the wording: the database trigger is what enforces it.
+  const { data, error } = await supabase.rpc('phone_registration_conflict', { p_phone: international });
+  if (!error && data === true) throw new Error('هذا الرقم مسجّل في حساب آخر.');
+  return international;
+}
+
+/**
+ * register() links onto the CURRENT guest, so it needs one. When the boot guest
+ * sign-in failed on a weak connection the app opens with no session and retries
+ * only on reconnect or on return to the foreground — never while the student
+ * fills the form. updateUser then failed locally («Auth session missing!», no
+ * request) and every press showed «تعذّر إتمام العملية» (2026-11-17, 27 attempts
+ * from Khartoum in 20 minutes). Get the guest here: the device's own guest, else
+ * a fresh anonymous one. Never LAST_SESSION_KEY — it may hold a REGISTERED
+ * account, whose phone and password this registration would overwrite.
+ */
+async function ensureGuestForRegistration(): Promise<void> {
+  // A boot/foreground ensureSession already running might be about to land one.
+  if (ensureSessionInFlight) await ensureSessionInFlight.catch(() => null);
+  const { data, error } = await withAuthTimeout(supabase.auth.getSession());
+  // A stored session whose refresh failed (offline): retrying later keeps the
+  // same guest; minting a new one now would orphan its progress.
+  if (error) throw error;
+  if (data.session) return;
+  await deliberately(async () => {
+    if (await restoreGuestSession()) return;
+    await signInAnonymously();
+  });
+}
+
 export async function register(
   name: string,
   phone: string,
@@ -548,10 +589,11 @@ export async function register(
   password: string,
   gender: Gender | null,
 ): Promise<CurrentUser> {
+  if (!USE_MOCK) await ensureGuestForRegistration();
   // iOS omits phone (email is the identifier) and gender (captured later). An
   // empty phone normalizes to "" — skip the phone field entirely in that case
   // so the account is linked by email+password alone.
-  const p = phone.trim() ? normalizePhone(phone, countryCode) : '';
+  const p = phone.trim() ? await checkedInternationalPhone(phone, countryCode) : '';
   const e = email.trim().toLowerCase();
   const display = name.trim();
   if (USE_MOCK) {
@@ -908,11 +950,13 @@ export async function changePhone(phone: string, countryCode: string): Promise<C
     const raw = await AsyncStorage.getItem(MOCK_SESSION_KEY);
     const cur = raw ? (JSON.parse(raw) as CurrentUser) : null;
     if (!cur) throw new Error('لا يوجد حساب');
-    const next: CurrentUser = { ...cur, phone: normalizePhone(phone, countryCode) };
+    const next: CurrentUser = { ...cur, phone: toInternationalPhone(phone, countryCode) };
     await AsyncStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(next));
     return next;
   }
-  const { data, error } = await supabase.auth.updateUser({ phone: normalizePhone(phone, countryCode) });
+  const { data, error } = await supabase.auth.updateUser({
+    phone: await checkedInternationalPhone(phone, countryCode),
+  });
   if (error) throw error;
   const u = data.user;
   const role = (u.user_metadata?.role as AppRole) ?? fallbackRole();

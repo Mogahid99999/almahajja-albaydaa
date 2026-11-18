@@ -9,7 +9,10 @@
 import { fireEvent, render } from '@testing-library/react-native';
 
 const mockRouter = { back: jest.fn(), push: jest.fn(), replace: jest.fn(), navigate: jest.fn() };
-jest.mock('expo-router', () => ({ useRouter: () => mockRouter }));
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return { useRouter: () => mockRouter, useFocusEffect: (cb: () => void) => useEffect(cb, [cb]) };
+});
 jest.mock('@/hooks/useMiniPlayerPad', () => ({ useMiniPlayerPad: () => 0 }));
 jest.mock('@/mushaf/usage', () => ({ touchMushafUsage: jest.fn() }));
 jest.mock('@/mushaf/pack', () => {
@@ -37,6 +40,22 @@ test('typing a search keeps the same input (no remount) and shows live results',
   await fireEvent.changeText(before, '50');
   expect(getByText('الانتقال إلى الصفحة ٥٠')).toBeTruthy();
   expect(getByLabelText('اسم السورة أو رقم الصفحة')).toBe(before);
+});
+
+test('the reader’s search button opens the index with the search box focused', async () => {
+  jest.useFakeTimers();
+  try {
+    const { requestIndexSearch } = jest.requireActual('@/mushaf/open');
+    requestIndexSearch();
+    const { TextInput } = jest.requireActual('react-native');
+    const focus = jest.spyOn(TextInput.prototype, 'focus').mockImplementation(() => {});
+    await render(<MushafIndex />);
+    jest.advanceTimersByTime(400);
+    expect(focus).toHaveBeenCalled();
+    focus.mockRestore();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test('the attribution to the King Fahd Complex is at the end of the index', async () => {

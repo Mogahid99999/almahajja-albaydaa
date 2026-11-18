@@ -1,0 +1,7 @@
+{
+  "name": "elapsed-clock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monotonic time since boot, unaffected by changes to the device clock.",
+  "main": "index.ts"
+}

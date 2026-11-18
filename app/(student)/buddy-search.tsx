@@ -10,7 +10,8 @@
  * Route: /(student)/buddy-search
  */
 import { useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 

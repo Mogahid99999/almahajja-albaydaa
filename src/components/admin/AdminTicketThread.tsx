@@ -9,7 +9,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { uploadBroadcastImage } from '@/api/broadcasts';
 import { TicketImage } from '@/components/tickets/TicketImage';

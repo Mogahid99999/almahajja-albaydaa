@@ -35,3 +35,6 @@ jobs:
 
       - name: Tests
         run: npm test -- --ci
+
+      - name: OTA update server tests
+        run: npm run test:ota

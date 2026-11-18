@@ -23,11 +23,11 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';

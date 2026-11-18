@@ -18,7 +18,8 @@ jest.mock('@/lib/supabase', () => ({
     auth: {
       updateUser: (...a: unknown[]) => mockUpdateUser(...a),
       refreshSession: async () => ({ data: {}, error: null }),
-      getSession: async () => ({ data: { session: null } }),
+      // Registration runs on the device's guest session.
+      getSession: async () => ({ data: { session: { user: { is_anonymous: true } } }, error: null }),
     },
     functions: { invoke: (...a: unknown[]) => mockInvoke(...a) },
     rpc: (...a: unknown[]) => mockRpc(...a),
@@ -66,6 +67,7 @@ test('a stalled updateUser rejects with an Arabic error instead of spinning fore
 test('a failed set_own_profile is retried, so name/gender/oath still land', async () => {
   mockUpdateUser.mockResolvedValue({ data: { user }, error: null });
   mockRpc
+    .mockResolvedValueOnce({ data: false, error: null }) // phone_registration_conflict
     .mockResolvedValueOnce({ data: null, error: { message: 'Network request failed' } })
     .mockResolvedValueOnce({ data: null, error: null });
 

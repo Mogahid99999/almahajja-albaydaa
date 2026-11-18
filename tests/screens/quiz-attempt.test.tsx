@@ -1,326 +1,253 @@
 /**
- * app/(student)/quiz-attempt/[attemptId].tsx — the phase-8 defect cluster
- * (F-051 countdown freeze, F-052 spinner-forever on failed load, F-053 silent
- * submit failure, F-054 English error leakage).
+ * app/(student)/quiz-attempt/[attemptId].tsx over the real device store (0174),
+ * with the server mocked. Covers the older findings too: F-051 countdown,
+ * F-052 failed load, F-053 failed submit, F-054 no English leakage.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { onlineManager } from '@tanstack/react-query';
 import { AppState } from 'react-native';
 
-const mockRouter = { replace: jest.fn(), back: jest.fn(), push: jest.fn(), canGoBack: () => true };
-let mockSearchParams: Record<string, string> = { attemptId: 'a1' };
+import type { QuizAttemptData } from '@/api/types';
 
+const mockRouter = { replace: jest.fn(), back: jest.fn(), push: jest.fn(), canGoBack: () => true };
 jest.mock('expo-router', () => ({
   useRouter: () => mockRouter,
-  useLocalSearchParams: () => mockSearchParams,
+  useLocalSearchParams: () => ({ attemptId: 'a1' }),
 }));
 
-type AttemptData = {
-  remainingSec: number | null;
-  submittedAt: string | null;
-  questions: {
-    id: string;
-    text: string;
-    kind?: 'mcq' | 'text';
-    textAnswer?: string | null;
-    options: { id: string; text: string }[];
-    selectedOptionId: string | null;
-  }[];
-};
+const mockGetQuestions = jest.fn<Promise<QuizAttemptData>, [string]>();
+const mockFinalize = jest.fn();
+const mockSaveAnswer = jest.fn(async () => undefined);
+const mockSaveText = jest.fn(async () => undefined);
+jest.mock('@/api/quizzes', () => ({
+  getAttemptQuestions: (id: string) => mockGetQuestions(id),
+  finalizeAttempt: (...a: unknown[]) => mockFinalize(...a),
+  saveAnswer: (...a: unknown[]) => (mockSaveAnswer as (...x: unknown[]) => Promise<void>)(...a),
+  saveTextAnswer: (...a: unknown[]) => (mockSaveText as (...x: unknown[]) => Promise<void>)(...a),
+  getSessionUserId: async () => 'u1',
+}));
+jest.mock('@/api/progress', () => ({ replayActivity: jest.fn() }));
+jest.mock('@/api/bookmarks', () => ({ replayBookmark: jest.fn() }));
+jest.mock('@/api/notes', () => ({ saveMyNote: jest.fn() }));
+jest.mock('@/api/journey', () => ({ recordQuranWirdDay: jest.fn(), setWeeklyGoal: jest.fn() }));
 
-const mockAttemptQuery: { data: AttemptData | undefined; isLoading: boolean; isError: boolean } = {
-  data: undefined,
-  isLoading: false,
-  isError: false,
-};
-const mockSaveAnswer = { mutate: jest.fn(), mutateAsync: jest.fn(async () => undefined) };
-const mockSubmitAttempt = { mutate: jest.fn(), isPending: false };
-const mockSaveText = { mutateAsync: jest.fn(async (_v: unknown) => undefined) };
-
-jest.mock('@/hooks/useQuizzes', () => ({
-  useAttemptQuestions: () => mockAttemptQuery,
-  useSaveAnswer: () => mockSaveAnswer,
-  useSaveTextAnswer: () => mockSaveText,
-  useSubmitAttempt: () => mockSubmitAttempt,
+let mockOnline = true;
+jest.mock('@/lib/connectivity', () => ({ isOnline: async () => mockOnline, onReconnect: jest.fn() }));
+jest.mock('@/lib/queryClient', () => ({
+  queryClient: { invalidateQueries: jest.fn(), setQueryData: jest.fn() },
 }));
 
 import QuizAttemptScreen from '../../app/(student)/quiz-attempt/[attemptId]';
+import { flushOutbox } from '@/lib/outbox';
+import { clearQueue, loadQueue } from '@/lib/outboxQueue';
+import { getLocalAttempt, removeLocalAttempt } from '@/lib/quizAttemptStore';
 
-const twoQuestions = (): AttemptData => ({
-  remainingSec: null,
-  submittedAt: null,
-  questions: [
-    {
-      id: 'q1',
-      text: 'السؤال الأول؟',
-      options: [
-        { id: 'o1', text: 'خيار أ' },
-        { id: 'o2', text: 'خيار ب' },
-      ],
-      selectedOptionId: null,
-    },
-    {
-      id: 'q2',
-      text: 'السؤال الثاني؟',
-      options: [
-        { id: 'o3', text: 'خيار ج' },
-        { id: 'o4', text: 'خيار د' },
-      ],
-      selectedOptionId: null,
-    },
-  ],
+const OFFLINE_END = 'انتهى وقت الاختبار، وسيتم إرسال إجاباتك تلقائيًا عند عودة الاتصال.';
+
+const data = (over: Partial<QuizAttemptData> = {}): QuizAttemptData =>
+  ({
+    attemptId: 'a1',
+    quizId: 'z1',
+    quizTitle: 'اختبار',
+    timeLimitSec: null,
+    remainingSec: null,
+    submittedAt: null,
+    questions: [
+      { id: 'q1', text: 'السؤال الأول؟', kind: 'mcq', points: 1, order: 1, selectedOptionId: null, textAnswer: null, options: [{ id: 'o1', text: 'خيار أ', order: 1 }, { id: 'o2', text: 'خيار ب', order: 2 }] },
+      { id: 'q2', text: 'اشرح معنى التوحيد', kind: 'text', points: 5, order: 2, selectedOptionId: null, textAnswer: null, options: [] },
+    ],
+    ...over,
+  }) as QuizAttemptData;
+
+function setOnline(v: boolean) {
+  mockOnline = v;
+  onlineManager.setOnline(v);
+}
+
+/** Lets async storage work settle under fake timers. */
+async function settle() {
+  for (let i = 0; i < 8; i++) await act(async () => { await Promise.resolve(); });
+}
+
+beforeEach(async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date('2026-11-09T10:00:00Z'));
+  setOnline(true);
+  mockGetQuestions.mockReset();
+  mockFinalize.mockReset().mockResolvedValue({ attemptId: 'a1' });
+  mockSaveAnswer.mockClear();
+  mockSaveText.mockClear();
+  mockRouter.replace.mockClear();
+  const left = await getLocalAttempt('u1', 'a1');
+  if (left) await removeLocalAttempt(left);
+  await AsyncStorage.clear();
+  await clearQueue();
 });
 
-beforeEach(() => {
-  mockSearchParams = { attemptId: 'a1' };
-  mockAttemptQuery.data = undefined;
-  mockAttemptQuery.isLoading = false;
-  mockAttemptQuery.isError = false;
-  mockSubmitAttempt.isPending = false;
-  // clearMocks only clears calls — implementations set inside a test would
-  // otherwise leak into the next one.
-  mockSaveAnswer.mutate.mockReset();
-  mockSaveAnswer.mutateAsync.mockReset().mockResolvedValue(undefined);
-  mockSubmitAttempt.mutate.mockReset();
-  mockSaveText.mutateAsync.mockReset().mockResolvedValue(undefined);
-});
-
-/** 0166: an MCQ question followed by a written one. */
-const mixed = (textAnswer: string | null = null): AttemptData => ({
-  remainingSec: null,
-  submittedAt: null,
-  questions: [
-    { ...twoQuestions().questions[0] },
-    { id: 'q2', text: 'اشرح معنى التوحيد', kind: 'text', textAnswer, options: [], selectedOptionId: null },
-  ],
-});
-
-describe('written answers (0166)', () => {
-  test('a text question shows the multiline field (no options); typing autosaves after a pause', async () => {
-    jest.useFakeTimers();
-    try {
-      mockAttemptQuery.data = mixed();
-      const { getByText, getByPlaceholderText, queryByText } = await render(<QuizAttemptScreen />);
-      await fireEvent.press(getByText('التالي'));
-      expect(getByText('اشرح معنى التوحيد')).toBeTruthy();
-      expect(queryByText('خيار أ')).toBeNull();
-      const field = getByPlaceholderText('اكتب إجابتك هنا...');
-      await fireEvent.changeText(field, 'إفراد الله بالعبادة');
-      expect(mockSaveText.mutateAsync).not.toHaveBeenCalled(); // debounced
-      await act(() => jest.advanceTimersByTime(1_000));
-      expect(mockSaveText.mutateAsync).toHaveBeenCalledWith({
-        attemptId: 'a1',
-        questionId: 'q2',
-        text: 'إفراد الله بالعبادة',
-      });
-      expect(getByText('أجبت عن ١ من ٢')).toBeTruthy();
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  test('moving to another question saves the draft at once and keeps it on return', async () => {
-    mockAttemptQuery.data = mixed();
-    const { getByText, getByPlaceholderText, getByDisplayValue } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('التالي'));
-    await fireEvent.changeText(getByPlaceholderText('اكتب إجابتك هنا...'), 'إجابتي');
-    await fireEvent.press(getByText('السابق'));
-    expect(mockSaveText.mutateAsync).toHaveBeenCalledWith({ attemptId: 'a1', questionId: 'q2', text: 'إجابتي' });
-    await fireEvent.press(getByText('التالي'));
-    expect(getByDisplayValue('إجابتي')).toBeTruthy();
-  });
-
-  test('a saved answer is restored on resume and not re-sent', async () => {
-    mockAttemptQuery.data = mixed('محفوظة من قبل');
-    const { getByText, getByDisplayValue } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('التالي'));
-    expect(getByDisplayValue('محفوظة من قبل')).toBeTruthy();
-    await fireEvent.press(getByText('السابق'));
-    expect(mockSaveText.mutateAsync).not.toHaveBeenCalled();
-  });
-
-  test('submit sends an unsaved draft before submitting', async () => {
-    mockAttemptQuery.data = mixed();
-    const order: string[] = [];
-    mockSaveText.mutateAsync.mockImplementation(async () => {
-      order.push('save');
-    });
-    mockSubmitAttempt.mutate.mockImplementation((_id, cbs) => {
-      order.push('submit');
-      cbs.onSuccess();
-    });
-    const { getByText, getAllByText, getByPlaceholderText } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('التالي'));
-    await fireEvent.changeText(getByPlaceholderText('اكتب إجابتك هنا...'), 'آخر كلمة');
-    await fireEvent.press(getByText('تسليم الاختبار'));
-    await fireEvent.press(getAllByText('تسليم')[0]);
-    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1'));
-    expect(order).toEqual(['save', 'submit']);
-  });
-});
-
-afterEach(() => {
+afterEach(async () => {
   jest.useRealTimers();
 });
 
+async function open() {
+  const view = await render(<QuizAttemptScreen />);
+  await settle();
+  return view;
+}
+
 describe('load states (F-052)', () => {
   test('a failed load shows the calm error exit, not a forever-spinner', async () => {
-    mockAttemptQuery.isError = true;
-    const { getByText } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('العودة'));
-    expect(mockRouter.back).toHaveBeenCalled();
+    mockGetQuestions.mockRejectedValue(new Error('Network request failed'));
+    const { getByText } = await open();
     expect(getByText('تعذّر فتح المحاولة')).toBeTruthy();
   });
 
   test('an already-submitted attempt redirects straight to its result', async () => {
-    mockAttemptQuery.data = { ...twoQuestions(), submittedAt: '2026-07-15T10:00:00Z' };
-    await render(<QuizAttemptScreen />);
+    mockGetQuestions.mockResolvedValue(data({ submittedAt: '2026-07-15T10:00:00Z' }));
+    await open();
     expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1');
   });
 
   test('a quiz with no questions shows the empty state', async () => {
-    mockAttemptQuery.data = { remainingSec: null, submittedAt: null, questions: [] };
-    const { getByText } = await render(<QuizAttemptScreen />);
+    mockGetQuestions.mockResolvedValue(data({ questions: [] }));
+    const { getByText } = await open();
     expect(getByText('لا توجد أسئلة في هذا الاختبار بعد')).toBeTruthy();
   });
 });
 
-describe('answering and navigation', () => {
-  test('picking an option saves it and moves the answered counter', async () => {
-    mockAttemptQuery.data = twoQuestions();
-    const { getByText } = await render(<QuizAttemptScreen />);
+describe('answers land on the device first', () => {
+  test('a choice is on disk at once, even offline', async () => {
+    mockGetQuestions.mockResolvedValue(data());
+    const { getByText } = await open();
+    setOnline(false);
     await fireEvent.press(getByText('خيار أ'));
-    expect(mockSaveAnswer.mutate).toHaveBeenCalledWith(
-      { attemptId: 'a1', questionId: 'q1', optionId: 'o1' },
-      expect.anything(),
-    );
+    await settle();
+    expect(await AsyncStorage.getItem('quiz-offline-v1:u1:a1:answers')).toContain('"q1":"o1"');
+    expect(mockSaveAnswer).not.toHaveBeenCalled();
     expect(getByText('أجبت عن ١ من ٢')).toBeTruthy();
   });
 
-  test('a failed answer-save surfaces the server’s Arabic reason verbatim (F-054)', async () => {
-    mockAttemptQuery.data = twoQuestions();
-    mockSaveAnswer.mutate.mockImplementation((_vars, cbs) =>
-      cbs.onError(new Error('انتهى وقت الاختبار')),
-    );
-    const { getByText } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('خيار أ'));
-    expect(getByText('انتهى وقت الاختبار')).toBeTruthy();
-  });
-
-  test('English save-failure noise becomes the generic connectivity line', async () => {
-    mockAttemptQuery.data = twoQuestions();
-    mockSaveAnswer.mutate.mockImplementation((_vars, cbs) =>
-      cbs.onError(new Error('Network request failed')),
-    );
-    const { getByText } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('خيار أ'));
-    expect(
-      getByText('تعذّر حفظ الإجابة — تحقق من الاتصال، وسيُعاد الحفظ عند التسليم.'),
-    ).toBeTruthy();
-  });
-
-  test('التالي moves to the next question', async () => {
-    mockAttemptQuery.data = twoQuestions();
-    const { getByText } = await render(<QuizAttemptScreen />);
+  test('written text autosaves to disk shortly after typing', async () => {
+    mockGetQuestions.mockResolvedValue(data());
+    const { getByText, getByPlaceholderText } = await open();
     await fireEvent.press(getByText('التالي'));
-    expect(getByText('السؤال الثاني؟')).toBeTruthy();
-    expect(getByText('السؤال ٢ من ٢')).toBeTruthy();
+    await fireEvent.changeText(getByPlaceholderText('اكتب إجابتك هنا...'), 'إفراد الله بالعبادة');
+    await act(() => jest.advanceTimersByTime(400));
+    await settle();
+    expect(await AsyncStorage.getItem('quiz-offline-v1:u1:a1:answers')).toContain('إفراد الله');
+  });
+
+  test('moving away and back keeps a draft', async () => {
+    mockGetQuestions.mockResolvedValue(data());
+    const { getByText, getByPlaceholderText, getByDisplayValue } = await open();
+    await fireEvent.press(getByText('التالي'));
+    await fireEvent.changeText(getByPlaceholderText('اكتب إجابتك هنا...'), 'إجابتي');
+    await fireEvent.press(getByText('السابق'));
+    await fireEvent.press(getByText('التالي'));
+    expect(getByDisplayValue('إجابتي')).toBeTruthy();
   });
 });
 
-describe('submit (F-053)', () => {
-  test('a failed submit shows the failure banner and stays retryable', async () => {
-    mockAttemptQuery.data = twoQuestions();
-    mockSubmitAttempt.mutate.mockImplementation((_id, cbs) =>
-      cbs.onError(new Error('Network request failed')),
-    );
-    const { getByText, getAllByText } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('تسليم الاختبار')); // early-submit affordance opens the sheet
-    await fireEvent.press(getAllByText('تسليم')[0]); // confirm inside the sheet
-    await waitFor(() =>
-      expect(
-        getByText('تعذّر تسليم الاختبار — تحقق من الاتصال ثم أعد المحاولة.'),
-      ).toBeTruthy(),
-    );
-
-    // Retry is NOT locked out: a second confirm reaches the server again.
-    mockSubmitAttempt.mutate.mockImplementation((_id, cbs) => cbs.onSuccess());
-    await fireEvent.press(getByText('تسليم الاختبار'));
-    await fireEvent.press(getAllByText('تسليم')[0]);
-    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1'));
-  });
-
-  test('a successful submit navigates to the result and never double-fires', async () => {
-    mockAttemptQuery.data = twoQuestions();
-    mockSubmitAttempt.mutate.mockImplementation((_id, cbs) => cbs.onSuccess());
-    const { getByText, getAllByText } = await render(<QuizAttemptScreen />);
-    await fireEvent.press(getByText('تسليم الاختبار'));
-    await fireEvent.press(getAllByText('تسليم')[0]);
-    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1'));
-    expect(mockSubmitAttempt.mutate).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('timed countdown on the wall clock (F-051)', () => {
-  test('counts down from the server-seeded remaining seconds', async () => {
-    jest.useFakeTimers();
-    mockAttemptQuery.data = { ...twoQuestions(), remainingSec: 90 };
-    const { getByText } = await render(<QuizAttemptScreen />);
-    expect(getByText('١:٣٠')).toBeTruthy();
+describe('the countdown', () => {
+  test('counts down from the server, in mm:ss (F-051)', async () => {
+    mockGetQuestions.mockResolvedValue(data({ timeLimitSec: 120, remainingSec: 90 }));
+    const { getByText } = await open();
+    expect(getByText('٠١:٣٠')).toBeTruthy();
     await act(() => jest.advanceTimersByTime(30_000));
-    expect(getByText('١:٠٠')).toBeTruthy();
+    expect(getByText('٠١:٠٠')).toBeTruthy();
   });
 
-  test('auto-submits when the wall-clock deadline passes', async () => {
-    jest.useFakeTimers();
-    mockAttemptQuery.data = { ...twoQuestions(), remainingSec: 5 };
-    await render(<QuizAttemptScreen />);
-    expect(mockSubmitAttempt.mutate).not.toHaveBeenCalled();
-    await act(() => jest.advanceTimersByTime(6_000));
-    expect(mockSubmitAttempt.mutate).toHaveBeenCalledWith('a1', expect.anything());
+  test('reopening continues the same time instead of restarting', async () => {
+    mockGetQuestions.mockResolvedValue(data({ timeLimitSec: 600, remainingSec: 600 }));
+    const first = await open();
+    await act(() => jest.advanceTimersByTime(5_000));
+    await settle();
+    await first.unmount();
+    setOnline(false);
+    jest.setSystemTime(Date.now() + 60_000);
+    const { getByText } = await open();
+    expect(mockGetQuestions).toHaveBeenCalledTimes(1);
+    expect(getByText('٠٨:٥٥')).toBeTruthy();
   });
 
-  test('time spent "backgrounded" is charged on the first foreground tick — the F-051 regression', async () => {
-    jest.useFakeTimers();
+  test('time away is charged on return to the foreground (F-051 regression)', async () => {
     const listeners: ((s: string) => void)[] = [];
-    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, fn) => {
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_t, fn) => {
       listeners.push(fn as (s: string) => void);
       return { remove: jest.fn() } as never;
     });
-
-    mockAttemptQuery.data = { ...twoQuestions(), remainingSec: 60 };
-    await render(<QuizAttemptScreen />);
-
-    // Simulate background: the JS timer never fires, but wall time moves on
-    // past the deadline (a phone call longer than the remaining minute).
+    mockGetQuestions.mockResolvedValue(data({ timeLimitSec: 60, remainingSec: 60 }));
+    const { getByText } = await open();
+    setOnline(false);
     await act(() => {
       jest.setSystemTime(Date.now() + 120_000);
     });
-    expect(mockSubmitAttempt.mutate).not.toHaveBeenCalled();
-
-    // Foreground: the AppState tick recomputes from the wall clock and fires
-    // the auto-submit immediately (the old counter would have shown a frozen
-    // «١:٠٠» and never submitted).
     await act(() => {
       for (const fn of listeners) fn('active');
     });
-    expect(mockSubmitAttempt.mutate).toHaveBeenCalledWith('a1', expect.anything());
+    await settle();
+    expect(getByText(OFFLINE_END)).toBeTruthy();
+  });
+});
+
+describe('at zero', () => {
+  test('online: the last typed words are sent and the result opens, once', async () => {
+    mockGetQuestions.mockResolvedValue(data({ timeLimitSec: 5, remainingSec: 5 }));
+    const { getByText, getByPlaceholderText } = await open();
+    await fireEvent.press(getByText('التالي'));
+    await fireEvent.changeText(getByPlaceholderText('اكتب إجابتك هنا...'), 'آخر كلمة');
+    await act(() => jest.advanceTimersByTime(6_000));
+    await settle();
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1'));
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(mockFinalize.mock.calls[0][1]).toEqual([{ questionId: 'q2', text: 'آخر كلمة' }]);
+    expect(await AsyncStorage.getItem('quiz-offline-v1:u1:a1:meta')).toBeNull();
   });
 
-  test('a failed auto-submit retries on a later tick', async () => {
-    jest.useFakeTimers();
-    mockAttemptQuery.data = { ...twoQuestions(), remainingSec: 2 };
-    mockSubmitAttempt.mutate.mockImplementation((_id, cbs) =>
-      cbs.onError(new Error('Network request failed')),
-    );
-    await render(<QuizAttemptScreen />);
-    // The auto-submit retries on EVERY tick past the deadline while it keeps
-    // failing, so advance to exactly the deadline tick for a deterministic count.
-    await act(() => jest.advanceTimersByTime(2_000));
-    expect(mockSubmitAttempt.mutate).toHaveBeenCalledTimes(1);
+  test('offline: locks, keeps everything, delivers when the connection returns', async () => {
+    mockGetQuestions.mockResolvedValue(data({ timeLimitSec: 3, remainingSec: 3 }));
+    const { getByText, queryByText } = await open();
+    await fireEvent.press(getByText('خيار ب'));
+    setOnline(false);
+    await act(() => jest.advanceTimersByTime(4_000));
+    await settle();
+    expect(getByText(OFFLINE_END)).toBeTruthy();
+    expect(queryByText('خيار ب')).toBeNull(); // no way back into the questions
+    expect(mockFinalize).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem('quiz-offline-v1:u1:a1:answers')).toContain('"phase":"locked"');
+    expect((await loadQueue()).filter((e) => e.kind === 'quiz_submit')).toHaveLength(1);
 
-    mockSubmitAttempt.mutate.mockImplementation((_id, cbs) => cbs.onSuccess());
-    await act(() => jest.advanceTimersByTime(1_000));
-    expect(mockSubmitAttempt.mutate).toHaveBeenCalledTimes(2);
+    setOnline(true);
+    await act(async () => {
+      await flushOutbox();
+    });
+    await settle();
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(mockFinalize.mock.calls[0][1]).toEqual(expect.arrayContaining([{ questionId: 'q1', optionId: 'o2' }]));
+    expect(await AsyncStorage.getItem('quiz-offline-v1:u1:a1:meta')).toBeNull();
     expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1');
+  });
+
+  test('a failed send keeps the attempt, offers a retry, and retrying delivers (F-053)', async () => {
+    mockFinalize.mockRejectedValueOnce(new Error('Network request failed')).mockRejectedValueOnce(new Error('Network request failed'));
+    mockGetQuestions.mockResolvedValue(data());
+    const { getByText, getAllByText } = await open();
+    await fireEvent.press(getByText('تسليم الاختبار'));
+    await fireEvent.press(getAllByText('تسليم')[0]);
+    await settle();
+    await waitFor(() => expect(getByText('إعادة الإرسال')).toBeTruthy());
+    expect(await AsyncStorage.getItem('quiz-offline-v1:u1:a1:meta')).not.toBeNull();
+    await fireEvent.press(getByText('إعادة الإرسال'));
+    await settle();
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/quiz-result/a1'));
+  });
+
+  test('a quiz with no time limit shows no countdown and never locks by itself', async () => {
+    mockGetQuestions.mockResolvedValue(data());
+    const { getByText, queryByLabelText } = await open();
+    await act(() => jest.advanceTimersByTime(600_000));
+    expect(queryByLabelText('الوقت المتبقي')).toBeNull();
+    expect(getByText('السؤال الأول؟')).toBeTruthy();
+    expect(mockFinalize).not.toHaveBeenCalled();
   });
 });

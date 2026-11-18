@@ -2,6 +2,7 @@
 import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FunctionsClient, FunctionsFetchError } from '@supabase/functions-js';
 import { createClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 
@@ -127,3 +128,73 @@ supabase.auth.onAuthStateChange((_event, session) => {
     JSON.stringify({ access_token: session.access_token, refresh_token: session.refresh_token }),
   ).catch(() => {});
 });
+
+/**
+ * Edge-function calls that never wait on a stuck GoTrue lock.
+ *
+ * `supabase.functions.invoke` first awaits the auth session (GoTrue's lock).
+ * After hours in a live «مجلس» (or after the app was backgrounded) that wait
+ * can hang with no end: an admin's comments failed with «تحقّق من الشبكة»
+ * for minutes while the server was fine, until a force-restart (2026-11-13).
+ * Here the session is read with a short deadline; if GoTrue does not answer in
+ * time, the access token already stored on the device is used as long as it is
+ * still valid. The token is never refreshed behind GoTrue's back (a second
+ * rotation of the refresh token could sign the user out); an expired token
+ * with a stuck lock is reported as a transport failure.
+ */
+export const SESSION_READ_DEADLINE_MS = 4_000;
+/** A stored token must still be valid this long to be used. */
+const STORED_TOKEN_MIN_LIFE_S = 60;
+export const AUTH_STORAGE_KEY = `sb-${new URL(env.supabaseUrl).hostname.split('.')[0]}-auth-token`;
+
+async function storedAccessToken(nowMs: number): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const s = (parsed.currentSession ?? parsed) as { access_token?: unknown; expires_at?: unknown };
+    if (typeof s.access_token !== 'string' || typeof s.expires_at !== 'number') return null;
+    return s.expires_at - nowMs / 1000 > STORED_TOKEN_MIN_LIFE_S ? s.access_token : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The bearer for an edge-function call: the live session's token, the anon key
+ * when signed out, or — when GoTrue does not answer within
+ * {@link SESSION_READ_DEADLINE_MS} — the still-valid stored token. null = no
+ * usable token (stuck lock AND expired token).
+ */
+export async function functionBearer(): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const viaClient = await Promise.race([
+    supabase.auth.getSession().then(
+      (r) => ({ answered: true as const, token: r.data.session?.access_token ?? null }),
+      () => ({ answered: false as const, token: null }),
+    ),
+    new Promise<{ answered: false; token: null }>((resolve) => {
+      timer = setTimeout(() => resolve({ answered: false, token: null }), SESSION_READ_DEADLINE_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (viaClient.answered) return viaClient.token ?? env.supabaseAnonKey;
+  return storedAccessToken(Date.now());
+}
+
+/**
+ * Same contract as `supabase.functions.invoke` (`{ data, error }`, the same
+ * FunctionsHttpError / FunctionsFetchError / FunctionsRelayError), but the
+ * bearer comes from {@link functionBearer}.
+ */
+export async function invokeFunction(
+  name: string,
+  options: { body?: Record<string, unknown>; timeout?: number },
+): Promise<{ data: unknown; error: unknown }> {
+  const bearer = await functionBearer();
+  if (!bearer) return { data: null, error: new FunctionsFetchError({ reason: 'no_session' }) };
+  const client = new FunctionsClient(`${env.supabaseUrl}/functions/v1`, {
+    headers: { Authorization: `Bearer ${bearer}`, apikey: env.supabaseAnonKey },
+  });
+  return client.invoke(name, options);
+}

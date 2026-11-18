@@ -119,11 +119,11 @@ export default function AdminBuddies() {
                   style={[styles.pairRow, i > 0 && styles.pairRowBorder]}
                 >
                   <View style={styles.pairNames}>
-                    <Txt size={13.5} weight="medium" color={colors.textInk} numberOfLines={1}>
+                    <Txt size={13.5} weight="medium" color={colors.textInk} numberOfLines={1} style={{ flexShrink: 1 }}>
                       {p.aName}
                     </Txt>
                     <Feather name="repeat" size={13} color={colors.accentBrassMuted} />
-                    <Txt size={13.5} weight="medium" color={colors.textInk} numberOfLines={1}>
+                    <Txt size={13.5} weight="medium" color={colors.textInk} numberOfLines={1} style={{ flexShrink: 1 }}>
                       {p.bName}
                     </Txt>
                   </View>

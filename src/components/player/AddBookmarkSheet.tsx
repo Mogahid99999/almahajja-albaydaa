@@ -4,10 +4,10 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radius } from '@/constants/theme';

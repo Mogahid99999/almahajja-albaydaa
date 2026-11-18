@@ -43,6 +43,7 @@ const mockUpdate = { mutate: jest.fn(), isPending: false };
 let mockAdminQuiz: unknown;
 let mockIntro: unknown;
 const mockStart = { mutate: jest.fn(), isPending: false };
+let mockIntegrity: { version: number; body: string } | null = null;
 
 jest.mock('@/hooks/useQuizzes', () => ({
   useAttemptResult: () => ({ data: mockResult, isLoading: false, isError: false }),
@@ -56,6 +57,8 @@ jest.mock('@/hooks/useQuizzes', () => ({
   useAdminQuiz: () => ({ data: mockAdminQuiz }),
   useQuizIntro: () => ({ data: mockIntro, isLoading: false, isError: false }),
   useStartAttempt: () => mockStart,
+  useLocalQuizAttempt: () => ({ data: null }),
+  useQuizIntegrity: () => ({ data: mockIntegrity, isLoading: false }),
   useCreateQuiz: () => mockCreate,
   useUpdateQuiz: () => mockUpdate,
 }));
@@ -489,5 +492,37 @@ describe('editor — نوع السؤال', () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+describe('integrity statement (0175)', () => {
+  const intro = { id: 'z', title: 'اختبار', description: null, status: 'not_started', attemptsUsed: 0, availability: 'open', questionCount: 1, totalScore: 1, passScore: 1, timeLimitSec: null, maxAttempts: null, attemptsLeft: null, lastResultAttemptId: null, sectionTitle: 'قسم' };
+
+  beforeEach(() => {
+    mockParams = { id: 'z' };
+    mockIntro = intro;
+    mockStart.mutate.mockClear();
+  });
+  afterEach(() => {
+    mockIntegrity = null;
+  });
+
+  test('a quiz not required for a certificate shows no statement and starts at once', async () => {
+    await render(<QuizIntroScreen />);
+    expect(screen.queryByText('إقرار النزاهة')).toBeNull();
+    fireEvent.press(screen.getByText('ابدأ الاختبار'));
+    expect(mockStart.mutate).toHaveBeenCalledWith({ quizId: 'z', integrityVersion: undefined }, expect.anything());
+  });
+
+  test('a required quiz cannot start until the box is ticked, then sends the version', async () => {
+    mockIntegrity = { version: 1, body: 'أُقرّ بأنني سأؤدي هذا الاختبار بنفسي' };
+    await render(<QuizIntroScreen />);
+    expect(screen.getByText('إقرار النزاهة')).toBeTruthy();
+    expect(screen.getByText('أُقرّ بأنني سأؤدي هذا الاختبار بنفسي')).toBeTruthy();
+    fireEvent.press(screen.getByText('بدء الاختبار'));
+    expect(mockStart.mutate).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('أوافق على الإقرار وأتعهد بالالتزام به.'));
+    await fireEvent.press(screen.getByText('بدء الاختبار'));
+    expect(mockStart.mutate).toHaveBeenCalledWith({ quizId: 'z', integrityVersion: 1 }, expect.anything());
   });
 });

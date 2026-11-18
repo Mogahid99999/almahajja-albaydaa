@@ -17,14 +17,15 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, Switch, TextInput, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { LiveInboxDraft } from '@/api/liveAdmin';
 import type { SheikhOption } from '@/api/types';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { TreePicker } from '@/components/admin/TreePicker';
 import { rpcErrorText } from '@/components/live/liveUi';
-import { Card, Divider, Rhombus, Txt } from '@/components/ui';
+import { Card, Divider, Rhombus, Txt, Toggle } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSaveLiveLecture } from '@/hooks/useLiveAdmin';
 import { useSectionsFlat } from '@/hooks/useSections';
@@ -282,7 +283,7 @@ export function LiveDraftCard({
 
       {/* Publish */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 }}>
-        <Switch
+        <Toggle
           value={notify}
           onValueChange={setNotify}
           disabled={locked}

@@ -9,7 +9,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { LiveSheet } from '@/components/live/sheets/LiveSheet';
 import { Rhombus, Txt } from '@/components/ui';

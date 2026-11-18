@@ -16,4 +16,5 @@ export { Logo } from './Logo';
 export { Divider } from './Divider';
 export { Rhombus, ConcentricMotif, RhombusEmblem } from './Rhombus';
 export { cardRowStyle } from './cardRowStyle';
+export { Toggle } from './Toggle';
 export { SheetModal, SHEET_BACKDROP_COLOR, type SheetModalProps } from './SheetModal';

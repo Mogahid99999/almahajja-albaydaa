@@ -13,11 +13,11 @@ import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { LectureBenefit } from '@/api/benefits';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
@@ -80,6 +80,7 @@ function Composer({ lectureId }: { lectureId: string }) {
         placeholder="اكتب الفائدة هنا..."
         placeholderTextColor={colors.textGhost}
         multiline
+        maxLength={3000}
         textAlign="right"
         textAlignVertical="top"
         style={styles.composerInput}

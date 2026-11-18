@@ -17,7 +17,7 @@ import { QuizStatusPill } from '@/components/quiz/QuizStatusPill';
 import { SectionNavBar } from '@/components/section/SectionNavBar';
 import { colors, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useQuizIntro, useStartAttempt } from '@/hooks/useQuizzes';
+import { useLocalQuizAttempt, useQuizIntegrity, useQuizIntro, useStartAttempt } from '@/hooks/useQuizzes';
 import { arabicOr } from '@/lib/errorText';
 import { arAttemptCount, arDateTime, arMinuteCount, arNum, arQuestionCount } from '@/lib/format';
 
@@ -51,7 +51,47 @@ export default function QuizIntroScreen() {
   const isGuest = user?.isGuest ?? true;
   const { data: quiz, isLoading, isError } = useQuizIntro(id ?? '');
   const startAttempt = useStartAttempt();
+  const { data: localAttempt } = useLocalQuizAttempt(id ?? '');
   const [startError, setStartError] = useState('');
+  const [integrityAccepted, setIntegrityAccepted] = useState(false);
+  // A new attempt only: resuming one needs nothing new.
+  const needsStart =
+    !!quiz && !isGuest && !localAttempt && quiz.status !== 'in_progress' && quiz.status !== 'exhausted' && quiz.status !== 'pending_review';
+  const integrityQuery = useQuizIntegrity(id ?? '', needsStart);
+  const integrity = needsStart ? (integrityQuery.data ?? null) : null;
+  const integrityWaiting = needsStart && integrityQuery.isLoading;
+
+  const openAttempt = (attemptId: string) =>
+    router.push(`/quiz-attempt/${attemptId}` as Parameters<typeof router.push>[0]);
+
+  // Offline with nothing cached, yet the attempt itself is on the device (0174).
+  if (!quiz && localAttempt) {
+    return (
+      <Screen scroll={false} padded bottomPad={40 + BOTTOM_NAV_CLEARANCE}>
+        <SectionNavBar contextLabel={null} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+          <Txt size={15} weight="semibold" color={colors.textMuted} align="center" style={{ alignSelf: 'stretch' }}>
+            {localAttempt.phase === 'locked' ? 'إجاباتك محفوظة بانتظار الإرسال' : 'لديك محاولة محفوظة على جهازك'}
+          </Txt>
+          <Pressable
+            onPress={() => openAttempt(localAttempt.attemptId)}
+            accessibilityRole="button"
+            style={({ pressed }) => ({
+              paddingVertical: 12,
+              paddingHorizontal: 28,
+              borderRadius: radius.sm,
+              backgroundColor: colors.primaryTeal,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Txt weight="semibold" size={14} color={colors.onTealPrimary}>
+              {localAttempt.phase === 'locked' ? 'عرض الحالة' : 'تابع الاختبار'}
+            </Txt>
+          </Pressable>
+        </View>
+      </Screen>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -82,11 +122,11 @@ export default function QuizIntroScreen() {
     );
   }
 
-  const exhausted = quiz.status === 'exhausted';
-  const inProgress = quiz.status === 'in_progress';
+  const exhausted = quiz.status === 'exhausted' && !localAttempt;
+  const inProgress = quiz.status === 'in_progress' || !!localAttempt;
   // 0166: a submitted attempt awaits a grader — no new attempt until it is
   // graded (the server refuses too); «عرض آخر نتيجة» shows its pending state.
-  const pendingReview = quiz.status === 'pending_review';
+  const pendingReview = quiz.status === 'pending_review' && !localAttempt;
   const startBlocked = exhausted || pendingReview;
   const canViewLastResult = quiz.lastResultAttemptId != null;
 
@@ -115,8 +155,12 @@ export default function QuizIntroScreen() {
 
   const primaryLabel = startAttempt.isPending
     ? 'جارٍ التحضير...'
+    : integrity
+      ? 'بدء الاختبار'
     : inProgress
-      ? 'تابع الاختبار'
+      ? localAttempt?.phase === 'locked'
+        ? 'بانتظار الإرسال'
+        : 'تابع الاختبار'
       : pendingReview
         ? 'بانتظار التصحيح'
         : exhausted
@@ -125,9 +169,15 @@ export default function QuizIntroScreen() {
             ? 'إعادة المحاولة'
             : 'ابدأ الاختبار';
 
+  const startDisabled = startBlocked || integrityWaiting || (!!integrity && !integrityAccepted);
+
   function handleStart() {
     setStartError('');
-    startAttempt.mutate(quiz!.id, {
+    if (localAttempt) {
+      openAttempt(localAttempt.attemptId);
+      return;
+    }
+    startAttempt.mutate({ quizId: quiz!.id, integrityVersion: integrity?.version }, {
       onSuccess: (attemptId) =>
         router.push(`/quiz-attempt/${attemptId}` as Parameters<typeof router.push>[0]),
       // Server refusals are calm Arabic and surface verbatim; network noise /
@@ -289,18 +339,54 @@ export default function QuizIntroScreen() {
             </Pressable>
           </>
         ) : (
+          <>
+          {integrity ? (
+            <Card style={{ padding: 14, marginBottom: 12 }}>
+              <Txt size={15} weight="semibold" color={colors.textInk}>
+                إقرار النزاهة
+              </Txt>
+              <Txt size={13} color={colors.textMuted} style={{ lineHeight: 24, marginTop: 6 }}>
+                {integrity.body}
+              </Txt>
+              <Pressable
+                onPress={() => setIntegrityAccepted((v) => !v)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: integrityAccepted }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 5,
+                    borderWidth: 2,
+                    borderColor: integrityAccepted ? colors.primaryTeal : colors.borderSand2,
+                    backgroundColor: integrityAccepted ? colors.primaryTeal : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {integrityAccepted ? <Feather name="check" size={14} color={colors.onTealPrimary} /> : null}
+                </View>
+                <Txt size={13} weight="semibold" color={colors.textInk} style={{ flex: 1, lineHeight: 22 }}>
+                  أوافق على الإقرار وأتعهد بالالتزام به.
+                </Txt>
+              </Pressable>
+            </Card>
+          ) : null}
           <Pressable
             onPress={handleStart}
-            disabled={startBlocked || startAttempt.isPending}
+            disabled={startDisabled || startAttempt.isPending}
+            accessibilityState={{ disabled: startDisabled || startAttempt.isPending }}
             style={({ pressed }) => [
               {
-                backgroundColor: startBlocked ? colors.surfaceInset : colors.primaryTeal,
+                backgroundColor: startDisabled ? colors.surfaceInset : colors.primaryTeal,
                 height: 50,
                 borderRadius: radius.sm,
                 alignItems: 'center',
                 justifyContent: 'center',
                 opacity: pressed || startAttempt.isPending ? 0.85 : 1,
-                ...(startBlocked ? null : shadows.button),
+                ...(startDisabled ? null : shadows.button),
               },
             ]}
             accessibilityRole="button"
@@ -308,11 +394,14 @@ export default function QuizIntroScreen() {
             <Txt
               weight="semibold"
               size={15}
-              color={startBlocked ? colors.textMuted : colors.onTealPrimary}
+              color={startDisabled ? colors.textMuted : colors.onTealPrimary}
+              align="center"
+              style={{ alignSelf: 'stretch' }}
             >
               {primaryLabel}
             </Txt>
           </Pressable>
+          </>
         )}
 
         {canViewLastResult ? (

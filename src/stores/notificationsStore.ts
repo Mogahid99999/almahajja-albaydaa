@@ -15,23 +15,23 @@ type NotificationsState = {
   permission: NotificationPermission;
   /** Expo push token for this device, once resolved (null on web / simulator). */
   token: string | null;
-  /** True once we've registered the token this run (avoids re-registering). */
-  registered: boolean;
+  /** The account this run's token was registered for (avoids re-registering it). */
+  registeredUserId: string | null;
 };
 
 type NotificationsActions = {
   setPermission: (permission: NotificationPermission) => void;
   setToken: (token: string | null) => void;
-  setRegistered: (registered: boolean) => void;
+  setRegisteredUserId: (userId: string | null) => void;
 };
 
 export const useNotificationsStore = create<NotificationsState & NotificationsActions>(
   (set) => ({
     permission: 'undetermined',
     token: null,
-    registered: false,
+    registeredUserId: null,
     setPermission: (permission) => set({ permission }),
     setToken: (token) => set({ token }),
-    setRegistered: (registered) => set({ registered }),
+    setRegisteredUserId: (registeredUserId) => set({ registeredUserId }),
   }),
 );

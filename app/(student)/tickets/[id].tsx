@@ -11,7 +11,8 @@
  *
  * Route: /(student)/tickets/[id]
  */
-import { KeyboardAvoidingView, Linking, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 

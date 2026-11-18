@@ -11,7 +11,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { Card, ProgressBar, Txt } from '@/components/ui';
 import { colors, radius } from '@/constants/theme';

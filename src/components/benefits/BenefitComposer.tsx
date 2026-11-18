@@ -6,7 +6,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { Card, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
@@ -54,7 +55,7 @@ export function BenefitComposer({ onPosted }: { onPosted?: () => void }) {
         placeholder="اكتب الفائدة، ويحسن أن تنسبها إلى قائلها..."
         placeholderTextColor={colors.textGhost}
         multiline
-        maxLength={1000}
+        maxLength={3000}
         textAlign="right"
         textAlignVertical="top"
         style={styles.input}

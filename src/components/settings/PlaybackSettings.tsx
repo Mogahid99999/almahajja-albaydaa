@@ -3,7 +3,9 @@
  * lecture" (PRD §8). Persisted on-device via the settings store; read by the
  * audio controller when a lecture finishes. Same quiet styling as PrefsToggles.
  */
-import { Switch, View } from 'react-native';
+import { View } from 'react-native';
+
+import { Toggle } from '@/components/ui';
 import Feather from '@expo/vector-icons/Feather';
 
 import { colors } from '@/constants/theme';
@@ -43,7 +45,7 @@ export function PlaybackSettings() {
             </Txt>
           </View>
 
-          <Switch
+          <Toggle
             value={autoAdvance}
             onValueChange={setAutoAdvance}
             trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}

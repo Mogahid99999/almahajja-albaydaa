@@ -134,11 +134,20 @@ export async function getQuizIntro(quizId: string): Promise<QuizIntro | null> {
   };
 }
 
+/** The statement to accept before this quiz, or null when it needs none (0175). */
+export async function getQuizIntegrity(quizId: string): Promise<{ version: number; body: string } | null> {
+  if (USE_MOCK) return null;
+  const { data, error } = await supabase.rpc('get_quiz_integrity', { p_quiz_id: quizId });
+  if (error) throw error;
+  return (data ?? null) as { version: number; body: string } | null;
+}
+
 /** Start (or resume) an attempt — gates + max_attempts enforced server-side. */
-export async function startAttempt(quizId: string): Promise<string> {
+export async function startAttempt(quizId: string, integrityVersion?: number): Promise<string> {
   if (USE_MOCK) return '';
   const { data, error } = await supabase.rpc('start_quiz_attempt', {
     p_quiz_id: quizId,
+    ...(integrityVersion == null ? {} : { p_integrity_version: integrityVersion }),
   });
   if (error) throw error;
   return data as string;
@@ -203,6 +212,31 @@ export async function submitAttempt(attemptId: string): Promise<QuizResult> {
   });
   if (error) throw error;
   return data as unknown as QuizResult;
+}
+
+/**
+ * Send every answer and finish the attempt in one transaction (0174). Safe to
+ * repeat: an attempt already submitted returns its result unchanged.
+ */
+export async function finalizeAttempt(
+  attemptId: string,
+  answers: { questionId: string; optionId?: string; text?: string }[],
+  clientFinishedAt: string | null,
+): Promise<QuizResult> {
+  if (USE_MOCK) return emptyResult(attemptId);
+  const { data, error } = await supabase.rpc('finalize_quiz_attempt', {
+    p_attempt_id: attemptId,
+    p_answers: answers,
+    ...(clientFinishedAt ? { p_client_finished_at: clientFinishedAt } : {}),
+  });
+  if (error) throw error;
+  return data as unknown as QuizResult;
+}
+
+/** The signed-in account, read from the device: works with no connection. */
+export async function getSessionUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
 }
 
 /** Re-open the result of an own, already-submitted attempt. */
@@ -337,71 +371,92 @@ export async function adminGetQuiz(quizId: string): Promise<AdminQuizDetail> {
  * Diff-upsert questions/options instead of delete-and-recreate: rows that keep
  * their id survive, so existing student attempt answers (FK cascade) aren't
  * wiped by an unrelated edit.
+ *
+ * Batched (2026-11-17): the old loop sent one request per question and per
+ * option — a 20-question quiz took ~100 requests and ~55 s on the admin web.
+ * Now it is at most 7 requests whatever the quiz size: read once, delete the
+ * removed rows, then upsert existing rows and insert new ones in bulk.
  */
 async function writeQuestions(quizId: string, questions: QuizQuestionInput[]): Promise<void> {
   const { data: existing, error: exErr } = await supabase
     .from('quiz_questions')
-    .select('id')
+    .select('id, quiz_options(id)')
     .eq('quiz_id', quizId);
   if (exErr) throw exErr;
+  const rows = (existing ?? []) as { id: string; quiz_options: { id: string }[] | null }[];
+
   const keepQ = new Set(questions.filter((q) => q.id).map((q) => q.id!));
-  const removedQ = (existing ?? []).map((r) => r.id).filter((id) => !keepQ.has(id));
+  const removedQ = rows.map((r) => r.id).filter((id) => !keepQ.has(id));
+  // Options of the questions that stay, minus the ones still in the editor.
+  const keepO = new Set(questions.flatMap((q) => q.options.filter((o) => o.id).map((o) => o.id!)));
+  const removedO = rows
+    .filter((r) => keepQ.has(r.id))
+    .flatMap((r) => (r.quiz_options ?? []).map((o) => o.id))
+    .filter((id) => !keepO.has(id));
+
   if (removedQ.length > 0) {
     const { error } = await supabase.from('quiz_questions').delete().in('id', removedQ);
     if (error) throw error;
   }
+  if (removedO.length > 0) {
+    const { error } = await supabase.from('quiz_options').delete().in('id', removedO);
+    if (error) throw error;
+  }
 
+  const questionRow = (q: QuizQuestionInput) => ({
+    quiz_id: quizId,
+    text: q.text,
+    points: q.points,
+    order: q.order,
+    kind: q.kind,
+    model_answer: q.modelAnswer,
+  });
+  const kept = questions.filter((q) => q.id);
+  const added = questions.filter((q) => !q.id);
+
+  if (kept.length > 0) {
+    const { error } = await supabase
+      .from('quiz_questions')
+      .upsert(kept.map((q) => ({ id: q.id!, ...questionRow(q) })), { onConflict: 'id' });
+    if (error) throw error;
+  }
+
+  // New questions get their ids back keyed by `order`, which is unique within
+  // one save (the editor sends 0..n-1), so the result order doesn't matter.
+  const idByOrder = new Map<number, string>();
+  if (added.length > 0) {
+    const { data, error } = await supabase
+      .from('quiz_questions')
+      .insert(added.map(questionRow))
+      .select('id, order');
+    if (error || !data) throw error ?? new Error('insert questions failed');
+    for (const r of data as { id: string; order: number }[]) idByOrder.set(r.order, r.id);
+  }
+
+  const keptOptions: { id: string; question_id: string; text: string; is_correct: boolean; order: number }[] = [];
+  const newOptions: { question_id: string; text: string; is_correct: boolean; order: number }[] = [];
   for (const q of questions) {
-    let questionId = q.id ?? null;
-    if (questionId) {
-      const { error } = await supabase
-        .from('quiz_questions')
-        .update({ text: q.text, points: q.points, order: q.order, kind: q.kind, model_answer: q.modelAnswer })
-        .eq('id', questionId);
-      if (error) throw error;
-    } else {
-      const { data, error } = await supabase
-        .from('quiz_questions')
-        .insert({
-          quiz_id: quizId,
-          text: q.text,
-          points: q.points,
-          order: q.order,
-          kind: q.kind,
-          model_answer: q.modelAnswer,
-        })
-        .select('id')
-        .single();
-      if (error || !data) throw error ?? new Error('insert question failed');
-      questionId = data.id;
-    }
-
-    const { data: exOpts, error: oErr } = await supabase
-      .from('quiz_options')
-      .select('id')
-      .eq('question_id', questionId);
-    if (oErr) throw oErr;
-    const keepO = new Set(q.options.filter((o) => o.id).map((o) => o.id!));
-    const removedO = (exOpts ?? []).map((r) => r.id).filter((id) => !keepO.has(id));
-    if (removedO.length > 0) {
-      const { error } = await supabase.from('quiz_options').delete().in('id', removedO);
-      if (error) throw error;
-    }
+    const questionId = q.id ?? idByOrder.get(q.order);
+    if (!questionId) throw new Error('insert questions failed');
     for (const o of q.options) {
-      if (o.id) {
-        const { error } = await supabase
-          .from('quiz_options')
-          .update({ text: o.text, is_correct: o.isCorrect, order: o.order })
-          .eq('id', o.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('quiz_options')
-          .insert({ question_id: questionId, text: o.text, is_correct: o.isCorrect, order: o.order });
-        if (error) throw error;
-      }
+      const row = { question_id: questionId, text: o.text, is_correct: o.isCorrect, order: o.order };
+      if (o.id) keptOptions.push({ id: o.id, ...row });
+      else newOptions.push(row);
     }
   }
+  if (keptOptions.length > 0) {
+    const { error } = await supabase.from('quiz_options').upsert(keptOptions, { onConflict: 'id' });
+    if (error) throw error;
+  }
+  if (newOptions.length > 0) {
+    const { error } = await supabase.from('quiz_options').insert(newOptions);
+    if (error) throw error;
+  }
+}
+
+/** 0181: the column is written only when the publish confirmation chose. */
+function notifyColumn(input: QuizInput): { notify_on_publish?: boolean } {
+  return input.notifyOnPublish === undefined ? {} : { notify_on_publish: input.notifyOnPublish };
 }
 
 /** Admin: create a quiz with its questions. Returns the new quiz id. */
@@ -423,6 +478,7 @@ export async function createQuiz(input: QuizInput, questions: QuizQuestionInput[
       availability_mode: input.availabilityMode,
       available_from: input.availabilityMode === 'scheduled' ? input.availableFrom : null,
       available_until: input.availabilityMode === 'scheduled' ? input.availableUntil : null,
+      ...notifyColumn(input),
     })
     .select('id')
     .single();
@@ -454,6 +510,7 @@ export async function updateQuiz(
       availability_mode: input.availabilityMode,
       available_from: input.availabilityMode === 'scheduled' ? input.availableFrom : null,
       available_until: input.availabilityMode === 'scheduled' ? input.availableUntil : null,
+      ...notifyColumn(input),
     })
     .eq('id', quizId);
   if (error) throw error;
@@ -484,10 +541,18 @@ export async function deleteQuiz(quizId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Admin: flip draft/published. */
-export async function setQuizStatus(quizId: string, status: 'draft' | 'published'): Promise<void> {
+/**
+ * Admin: flip draft/published. `notifyOnPublish` (0181) comes from the publish
+ * confirmation; undefined keeps the stored choice.
+ */
+export async function setQuizStatus(
+  quizId: string,
+  status: 'draft' | 'published',
+  notifyOnPublish?: boolean,
+): Promise<void> {
   if (USE_MOCK) return;
-  const { error } = await supabase.from('quizzes').update({ status }).eq('id', quizId);
+  const patch = notifyOnPublish === undefined ? { status } : { status, notify_on_publish: notifyOnPublish };
+  const { error } = await supabase.from('quizzes').update(patch).eq('id', quizId);
   if (error) throw error;
 }
 

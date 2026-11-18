@@ -7,7 +7,9 @@
  * "draw over other apps" toggle (SYSTEM_ALERT_WINDOW can't be granted silently).
  * Same calm styling as PlaybackSettings / PrefsToggles.
  */
-import { Switch, View } from 'react-native';
+import { View } from 'react-native';
+
+import { Toggle } from '@/components/ui';
 import Feather from '@expo/vector-icons/Feather';
 
 import { colors } from '@/constants/theme';
@@ -56,7 +58,7 @@ export function BubbleConsent() {
             </Txt>
           </View>
 
-          <Switch
+          <Toggle
             value={bubbleConsent}
             onValueChange={onToggle}
             trackColor={{ false: colors.surfaceInset, true: colors.primaryTeal600 }}

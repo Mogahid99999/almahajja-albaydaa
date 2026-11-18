@@ -141,16 +141,12 @@ describe('runAppOpen', () => {
     expect(mockAppOpen).toHaveBeenCalledTimes(2);
   });
 
-  test('seeds the live card, the version gate and the buddy counts — no separate fetches', async () => {
+  test('seeds the live card and the buddy counts — no separate fetches', async () => {
     mockAppOpen.mockResolvedValue(result());
     await runAppOpen({ force: true, onSignedOut: jest.fn() });
     expect(queryClient.getQueryData(queryKeys.liveNow)).toEqual({ live: null, upcoming: [], remindedIds: [], green: null });
-    expect(queryClient.getQueryData(['appVersionGate'])).toEqual({
-      minVersion: '1.0.0',
-      downloadUrl: null,
-      latestVersion: '1.1.4',
-      latestReleasedAt: '2026-10-05',
-    });
+    // The old update-gate config the server still sends is ignored (store update prompt).
+    expect(queryClient.getQueryData(['appVersionGate'])).toBeUndefined();
     expect(queryClient.getQueryData(BUDDY_OPEN_COUNTS_KEY)).toEqual({ incoming: 1, outgoing: 0, goalInvites: 0 });
     expect(mockCancel).toHaveBeenCalledTimes(1);
   });
@@ -170,5 +166,52 @@ describe('runAppOpen', () => {
     await runAppOpen({ force: true, onSignedOut: jest.fn() });
     expect(queryClient.getQueryState(queryKeys.buddyRequests)?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(BUDDY_OPEN_COUNTS_KEY)?.isInvalidated).toBe(false);
+  });
+});
+
+describe('0178 — admin profile edits reach the cached user', () => {
+  const me = {
+    id: 'u1',
+    email: 'a@x.com',
+    phone: '249912345678',
+    role: 'student' as const,
+    isGuest: false,
+    displayName: 'الاسم القديم',
+    gender: 'male' as const,
+  };
+  const withProfile = (profile: Record<string, unknown>) =>
+    parseAppOpen({ ...RAW, profile })!;
+
+  beforeEach(() => {
+    __resetAppOpenForTests();
+    queryClient.clear();
+  });
+
+  test('an admin rename replaces the stale session name', async () => {
+    queryClient.setQueryData(queryKeys.currentUser, me);
+    mockAppOpen.mockResolvedValueOnce(
+      withProfile({ display_name: 'عبد الله أحمد', gender: 'male', role: 'student', email: 'a@x.com', phone: '249912345678' }),
+    );
+    await runAppOpen({ force: true, onSignedOut: jest.fn() });
+    expect(queryClient.getQueryData<typeof me>(queryKeys.currentUser)?.displayName).toBe('عبد الله أحمد');
+  });
+
+  test('gender / role / email edits are folded in too', () => {
+    const { mergeServerProfile } = jest.requireActual('@/lib/appOpen');
+    const p = withProfile({ display_name: 'الاسم القديم', gender: 'female', role: 'publisher', email: 'b@x.com', phone: null }).profile;
+    expect(mergeServerProfile(me, p)).toEqual({ ...me, gender: 'female', role: 'publisher', email: 'b@x.com' });
+  });
+
+  test('nothing differs → no cache write', () => {
+    const { mergeServerProfile } = jest.requireActual('@/lib/appOpen');
+    const p = withProfile({ display_name: 'الاسم القديم', gender: 'male', role: 'student', email: 'a@x.com', phone: '249912345678' }).profile;
+    expect(mergeServerProfile(me, p)).toBeNull();
+  });
+
+  test('guests, an older server (no key) and an unknown role are left alone', () => {
+    const { mergeServerProfile } = jest.requireActual('@/lib/appOpen');
+    expect(mergeServerProfile({ ...me, isGuest: true }, withProfile({ display_name: 'x' }).profile)).toBeNull();
+    expect(parseAppOpen(RAW)!.profile).toBeNull();
+    expect(mergeServerProfile(me, withProfile({ display_name: 'الاسم القديم', role: 'root' }).profile)).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { updatePassword, verifyPasswordResetCode } from '@/api/auth';
 import { Card, IconButton, Screen, Txt } from '@/components/ui';

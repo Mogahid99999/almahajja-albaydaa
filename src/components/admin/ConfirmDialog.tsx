@@ -18,6 +18,9 @@ interface ConfirmDialogProps {
   /** A red confirm button for irreversible actions (default true). */
   destructive?: boolean;
   pending?: boolean;
+  /** Optional third choice under the two buttons (e.g. «نشر بدون إشعار»). */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -30,6 +33,8 @@ export function ConfirmDialog({
   cancelLabel = 'إلغاء',
   destructive = true,
   pending = false,
+  secondaryLabel,
+  onSecondary,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -75,6 +80,18 @@ export function ConfirmDialog({
               </Txt>
             </Pressable>
           </View>
+          {secondaryLabel && onSecondary ? (
+            <Pressable
+              onPress={onSecondary}
+              disabled={pending}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.secondaryBtn, { opacity: pressed || pending ? 0.7 : 1 }]}
+            >
+              <Txt weight="semibold" size={14} color={colors.primaryTeal}>
+                {secondaryLabel}
+              </Txt>
+            </Pressable>
+          ) : null}
         </View>
       </Pressable>
     </Modal>
@@ -132,6 +149,17 @@ const styles = StyleSheet.create({
 
   confirmBtnDanger: {
     backgroundColor: colors.stateDanger,
+  } as ViewStyle,
+
+  secondaryBtn: {
+    marginTop: 10,
+    alignSelf: 'stretch',
+    height: 44,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.primaryTeal,
+    alignItems: 'center',
+    justifyContent: 'center',
   } as ViewStyle,
 
   cancelBtn: {

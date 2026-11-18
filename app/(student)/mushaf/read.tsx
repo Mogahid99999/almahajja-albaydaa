@@ -24,6 +24,7 @@ import { MushafPager } from '@/components/mushaf/MushafPager';
 import { TextSizeIcon } from '@/components/mushaf/TextSizeIcon';
 import { Txt } from '@/components/ui';
 import { colors } from '@/constants/theme';
+import { requestIndexSearch } from '@/mushaf/open';
 import { activePackUri, cachedGlyphIndex, initPack, loadGlyphIndex, usePackStore, type GlyphIndex } from '@/mushaf/pack';
 import { ar, clampPage, pageInfo } from '@/mushaf/quran';
 import { FONT_LEVELS, useMushafStore } from '@/mushaf/store';
@@ -33,6 +34,7 @@ import { useWirdReading } from '@/mushaf/useWirdReading';
 import { useWirdToday } from '@/mushaf/useWirdToday';
 
 const CHROME_MS = 3500;
+const TOOLBAR_H = 52;
 
 export default function MushafReader() {
   const router = useRouter();
@@ -90,6 +92,10 @@ export default function MushafReader() {
   }, [printReady]);
 
   const mode: MushafMode = level > 0 ? 'flex' : printReady && glyphs ? 'print' : 'simple';
+  // The fixed page carries its own sura | juz strip and page number, and its
+  // tools sit in a quiet bar ABOVE the sheet (never over it). The enlarged
+  // reading keeps the floating, self-hiding chrome.
+  const fixed = mode !== 'flex';
 
   // On Android a touch on the reading bar ALSO reaches the page's native Tap
   // gesture underneath, which then hid the bar (and closed the font panel)
@@ -106,6 +112,10 @@ export default function MushafReader() {
     if (prev?.name === 'mushaf/index') router.back();
     else router.replace('/mushaf');
   };
+  const openSearch = () => {
+    requestIndexSearch();
+    openIndex();
+  };
   const onChromeTouch = () => {
     chromeTouchAt.current = Date.now();
   };
@@ -113,12 +123,12 @@ export default function MushafReader() {
     setChrome(on);
     if (!on) setFsOpen(false);
   }, []);
-  // Auto-hide while the font panel is closed.
+  // Auto-hide while the font panel is closed (enlarged reading only).
   useEffect(() => {
-    if (!chrome || fsOpen) return;
+    if (fixed || !chrome || fsOpen) return;
     const t = setTimeout(() => setChrome(false), CHROME_MS);
     return () => clearTimeout(t);
-  }, [chrome, fsOpen, page]);
+  }, [fixed, chrome, fsOpen, page]);
 
   useEffect(() => {
     if (!toast) return;
@@ -139,6 +149,7 @@ export default function MushafReader() {
   const marked = bookmarks.includes(page);
   const ready = fontsOk && !!text;
   const top = insets.top;
+  const pagerH = fixed ? height - top - TOOLBAR_H - insets.bottom : height - top;
 
   const renderPage = useCallback(
     (p: number) =>
@@ -151,11 +162,49 @@ export default function MushafReader() {
           glyphs={glyphs}
           packUri={activePackUri()}
           width={width}
-          height={height - top}
+          height={pagerH}
         />
       ) : null,
-    [text, mode, level, glyphs, width, height, top],
+    [text, mode, level, glyphs, width, pagerH],
   );
+
+  const bookmarkButton = (
+    <Pressable
+      onPress={() => {
+        const on = toggleBookmark(page);
+        setToast(on ? `وُضعت علامة على الصفحة ${ar(page)}` : 'أُزيلت العلامة');
+        showChrome(true);
+      }}
+      accessibilityLabel={marked ? 'إزالة العلامة' : 'وضع علامة'}
+      accessibilityState={{ selected: marked }}
+      hitSlop={6}
+      style={fixed ? styles.tb : styles.ib}
+    >
+      <Feather name="bookmark" size={fixed ? 18 : 19} color={marked ? colors.accentBrass : colors.accentBrassMuted} />
+      {marked ? <View style={styles.bmDot} /> : null}
+    </Pressable>
+  );
+  const fontButton = (
+    <Pressable
+      onPress={() => {
+        setFsOpen((o) => !o);
+        setChrome(true);
+      }}
+      accessibilityLabel="حجم الخط"
+      accessibilityState={{ expanded: fsOpen }}
+      hitSlop={6}
+      style={[fixed ? styles.tb : styles.ib, fsOpen && styles.ibOn]}
+    >
+      <TextSizeIcon color={colors.primaryTeal} />
+    </Pressable>
+  );
+  const wirdLine =
+    wird.goal != null ? (
+      <Txt size={10.5} weight="semibold" color={wird.done ? colors.stateSuccess : colors.accentBrassMuted}>
+        {/* «من», not «·» or «/»: beside Arabic digits a dot reads as a zero (١٠). */}
+        {wird.done ? 'ورد اليوم: أتممته' : `ورد اليوم: ${ar(Math.min(wird.count, wird.goal))} من ${ar(wird.goal)}`}
+      </Txt>
+    ) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: MUSHAF_PAPER, paddingTop: top }}>
@@ -169,28 +218,46 @@ export default function MushafReader() {
           )}
         </View>
       ) : (
-        <MushafPager
-          page={page}
-          width={width}
-          height={height - top}
-          strictHorizontal={mode === 'flex'}
-          onPageChange={(p) => {
-            setPage(p);
-            if (!hintSeen) setHintSeen();
-          }}
-          onTurnStart={() => {
-            if (chrome) showChrome(false);
-          }}
-          onTap={() => {
-            if (Date.now() - chromeTouchAt.current < 600) return;
-            showChrome(!chrome);
-          }}
-          renderPage={renderPage}
-        />
+        <>
+          {fixed ? (
+            <View style={styles.toolbar} onTouchStart={onChromeTouch}>
+              {/* RTL: the first two sit on the right. */}
+              <Pressable onPress={openIndex} accessibilityLabel="الفهرس" hitSlop={6} style={styles.tb}>
+                <Feather name="list" size={18} color={colors.primaryTeal} />
+              </Pressable>
+              <Pressable onPress={openSearch} accessibilityLabel="البحث في المصحف" hitSlop={6} style={styles.tb}>
+                <Feather name="search" size={17} color={colors.primaryTeal} />
+              </Pressable>
+              <View style={{ flex: 1, alignItems: 'center' }}>{wirdLine}</View>
+              {fontButton}
+              {bookmarkButton}
+            </View>
+          ) : null}
+          <MushafPager
+            page={page}
+            width={width}
+            height={pagerH}
+            strictHorizontal={mode === 'flex'}
+            onPageChange={(p) => {
+              setPage(p);
+              if (!hintSeen) setHintSeen();
+            }}
+            onTurnStart={() => {
+              if (fixed) setFsOpen(false);
+              else if (chrome) showChrome(false);
+            }}
+            onTap={() => {
+              if (Date.now() - chromeTouchAt.current < 600) return;
+              if (fixed) setFsOpen(false);
+              else showChrome(!chrome);
+            }}
+            renderPage={renderPage}
+          />
+        </>
       )}
 
-      {/* Quiet reading chrome */}
-      {chrome ? (
+      {/* Quiet reading chrome (enlarged reading) */}
+      {!fixed && chrome ? (
         <View
           style={[styles.bar, { top }]}
           onTouchStart={onChromeTouch}
@@ -206,46 +273,15 @@ export default function MushafReader() {
             <Txt size={10.5} color={colors.textGhost}>
               الجزء {ar(info.juz)} · صفحة {ar(page)}
             </Txt>
-            {wird.goal != null ? (
-              <Txt size={10.5} weight="semibold" color={wird.done ? colors.stateSuccess : colors.accentBrassMuted}>
-                {/* «من», not «·» or «/»: beside Arabic digits a dot reads as a zero (١٠). */}
-                {wird.done
-                  ? 'ورد اليوم: أتممته'
-                  : `ورد اليوم: ${ar(Math.min(wird.count, wird.goal))} من ${ar(wird.goal)}`}
-              </Txt>
-            ) : null}
+            {wirdLine}
           </View>
-          <Pressable
-            onPress={() => {
-              setFsOpen((o) => !o);
-              setChrome(true);
-            }}
-            accessibilityLabel="حجم الخط"
-            accessibilityState={{ expanded: fsOpen }}
-            hitSlop={6}
-            style={[styles.ib, fsOpen && styles.ibOn]}
-          >
-            <TextSizeIcon color={colors.primaryTeal} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              const on = toggleBookmark(page);
-              setToast(on ? `وُضعت علامة على الصفحة ${ar(page)}` : 'أُزيلت العلامة');
-              showChrome(true);
-            }}
-            accessibilityLabel={marked ? 'إزالة العلامة' : 'وضع علامة'}
-            accessibilityState={{ selected: marked }}
-            hitSlop={6}
-            style={styles.ib}
-          >
-            <Feather name="bookmark" size={19} color={marked ? colors.accentBrass : colors.accentBrassMuted} />
-            {marked ? <View style={styles.bmDot} /> : null}
-          </Pressable>
+          {fontButton}
+          {bookmarkButton}
         </View>
       ) : null}
 
-      {chrome && fsOpen ? (
-        <View style={[styles.fsPanel, { top: top + barH + 6 }]} onTouchStart={onChromeTouch}>
+      {fsOpen && (fixed || chrome) ? (
+        <View style={[styles.fsPanel, { top: top + (fixed ? TOOLBAR_H : barH) + 6 }]} onTouchStart={onChromeTouch}>
           <View style={styles.fsRow}>
             <Pressable
               onPress={() => setLevel(level - 1)}
@@ -304,11 +340,13 @@ export default function MushafReader() {
         </Pressable>
       ) : null}
 
-      <View pointerEvents="none" style={[styles.foot, { bottom: insets.bottom + 10 }]}>
-        <Txt size={10.5} color={colors.textFaint}>{info.suraName}</Txt>
-        <Txt size={12} weight="semibold" color={colors.textSlate}>{ar(page)}</Txt>
-        <Txt size={10.5} color={colors.textFaint}>الجزء {ar(info.juz)}</Txt>
-      </View>
+      {fixed ? null : (
+        <View pointerEvents="none" style={[styles.foot, { bottom: insets.bottom + 10 }]}>
+          <Txt size={10.5} color={colors.textFaint}>{info.suraName}</Txt>
+          <Txt size={12} weight="semibold" color={colors.textSlate}>{ar(page)}</Txt>
+          <Txt size={10.5} color={colors.textFaint}>الجزء {ar(info.juz)}</Txt>
+        </View>
+      )}
 
       {ready && !hintSeen && !fsOpen ? (
         <View pointerEvents="none" style={[styles.hint, { bottom: insets.bottom + 64 }]}>
@@ -368,6 +406,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceCard,
   },
   ibOn: { backgroundColor: colors.surfaceInset },
+  toolbar: {
+    height: TOOLBAR_H,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  // Quieter than the floating bar's buttons: no fill, a hairline only.
+  tb: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderSand2,
+    backgroundColor: 'rgba(252,248,238,0.6)',
+  },
   bmDot: { position: 'absolute', top: 7, right: 8, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentBrass },
   fsPanel: {
     position: 'absolute',

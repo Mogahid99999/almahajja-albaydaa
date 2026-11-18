@@ -3,8 +3,9 @@
  *
  * Edits the world-readable app_config keys through the admin-only DEFINER
  * set_app_config: the «عن المنصة» paragraphs, the Telegram live-broadcast
- * intro/link, and (with a loud caution) the V4 update gate. Saving one field at
- * a time keeps each write independent.
+ * intro/link and the rest. Saving one field at a time keeps each write
+ * independent. The version fields (min / latest app version) are gone: the app
+ * now learns of a new store version by itself (store update prompt, 2026-11-18).
  *
  * V23 P7: the in-app «البث المباشر» rollout flag (app_config.live_enabled —
  * «متوقف» / «للمشرفين فقط» / «للجميع», migration 0145). One tap saves it through
@@ -14,7 +15,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Alert, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { AdminShell } from '@/components/admin/AdminShell';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
@@ -90,16 +92,6 @@ const REPORTS_FIELDS: FieldDef[] = [
     label: 'البريد الإلكتروني لإشعارات البلاغات (يُترك فارغاً لتعطيل التنبيه بالبريد)',
     placeholder: 'admin@example.com',
   },
-];
-
-const APP_FIELDS: FieldDef[] = [
-  { key: 'min_app_version', label: 'أدنى إصدار مدعوم', placeholder: '1.0.0' },
-  { key: 'app_download_url', label: 'رابط تنزيل التحديث', placeholder: 'https://...' },
-];
-
-const RELEASE_FIELDS: FieldDef[] = [
-  { key: 'latest_app_version', label: 'أحدث إصدار منشور', placeholder: '1.1.0' },
-  { key: 'latest_released_at', label: 'تاريخ إصدار آخر تحديث (YYYY-MM-DD)', placeholder: '2026-07-06' },
 ];
 
 const LIVE_LEVELS: { level: LiveEnabledLevel; label: string; hint: string }[] = [
@@ -229,8 +221,6 @@ export default function AdminSettings() {
       ...START_HERE_FIELDS,
       ...QNA_FIELDS,
       ...REPORTS_FIELDS,
-      ...APP_FIELDS,
-      ...RELEASE_FIELDS,
     ];
     const next: Record<string, string> = {};
     for (const f of all) next[f.key] = config[f.key] ?? f.fallback ?? '';
@@ -380,27 +370,7 @@ export default function AdminSettings() {
       <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
         إشعارات البلاغات
       </Txt>
-      <Card style={{ gap: 18 }}>{renderFields(REPORTS_FIELDS)}</Card>
-
-      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
-        إعدادات التطبيق
-      </Txt>
-      <View style={styles.caution}>
-        <Feather name="alert-triangle" size={14} color={colors.accentBrassMuted} />
-        <Txt size={12} color={colors.textMuted} style={{ flex: 1 }}>
-          لا ترفع «أدنى إصدار مدعوم» فوق إصدار التطبيق المثبَّت لدى المستخدمين، فسيُقفل الدخول عليهم جميعًا.
-        </Txt>
-      </View>
-      <Card style={{ gap: 18 }}>{renderFields(APP_FIELDS)}</Card>
-
-      <Txt weight="semibold" size={15} color={colors.textInk} style={styles.heading}>
-        تتبّع الإصدار الأخير
-      </Txt>
-      <Txt size={12} color={colors.textMuted} style={{ marginBottom: 12 }}>
-        عند رفع بناء جديد، سجّل رقم إصداره وتاريخه هنا. سيظهر إشعار لطيف للمستخدمين على
-        إصدار أقدم، ثم يُطلب منهم التحديث تلقائيًا إن مرّت 30 يومًا دون أن يحدّثوا.
-      </Txt>
-      <Card style={{ gap: 18, marginBottom: 24 }}>{renderFields(RELEASE_FIELDS)}</Card>
+      <Card style={{ gap: 18, marginBottom: 24 }}>{renderFields(REPORTS_FIELDS)}</Card>
     </AdminShell>
   );
 }
@@ -416,16 +386,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     padding: 12,
     marginBottom: 8,
-  } as ViewStyle,
-
-  caution: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(201,164,99,0.12)',
-    borderRadius: radius.sm,
-    padding: 12,
-    marginBottom: 12,
   } as ViewStyle,
 
   input: {

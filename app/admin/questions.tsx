@@ -90,6 +90,17 @@ function QuestionCard({
   const [composing, setComposing] = useState(false);
   const [revealedName, setRevealedName] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // Hiding removes the question from every student — confirm first (showing
+  // it again stays one tap).
+  const [confirmHide, setConfirmHide] = useState(false);
+  const applyHidden = (hidden: boolean) =>
+    setHidden.mutate(
+      { questionId: q.id, hidden },
+      {
+        onError: (e) => setError(staffErrorText(e, 'تعذّر تغيير الحالة')),
+        onSettled: () => setConfirmHide(false),
+      },
+    );
 
   const onReveal = () => {
     setError('');
@@ -228,12 +239,7 @@ function QuestionCard({
           </Pressable>
 
           <Pressable
-            onPress={() =>
-              setHidden.mutate(
-                { questionId: q.id, hidden: !isHidden },
-                { onError: (e) => setError(staffErrorText(e, 'تعذّر تغيير الحالة')) },
-              )
-            }
+            onPress={() => (isHidden ? applyHidden(false) : setConfirmHide(true))}
             disabled={setHidden.isPending}
             style={({ pressed }) => [styles.iconTextBtn, pressed && { opacity: 0.7 }]}
           >
@@ -285,6 +291,16 @@ function QuestionCard({
           </Pressable>
         </View>
       )}
+      <ConfirmDialog
+        visible={confirmHide}
+        title="إخفاء السؤال؟"
+        message="سيختفي هذا السؤال وإجابته عن جميع الدارسين. يمكنك إظهاره لاحقًا من «المخفية»."
+        confirmLabel="إخفاء"
+        cancelLabel="تراجع"
+        pending={setHidden.isPending}
+        onConfirm={() => applyHidden(true)}
+        onCancel={() => setConfirmHide(false)}
+      />
     </Card>
   );
 }

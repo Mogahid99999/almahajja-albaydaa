@@ -1487,6 +1487,7 @@ export type Database = {
           description: string | null
           id: string
           max_attempts: number | null
+          notify_on_publish: boolean
           order: number
           pass_score: number
           section_id: string
@@ -1505,6 +1506,7 @@ export type Database = {
           description?: string | null
           id?: string
           max_attempts?: number | null
+          notify_on_publish?: boolean
           order?: number
           pass_score?: number
           section_id: string
@@ -1523,6 +1525,7 @@ export type Database = {
           description?: string | null
           id?: string
           max_attempts?: number | null
+          notify_on_publish?: boolean
           order?: number
           pass_score?: number
           section_id?: string
@@ -2878,6 +2881,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      phone_registration_conflict: { Args: { p_phone: string }; Returns: boolean }
+      get_quiz_integrity: { Args: { p_quiz_id: string }; Returns: Json }
+      finalize_quiz_attempt: {
+        Args: {
+          p_answers: Json
+          p_attempt_id: string
+          p_client_finished_at?: string
+        }
+        Returns: Json
+      }
       save_quiz_text_answer: {
         Args: {
           p_attempt_id: string
@@ -2967,7 +2980,7 @@ export type Database = {
         Returns: undefined
       }
       settle_buddy_goals: { Args: never; Returns: number }
-      start_quiz_attempt: { Args: { p_quiz_id: string }; Returns: string }
+      start_quiz_attempt: { Args: { p_quiz_id: string; p_integrity_version?: number }; Returns: string }
       start_restore_session: { Args: { p_file_name?: string }; Returns: string }
       streak_for_user: {
         Args: { p_today?: string; p_user_id: string }

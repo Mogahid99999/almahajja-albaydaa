@@ -11,6 +11,8 @@ import { SectionStatusTag } from '@/components/section/SectionStatusTag';
 
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
 jest.mock('@/hooks/useSections', () => ({ usePrefetchSection: () => () => {} }));
+const mockCertificateIds = { current: new Set<string>() };
+jest.mock('@/hooks/useCertificates', () => ({ useCertificateCardIds: () => mockCertificateIds.current }));
 
 const card = (id: string, title: string, seriesStatus: SectionCard['seriesStatus']): SectionCard => ({
   id,
@@ -44,4 +46,15 @@ test('an unset status renders nothing', async () => {
   await render(<SectionStatusTag status={null} />);
   expect(screen.queryByText('مستمر')).toBeNull();
   expect(screen.queryByText('منتهي')).toBeNull();
+});
+
+test('«شهادة إتمام» marks only the cards with a certificate, own or inside (0169)', async () => {
+  mockCertificateIds.current = new Set(['b']);
+  await render(<SectionsGrid sections={cards} />);
+  expect(screen.getAllByLabelText('في هذا القسم شهادة إتمام')).toHaveLength(1);
+  await render(<SubsectionsScroller subsections={cards} />);
+  expect(screen.getAllByLabelText('في هذا القسم شهادة إتمام')).toHaveLength(1);
+  mockCertificateIds.current = new Set();
+  await render(<SectionsGrid sections={cards} />);
+  expect(screen.queryByLabelText('في هذا القسم شهادة إتمام')).toBeNull();
 });

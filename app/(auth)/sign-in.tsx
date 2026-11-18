@@ -1,9 +1,12 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { BackHandler, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { SupportContactLink } from '@/components/SupportContactLink';
+import { CountryCodeButton } from '@/components/ui/PhoneInput';
+import { DEFAULT_COUNTRY_CODE } from '@/constants/countries';
 import { Card, ConcentricMotif, Logo, Screen, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useSignIn } from '@/hooks/useAuth';
@@ -12,6 +15,9 @@ import { arabicAuthError } from '@/lib/authErrors';
 export default function SignInScreen() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState('');
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
+  // A number typed without its calling code needs the country to be found.
+  const needsCountry = /^[0-9٠-٩][0-9٠-٩ -]*$/.test(identifier.trim());
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const signIn = useSignIn();
@@ -36,14 +42,14 @@ export default function SignInScreen() {
   // guests can stay here to register), so a returning sign-in must navigate itself.
   // Land on Home; AuthGate then redirects to /admin if the account is an admin.
   const onSubmit = () =>
-    signIn.mutate({ identifier, password }, { onSuccess: () => router.replace('/') });
+    signIn.mutate({ identifier, password, countryCode }, { onSuccess: () => router.replace('/') });
 
   return (
     // Scroll + keyboard-avoid (same fix as register): the old scroll={false} +
     // centered layout cut off the bottom links on a 720×1280 screen, and the
     // keyboard buried the password field + «دخول» with no scroll escape.
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40}>
+    <Screen scroll contentStyle={{ flexGrow: 1 }} bottomPad={40} keyboardShouldPersistTaps="handled">
       {/* Brand — marginTop (not container paddingTop, which would displace the
           status-bar scrim) gives the logo breathing room from the top edge. */}
       <View style={{ alignItems: 'center', marginTop: 28, marginBottom: 28 }}>
@@ -63,15 +69,20 @@ export default function SignInScreen() {
         </Txt>
 
         <Field label="البريد الإلكتروني أو رقم الهاتف">
-          <TextInput
-            value={identifier}
-            onChangeText={setIdentifier}
-            placeholder="example@gmail.com أو 09xxxxxxxx"
-            placeholderTextColor={colors.textGhost}
-            autoCapitalize="none"
-            keyboardType="default"
-            style={inputStyle}
-          />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {needsCountry ? (
+              <CountryCodeButton countryCode={countryCode} onChange={setCountryCode} height={46} />
+            ) : null}
+            <TextInput
+              value={identifier}
+              onChangeText={setIdentifier}
+              placeholder="example@gmail.com أو 09xxxxxxxx"
+              placeholderTextColor={colors.textGhost}
+              autoCapitalize="none"
+              keyboardType="default"
+              style={[inputStyle, { flex: 1 }]}
+            />
+          </View>
         </Field>
 
         <Field label="كلمة المرور">

@@ -34,7 +34,8 @@ jest.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       updateUser: (...a: unknown[]) => mockUpdateUser(...a),
-      getSession: async () => ({ data: { session: null } }),
+      // Registration runs on the device's guest session.
+      getSession: async () => ({ data: { session: { user: { is_anonymous: true } } }, error: null }),
     },
     functions: { invoke: (...a: unknown[]) => mockInvoke(...a) },
     rpc: (...a: unknown[]) => mockRpc(...a),
@@ -97,7 +98,7 @@ describe('Android (phone present): phone+password first, email best-effort after
     await register('محمد', '0912345678', '249', 'a@example.com', 'password123', 'male');
     expect(mockCalls).toEqual(['updateUser', 'register-set-email']);
     expect(mockUpdateUser).toHaveBeenCalledWith({
-      phone: '249912345678',
+      phone: '+249912345678',
       password: 'password123',
       data: { display_name: 'محمد', gender: 'male' },
     });

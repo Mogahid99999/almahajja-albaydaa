@@ -15,11 +15,11 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
-  TextInput,
   View,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type {
   MyQuestion,

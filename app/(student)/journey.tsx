@@ -11,6 +11,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
 
 import type { GoalMetric } from '@/api/types';
 import { nearestBadge } from '@/constants/badges';
@@ -26,6 +27,7 @@ import {
   useWeeklyGoal,
 } from '@/hooks/useJourney';
 import { useMyQuizStats } from '@/hooks/useQuizzes';
+import { useMyCertificates } from '@/hooks/useCertificates';
 import { useResumeCard } from '@/hooks/useProgress';
 import { useUnreviewedBookmarkCount } from '@/hooks/useBookmarks';
 import { useMiniPlayerPad } from '@/hooks/useMiniPlayerPad';
@@ -67,6 +69,7 @@ export default function JourneyScreen() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const isGuest = user?.isGuest ?? true;
+  const { data: certificates } = useMyCertificates({ enabled: !isGuest });
   const { data: summary, isLoading, refetch: refetchSummary } = useJourneySummary({ enabled: !isGuest });
   const { data: goal, refetch: refetchGoal } = useWeeklyGoal({ enabled: !isGuest });
   const { data: badges, refetch: refetchBadges } = useBadges({ enabled: !isGuest });
@@ -181,6 +184,33 @@ export default function JourneyScreen() {
               </Card>
             </Pressable>
           ) : null}
+
+          {/* ── «شهاداتي» — earned certificates + the ones in progress (0169) ─────── */}
+          <Pressable
+            onPress={() => router.push('/(student)/certificates' as Parameters<typeof router.push>[0])}
+            accessibilityRole="button"
+            accessibilityLabel="شهاداتي"
+            style={({ pressed }) => ({ marginBottom: 16, opacity: pressed ? 0.85 : 1 })}
+          >
+            <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Feather name="award" size={18} color={colors.accentBrassMuted} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Txt size={13.5} weight="semibold" color={colors.textInk}>
+                  شهاداتي
+                </Txt>
+                {certificates && certificates.length > 0 ? (
+                  <Txt size={12} color={colors.textMuted} tabular>
+                    {`${arNum(certificates.filter((c) => c.eligibility.eligible).length)} مستحقة · ${arNum(
+                      certificates.filter((c) => !c.eligibility.eligible).length,
+                    )} قيد الإنجاز`}
+                  </Txt>
+                ) : null}
+              </View>
+              <Txt size={12.5} weight="semibold" color={colors.accentBrassMuted}>
+                عرض
+              </Txt>
+            </Card>
+          </Pressable>
 
           {/* ── ورد القرآن اليومي — one of the day's activities ─────────────────── */}
           <View style={{ marginBottom: 16 }}>

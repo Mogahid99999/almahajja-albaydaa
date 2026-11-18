@@ -7,7 +7,8 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import React, { useState } from 'react';
-import { Image, Pressable, StyleSheet, TextInput, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Image, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { SheikhProfile } from '@/api/sheikhs';
 import { AdminShell } from '@/components/admin/AdminShell';
@@ -303,7 +304,9 @@ export default function SheikhsScreen() {
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onSubmitEditing={handleAdd}
-            style={[styles.input, { flex: 1 }, focused && styles.inputFocused]}
+            // minWidth 0: a web <input> otherwise keeps its intrinsic width and
+            // pushed «إضافة» off a phone screen (2026-11-18).
+            style={[styles.input, { flex: 1, minWidth: 0 }, focused && styles.inputFocused]}
           />
           <Pressable
             onPress={handleAdd}

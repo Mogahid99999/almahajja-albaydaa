@@ -38,6 +38,7 @@ import { phaseProgress } from './ffmpegProgress.js';
 import { errorMessage, type Logger, silentLogger } from './log.js';
 import type { MediaTools } from './media.js';
 import { ProgressReporter, type ProgressReporterOptions } from './progressReporter.js';
+import { type ListenerDir, type ListenerMix, roomFromRawName, waitListenerMix } from './listenerMix.js';
 import type { RecordingsDir } from './recordings.js';
 import { uniqueLectureKey } from './shared/lectureKey.js';
 import type { Storage } from './storage.js';
@@ -54,6 +55,12 @@ export const MAX_ERROR_LENGTH = 500;
  * a bigger unreadable part fails the job loudly instead (raws kept).
  */
 export const MAX_SKIPPABLE_PART_BYTES = 256 * 1024;
+/**
+ * The listener-rec mix becomes the lecture only when it is at least as long as the egress
+ * recording minus this (it joins the room before the egress, so it is normally longer).
+ */
+export const LISTENER_MIN_SLACK_SEC = 30;
+export const LISTENER_BACKUP_PREFIX = 'live-raw/listener/';
 
 export interface JobRunnerDeps {
   db: JobDb;
@@ -69,6 +76,16 @@ export interface JobRunnerDeps {
    * runs longer than this is aborted and failed (→ retry). Default 3 h.
    */
   maxJobMs?: number;
+  /**
+   * Live only, when set (LISTENER_DIR): the listener-rec mix is the lecture's source and the
+   * egress raw the fallback. waitMs = how long to wait for the mix after the egress ended.
+   */
+  listener?: {
+    dir: Pick<ListenerDir, 'state'>;
+    waitMs: number;
+    pollMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  };
 }
 
 export const DEFAULT_MAX_JOB_MS = 3 * 60 * 60 * 1000;
@@ -251,6 +268,39 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
         : null;
     }
     if (signal.aborted) throw new AbortedError();
+
+    // 2b. live: prefer the listener-rec mix (no egress holes); the egress raw is the fallback.
+    let listenerMix: ListenerMix | null = null;
+    if (isLive && deps.listener) {
+      const room = roomFromRawName(raws[0]?.name ?? '');
+      const st = room
+        ? await waitListenerMix(deps.listener.dir, room, {
+            timeoutMs: deps.listener.waitMs,
+            pollMs: deps.listener.pollMs ?? 10_000,
+            signal,
+            sleep: deps.listener.sleep,
+          })
+        : ({ state: 'none', reason: 'no room in the raw name' } as const);
+      if (signal.aborted) throw new AbortedError();
+      let reason = st.state === 'none' ? st.reason : '';
+      if (st.state === 'ready') {
+        const d = await deps.media.probeDuration(st.mix.path, signal);
+        if (signal.aborted) throw new AbortedError();
+        if (d !== null && (inputDuration === null || d >= inputDuration - LISTENER_MIN_SLACK_SEC)) {
+          listenerMix = st.mix;
+          inputPaths = [st.mix.path];
+          inputDuration = d;
+        } else {
+          reason = `listener mix too short (${d ?? 'unreadable'} s, egress ${inputDuration} s)`;
+        }
+      }
+      log(listenerMix ? 'info' : 'warn', 'job.source', {
+        id: job.id,
+        source: listenerMix ? 'listener' : 'egress',
+        ...(listenerMix ? { mix: listenerMix.dirName } : { reason }),
+      });
+    }
+
     await deps.media.transcode({
       input: inputPaths.length === 1 ? (inputPaths[0] as string) : inputPaths,
       output: outputPath,
@@ -302,6 +352,16 @@ export async function runJob(job: MediaJob, deps: JobRunnerDeps, shutdown?: Abor
       doneRawBytes += raw.size;
     }
     const rawBackupKey = raws[0]?.backupKey;
+    // The listener mix the lecture was made from is kept in R2 too (the local folder has no retention yet).
+    if (listenerMix) {
+      const key = `${LISTENER_BACKUP_PREFIX}${listenerMix.dirName}.ogg`;
+      if ((await deps.storage.objectSize(key)) !== listenerMix.size) {
+        if (signal.aborted) throw new AbortedError();
+        const uploaded = await deps.storage.uploadFile(key, listenerMix.path, RAW_CONTENT_TYPE, { signal });
+        if (uploaded !== listenerMix.size) throw new Error(`listener mix backup size mismatch (${uploaded} ≠ ${listenerMix.size} bytes)`);
+      }
+      log('info', 'job.listener_backup', { id: job.id, key, bytes: listenerMix.size });
+    }
 
     // 5. commit. Stop the reporter first so a late progress write can't race
     //    the RPC's progress=1; never commit a job that is no longer ours. (A

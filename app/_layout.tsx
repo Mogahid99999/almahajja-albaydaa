@@ -41,32 +41,31 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { onSessionLost, signOut } from '@/api/auth';
 import { isLectureVisibleToViewer } from '@/api/lectures';
-import { registerPushToken } from '@/api/notifications';
 import { getResumeTarget } from '@/api/progress';
+import { useCurrentUserId } from '@/hooks/useCurrentUserId';
+import { usePushTokenRegistration } from '@/hooks/usePushTokenRegistration';
 import { forcedSignOutCleanup, useCurrentUser, useEnsureSession } from '@/hooks/useAuth';
 import { Logo } from '@/components/ui/Logo';
 import { StartHereCard } from '@/components/onboarding/StartHereCard';
 import { TourCard } from '@/components/onboarding/TourCard';
-import { UpdateGate } from '@/components/UpdateGate';
+import { StoreUpdatePrompt } from '@/components/StoreUpdatePrompt';
 import { colors, radius } from '@/constants/theme';
 import {
   addResponseListener,
   clearBadge,
   configureNotificationHandler,
-  ensurePermission,
   getInitialDeepLink,
-  getToken,
   NEAR_COMPLETION_PCT,
   RESUME_LONGGAP_HOURS,
 } from '@/lib/notifications';
 import { pickPhrase } from '@/lib/notificationPhrases';
 import { recordAppOpen } from '@/lib/notificationState';
 import { isBroadcastPush, runAppOpen } from '@/lib/appOpen';
-import { registerPushTokenIfChanged } from '@/lib/pushTokenRegistry';
 import { addBubbleListeners, bubbleEligibleNow, maybeShowResumeBubble } from '@/lib/bubble';
 import { addForegroundSeconds, shouldShowRatingPrompt } from '@/lib/ratingPrompt';
 import { RatingPromptModal } from '@/components/rating/RatingPromptModal';
 import { useLiveStore } from '@/stores/liveStore';
+import { storeUpdatePromptPending } from '@/stores/storeUpdateStore';
 import { GenderPrompt } from '@/components/ui/GenderPrompt';
 import { AchievementCelebration } from '@/components/celebration/AchievementCelebration';
 import { NOTIF_TEST_MODE } from '@/config';
@@ -79,7 +78,6 @@ import { flushOutbox, startOutbox } from '@/lib/outbox';
 import { getMostRecentlyActiveLectureId } from '@/lib/resumeCache';
 import { APP_VERSION } from '@/lib/version';
 import { queryKeys } from '@/constants/queryKeys';
-import { useNotificationsStore } from '@/stores/notificationsStore';
 
 // Benign dev-only warning: expo-notifications flags 'default' as an unknown
 // custom sound even though it's the built-in system sound name.
@@ -112,7 +110,6 @@ const PERSISTED_QUERY_ROOTS = new Set<string>([
   // (src/lib/appOpen.ts) invalidates them when its counts/timestamps say they changed.
   'buddy', // my buddy card state + the last app_open buddy counts (never search results)
   'broadcasts', // Home «التذكيرات النافعة» card
-  'appVersionGate', // UpdateGate config, also seeded by app_open
   'schedule', // «الجدول الأسبوعي» (0158) — works offline, refetched when its version moves
 ]);
 
@@ -410,10 +407,6 @@ function AuthGate() {
 function NotificationsBootstrap() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
-  const setPermission = useNotificationsStore((s) => s.setPermission);
-  const setToken = useNotificationsStore((s) => s.setToken);
-  const setRegistered = useNotificationsStore((s) => s.setRegistered);
-  const registered = useNotificationsStore((s) => s.registered);
   const [ratingPromptVisible, setRatingPromptVisible] = useState(false);
   // iOS deferred-gender flow: a women's-section lecture opened (via a
   // notification/deep link) by a user whose gender isn't set yet. Instead of
@@ -434,31 +427,7 @@ function NotificationsBootstrap() {
     configureNotificationHandler();
   }, []);
 
-  // Permission + token registration, once we have a signed-in user.
-  useEffect(() => {
-    if (!user || registered) return;
-    let cancelled = false;
-    (async () => {
-      const status = await ensurePermission();
-      if (cancelled) return;
-      setPermission(status as 'granted' | 'denied' | 'undetermined');
-      if (status !== 'granted') return;
-      const token = await getToken();
-      if (cancelled || !token) return;
-      setToken(token);
-      try {
-        // LOAD V24: only when the token/account changed or the last write is a
-        // week old — not an upsert on every cold start (`registered` is per run).
-        await registerPushTokenIfChanged(token, user.id, () => registerPushToken(token, Platform.OS));
-        if (!cancelled) setRegistered(true);
-      } catch {
-        // Registration failure is non-fatal — the inbox still works.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, registered, setPermission, setToken, setRegistered]);
+  usePushTokenRegistration(useCurrentUserId());
 
   // Deep-link notification taps (lecture → player, section → section page).
   // Handles BOTH a warm tap (listener) and the cold-start tap that launched the
@@ -489,6 +458,9 @@ function NotificationsBootstrap() {
         }
         // 0166 «تم تصحيح اختبارك»: the cached result / quiz cards still say
         // «بانتظار التصحيح» — refetch them so the tap lands on the final result.
+        if ((data.route ?? '').startsWith('/certificate/')) {
+          void queryClient.invalidateQueries({ queryKey: ['certificates'] });
+        }
         if ((data.route ?? '').startsWith('/quiz-result/')) {
           void queryClient.invalidateQueries({ queryKey: ['quizzes'] });
           void queryClient.invalidateQueries({ queryKey: ['section'] });
@@ -585,9 +557,9 @@ function NotificationsBootstrap() {
     const maybePrompt = () => {
       // Never over a live majlis (it popped up over the halaqa on the device,
       // 2026-09-30); the next return to the app asks again.
-      if (useLiveStore.getState().session) return;
+      if (useLiveStore.getState().session || storeUpdatePromptPending()) return;
       void shouldShowRatingPrompt().then((show) => {
-        if (show && !useLiveStore.getState().session) setRatingPromptVisible(true);
+        if (show && !useLiveStore.getState().session && !storeUpdatePromptPending()) setRatingPromptVisible(true);
       });
     };
     maybePrompt();
@@ -739,7 +711,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
         نعتذر عن هذا العارض، جرّب المحاولة مرة أخرى.
       </Text>
       {__DEV__ ? (
-        <Text style={{ color: colors.textGhost, fontSize: 11, textAlign: 'center' }}>
+        <Text allowFontScaling={false} style={{ color: colors.textGhost, fontSize: 11, textAlign: 'center' }}>
           {error.message}
         </Text>
       ) : null}
@@ -754,7 +726,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
           opacity: pressed ? 0.85 : 1,
         })}
       >
-        <Text style={{ color: colors.onTealPrimary, fontSize: 15, fontWeight: '600' }}>
+        <Text allowFontScaling={false} style={{ color: colors.onTealPrimary, fontSize: 15, fontWeight: '600' }}>
           إعادة المحاولة
         </Text>
       </Pressable>
@@ -804,11 +776,12 @@ export default function RootLayout() {
               edge-to-edge is always on) — the status-bar fog is Screen.tsx's job. */}
           <StatusBar style="dark" />
           <SessionGate fontsLoaded={fontsLoaded || !!fontError}>
-            <UpdateGate>
+            <>
               <AuthGate />
               <NotificationsBootstrap />
               <TourCard />
               <StartHereCard />
+              <StoreUpdatePrompt />
               <Stack
                 screenOptions={{
                   headerShown: false,
@@ -868,7 +841,7 @@ export default function RootLayout() {
                   the Stack so it overlays every screen; it self-hides when the
                   celebration queue is empty. */}
               <AchievementCelebration />
-            </UpdateGate>
+            </>
           </SessionGate>
         </SafeAreaProvider>
       </GestureHandlerRootView>

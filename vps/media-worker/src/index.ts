@@ -9,6 +9,7 @@ import { EgressTmpDir } from './egressRecovery.js';
 import { EgressTracker } from './egressTracker.js';
 import { HostAbsenceWatch } from './hostWatch.js';
 import { runJob } from './jobRunner.js';
+import { ListenerDir } from './listenerMix.js';
 import { createLiveControl } from './liveControl.js';
 import { createLiveKitProbe, UNCONFIGURED_PROBE } from './livekitProbe.js';
 import { consoleLogger as log, errorMessage } from './log.js';
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
   const media = createFfmpegTools();
   const egress = new EgressTracker();
   const recordings = new RecordingsDir(cfg.recordingsDir);
+  const listenerDir = cfg.listenerDir ? new ListenerDir(cfg.listenerDir) : null;
   const liveControl = createLiveControl(cfg.supabaseUrl, cfg.supabaseServiceRoleKey);
   const hostWatch = new HostAbsenceWatch(liveControl, { log });
 
@@ -90,7 +92,10 @@ async function main(): Promise<void> {
     runJob: (job, signal) =>
       runJob(
         job,
-        { db, storage, media, recordings, tmpDir: cfg.tmpDir, liveLoudnorm: cfg.liveLoudnorm, log },
+        {
+          db, storage, media, recordings, tmpDir: cfg.tmpDir, liveLoudnorm: cfg.liveLoudnorm, log,
+          ...(listenerDir ? { listener: { dir: listenerDir, waitMs: cfg.listenerWaitMs } } : {}),
+        },
         signal,
       ),
   });
@@ -111,7 +116,7 @@ async function main(): Promise<void> {
   });
 
   server.listen(cfg.port, () => {
-    log('info', 'worker.started', { env: cfg.workerEnv, port: cfg.port, loudnorm: cfg.liveLoudnorm });
+    log('info', 'worker.started', { env: cfg.workerEnv, port: cfg.port, loudnorm: cfg.liveLoudnorm, listener: cfg.listenerDir ?? 'off' });
     worker.start();
     sweeper.start();
     retention.start();

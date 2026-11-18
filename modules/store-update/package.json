@@ -1,0 +1,7 @@
+{
+  "name": "store-update",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android: asks Google Play whether a newer version of the app is published and starts Play's own update screen.",
+  "main": "index.ts"
+}

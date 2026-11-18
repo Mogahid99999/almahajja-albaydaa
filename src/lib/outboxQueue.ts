@@ -46,7 +46,15 @@ export type OutboxBookmark = {
  * server write (record_quran_wird_day) is idempotent, so a replay is harmless.
  */
 export type OutboxWird = { kind: 'wird'; day: string };
-export type OutboxEntry = OutboxActivity | OutboxNote | OutboxGoal | OutboxBookmark | OutboxWird;
+/** A finished quiz attempt (0174). Its answers live in quizAttemptStore. */
+export type OutboxQuizSubmit = { kind: 'quiz_submit'; attemptId: string };
+export type OutboxEntry =
+  | OutboxActivity
+  | OutboxNote
+  | OutboxGoal
+  | OutboxBookmark
+  | OutboxWird
+  | OutboxQuizSubmit;
 
 /** Device-local YYYY-MM-DD (the day the activity is credited to). */
 export function localDay(d: Date = new Date()): string {
@@ -228,5 +236,15 @@ export async function enqueueWirdDay(day: string): Promise<void> {
   const q = await load();
   if (!q.some((x) => x.kind === 'wird' && x.day === day)) q.push({ kind: 'wird', day });
   await persist();
+  onEnqueue?.();
+}
+
+/** Queue the delivery of a finished attempt, at most once per attempt. */
+export async function enqueueQuizSubmit(attemptId: string): Promise<void> {
+  const q = await load();
+  if (!q.some((x) => x.kind === 'quiz_submit' && x.attemptId === attemptId)) {
+    q.push({ kind: 'quiz_submit', attemptId });
+    await persist();
+  }
   onEnqueue?.();
 }

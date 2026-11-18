@@ -26,12 +26,14 @@
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { useRouter } from 'expo-router';
 
 import type { Gender } from '@/api/types';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { splitPhone } from '@/constants/countries';
+import { isPhoneEntryValid } from '@/lib/phone';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import {
   useChangePassword,
@@ -131,7 +133,7 @@ export default function EditProfileScreen() {
   const phoneDigits = phone.replace(/[^0-9]/g, '');
   const storedPhone = splitPhone(user?.phone ?? '');
   const phoneChanged =
-    phoneDigits.length >= 8 &&
+    isPhoneEntryValid(phoneDigits, phoneCountryCode) &&
     (phoneDigits !== storedPhone.local || phoneCountryCode !== storedPhone.countryCode);
   const onSavePhone = () => {
     if (!phoneChanged) return;
@@ -181,7 +183,7 @@ export default function EditProfileScreen() {
         password section is the tallest expandable row (3 fields + button) and
         without this its Save button could land under the system nav bar with
         no more room to scroll past it. */}
-    <Screen bottomPad={(miniPad || 24) + 60 + BOTTOM_NAV_CLEARANCE} padded>
+    <Screen bottomPad={(miniPad || 24) + 60 + BOTTOM_NAV_CLEARANCE} padded keyboardShouldPersistTaps="handled">
       {/* ── Nav row ─────────────────────────────────────────────────────────── */}
       <View
         style={{

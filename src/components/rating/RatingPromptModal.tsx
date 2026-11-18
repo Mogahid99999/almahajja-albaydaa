@@ -1,7 +1,8 @@
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
+import { KeyboardAvoidingView, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { SheetModal } from '@/components/ui/SheetModal';
 import { Txt } from '@/components/ui/Txt';

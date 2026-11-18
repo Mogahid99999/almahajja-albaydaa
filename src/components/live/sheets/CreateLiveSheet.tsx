@@ -15,9 +15,10 @@
  * The RPC's own Arabic message shows on failure (e.g. another live running).
  */
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
-import { Divider, Txt, cardRowStyle } from '@/components/ui';
+import { Divider, Txt, cardRowStyle, Toggle } from '@/components/ui';
 import { colors, fonts, radius } from '@/constants/theme';
 import { useCreateLiveSession } from '@/hooks/useLive';
 import { arNum } from '@/lib/format';
@@ -458,7 +459,7 @@ function ToggleRow({
       <Txt size={14} weight="medium" style={{ flex: 1 }}>
         {label}
       </Txt>
-      <Switch
+      <Toggle
         value={value}
         onValueChange={onChange}
         accessibilityLabel={label}

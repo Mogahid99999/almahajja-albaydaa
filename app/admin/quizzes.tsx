@@ -7,7 +7,15 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 
 import type { AdminQuizRow } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
@@ -23,6 +31,9 @@ import {
 } from '@/hooks/useQuizzes';
 import { QUIZ_AVAILABILITY_META } from '@/components/quiz/quizAvailability';
 import { arNum, arQuestionCount } from '@/lib/format';
+
+/** Same breakpoint as the lectures list: below it, row buttons get their own line. */
+const ROW_COMPACT_BREAKPOINT = 640;
 
 function StatusPill({ status }: { status: 'draft' | 'published' }) {
   const published = status === 'published';
@@ -76,12 +87,22 @@ function QuizRow({
   // toggle only flips open↔closed for the always-on modes.
   const canQuickToggle = quiz.availabilityMode !== 'scheduled';
   const isClosed = quiz.availabilityMode === 'closed';
+  // On a phone the title shared one line with two pills and five buttons and
+  // shrank to «اختبار ال.» (2026-11-18): there the buttons drop to their own
+  // line and the title may take two lines — same as the lectures list.
+  const compact = useWindowDimensions().width < ROW_COMPACT_BREAKPOINT;
 
   return (
-    <View style={styles.row}>
-      <View style={{ flex: 1, gap: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Txt size={14} weight="semibold" color={colors.textInk} numberOfLines={1} style={{ flexShrink: 1 }}>
+    <View style={[styles.row, compact && styles.rowCompact]}>
+      <View style={[{ gap: 4 }, compact ? null : { flex: 1 }]}>
+        <View style={styles.titleLine}>
+          <Txt
+            size={14}
+            weight="semibold"
+            color={colors.textInk}
+            numberOfLines={compact ? 2 : 1}
+            style={{ flexShrink: 1 }}
+          >
             {quiz.title}
           </Txt>
           <StatusPill status={quiz.status} />
@@ -92,7 +113,7 @@ function QuizRow({
         </Txt>
       </View>
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, compact && styles.actionsCompact]}>
         {canQuickToggle ? (
           <Pressable
             onPress={onToggleAvailability}
@@ -160,20 +181,37 @@ export default function AdminQuizzesScreen() {
   // (0018_quiz_publish_notify.sql) — confirm before that transition, same as
   // lectures. Unpublishing never notifies, so it goes through immediately.
   const [pendingPublish, setPendingPublish] = useState<AdminQuizRow | null>(null);
+  // Unpublishing hides the quiz from every student at once. It used to be one
+  // tap on the list icon, and quizzes were turned into drafts by accident from
+  // the app (2026-11-15, 2026-11-17), so it asks first too.
+  const [pendingUnpublish, setPendingUnpublish] = useState<AdminQuizRow | null>(null);
 
   function handleTogglePublish(quiz: AdminQuizRow) {
     if (quiz.status === 'published') {
-      setStatus.mutate({ quizId: quiz.id, status: 'draft' });
+      setPendingUnpublish(quiz);
       return;
     }
     setPendingPublish(quiz);
   }
 
+  function publish(notifyOnPublish: boolean) {
+    if (!pendingPublish) return;
+    setStatus.mutate(
+      { quizId: pendingPublish.id, status: 'published', notifyOnPublish },
+      { onSettled: () => setPendingPublish(null) },
+    );
+  }
+
+  // Closing stops every student from starting the quiz — confirm it like an
+  // unpublish. Re-opening is harmless and stays one tap.
+  const [pendingClose, setPendingClose] = useState<AdminQuizRow | null>(null);
+
   function handleToggleAvailability(quiz: AdminQuizRow) {
-    setAvailability.mutate({
-      quizId: quiz.id,
-      mode: quiz.availabilityMode === 'closed' ? 'open' : 'closed',
-    });
+    if (quiz.availabilityMode !== 'closed') {
+      setPendingClose(quiz);
+      return;
+    }
+    setAvailability.mutate({ quizId: quiz.id, mode: 'open' });
   }
 
   const groups = useMemo(() => {
@@ -212,8 +250,18 @@ export default function AdminQuizzesScreen() {
     [],
   );
 
+  // Title first (the RTL start) and the buttons after it; on a phone the buttons
+  // wrap under the title instead of covering it (2026-11-18).
   const header = (
     <View style={styles.pageHeader}>
+      <View style={styles.headerTitle}>
+        <Txt weight="display" size={27} color={colors.primaryTeal}>
+          الاختبارات
+        </Txt>
+        <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
+          {`${arNum(quizzes.length)} اختبار · تُعرض للطلاب على صفحة القسم بعد النشر`}
+        </Txt>
+      </View>
       <View style={styles.headerActions}>
         <Pressable
           onPress={() => router.push('/admin/quiz-edit' as Parameters<typeof router.push>[0])}
@@ -250,14 +298,6 @@ export default function AdminQuizzesScreen() {
               : 'بانتظار التصحيح'}
           </Txt>
         </Pressable>
-      </View>
-      <View>
-        <Txt weight="display" size={27} color={colors.primaryTeal}>
-          الاختبارات
-        </Txt>
-        <Txt size={13} color={colors.textMuted} style={{ marginTop: 4 }}>
-          {`${arNum(quizzes.length)} اختبار · تُعرض للطلاب على صفحة القسم بعد النشر`}
-        </Txt>
       </View>
     </View>
   );
@@ -311,18 +351,48 @@ export default function AdminQuizzesScreen() {
         visible={!!pendingPublish}
         destructive={false}
         title="نشر الاختبار؟"
-        message={`سيصل إشعار فوري إلى جميع الدارسين بأن اختبار «${pendingPublish?.title ?? ''}» متاح الآن.`}
-        confirmLabel="نشر"
+        message={`«نشر وإرسال إشعار» يرسل إشعارًا إلى جميع الدارسين بأن اختبار «${pendingPublish?.title ?? ''}» متاح الآن. «نشر بدون إشعار» يُظهره في صفحته دون أي إشعار.`}
+        confirmLabel="نشر وإرسال إشعار"
+        cancelLabel="تراجع"
+        secondaryLabel="نشر بدون إشعار"
+        pending={setStatus.isPending}
+        onConfirm={() => publish(true)}
+        onSecondary={() => publish(false)}
+        onCancel={() => setPendingPublish(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingUnpublish}
+        title="إلغاء نشر الاختبار؟"
+        message={`سيتحوّل «${pendingUnpublish?.title ?? ''}» إلى مسودة ويختفي عن جميع الدارسين حتى يُنشر من جديد.`}
+        confirmLabel="إلغاء النشر"
         cancelLabel="تراجع"
         pending={setStatus.isPending}
         onConfirm={() => {
-          if (!pendingPublish) return;
+          if (!pendingUnpublish) return;
           setStatus.mutate(
-            { quizId: pendingPublish.id, status: 'published' },
-            { onSettled: () => setPendingPublish(null) },
+            { quizId: pendingUnpublish.id, status: 'draft' },
+            { onSettled: () => setPendingUnpublish(null) },
           );
         }}
-        onCancel={() => setPendingPublish(null)}
+        onCancel={() => setPendingUnpublish(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingClose}
+        title="إغلاق الاختبار؟"
+        message={`لن يستطيع أي دارس بدء «${pendingClose?.title ?? ''}» حتى يُفتح من جديد. يبقى منشورًا ويبقى ما سُلِّم من إجابات.`}
+        confirmLabel="إغلاق الاختبار"
+        cancelLabel="تراجع"
+        pending={setAvailability.isPending}
+        onConfirm={() => {
+          if (!pendingClose) return;
+          setAvailability.mutate(
+            { quizId: pendingClose.id, mode: 'closed' },
+            { onSettled: () => setPendingClose(null) },
+          );
+        }}
+        onCancel={() => setPendingClose(null)}
       />
     </AdminShell>
   );
@@ -331,9 +401,17 @@ export default function AdminQuizzesScreen() {
 const styles = StyleSheet.create({
   pageHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 14,
     marginBottom: 28,
+  } as ViewStyle,
+
+  headerTitle: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 260,
   } as ViewStyle,
 
   headerActions: {
@@ -341,7 +419,23 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: 10,
-    flexShrink: 1,
+  } as ViewStyle,
+
+  titleLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  } as ViewStyle,
+
+  rowCompact: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 6,
+  } as ViewStyle,
+
+  actionsCompact: {
+    alignSelf: 'flex-end',
   } as ViewStyle,
 
   gradingBtn: {

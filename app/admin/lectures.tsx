@@ -16,12 +16,12 @@ import {
   PanResponder,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import type { AdminLectureRow } from '@/api/types';
 import { AdminShell } from '@/components/admin/AdminShell';
@@ -396,6 +396,7 @@ export default function LecturesScreen() {
   const { data: sections = [] } = useSectionsFlat();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminLectureRow | null>(null);
+  const [pendingUnpublish, setPendingUnpublish] = useState<AdminLectureRow | null>(null);
   // A confirm step before any action that would newly PUBLISH a lecture — that
   // fans out a real push notification to every opted-in student immediately.
   // Re-saving an already-published lecture (status staying 'published') never
@@ -410,6 +411,10 @@ export default function LecturesScreen() {
       }
     | null
   >(null);
+  const [pendingEditUnpublish, setPendingEditUnpublish] = useState<{
+    row: AdminLectureRow;
+    input: { title: string; sectionId: string | null; sheikhId: string | null; order: number; status: AppLectureStatus };
+  } | null>(null);
 
   const counts = useMemo(() => {
     const c: Record<StatusFilter, number> = {
@@ -526,7 +531,9 @@ export default function LecturesScreen() {
       setPendingPublish({ kind: 'toggle', row });
       return;
     }
-    setStatus.mutate({ id: row.id, status: 'draft' });
+    // Hiding a lecture from every student was one tap (same accident as the
+    // quizzes, 2026-11-15/17) — confirm first.
+    setPendingUnpublish(row);
   }
 
   function handleConfirmDelete() {
@@ -569,6 +576,11 @@ export default function LecturesScreen() {
             onSave={(input) => {
               if (input.status === 'published' && row.status !== 'published') {
                 setPendingPublish({ kind: 'edit', row, input });
+                return;
+              }
+              // Saving a published lecture as a draft hides it from everyone — ask.
+              if (row.status === 'published' && input.status !== 'published') {
+                setPendingEditUnpublish({ row, input });
                 return;
               }
               updateLecture.mutate({ id: row.id, input }, { onSuccess: () => setEditingId(null) });
@@ -735,6 +747,43 @@ export default function LecturesScreen() {
           }
         }}
         onCancel={() => setPendingPublish(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingUnpublish}
+        title="إلغاء نشر المحاضرة؟"
+        message={`ستتحوّل «${pendingUnpublish?.title ?? ''}» إلى مسودة وتختفي عن جميع الدارسين حتى تُنشر من جديد.`}
+        confirmLabel="إلغاء النشر"
+        cancelLabel="تراجع"
+        pending={setStatus.isPending}
+        onConfirm={() => {
+          if (!pendingUnpublish) return;
+          setStatus.mutate(
+            { id: pendingUnpublish.id, status: 'draft' },
+            { onSettled: () => setPendingUnpublish(null) },
+          );
+        }}
+        onCancel={() => setPendingUnpublish(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingEditUnpublish}
+        title="إلغاء نشر المحاضرة؟"
+        message={`ستتحوّل «${pendingEditUnpublish?.row.title ?? ''}» إلى مسودة وتختفي عن جميع الدارسين حتى تُنشر من جديد.`}
+        confirmLabel="حفظ كمسودة"
+        cancelLabel="تراجع"
+        pending={updateLecture.isPending}
+        onConfirm={() => {
+          if (!pendingEditUnpublish) return;
+          updateLecture.mutate(
+            { id: pendingEditUnpublish.row.id, input: pendingEditUnpublish.input },
+            {
+              onSuccess: () => setEditingId(null),
+              onSettled: () => setPendingEditUnpublish(null),
+            },
+          );
+        }}
+        onCancel={() => setPendingEditUnpublish(null)}
       />
     </AdminShell>
   );
