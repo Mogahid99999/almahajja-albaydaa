@@ -34,7 +34,8 @@ jest.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       updateUser: (...a: unknown[]) => mockUpdateUser(...a),
-      getSession: async () => ({ data: { session: null } }),
+      // Registration runs on the device's guest session.
+      getSession: async () => ({ data: { session: { user: { is_anonymous: true } } }, error: null }),
     },
     functions: { invoke: (...a: unknown[]) => mockInvoke(...a) },
     rpc: (...a: unknown[]) => mockRpc(...a),

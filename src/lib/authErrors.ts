@@ -19,6 +19,10 @@ export function arabicAuthError(e: unknown): string {
   if (m.includes('invalid login credentials'))
     return 'البريد الإلكتروني أو رقم الهاتف أو كلمة المرور غير صحيحة';
   if (m.includes('email not confirmed')) return 'يرجى تأكيد بريدك الإلكتروني أولاً';
+  // No session on the device (register() now recovers one first — this is the
+  // fallback if even that couldn't): it heals with a working connection.
+  if (m.includes('session missing') || m.includes('session_not_found') || m.includes('session not found'))
+    return 'تعذّر الاتصال بالخادم، تحقّق من اتصالك وحاول مرة أخرى.';
   if (m.includes('already') || m.includes('registered') || m.includes('exists'))
     return 'هذا البريد أو الرقم مستخدم في حساب آخر.';
   // OTP verify errors before the generic "invalid …" checks below.

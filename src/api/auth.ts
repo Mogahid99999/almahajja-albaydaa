@@ -557,6 +557,30 @@ async function checkedInternationalPhone(phone: string, countryCode: string): Pr
   return international;
 }
 
+/**
+ * register() links onto the CURRENT guest, so it needs one. When the boot guest
+ * sign-in failed on a weak connection the app opens with no session and retries
+ * only on reconnect or on return to the foreground — never while the student
+ * fills the form. updateUser then failed locally («Auth session missing!», no
+ * request) and every press showed «تعذّر إتمام العملية» (2026-11-17, 27 attempts
+ * from Khartoum in 20 minutes). Get the guest here: the device's own guest, else
+ * a fresh anonymous one. Never LAST_SESSION_KEY — it may hold a REGISTERED
+ * account, whose phone and password this registration would overwrite.
+ */
+async function ensureGuestForRegistration(): Promise<void> {
+  // A boot/foreground ensureSession already running might be about to land one.
+  if (ensureSessionInFlight) await ensureSessionInFlight.catch(() => null);
+  const { data, error } = await withAuthTimeout(supabase.auth.getSession());
+  // A stored session whose refresh failed (offline): retrying later keeps the
+  // same guest; minting a new one now would orphan its progress.
+  if (error) throw error;
+  if (data.session) return;
+  await deliberately(async () => {
+    if (await restoreGuestSession()) return;
+    await signInAnonymously();
+  });
+}
+
 export async function register(
   name: string,
   phone: string,
@@ -565,6 +589,7 @@ export async function register(
   password: string,
   gender: Gender | null,
 ): Promise<CurrentUser> {
+  if (!USE_MOCK) await ensureGuestForRegistration();
   // iOS omits phone (email is the identifier) and gender (captured later). An
   // empty phone normalizes to "" — skip the phone field entirely in that case
   // so the account is linked by email+password alone.
