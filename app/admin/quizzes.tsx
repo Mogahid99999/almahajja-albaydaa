@@ -181,11 +181,16 @@ export default function AdminQuizzesScreen() {
     );
   }
 
+  // Closing stops every student from starting the quiz — confirm it like an
+  // unpublish. Re-opening is harmless and stays one tap.
+  const [pendingClose, setPendingClose] = useState<AdminQuizRow | null>(null);
+
   function handleToggleAvailability(quiz: AdminQuizRow) {
-    setAvailability.mutate({
-      quizId: quiz.id,
-      mode: quiz.availabilityMode === 'closed' ? 'open' : 'closed',
-    });
+    if (quiz.availabilityMode !== 'closed') {
+      setPendingClose(quiz);
+      return;
+    }
+    setAvailability.mutate({ quizId: quiz.id, mode: 'open' });
   }
 
   const groups = useMemo(() => {
@@ -348,6 +353,23 @@ export default function AdminQuizzesScreen() {
           );
         }}
         onCancel={() => setPendingUnpublish(null)}
+      />
+
+      <ConfirmDialog
+        visible={!!pendingClose}
+        title="إغلاق الاختبار؟"
+        message={`لن يستطيع أي دارس بدء «${pendingClose?.title ?? ''}» حتى يُفتح من جديد. يبقى منشورًا ويبقى ما سُلِّم من إجابات.`}
+        confirmLabel="إغلاق الاختبار"
+        cancelLabel="تراجع"
+        pending={setAvailability.isPending}
+        onConfirm={() => {
+          if (!pendingClose) return;
+          setAvailability.mutate(
+            { quizId: pendingClose.id, mode: 'closed' },
+            { onSettled: () => setPendingClose(null) },
+          );
+        }}
+        onCancel={() => setPendingClose(null)}
       />
     </AdminShell>
   );
