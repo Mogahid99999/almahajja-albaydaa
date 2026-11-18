@@ -1,5 +1,8 @@
-// Staff download of a live session's LOCAL raw recording (P2; tunnel hostname
-// comes in P6):  GET /recordings/:sessionId   Authorization: Bearer <user JWT>
+// Staff download of a live session's recording (P2; served through the admin site's nginx at
+// /media-worker/recordings/ since 2026-11-19):  GET /recordings/:sessionId   Authorization: Bearer <user JWT>
+//
+//  0. Once the lecture exists, its processed MP3 (lectures/…) is what is downloaded — 302 to a
+//     10-minute presigned GET. Steps 2–4 (the raw) only before that.
 //
 //  1. JWT verified with auth.getUser → profiles.role must be admin | publisher
 //     (401 without / with a bad token, 403 for any other role). Auth happens
@@ -24,6 +27,13 @@ import type { Storage } from './storage.js';
 export const DOWNLOAD_ROLES = new Set(['admin', 'publisher']);
 export const BACKUP_URL_TTL_SEC = 10 * 60;
 const BACKUP_KEY_RE = /^live-raw\/[^/]+$/;
+const LECTURE_KEY_RE = /^lectures\/[^\0]+\.mp3$/;
+
+/** «{title}.mp3», safe for every OS. */
+export function lectureFileName(title: string): string {
+  const safe = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+  return `${safe || 'محاضرة'}.mp3`;
+}
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface DownloadDeps {
@@ -121,6 +131,28 @@ export async function handleRecordingDownload(
     log('error', 'recording.lookup_error', { session: sessionId, error: errorMessage(err, 200) });
     return json(res, 503, { ok: false, error: 'unavailable' });
   }
+  // The processed lecture first (owner, 2026-11-19: «يجب ان يكون الصحيح و المعالج») — the
+  // listener mix, cut at «بدء». The egress raw has the mixer holes and is only the fallback
+  // while the lecture is not made yet.
+  const lecture = row?.lecture ?? null;
+  if (lecture && LECTURE_KEY_RE.test(lecture.audioPath)) {
+    let url: string;
+    try {
+      url = await deps.storage.presignGet(lecture.audioPath, {
+        expiresInSec: BACKUP_URL_TTL_SEC,
+        contentDisposition: contentDisposition(lectureFileName(lecture.title)),
+        contentType: 'audio/mpeg',
+      });
+    } catch (err) {
+      log('error', 'recording.presign_error', { session: sessionId, error: errorMessage(err, 200) });
+      return json(res, 503, { ok: false, error: 'unavailable' });
+    }
+    log('info', 'recording.download_lecture', { session: sessionId, user: staff.userId });
+    res.writeHead(302, { Location: url, 'Cache-Control': 'no-store', ...CORS });
+    res.end();
+    return;
+  }
+
   const file = row?.rawPath ? await deps.recordings.resolve(row.rawPath) : null;
   if (!file) {
     // Local raw gone → the R2 backup (kept forever), via a short-lived presigned URL.

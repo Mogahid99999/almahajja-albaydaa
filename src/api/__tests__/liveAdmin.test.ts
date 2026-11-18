@@ -36,6 +36,7 @@ import {
   RawDownloadError,
   rawDownloadErrorText,
   rawFileName,
+  downloadFileName,
   rawRecordingUrl,
   retryLiveRecording,
   saveLiveLecture,
@@ -253,6 +254,10 @@ describe('raw recording download (media worker)', () => {
   test('the saved file name is the session title, safe for any OS', () => {
     expect(rawFileName('شرح: كتاب/التوحيد?')).toBe('التسجيل الأصلي - شرح كتاب التوحيد.ogg');
     expect(rawFileName('   ')).toBe('التسجيل الأصلي - مجلس.ogg');
+    // 2026-11-19: the processed lecture (MP3) comes back once it exists.
+    expect(downloadFileName('وفاة النبي', 'audio/mpeg')).toBe('وفاة النبي.mp3');
+    expect(downloadFileName('وفاة النبي', 'audio/ogg')).toBe('التسجيل الأصلي - وفاة النبي.ogg');
+    expect(downloadFileName('وفاة النبي', null)).toBe('التسجيل الأصلي - وفاة النبي.ogg');
   });
 
   test('not configured → a clear Arabic error, no request', async () => {

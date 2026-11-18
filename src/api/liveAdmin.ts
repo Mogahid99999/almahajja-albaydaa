@@ -413,6 +413,17 @@ export function rawFileName(title: string): string {
   return `التسجيل الأصلي - ${safe || 'مجلس'}.ogg`;
 }
 
+/**
+ * Since 2026-11-19 the worker serves the processed lecture (MP3) once it exists, and the raw
+ * (OGG) only before: name the saved file after what actually came back.
+ */
+export function downloadFileName(title: string, contentType: string | null): string {
+  if (contentType && /audio\/(mpeg|mp3)/i.test(contentType)) {
+    return rawFileName(title).replace(/^التسجيل الأصلي - /, '').replace(/\.ogg$/, '.mp3');
+  }
+  return rawFileName(title);
+}
+
 async function accessToken(): Promise<string> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -450,7 +461,7 @@ export async function downloadRawRecording(sessionId: string, title: string): Pr
     try {
       const a = document.createElement('a');
       a.href = href;
-      a.download = name;
+      a.download = downloadFileName(title, res.headers.get('content-type'));
       a.rel = 'noopener';
       document.body.appendChild(a);
       a.click();
