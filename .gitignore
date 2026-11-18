@@ -29,6 +29,9 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
+# OTA code-signing CERTIFICATE is public and must ship in the app build (EAS honours .gitignore).
+# Its private key lives outside the repo (../ota-keys) and must never be committed.
+!certs/certificate.pem
 
 # local env files
 .env
