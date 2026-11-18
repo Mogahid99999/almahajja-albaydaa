@@ -50,7 +50,9 @@ const keyPath = opt('key', process.env.OTA_PRIVATE_KEY ?? path.join(ROOT, '..', 
 const local = opt('local');
 
 // 1. Clean tree
-if (!flag('allow-dirty') && run('git', ['status', '--porcelain', '--untracked-files=no']).trim())
+// .claude/ and supabase/ (CLI temp, migrations) never reach the app bundle.
+const dirty = run('git', ['status', '--porcelain', '--untracked-files=no', '--', '.', ':!.claude', ':!supabase']).trim();
+if (!flag('allow-dirty') && dirty)
   fail('uncommitted changes — commit first (or --allow-dirty for a local dry run)');
 const commit = run('git', ['rev-parse', '--short', 'HEAD']).trim();
 
