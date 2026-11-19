@@ -93,6 +93,13 @@
 //                       session + that comment is deleted → { ok, status, id };
 //                       broadcast {t:'del', id}. Never says who it was; 409
 //                       invalid_target on one's own comment.
+//   comment_edit        (0182) { sessionId, commentId, text } — its author only,
+//                       while live → { ok, status, comment }; broadcast
+//                       {t:'edit', c}. 409 comments_closed for non-moderators.
+//   comments_close      (0182) { sessionId, closed } — host / moderators /
+//                       content managers, green or live → { ok, status, closed };
+//                       broadcast {t:'closed', closed}; logged comments_close.
+//   Comments are up to 1000 characters since 0182 (300 before).
 //   Staff actions are logged (comment_delete by a moderator, comment_answered,
 //   comment_block) with target_identity NULL and only the comment id in detail.
 //
@@ -737,6 +744,37 @@ async function handleComment(authHeader: string, bearer: string, body: unknown):
       result = { id: r.commentId, answered: r.answered };
       logged = commentAuditAction("comment_answered");
       detail = { comment_id: r.commentId, answered: r.answered };
+      break;
+    }
+
+    case "comment_edit": {
+      const t = commentTextVerdict(r.text);
+      if (!t.ok) return fail(t.code);
+      const { data, error } = await admin.rpc("live_edit_comment", {
+        p_session: session.id,
+        p_comment: r.commentId,
+        p_user: userId,
+        p_body: r.text,
+      });
+      if (error) return failCommentRpc(error.message);
+      const c = toPublicComment(data);
+      if (!c) return fail("server_error", "malformed comment row");
+      message = { t: "edit", c };
+      result = { comment: { ...c, mine: true } };
+      break;
+    }
+
+    case "comments_close": {
+      const { error } = await admin.rpc("live_set_comments_closed", {
+        p_session: session.id,
+        p_actor: userId,
+        p_closed: r.closed,
+      });
+      if (error) return failCommentRpc(error.message);
+      message = { t: "closed", closed: r.closed };
+      result = { closed: r.closed };
+      logged = commentAuditAction("comments_close");
+      detail = { closed: r.closed };
       break;
     }
 

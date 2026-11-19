@@ -773,7 +773,9 @@ export type LiveErrorCode =
   | "another_live_active" | "not_present" | "no_track" | "no_moderator_present"
   | "requests_closed" | "rate_limited" | "livekit_error" | "server_error"
   // comments (0147)
-  | "guest_cannot_comment" | "not_live" | "blocked" | "blocked_words" | "too_long" | "empty";
+  | "guest_cannot_comment" | "not_live" | "blocked" | "blocked_words" | "too_long" | "empty"
+  // 0182
+  | "comments_closed";
 
 export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   bad_request: 400,
@@ -813,6 +815,8 @@ export const LIVE_ERROR_STATUS: Readonly<Record<LiveErrorCode, number>> = {
   too_long: 400,
   /** Nothing but whitespace. */
   empty: 400,
+  /** 0182: a moderator closed the comments of this session. */
+  comments_closed: 409,
 };
 
 /**
@@ -923,7 +927,11 @@ export function parseLiveControlRequest(body: unknown): { ok: true; value: LiveC
 // Separate from LIVE_ACTIONS on purpose: live-control routes a comment action
 // to its own handler before parseLiveControlRequest (different body fields).
 
-export const COMMENT_ACTIONS = ["comment", "comment_delete", "comment_answered", "comment_block"] as const;
+export const COMMENT_ACTIONS = [
+  "comment", "comment_delete", "comment_answered", "comment_block",
+  // 0182
+  "comment_edit", "comments_close",
+] as const;
 export type CommentAction = (typeof COMMENT_ACTIONS)[number];
 
 export function isCommentAction(x: unknown): x is CommentAction {
@@ -933,17 +941,19 @@ export function isCommentAction(x: unknown): x is CommentAction {
 export const COMMENT_KINDS = ["comment", "question"] as const;
 export type CommentKind = (typeof COMMENT_KINDS)[number];
 
-/** live_comments.body check (0147): 1–300 characters after trimming. */
-export const COMMENT_MAX_CHARS = 300;
+/** live_comments.body check: 1–1000 characters after trimming (300 until 0182). */
+export const COMMENT_MAX_CHARS = 1000;
 /** live_post_comment (0147): one comment per 10 s per user per session. */
 export const COMMENT_RATE_LIMIT_MS = 10_000;
-/** LiveKit data topic of the comment stream (JSON: {t:'add',c} | {t:'del',id} | {t:'ans',id,answered}). */
+/** LiveKit data topic of the comment stream (JSON: {t:'add',c} | {t:'del',id} | {t:'ans',id,answered} | 0182: {t:'edit',c} | {t:'closed',closed}). */
 export const COMMENTS_TOPIC = "comments";
 
 export type LiveCommentRequest =
   | { action: "comment"; sessionId: string; kind: CommentKind; text: string; anonymous: boolean }
   | { action: "comment_delete" | "comment_block"; sessionId: string; commentId: string }
-  | { action: "comment_answered"; sessionId: string; commentId: string; answered: boolean };
+  | { action: "comment_answered"; sessionId: string; commentId: string; answered: boolean }
+  | { action: "comment_edit"; sessionId: string; commentId: string; text: string }
+  | { action: "comments_close"; sessionId: string; closed: boolean };
 
 /**
  * The body of a comment action. The text itself is only type-checked here
@@ -967,13 +977,21 @@ export function parseLiveCommentRequest(
       value: { action: "comment", sessionId, kind: b.kind as CommentKind, text: b.text, anonymous: b.anonymous },
     };
   }
+  if (b.action === "comments_close") {
+    if (typeof b.closed !== "boolean") return { ok: false, error: "closed required" };
+    return { ok: true, value: { action: "comments_close", sessionId, closed: b.closed } };
+  }
   if (typeof b.commentId !== "string" || !UUID_RE.test(b.commentId)) return { ok: false, error: "commentId required" };
   const commentId = b.commentId;
+  if (b.action === "comment_edit") {
+    if (typeof b.text !== "string") return { ok: false, error: "text required" };
+    return { ok: true, value: { action: "comment_edit", sessionId, commentId, text: b.text } };
+  }
   if (b.action === "comment_answered") {
     if (typeof b.answered !== "boolean") return { ok: false, error: "answered required" };
     return { ok: true, value: { action: "comment_answered", sessionId, commentId, answered: b.answered } };
   }
-  return { ok: true, value: { action: b.action, sessionId, commentId } };
+  return { ok: true, value: { action: b.action as "comment_delete" | "comment_block", sessionId, commentId } };
 }
 
 /** Characters as Postgres counts them (code points, not UTF-16 units — an emoji is one). */
@@ -981,7 +999,7 @@ export function commentLength(text: string): number {
   return Array.from(text.trim()).length;
 }
 
-/** Same rule as the live_comments.body check: 1–300 characters after trimming. */
+/** Same rule as the live_comments.body check: 1–COMMENT_MAX_CHARS characters after trimming. */
 export function commentTextVerdict(text: string): Verdict<"empty" | "too_long"> {
   const n = commentLength(text);
   if (n === 0) return { ok: false, code: "empty" };
@@ -1015,8 +1033,8 @@ export function preauthorizeCommentAction(
   action: CommentAction,
   caller: { appRole: string | null | undefined; isGuest: boolean },
 ): Verdict<"forbidden" | "guest_cannot_comment"> {
-  if (caller.isGuest) return action === "comment" ? { ok: false, code: "guest_cannot_comment" } : { ok: false, code: "forbidden" };
-  if (action === "comment" || action === "comment_delete") return OK;
+  if (caller.isGuest) return action === "comment" || action === "comment_edit" ? { ok: false, code: "guest_cannot_comment" } : { ok: false, code: "forbidden" };
+  if (action === "comment" || action === "comment_delete" || action === "comment_edit") return OK;
   return isStaffRole(caller.appRole) ? OK : { ok: false, code: "forbidden" };
 }
 
@@ -1038,8 +1056,12 @@ export function authorizeCommentAction(
       return actor.liveRole ? OK : { ok: false, code: "not_present" };
     case "comment_delete":
       return actor.isGuest ? forbidden : OK;
+    case "comment_edit":
+      // SQL allows only the author.
+      return actor.isGuest ? { ok: false, code: "guest_cannot_comment" } : OK;
     case "comment_answered":
     case "comment_block":
+    case "comments_close":
       return canModerateComments(actor) ? OK : forbidden;
   }
 }
@@ -1050,7 +1072,8 @@ export function authorizeCommentAction(
  * clean up the list after the majlis too.
  */
 export function commentStatusVerdict(action: CommentAction, status: string): Verdict<"not_live"> {
-  if (action === "comment" && status !== "live") return { ok: false, code: "not_live" };
+  if ((action === "comment" || action === "comment_edit") && status !== "live") return { ok: false, code: "not_live" };
+  if (action === "comments_close" && status !== "live" && status !== "green") return { ok: false, code: "not_live" };
   return OK;
 }
 
@@ -1062,12 +1085,14 @@ export function shouldBroadcastComments(status: string): boolean {
 const COMMENT_RPC_CODES: readonly LiveErrorCode[] = [
   "not_found", "not_live", "guest_cannot_comment", "not_present", "blocked", "empty", "too_long",
   "blocked_words", "rate_limited", "forbidden", "invalid_target", "bad_request",
+  "comments_closed",
 ];
 
 /** A 0147 refusal ('live_comment:<code>') → our code; anything else is a server error. */
 export function commentRpcErrorCode(message: string | null | undefined): LiveErrorCode {
   const m = /live_comment:([a-z_]+)/.exec(message ?? "");
-  const code = m?.[1] as LiveErrorCode | undefined;
+  // 0182 raises live_comment:closed; the HTTP code is comments_closed.
+  const code = (m?.[1] === "closed" ? "comments_closed" : m?.[1]) as LiveErrorCode | undefined;
   return code && COMMENT_RPC_CODES.includes(code) ? code : "server_error";
 }
 
@@ -1079,7 +1104,10 @@ export function commentRpcErrorCode(message: string | null | undefined): LiveErr
 export function commentAuditAction(action: CommentAction, ctx: { by?: string | null } = {}): string | null {
   switch (action) {
     case "comment":
+    case "comment_edit":
       return null;
+    case "comments_close":
+      return "comments_close";
     case "comment_delete":
       return ctx.by === "moderator" ? "comment_delete" : null;
     case "comment_answered":
@@ -1097,6 +1125,8 @@ export type PublicLiveComment = {
   name: string | null;
   gender: LiveGender;
   answered: boolean;
+  /** 0182: edited by its author. */
+  edited: boolean;
   at: string;
 };
 
@@ -1122,6 +1152,7 @@ export function toPublicComment(raw: unknown): PublicLiveComment | null {
     name: typeof r.name === "string" && r.name ? r.name : null,
     gender: r.gender,
     answered: r.answered,
+    edited: r.edited === true,
     at: r.at,
   };
 }
@@ -1129,7 +1160,9 @@ export function toPublicComment(raw: unknown): PublicLiveComment | null {
 export type CommentsMessage =
   | { t: "add"; c: PublicLiveComment }
   | { t: "del"; id: string }
-  | { t: "ans"; id: string; answered: boolean };
+  | { t: "ans"; id: string; answered: boolean }
+  | { t: "edit"; c: PublicLiveComment }
+  | { t: "closed"; closed: boolean };
 
 /** The data message body on topic COMMENTS_TOPIC (UTF-8 JSON). */
 export function commentsMessage(msg: CommentsMessage): string {
@@ -1140,5 +1173,9 @@ export function commentsMessage(msg: CommentsMessage): string {
       return JSON.stringify({ t: "del", id: msg.id });
     case "ans":
       return JSON.stringify({ t: "ans", id: msg.id, answered: msg.answered });
+    case "edit":
+      return JSON.stringify({ t: "edit", c: msg.c });
+    case "closed":
+      return JSON.stringify({ t: "closed", closed: msg.closed });
   }
 }

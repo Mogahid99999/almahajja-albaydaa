@@ -277,7 +277,7 @@ describe('live: posting and the anonymity invariants', () => {
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ ok: true, status: 'live' });
     const c = r.body!.comment;
-    expect(Object.keys(c).sort()).toEqual(['answered', 'at', 'gender', 'id', 'kind', 'mine', 'name', 'text']);
+    expect(Object.keys(c).sort()).toEqual(['answered', 'at', 'edited', 'gender', 'id', 'kind', 'mine', 'name', 'text']);
     expect(c).toMatchObject({
       kind: 'comment',
       text: 'تجربة: جزاكم الله خيراً', // trimmed
@@ -343,7 +343,7 @@ describe('live: posting and the anonymity invariants', () => {
     const e = await post(sisterNamed, '   \n  ', false);
     expect(e.status).toBe(400);
     expect(e.body).toEqual({ error: 'empty' });
-    const t = await post(sisterNamed, 'ب'.repeat(301), false);
+    const t = await post(sisterNamed, 'ب'.repeat(1001), false);
     expect(t.status).toBe(400);
     expect(t.body).toEqual({ error: 'too_long' });
     const b = await control(sisterNamed, { action: 'comment', sessionId, kind: 'comment', text: 'x' });
@@ -362,7 +362,7 @@ describe('live: posting and the anonymity invariants', () => {
     expect(byId[cSisterNamed]).toMatchObject({ name: names.sisterNamed, mine: false });
     expect(byId[cBrother2]).toMatchObject({ name: null, mine: false });
     for (const c of list) {
-      expect(Object.keys(c).sort()).toEqual(['answered', 'at', 'gender', 'id', 'kind', 'mine', 'name', 'text']);
+      expect(Object.keys(c).sort()).toEqual(['answered', 'at', 'edited', 'gender', 'id', 'kind', 'mine', 'name', 'text']);
     }
     expectNoTraceOf(list, [
       { id: sisterHiddenId, name: names.sisterHidden },
@@ -553,6 +553,59 @@ describe('live: delete, answered, block', () => {
       { id: brother2Id, name: names.brother2 },
     ]);
   });
+});
+
+// ---------------------------------------------------------------------------------
+// 0182 (owner 2026-11-19): edit own comment, 1000 characters, moderators close the comments.
+describe('live: edit and close (0182)', () => {
+  test('the author edits her own comment → 200, «edited», the room reads the new text', async () => {
+    const e = await control(sisterHidden, { action: 'comment_edit', sessionId, commentId: cSisterHidden, text: 'تجربة: بعد التعديل' });
+    expect(e.status).toBe(200);
+    expect(e.body?.comment).toMatchObject({ id: cSisterHidden, text: 'تجربة: بعد التعديل', edited: true, name: null, mine: true });
+    const { data } = await brother.rpc('get_live_comments', { p_session: sessionId });
+    expect((data as any[]).find((c) => c.id === cSisterHidden)).toMatchObject({ text: 'تجربة: بعد التعديل', edited: true, name: null });
+  });
+
+  test("nobody edits another person's comment (403); 1000 characters fit, 1001 do not", async () => {
+    const x = await control(brother, { action: 'comment_edit', sessionId, commentId: cSisterHidden, text: 'ليس لي' });
+    expect(x.status).toBe(403);
+    const ok = await control(sisterHidden, { action: 'comment_edit', sessionId, commentId: cSisterHidden, text: 'ب'.repeat(1000) });
+    expect(ok.status).toBe(200);
+    const long = await control(sisterHidden, { action: 'comment_edit', sessionId, commentId: cSisterHidden, text: 'ب'.repeat(1001) });
+    expect(long.status).toBe(400);
+    expect(long.body).toEqual({ error: 'too_long' });
+  });
+
+  test('only moderators close; while closed listeners neither post nor edit, the host still writes; reopen', async () => {
+    const x = await control(brother, { action: 'comments_close', sessionId, closed: true });
+    expect(x.status).toBe(403);
+
+    const c = await control(sheikh, { action: 'comments_close', sessionId, closed: true });
+    expect(c.status).toBe(200);
+    expect(c.body).toEqual({ ok: true, status: 'live', closed: true });
+    const st = await brother.rpc('get_live_comments_state', { p_session: sessionId });
+    expect(st.data).toEqual({ closed: true });
+
+    await sleep(10_500); // past the brother's rate limit, so «closed» is what refuses
+    const p = await post(brother, 'تجربة: والتعليقات مغلقة', false);
+    expect(p.status).toBe(409);
+    expect(p.body).toEqual({ error: 'comments_closed' });
+    const e = await control(sisterHidden, { action: 'comment_edit', sessionId, commentId: cSisterHidden, text: 'تعديل وهي مغلقة' });
+    expect(e.status).toBe(409);
+    expect(e.body).toEqual({ error: 'comments_closed' });
+    const h = await post(sheikh, 'تجربة: الشيخ يكتب والتعليقات مغلقة', false);
+    expect(h.status).toBe(200);
+
+    const o = await control(admin, { action: 'comments_close', sessionId, closed: false });
+    expect(o.status).toBe(200);
+    expect((await brother.rpc('get_live_comments_state', { p_session: sessionId })).data).toEqual({ closed: false });
+    const { data: log } = await service
+      .from('live_moderation_log')
+      .select('action, detail')
+      .eq('session_id', sessionId)
+      .eq('action', 'comments_close');
+    expect((log ?? []).map((r: any) => r.detail?.closed)).toEqual(expect.arrayContaining([true, false]));
+  }, 120_000);
 });
 
 // ---------------------------------------------------------------------------------

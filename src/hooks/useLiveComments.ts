@@ -21,9 +21,12 @@ import { create } from 'zustand';
 import {
   blockLiveCommentAuthor,
   deleteLiveComment,
+  editLiveComment,
   getLiveComments,
+  getLiveCommentsState,
   postLiveComment,
   setLiveCommentAnswered,
+  setLiveCommentsClosed,
   type LiveComment,
   type LiveCommentKind,
   type LiveCommentsMessage,
@@ -54,6 +57,10 @@ async function fetchComments(sessionId: string): Promise<LiveComment[]> {
 
 /** One update → the room's cached list (and any read in flight). */
 export function applyLiveCommentsMessage(qc: QueryClient, sessionId: string, msg: LiveCommentsMessage): void {
+  if (msg.t === 'closed') {
+    qc.setQueryData(queryKeys.liveCommentsState(sessionId), { closed: msg.closed });
+    return;
+  }
   inflight.get(sessionId)?.forEach((b) => b.push(msg));
   qc.setQueryData<LiveComment[]>(queryKeys.liveComments(sessionId), (old) =>
     old ? applyCommentsMessage(old, msg) : old,
@@ -112,6 +119,16 @@ export function useLiveComments(
   });
   const comments = query.data ?? EMPTY;
 
+  // 0182: closed by a moderator — read with the list, then kept current by {t:'closed'}.
+  const state = useQuery({
+    queryKey: queryKeys.liveCommentsState(id),
+    queryFn: () => getLiveCommentsState(id),
+    enabled: opts.enabled && !!sessionId,
+    staleTime: 0,
+    gcTime: 5 * 60_000,
+    retry: 1,
+  });
+
   const seenSession = useSeen((s) => s.sessionId);
   const seenIds = useSeen((s) => s.ids);
   const mark = useSeen((s) => s.mark);
@@ -130,6 +147,7 @@ export function useLiveComments(
     isError: query.isError && !query.data,
     refetch: query.refetch,
     unseen,
+    closed: state.data?.closed === true,
   };
 }
 
@@ -142,6 +160,30 @@ export function usePostLiveComment(sessionId: string | null | undefined) {
     networkMode: 'always',
     onSuccess: (c) => {
       if (sessionId) applyLiveCommentsMessage(qc, sessionId, { t: 'add', c });
+    },
+  });
+}
+
+/** 0182: the author edits his own comment; the new text replaces it in the list at once. */
+export function useEditLiveComment(sessionId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; text: string }) => editLiveComment(sessionId as string, v.id, v.text),
+    networkMode: 'always',
+    onSuccess: (c) => {
+      if (sessionId) applyLiveCommentsMessage(qc, sessionId, { t: 'edit', c });
+    },
+  });
+}
+
+/** 0182: a moderator closes / reopens the comments of this majlis. */
+export function useSetLiveCommentsClosed(sessionId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (closed: boolean) => setLiveCommentsClosed(sessionId as string, closed),
+    networkMode: 'always',
+    onSuccess: (_d, closed) => {
+      if (sessionId) applyLiveCommentsMessage(qc, sessionId, { t: 'closed', closed });
     },
   });
 }
