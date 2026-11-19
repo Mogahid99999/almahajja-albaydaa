@@ -19,7 +19,8 @@
  * live-control error codes (HTTP status):
  *   guest_cannot_comment 403 («سجّل أولاً») · not_live 409 (green or over) ·
  *   not_present 409 (not in the room) · blocked 403 (blocked from commenting in
- *   this majlis) · blocked_words 400 · empty 400 · too_long 400 (> 300) ·
+ *   this majlis) · blocked_words 400 · empty 400 · too_long 400 (> 1000; 300 before 0182) ·
+ *   comments_closed 409 (0182: a moderator closed the comments) ·
  *   rate_limited 429 (one per 10 s) · forbidden 403 · not_found 404 ·
  *   invalid_target 409 (blocking one's own comment) · bad_request 400 ·
  *   banned 403 · unauthorized 401 · server_error 500 · network (no response).
@@ -37,6 +38,8 @@ export type LiveComment = {
   name: string | null;
   gender: 'm' | 'f';
   answered: boolean;
+  /** 0182: its author edited it («معدّل»). */
+  edited?: boolean;
   /** Server time of posting, 'YYYY-MM-DDTHH:MM:SS.mmmZ' (UTC) — `new Date(at)` works on Hermes. */
   at: string;
   /** Reads only: the caller wrote it. Never part of a broadcast. */
@@ -48,12 +51,15 @@ export type LiveComment = {
 export type LiveCommentsMessage =
   | { t: 'add'; c: LiveComment }
   | { t: 'del'; id: string }
-  | { t: 'ans'; id: string; answered: boolean };
+  | { t: 'ans'; id: string; answered: boolean }
+  // 0182
+  | { t: 'edit'; c: LiveComment }
+  | { t: 'closed'; closed: boolean };
 
 /** LiveKit data topic of the comment stream (live-control broadcasts, RELIABLE). */
 export const LIVE_COMMENTS_TOPIC = 'comments';
-/** Same as the server (live_comments.body check): 1–300 characters after trimming. */
-export const LIVE_COMMENT_MAX_CHARS = 300;
+/** Same as the server (live_comments.body check): 1–1000 characters after trimming (300 before 0182). */
+export const LIVE_COMMENT_MAX_CHARS = 1000;
 /** Server rate limit: one comment per 10 s per user per majlis (429 rate_limited). */
 export const LIVE_COMMENT_RATE_LIMIT_MS = 10_000;
 /** A comment data message is < 2 KB; anything this big is not ours. */
@@ -98,6 +104,7 @@ export function toLiveComment(raw: unknown): LiveComment | null {
     answered: r.answered,
     at: r.at,
   };
+  if (r.edited === true) c.edited = true;
   if (typeof r.mine === 'boolean') c.mine = r.mine;
   if (typeof r.deleted === 'boolean') c.deleted = r.deleted;
   return c;
@@ -172,6 +179,29 @@ export async function postLiveComment(input: {
   const c = toLiveComment(d.comment);
   if (!c) throw new LiveControlError('unknown');
   return { ...c, mine: true };
+}
+
+/** 0182: the author edits his own comment while live → the updated comment (mine: true). */
+export async function editLiveComment(sessionId: string, commentId: string, text: string): Promise<LiveComment> {
+  const len = liveCommentLength(text);
+  if (len === 0) throw new LiveControlError('empty');
+  if (len > LIVE_COMMENT_MAX_CHARS) throw new LiveControlError('too_long');
+  const d = await invokeLiveControl('comment_edit', { sessionId, commentId, text });
+  const c = toLiveComment(d.comment);
+  if (!c) throw new LiveControlError('unknown');
+  return { ...c, mine: true };
+}
+
+/** 0182: close / reopen the comments of a majlis — host / moderators / content managers. */
+export async function setLiveCommentsClosed(sessionId: string, closed: boolean): Promise<void> {
+  await invokeLiveControl('comments_close', { sessionId, closed });
+}
+
+/** 0182: whether the comments are closed (same access as get_live_comments; false when unknown). */
+export async function getLiveCommentsState(sessionId: string): Promise<{ closed: boolean }> {
+  const { data, error } = await supabase.rpc('get_live_comments_state' as never, { p_session: sessionId } as never);
+  if (error) throw error;
+  return { closed: (data as { closed?: unknown } | null)?.closed === true };
 }
 
 /** Soft-delete: the author, or the session's host / moderators / a content manager. Idempotent. */
@@ -288,6 +318,15 @@ export function parseCommentsMessage(payload: Uint8Array): LiveCommentsMessage |
       return isId(msg.id) ? { t: 'del', id: msg.id } : null;
     case 'ans':
       return isId(msg.id) && typeof msg.answered === 'boolean' ? { t: 'ans', id: msg.id, answered: msg.answered } : null;
+    case 'edit': {
+      const c = toLiveComment(msg.c);
+      if (!c) return null;
+      delete c.mine;
+      delete c.deleted;
+      return { t: 'edit', c };
+    }
+    case 'closed':
+      return typeof msg.closed === 'boolean' ? { t: 'closed', closed: msg.closed } : null;
     default:
       return null;
   }

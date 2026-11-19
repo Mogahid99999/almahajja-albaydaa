@@ -161,7 +161,7 @@ export function ReactionPill({ open, onPress }: { open: boolean; onPress: () => 
   );
 }
 
-/** The six signs. `blocked`: a moderator stopped mine — say so, send nothing. */
+/** The signs (seven since 😢, 2026-11-19 — they fit a 360 dp phone, and wrap below that). `blocked`: a moderator stopped mine — say so, send nothing. */
 export function ReactionTray({ blocked, onPick }: { blocked: boolean; onPick: (key: ReactionKey) => void }) {
   if (blocked) {
     return (
@@ -176,9 +176,10 @@ export function ReactionTray({ blocked, onPick }: { blocked: boolean; onPick: (k
     <View
       style={{
         flexDirection: 'row',
+        flexWrap: 'wrap',
         justifyContent: 'center',
-        gap: 6,
-        paddingHorizontal: 16,
+        gap: 5,
+        paddingHorizontal: 12,
         paddingTop: 6,
       }}
     >
@@ -190,9 +191,9 @@ export function ReactionTray({ blocked, onPick }: { blocked: boolean; onPick: (k
           accessibilityLabel={r.label}
           hitSlop={2}
           style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
+            width: 42,
+            height: 42,
+            borderRadius: 21,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: colors.surfaceCard,

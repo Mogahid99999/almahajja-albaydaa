@@ -89,7 +89,7 @@ describe('reads', () => {
         { ...named, id: 'not-a-uuid' },
         { ...named, gender: 'x' },
         { ...named, text: '' },
-        { ...named, text: 'ب'.repeat(301) },
+        { ...named, text: 'ب'.repeat(1001) },
         { ...named, at: 'yesterday' },
         null,
         'x',
@@ -154,13 +154,13 @@ describe('writes (live-control)', () => {
       code: 'empty',
     });
     await expect(
-      postLiveComment({ sessionId: SESSION, kind: 'comment', text: 'ب'.repeat(301), anonymous: false }),
+      postLiveComment({ sessionId: SESSION, kind: 'comment', text: 'ب'.repeat(1001), anonymous: false }),
     ).rejects.toMatchObject({ code: 'too_long' });
-    // 300 emoji = 300 characters for the server, not 600.
-    mockInvoke.mockResolvedValue({ data: { ok: true, comment: { ...named, text: '🌙'.repeat(300) } }, error: null });
+    // 1000 emoji = 1000 characters for the server, not 2000 (0182; 300 before).
+    mockInvoke.mockResolvedValue({ data: { ok: true, comment: { ...named, text: '🌙'.repeat(1000) } }, error: null });
     await expect(
-      postLiveComment({ sessionId: SESSION, kind: 'comment', text: '🌙'.repeat(300), anonymous: false }),
-    ).resolves.toMatchObject({ text: '🌙'.repeat(300) });
+      postLiveComment({ sessionId: SESSION, kind: 'comment', text: '🌙'.repeat(1000), anonymous: false }),
+    ).resolves.toMatchObject({ text: '🌙'.repeat(1000) });
     expect(mockInvoke).toHaveBeenCalledTimes(1);
   });
 
@@ -213,6 +213,15 @@ describe('parseCommentsMessage (topic "comments")', () => {
   test('add never carries mine / deleted, even if sent', () => {
     const m = parseCommentsMessage(bytes({ t: 'add', c: { ...named, mine: true, deleted: false } }));
     expect(m).toEqual({ t: 'add', c: named });
+  });
+
+  test('0182: edit (a public comment, never mine) and closed', () => {
+    expect(parseCommentsMessage(bytes({ t: 'edit', c: { ...named, edited: true, mine: true } }))).toEqual({
+      t: 'edit',
+      c: { ...named, edited: true },
+    });
+    expect(parseCommentsMessage(bytes({ t: 'closed', closed: true }))).toEqual({ t: 'closed', closed: true });
+    expect(parseCommentsMessage(bytes({ t: 'closed', closed: 'yes' }))).toBeNull();
   });
 
   test('del / ans', () => {

@@ -423,7 +423,10 @@ export type LiveControlAction =
   | 'comment'
   | 'comment_delete'
   | 'comment_answered'
-  | 'comment_block';
+  | 'comment_block'
+  // 0182
+  | 'comment_edit'
+  | 'comments_close';
 
 /**
  * Call live-control: `{ action, ...body }` — body carries `sessionId` and the

@@ -33,6 +33,9 @@ const time = (c: LiveComment) => {
  *    merge and `mine` is kept. A new one lands in time order (normally last).
  *  - del: removed.
  *  - ans: «تمت الإجابة» on / off.
+ *  - edit (0182): the author's new text in place (same id, same time, «معدّل»);
+ *    an unknown id is ignored (the next read has it).
+ *  - closed (0182): not a list change (useLiveComments keeps it apart).
  */
 export function applyCommentsMessage(list: readonly LiveComment[], msg: LiveCommentsMessage): LiveComment[] {
   const arr = list as LiveComment[];
@@ -58,6 +61,15 @@ export function applyCommentsMessage(list: readonly LiveComment[], msg: LiveComm
     case 'del': {
       if (!arr.some((x) => x.id === msg.id)) return arr;
       return arr.filter((x) => x.id !== msg.id);
+    }
+    case 'edit': {
+      const i = arr.findIndex((x) => x.id === msg.c.id);
+      if (i < 0) return arr;
+      const old = arr[i];
+      if (old.text === msg.c.text && !!old.edited === !!msg.c.edited) return arr;
+      const next = arr.slice();
+      next[i] = { ...old, text: msg.c.text, edited: msg.c.edited ?? true };
+      return next;
     }
     case 'ans': {
       const i = arr.findIndex((x) => x.id === msg.id);

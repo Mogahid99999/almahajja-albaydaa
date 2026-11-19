@@ -23,6 +23,8 @@ export const REACTIONS = [
   { key: 'laugh', emoji: '😂', label: 'ضحك' },
   { key: 'wow', emoji: '😮', label: 'تعجّب' },
   { key: 'rose', emoji: '🌹', label: 'جزاكم الله خيراً' },
+  // owner 2026-11-19. Older apps ignore an unknown key (parseReaction).
+  { key: 'cry', emoji: '😢', label: 'بكاء' },
 ] as const;
 
 export type ReactionKey = (typeof REACTIONS)[number]['key'];

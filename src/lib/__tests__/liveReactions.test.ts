@@ -15,8 +15,9 @@ import {
   reactionEmoji,
 } from '../liveReactions';
 
-test('six calm signs, each with an Arabic label', () => {
-  expect(REACTIONS.map((r) => r.emoji)).toEqual(['👍', '❤️', '🤲', '😂', '😮', '🌹']);
+test('seven calm signs (😢 since 2026-11-19), each with an Arabic label', () => {
+  expect(REACTIONS.map((r) => r.emoji)).toEqual(['👍', '❤️', '🤲', '😂', '😮', '🌹', '😢']);
+  expect(REACTIONS.find((r) => r.key === 'cry')?.label).toBe('بكاء');
   for (const r of REACTIONS) expect(/[؀-ۿ]/.test(r.label)).toBe(true);
   expect(reactionEmoji('dua')).toBe('🤲');
 });

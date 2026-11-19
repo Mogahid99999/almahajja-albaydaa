@@ -79,3 +79,17 @@ test('the staff badge counts unseen comments that are not mine', () => {
   expect(countUnseen(list, new Set(['a']))).toBe(1);
   expect(countUnseen(list, new Set(['a', 'c']))).toBe(0);
 });
+
+// 0182 (owner 2026-11-19)
+test('edit replaces the text in place, keeps mine and the time, marks «معدّل»; an unknown id is ignored', () => {
+  const list = [c('a', T1, { mine: true }), c('b', T2)];
+  const next = applyCommentsMessage(list, { t: 'edit', c: c('a', T1, { text: 'نص جديد', edited: true }) });
+  expect(next[0]).toMatchObject({ id: 'a', text: 'نص جديد', edited: true, mine: true, at: T1 });
+  expect(next[1]).toBe(list[1]);
+  expect(applyCommentsMessage(list, { t: 'edit', c: c('zz', T3, { edited: true }) })).toBe(list);
+});
+
+test('closed is not a list change', () => {
+  const list = [c('a', T1)];
+  expect(applyCommentsMessage(list, { t: 'closed', closed: true })).toBe(list);
+});

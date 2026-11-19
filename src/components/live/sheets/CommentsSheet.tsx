@@ -4,8 +4,8 @@
  * bottom, next to the composer); it follows the room live (useLiveComments).
  *
  * Composer: one box «اكتب تعليقاً أو سؤالاً» (owner 2026-09-30: no «تعليق» /
- * «سؤال» choice in the UI — the post goes as kind 'comment'), up to 300
- * characters (the remainder shows near the limit), then the name rules (owner, final):
+ * «سؤال» choice in the UI — the post goes as kind 'comment'), up to 1000
+ * characters (300 before 0182) (the remainder shows near the limit), then the name rules (owner, final):
  *  - a brother writes with his name, or ticks «بدون اسم» («طالب» for everyone);
  *  - a sister who sits in the room WITHOUT her name is always nameless — no
  *    option, one quiet line says so;
@@ -18,6 +18,10 @@
  * room's moderators / content managers → «حذف»,
  * «منع من التعليق» (after a confirm; the author is never shown). live-control
  * takes 2–5 s: every write shows its busy state, the list stays usable.
+ *
+ * 0182 (owner 2026-11-19): «تعديل» on my own comment (the composer turns into
+ * «تعديل تعليقك», the row shows «معدّل»); the room's moderators close / reopen the
+ * comments («إغلاق التعليقات» / «فتح التعليقات») — while closed only they write.
  */
 import Feather from '@expo/vector-icons/Feather';
 import { useEffect, useRef, useState } from 'react';
@@ -34,7 +38,13 @@ import { TextInput } from '@/components/ui/TextInput';
 import { LIVE_COMMENT_MAX_CHARS, liveCommentLength, type LiveComment } from '@/api/liveComments';
 import { Txt } from '@/components/ui';
 import { colors, fonts, radius } from '@/constants/theme';
-import { useLiveCommentAction, usePostLiveComment, type LiveCommentAction } from '@/hooks/useLiveComments';
+import {
+  useEditLiveComment,
+  useLiveCommentAction,
+  usePostLiveComment,
+  useSetLiveCommentsClosed,
+  type LiveCommentAction,
+} from '@/hooks/useLiveComments';
 import {
   LIVE_COMMENTS_COPY as COPY,
   LIVE_COPY,
@@ -70,6 +80,7 @@ export function CommentsSheet({
   myName,
   canModerate,
   onGuestGate,
+  closed = false,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -87,11 +98,18 @@ export function CommentsSheet({
   canModerate: boolean;
   /** A guest wants to write → «سجّل أولاً». */
   onGuestGate: () => void;
+  /** 0182: a moderator closed the comments of this majlis. */
+  closed?: boolean;
 }) {
   const action = useLiveCommentAction(sessionId);
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmBlock, setConfirmBlock] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const closeMut = useSetLiveCommentsClosed(sessionId);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  // Writing (posting or editing) is open to me: open comments, or I moderate them.
+  const mayWrite = writeState === 'ok' && (!closed || canModerate);
 
   const listRef = useRef<FlatList<LiveComment>>(null);
   const atEnd = useRef(true);
@@ -102,6 +120,8 @@ export function CommentsSheet({
     setSelected(null);
     setConfirmBlock(null);
     setRowError(null);
+    setEditing(null);
+    setCloseError(null);
     // Open on the newest: a reopen with the same list never changes the
     // content size, and the first one can measure before the list has a height.
     const t = setTimeout(() => {
@@ -133,13 +153,19 @@ export function CommentsSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealKey]);
 
-  // A comment deleted meanwhile (by its author, a moderator) closes its actions.
+  // A comment deleted meanwhile (by its author, a moderator) closes its actions / its edit.
   useEffect(() => {
     if (selected && !comments.some((c) => c.id === selected)) {
       setSelected(null);
       setConfirmBlock(null);
     }
-  }, [comments, selected]);
+    if (editing && !comments.some((c) => c.id === editing.id)) setEditing(null);
+  }, [comments, selected, editing]);
+
+  // Closed meanwhile (and I don't moderate): an edit in progress can't be saved.
+  useEffect(() => {
+    if (!mayWrite) setEditing(null);
+  }, [mayWrite]);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
@@ -171,6 +197,24 @@ export function CommentsSheet({
   return (
     <LiveSheet visible={visible} onClose={onClose} title={COPY.title} sub={COPY.sub} heightRatio={0.82} avoidKeyboard>
       <View style={{ flex: 1 }}>
+        {canModerate ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 10 }}>
+            <Txt size={12} color={colors.accentBrassMuted} style={{ flex: 1, lineHeight: 19 }}>
+              {closed ? COPY.closedStaff : ''}
+            </Txt>
+            <RowAction
+              icon={closed ? 'unlock' : 'lock'}
+              label={closed ? COPY.openComments : COPY.closeComments}
+              tone={closed ? 'primary' : 'plain'}
+              busy={closeMut.isPending}
+              onPress={() => {
+                setCloseError(null);
+                closeMut.mutate(!closed, { onError: (e) => setCloseError(commentErrorText(e, 'act')) });
+              }}
+            />
+          </View>
+        ) : null}
+        {closeError ? <SheetError text={closeError} /> : null}
         <FlatList
           ref={listRef}
           data={comments as LiveComment[]}
@@ -198,6 +242,7 @@ export function CommentsSheet({
           renderItem={({ item }) => {
             const mine = !!item.mine;
             const canDelete = mine || canModerate;
+            const canEdit = mine && mayWrite;
             const actionable = canDelete;
             const open = selected === item.id;
             return (
@@ -233,6 +278,18 @@ export function CommentsSheet({
                     </View>
                   ) : (
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                      {canEdit ? (
+                        <RowAction
+                          icon="edit-2"
+                          label={COPY.edit}
+                          disabled={action.isPending}
+                          onPress={() => {
+                            setRowError(null);
+                            setSelected(null);
+                            setEditing({ id: item.id, text: item.text });
+                          }}
+                        />
+                      ) : null}
                       {canDelete ? (
                         <RowAction
                           icon="trash-2"
@@ -267,6 +324,9 @@ export function CommentsSheet({
           sessionId={sessionId}
           visible={visible}
           writeState={writeState}
+          closed={closed && !canModerate}
+          editing={editing}
+          onEditDone={() => setEditing(null)}
           me={me}
           myName={myName}
           onGuestGate={onGuestGate}
@@ -362,7 +422,7 @@ function CommentRow({
         </Txt>
         <View style={{ flex: 1 }} />
         <Txt size={11} color={colors.textGhost} tabular>
-          {arClock(c.at)}
+          {c.edited ? `${COPY.edited} · ${arClock(c.at)}` : arClock(c.at)}
         </Txt>
       </View>
       <Txt size={14} color={colors.textInk} selectable style={{ lineHeight: 23, marginTop: 4, alignSelf: 'stretch' }}>
@@ -428,6 +488,9 @@ function Composer({
   sessionId,
   visible,
   writeState,
+  closed,
+  editing,
+  onEditDone,
   me,
   myName,
   onGuestGate,
@@ -436,16 +499,39 @@ function Composer({
   sessionId: string;
   visible: boolean;
   writeState: CommentsWriteState;
+  /** 0182: closed for me (a moderator closed them and I don't moderate). */
+  closed: boolean;
+  /** 0182: my comment being edited, or null (a new post). */
+  editing: { id: string; text: string } | null;
+  onEditDone: () => void;
   me: { gender: Sex; hidden: boolean } | null;
   myName?: string | null;
   onGuestGate: () => void;
   onSent: () => void;
 }) {
   const post = usePostLiveComment(sessionId);
+  const edit = useEditLiveComment(sessionId);
   const [text, setText] = useState('');
   const [anonymous, setAnonymous] = useState(false);
   const [warn, setWarn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+
+  // Entering an edit puts my comment in the box; my unsent draft comes back after.
+  const editingId = editing?.id ?? null;
+  useEffect(() => {
+    if (editing) {
+      setDraft((d) => (d === null ? text : d));
+      setText(editing.text);
+      setError(null);
+      setWarn(false);
+    } else if (draft !== null) {
+      setText(draft);
+      setDraft(null);
+    }
+    // Only when the edited comment changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
 
   useEffect(() => {
     if (visible) return;
@@ -466,6 +552,15 @@ function Composer({
       </View>
     );
   }
+  if (writeState === 'ok' && closed) {
+    return (
+      <View style={{ paddingTop: 12, borderTopWidth: 1, borderColor: colors.borderSand }}>
+        <Txt size={12.5} color={colors.textFaint} align="center" style={{ alignSelf: 'stretch', lineHeight: 20 }}>
+          {COPY.closedLine}
+        </Txt>
+      </View>
+    );
+  }
   if (writeState !== 'ok') {
     return (
       <View style={{ paddingTop: 12, borderTopWidth: 1, borderColor: colors.borderSand }}>
@@ -481,7 +576,7 @@ function Composer({
   const namedSister = sister && !me?.hidden;
   const length = liveCommentLength(text);
   const remaining = commentRemainingLine(length, LIVE_COMMENT_MAX_CHARS);
-  const busy = post.isPending;
+  const busy = post.isPending || edit.isPending;
   const canSend = length >= 1 && length <= LIVE_COMMENT_MAX_CHARS && !busy;
 
   const send = (anon: boolean) => {
@@ -489,6 +584,16 @@ function Composer({
     setWarn(false);
     setError(null);
     const body = text.trim();
+    if (editing) {
+      edit.mutate(
+        { id: editing.id, text: body },
+        {
+          onSuccess: () => onEditDone(),
+          onError: (e) => setError(commentErrorText(e, 'send')),
+        },
+      );
+      return;
+    }
     post.mutate(
       // One kind in the UI (owner 2026-09-30); the server still stores it.
       { kind: 'comment', text: body, anonymous: anon },
@@ -504,6 +609,10 @@ function Composer({
 
   const onSendPress = () => {
     if (!canSend) return;
+    if (editing) {
+      send(false); // an edit never changes the name
+      return;
+    }
     if (namedSister) {
       setWarn(true); // before EVERY named send (owner)
       return;
@@ -513,8 +622,21 @@ function Composer({
 
   return (
     <View style={{ paddingTop: 10, gap: 8, borderTopWidth: 1, borderColor: colors.borderSand }}>
-      {/* The remainder near the limit */}
+      {/* The remainder near the limit; «تعديل تعليقك» + «إلغاء» while editing */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {editing ? (
+          <>
+            <Feather name="edit-2" size={13} color={colors.primaryTeal} />
+            <Txt size={12.5} weight="semibold" color={colors.primaryTeal}>
+              {COPY.editingTitle}
+            </Txt>
+            <Pressable onPress={onEditDone} disabled={busy} accessibilityRole="button" hitSlop={8}>
+              <Txt size={12.5} weight="medium" color={colors.textMuted}>
+                {COPY.cancel}
+              </Txt>
+            </Pressable>
+          </>
+        ) : null}
         <View style={{ flex: 1 }} />
         {remaining ? (
           <Txt
@@ -589,7 +711,7 @@ function Composer({
             onPress={onSendPress}
             disabled={!canSend}
             accessibilityRole="button"
-            accessibilityLabel={COPY.send}
+            accessibilityLabel={editing ? COPY.saveEdit : COPY.send}
             accessibilityState={{ disabled: !canSend, busy }}
             style={({ pressed }) => ({
               width: 46,
@@ -604,15 +726,19 @@ function Composer({
             {busy ? (
               <ActivityIndicator size="small" color={colors.onTealPrimary} />
             ) : (
-              // RTL: the paper plane points to the reading direction's end.
-              <Feather name="send" size={18} color={colors.onTealPrimary} style={{ transform: [{ scaleX: -1 }] }} />
+              editing ? (
+                <Feather name="check" size={19} color={colors.onTealPrimary} />
+              ) : (
+                // RTL: the paper plane points to the reading direction's end.
+                <Feather name="send" size={18} color={colors.onTealPrimary} style={{ transform: [{ scaleX: -1 }] }} />
+              )
             )}
           </Pressable>
         </View>
       )}
 
       {/* Name rules */}
-      {!warn && me && !sister ? (
+      {!warn && !editing && me && !sister ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Pressable
             onPress={() => setAnonymous((v) => !v)}
@@ -646,7 +772,7 @@ function Composer({
           </Txt>
         </View>
       ) : null}
-      {!warn && hiddenSister ? (
+      {!warn && !editing && hiddenSister ? (
         <Txt size={12} color={colors.textFaint} style={{ lineHeight: 19, alignSelf: 'stretch' }}>
           {COPY.hiddenSister}
         </Txt>

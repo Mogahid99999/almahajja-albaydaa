@@ -663,6 +663,15 @@ export const LIVE_COMMENTS_COPY = {
   blockedWords: 'في النص كلمات غير مناسبة، عدّله ثم أرسل',
   blocked: 'لا يمكنك التعليق في هذا المجلس',
   sendFailed: 'تعذّر الإرسال. حاول مرة أخرى',
+  // 0182 (owner 2026-11-19): edit own comment, moderators close the comments
+  edit: 'تعديل',
+  edited: 'معدّل',
+  editingTitle: 'تعديل تعليقك',
+  saveEdit: 'حفظ التعديل',
+  closedLine: 'أُغلقت التعليقات في هذا المجلس',
+  closedStaff: 'التعليقات مغلقة للحاضرين، ويمكنك أنت الكتابة',
+  closeComments: 'إغلاق التعليقات',
+  openComments: 'فتح التعليقات',
 } as const;
 
 /**
@@ -734,7 +743,9 @@ export function commentErrorText(e: unknown, action: 'send' | 'act' = 'send'): s
     case 'guest_cannot_comment':
       return 'التعليق والسؤال للمسجّلين فقط';
     case 'too_long':
-      return 'النص أطول من ٣٠٠ حرف، اختصره ثم أرسل';
+      return 'النص أطول من ١٠٠٠ حرف، اختصره ثم أرسل';
+    case 'comments_closed':
+      return 'أُغلقت التعليقات في هذا المجلس';
     case 'empty':
       return 'اكتب شيئاً أولاً';
     case 'not_present':

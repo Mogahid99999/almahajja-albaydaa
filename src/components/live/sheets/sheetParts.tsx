@@ -55,7 +55,17 @@ export function SheetButton({
       })}
     >
       {busy ? <ActivityIndicator size="small" color={fg} /> : null}
-      <Txt size={15} weight={tone === 'secondary' ? 'medium' : 'semibold'} color={fg} align="center">
+      {/* simple + shrink: highQuality breaking mis-measures an Arabic label in a row on
+          Android and hides its last word («أضف تعليقاً أو سؤالاً» showed «أضف تعليقاً أو»,
+          2026-11-19) — same fix as CommentsSheet's RowAction. */}
+      <Txt
+        size={15}
+        weight={tone === 'secondary' ? 'medium' : 'semibold'}
+        color={fg}
+        align="center"
+        textBreakStrategy="simple"
+        style={{ flexShrink: 1 }}
+      >
         {label}
       </Txt>
     </Pressable>

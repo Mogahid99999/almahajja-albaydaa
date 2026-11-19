@@ -151,6 +151,8 @@ export const queryKeys = {
   // and the staff list incl. deleted ones (admin_live_comments) — under
   // ['live', 'admin', …] with the other staff live reads (useLiveAdmin liveAdminKeys.all).
   liveComments: (sessionId: string) => ['live', 'comments', sessionId] as const,
+  /** 0182: { closed } of a session's comments. */
+  liveCommentsState: (sessionId: string) => ['live', 'comments-state', sessionId] as const,
 
   // «الجدول الأسبوعي للدروس» (0158): ONE persisted read, refetched only when
   // app_open's schedule_version moves.

@@ -712,6 +712,7 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
           me={me ? { gender: me.gender, hidden: me.hidden } : null}
           myName={user?.displayName ?? null}
           canModerate={canModerateCmts}
+          closed={comments.closed}
           onGuestGate={() =>
             swapSheet(
               () => setCommentsOpen(false),

@@ -44,7 +44,7 @@ jest.mock('@/hooks/useLive', () => ({
   useLiveStaffParticipants: () => ({ data: [] }),
 }));
 
-const mockComments: { list: LiveComment[]; unseen: number } = { list: [], unseen: 0 };
+const mockComments: { list: LiveComment[]; unseen: number; closed?: boolean } = { list: [], unseen: 0 };
 const mockCommentsOpts: { enabled: boolean; open: boolean }[] = [];
 const mockPost = jest.fn();
 const mockAction = jest.fn();
@@ -57,11 +57,16 @@ jest.mock('@/hooks/useLiveComments', () => ({
       isError: false,
       refetch: jest.fn(),
       unseen: mockComments.unseen,
+      closed: mockComments.closed ?? false,
     };
   },
   usePostLiveComment: () => ({ mutate: mockPost, isPending: false }),
   useLiveCommentAction: () => ({ mutate: mockAction, isPending: false, variables: undefined }),
+  useEditLiveComment: () => ({ mutate: mockEdit, isPending: false }),
+  useSetLiveCommentsClosed: () => ({ mutate: mockClose, isPending: false }),
 }));
+const mockEdit = jest.fn();
+const mockClose = jest.fn();
 
 const mockState: Record<string, unknown> = {};
 jest.mock('@/stores/liveStore', () => {
@@ -384,4 +389,72 @@ test('in the green room (not on air yet) the composer waits for the broadcast', 
   await openComments();
   expect(screen.getByText('التعليق متاح أثناء البث المباشر')).toBeTruthy();
   expect(screen.queryByLabelText('إرسال')).toBeNull();
+});
+
+// ─── 0182 (owner 2026-11-19): edit own comment, moderators close the comments ───
+
+test('the author edits her own comment: «تعديل» fills the box, ✓ saves through live-control', async () => {
+  inRoom({
+    user: { id: 'u2', role: 'student', isGuest: false, displayName: 'مريم', gender: 'female' },
+    me: { role: 'listener', hidden: false, gender: 'f' },
+  });
+  mockComments.list = [comment('mine1', { text: 'تعليقي', name: 'مريم', gender: 'f', mine: true })];
+  await openComments();
+  await fireEvent.press(screen.getByText('تعليقي'));
+  await fireEvent.press(screen.getByLabelText('تعديل'));
+  expect(screen.getByText('تعديل تعليقك')).toBeTruthy();
+  const box = screen.getByLabelText('اكتب تعليقاً أو سؤالاً');
+  expect(box.props.value).toBe('تعليقي');
+  await fireEvent.changeText(box, 'تعليقي بعد التعديل');
+  await fireEvent.press(screen.getByLabelText('حفظ التعديل'));
+  expect(mockEdit).toHaveBeenCalledWith({ id: 'mine1', text: 'تعليقي بعد التعديل' }, expect.anything());
+  expect(mockPost).not.toHaveBeenCalled();
+});
+
+test('an edited comment shows «معدّل»; nobody may edit another person\'s comment', async () => {
+  brother();
+  mockComments.list = [comment('c9', { text: 'تعليق غيري', edited: true })];
+  await openComments();
+  expect(screen.getByText(/معدّل/)).toBeTruthy();
+  expect(screen.queryByLabelText('تعديل')).toBeNull();
+});
+
+test('closed comments: a listener sees «أُغلقت التعليقات», no box, no «تعديل»', async () => {
+  inRoom({
+    user: { id: 'u2', role: 'student', isGuest: false, displayName: 'مريم', gender: 'female' },
+    me: { role: 'listener', hidden: false, gender: 'f' },
+  });
+  mockComments.closed = true;
+  mockComments.list = [comment('mine1', { text: 'تعليقي', name: 'مريم', gender: 'f', mine: true })];
+  await openComments();
+  expect(screen.getByText('أُغلقت التعليقات في هذا المجلس')).toBeTruthy();
+  expect(screen.queryByLabelText('اكتب تعليقاً أو سؤالاً')).toBeNull();
+  await fireEvent.press(screen.getByText('تعليقي'));
+  expect(screen.queryByLabelText('تعديل')).toBeNull();
+  expect(screen.getByLabelText('حذف')).toBeTruthy();
+  mockComments.closed = false;
+});
+
+test('the host closes and reopens the comments; while closed he still writes', async () => {
+  inRoom({
+    user: { id: 'a1', role: 'sheikh', isGuest: false, displayName: 'الشيخ', gender: 'male' },
+    me: { role: 'host', hidden: false, gender: 'm' },
+  });
+  await openComments();
+  await fireEvent.press(screen.getByLabelText('إغلاق التعليقات'));
+  expect(mockClose).toHaveBeenCalledWith(true, expect.anything());
+
+  mockComments.closed = true;
+  await openComments();
+  expect(screen.getByText('التعليقات مغلقة للحاضرين، ويمكنك أنت الكتابة')).toBeTruthy();
+  expect(screen.getByLabelText('اكتب تعليقاً أو سؤالاً')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('فتح التعليقات'));
+  expect(mockClose).toHaveBeenCalledWith(false, expect.anything());
+  mockComments.closed = false;
+});
+
+test('a listener has no close button', async () => {
+  brother();
+  await openComments();
+  expect(screen.queryByLabelText('إغلاق التعليقات')).toBeNull();
 });

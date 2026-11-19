@@ -847,7 +847,9 @@ describe('comments (0147): who may write, delete, answer, block', () => {
   const COMMENT = 'c1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
 
   test('comment actions are their own set — never in LIVE_ACTIONS, never the service role\'s', () => {
-    expect([...COMMENT_ACTIONS]).toEqual(['comment', 'comment_delete', 'comment_answered', 'comment_block']);
+    expect([...COMMENT_ACTIONS]).toEqual([
+      'comment', 'comment_delete', 'comment_answered', 'comment_block', 'comment_edit', 'comments_close',
+    ]);
     for (const a of COMMENT_ACTIONS) {
       expect(isCommentAction(a)).toBe(true);
       expect((LIVE_ACTIONS as readonly string[]).includes(a)).toBe(false);
@@ -929,12 +931,12 @@ describe('comments (0147): who may write, delete, answer, block', () => {
     expect(shouldBroadcastComments('ended')).toBe(false);
   });
 
-  test('text: 1–300 characters after trimming, counted like Postgres (code points)', () => {
-    expect(COMMENT_MAX_CHARS).toBe(300);
+  test('text: 1–1000 characters after trimming (0182, was 300), counted like Postgres (code points)', () => {
+    expect(COMMENT_MAX_CHARS).toBe(1000);
     expect(commentTextVerdict('   \n ')).toEqual({ ok: false, code: 'empty' });
     expect(commentTextVerdict('ما حكم صلاة الوتر؟')).toEqual({ ok: true });
-    expect(commentTextVerdict(`  ${'ب'.repeat(300)}  `)).toEqual({ ok: true });
-    expect(commentTextVerdict('ب'.repeat(301))).toEqual({ ok: false, code: 'too_long' });
+    expect(commentTextVerdict(`  ${'ب'.repeat(1000)}  `)).toEqual({ ok: true });
+    expect(commentTextVerdict('ب'.repeat(1001))).toEqual({ ok: false, code: 'too_long' });
     // 300 emoji are 600 UTF-16 units but 300 characters for the DB check.
     expect(commentLength('🌙'.repeat(300))).toBe(300);
     expect(commentTextVerdict('🌙'.repeat(300))).toEqual({ ok: true });
@@ -1020,6 +1022,7 @@ describe('comments (0147): who may write, delete, answer, block', () => {
       name: null,
       gender: 'f',
       answered: false,
+      edited: false,
       at: '2026-09-30T18:00:00.123+00:00',
     });
     const add = commentsMessage({ t: 'add', c });
@@ -1028,9 +1031,56 @@ describe('comments (0147): who may write, delete, answer, block', () => {
     expect(add).not.toContain('mine');
     expect(JSON.parse(commentsMessage({ t: 'del', id: COMMENT }))).toEqual({ t: 'del', id: COMMENT });
     expect(JSON.parse(commentsMessage({ t: 'ans', id: COMMENT, answered: true }))).toEqual({ t: 'ans', id: COMMENT, answered: true });
+    // 0182: an edit replaces the comment in place; closing reaches everyone
+    expect(JSON.parse(commentsMessage({ t: 'edit', c: { ...c, text: 'نص معدّل', edited: true } }))).toEqual({
+      t: 'edit',
+      c: { ...c, text: 'نص معدّل', edited: true },
+    });
+    expect(JSON.parse(commentsMessage({ t: 'closed', closed: true }))).toEqual({ t: 'closed', closed: true });
+    expect(toPublicComment({ ...row, edited: true })?.edited).toBe(true);
     // malformed rows are not broadcast
     expect(toPublicComment({ ...row, gender: 'x' })).toBeNull();
     expect(toPublicComment({ ...row, name: 5 })).toBeNull();
     expect(toPublicComment(null)).toBeNull();
+  });
+});
+
+describe('comments 0182: edit own comment, moderators close the comments', () => {
+  const S = '11111111-1111-4111-8111-111111111111';
+  const C = '22222222-2222-4222-8222-222222222222';
+  test('parse: comment_edit needs commentId + text; comments_close needs closed', () => {
+    expect(parseLiveCommentRequest({ action: 'comment_edit', sessionId: S, commentId: C, text: 'تعديل' })).toEqual({
+      ok: true, value: { action: 'comment_edit', sessionId: S, commentId: C, text: 'تعديل' },
+    });
+    expect(parseLiveCommentRequest({ action: 'comment_edit', sessionId: S, commentId: C }).ok).toBe(false);
+    expect(parseLiveCommentRequest({ action: 'comments_close', sessionId: S, closed: true })).toEqual({
+      ok: true, value: { action: 'comments_close', sessionId: S, closed: true },
+    });
+    expect(parseLiveCommentRequest({ action: 'comments_close', sessionId: S }).ok).toBe(false);
+  });
+
+  test('who: any registered author may ask to edit (SQL checks it is his); only moderators close', () => {
+    const user = { kind: 'user' as const, appRole: 'student', isGuest: false, isHost: false, liveRole: 'listener' };
+    expect(authorizeCommentAction('comment_edit', user)).toEqual({ ok: true });
+    expect(authorizeCommentAction('comment_edit', { ...user, isGuest: true })).toEqual({ ok: false, code: 'guest_cannot_comment' });
+    expect(authorizeCommentAction('comments_close', user)).toEqual({ ok: false, code: 'forbidden' });
+    expect(authorizeCommentAction('comments_close', { ...user, appRole: 'admin' })).toEqual({ ok: true });
+    expect(authorizeCommentAction('comments_close', { ...user, isHost: true })).toEqual({ ok: true });
+    expect(preauthorizeCommentAction('comment_edit', { appRole: 'student', isGuest: false })).toEqual({ ok: true });
+    expect(preauthorizeCommentAction('comments_close', { appRole: 'student', isGuest: false })).toEqual({ ok: false, code: 'forbidden' });
+  });
+
+  test('when: edit while live only; close / reopen in green or live', () => {
+    expect(commentStatusVerdict('comment_edit', 'live')).toEqual({ ok: true });
+    expect(commentStatusVerdict('comment_edit', 'ended')).toEqual({ ok: false, code: 'not_live' });
+    expect(commentStatusVerdict('comments_close', 'green')).toEqual({ ok: true });
+    expect(commentStatusVerdict('comments_close', 'ended')).toEqual({ ok: false, code: 'not_live' });
+  });
+
+  test('SQL live_comment:closed is a 409 comments_closed; closing is logged, editing is not', () => {
+    expect(commentRpcErrorCode('live_comment:closed')).toBe('comments_closed');
+    expect(LIVE_ERROR_STATUS.comments_closed).toBe(409);
+    expect(commentAuditAction('comments_close')).toBe('comments_close');
+    expect(commentAuditAction('comment_edit')).toBeNull();
   });
 });

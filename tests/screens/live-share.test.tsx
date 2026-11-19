@@ -45,6 +45,8 @@ jest.mock('@/hooks/useLiveComments', () => ({
   useLiveComments: () => ({ comments: [], isLoading: false, isError: false, refetch: jest.fn(), unseen: 0 }),
   usePostLiveComment: () => ({ mutate: jest.fn(), isPending: false }),
   useLiveCommentAction: () => ({ mutate: jest.fn(), isPending: false, variables: undefined }),
+  useEditLiveComment: () => ({ mutate: jest.fn(), isPending: false }),
+  useSetLiveCommentsClosed: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
 const mockState: Record<string, unknown> = {};
