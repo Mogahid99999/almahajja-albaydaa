@@ -107,8 +107,11 @@ function SuraHeader({ sura, flex }: { sura: number; flex?: boolean }) {
   return (
     <View style={[styles.hdOuter, flex && { width: '100%', marginVertical: 10 }]}>
       <View style={styles.hdInner}>
-        <Text style={styles.hdText} allowFontScaling={false}>
-          سُورَةُ {suraName(sura)}
+        {/* One string, stretched + centered, simple breaking: a content-sized centered
+            Arabic Text on Android drops its last word (page 262 showed «سُورَةُ» without
+            «الحجر», 2026-11-21). */}
+        <Text style={styles.hdText} allowFontScaling={false} textBreakStrategy="simple" numberOfLines={1}>
+          {`سُورَةُ ${suraName(sura)}`}
         </Text>
       </View>
     </View>
@@ -351,7 +354,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSandRaised,
   },
   hdInner: { borderWidth: 1, borderColor: colors.borderSand2, borderRadius: 7, paddingVertical: 1, alignItems: 'center' },
-  hdText: { fontFamily: fonts.display, fontSize: 15, color: colors.primaryTeal, lineHeight: 26 },
+  hdText: {
+    fontFamily: fonts.display,
+    fontSize: 15,
+    color: colors.primaryTeal,
+    lineHeight: 26,
+    alignSelf: 'stretch',
+    textAlign: 'center',
+  },
   flexPara: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   flexBasm: { fontFamily: HAFS_FAMILY, color: INK, textAlign: 'center', marginBottom: 6 },
 });

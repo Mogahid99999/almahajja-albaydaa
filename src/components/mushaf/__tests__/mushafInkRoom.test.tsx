@@ -68,3 +68,14 @@ test('enlarged reading draws each word in its own box (no paragraph edge to cut 
   expect(words.length).toBeGreaterThan(1);
   for (const w of words.slice(0, 5)) expectRoom(w, 5, 20.5);
 });
+
+test('a sura header is one stretched, centered string (Android dropped the name — pages 262, 434, 467, 523…)', async () => {
+  const view = await render(<MushafPage {...base} page={2} mode="print" />);
+  // The page frame names the sura too; the in-text header is the one with a break strategy.
+  const header = view.getAllByText(/^سُورَةُ \S+$/).find((t) => t.props.textBreakStrategy)!;
+  expect(header).toBeDefined();
+  const style = StyleSheet.flatten(header.props.style);
+  expect(style.alignSelf).toBe('stretch');
+  expect(style.textAlign).toBe('center');
+  expect(header.props.textBreakStrategy).toBe('simple');
+});
