@@ -44,31 +44,64 @@ const PAGE_H = 588;
 if (PAGE_W !== TEXT_W || PAGE_H !== TEXT_H) throw new Error('mushaf text box and frame disagree');
 const LINE_H = PAGE_H / 15;
 const FLEX_BASE = 20.5;
+/** Hafs line box ≈ (2371 + 1217) / 2048 = 1.75 em; + 0.3 em = the old 2.05 em pitch. */
+const FLEX_ROW_GAP_EM = 0.3;
 
 /**
  * Ink room (2026-11-21, a student's report: word starts, their first diacritics,
- * the second dot of an initial ي cut off). The Madinah glyphs draw up to 0.68 em
- * to the RIGHT of their advance — the word's start — and Android's TextView clips
- * its text to its own content box (padding moves the clip with it). So every drawn
- * word carries four no-break spaces of the bundled Hafs font on each side (450/2048
- * em each: 0.88 em of room, no line-break point), and an equal negative margin puts
- * the word exactly where it was: lines and justification don't move.
+ * the second dot of an initial ي cut off). Android's TextView clips its text to its
+ * content box horizontally (padding moves the clip with it) and to its outer box
+ * vertically. Measured over the whole mushaf (all 604 pages / all 21 133 words):
+ *   Madinah page fonts — real ink reaches 0.51 em past a word's advance on its
+ *     start side, 0.23 em on its end side; beyond that the fonts only carry a few
+ *     stray specks (< 0.002 em², up to 2.3 em away) that were never meant to show;
+ *   Hafs (simplified) — marks reach 0.93 em (start) / 0.73 em (end), and stacked
+ *     marks 0.06 em above / 0.03 em below the font's own box.
+ * So a word carries no-break spaces of the bundled Hafs font on each side (450/2048
+ * em each, no line-break point): 3 for the Madinah fonts (0.66 em — every letter and
+ * mark with ≥ 0.15 em to spare, the far specks still hidden), 5 for Hafs (1.1 em);
+ * plus 0.15 em of vertical padding. Equal negative margins put the word exactly
+ * where it was: lines and justification don't move.
  */
-const INK_ROOM = ' '.repeat(4);
-const INK_ROOM_EM = (4 * 450) / 2048;
+const NBSP_EM = 450 / 2048;
+const V_ROOM_EM = 0.15;
+const NBSP = String.fromCharCode(0xa0);
 
-function Word({ size, family, color, children }: { size: number; family: string; color: string; children: string }) {
+function Word({
+  size,
+  family,
+  color,
+  room,
+  children,
+}: {
+  size: number;
+  family: string;
+  color: string;
+  /** No-break spaces on each side. */
+  room: number;
+  children: string;
+}) {
+  const pad = NBSP.repeat(room);
   return (
     <Text
       allowFontScaling={false}
-      style={{ fontFamily: HAFS_FAMILY, fontSize: size, color, marginHorizontal: -size * INK_ROOM_EM }}
+      style={{
+        fontFamily: HAFS_FAMILY,
+        fontSize: size,
+        color,
+        marginHorizontal: -size * NBSP_EM * room,
+        paddingVertical: size * V_ROOM_EM,
+        marginVertical: -size * V_ROOM_EM,
+      }}
     >
-      {INK_ROOM}
+      {pad}
       <Text style={{ fontFamily: family }}>{children}</Text>
-      {INK_ROOM}
+      {pad}
     </Text>
   );
 }
+const ROOM_PRINT = 3;
+const ROOM_HAFS = 5;
 
 function SuraHeader({ sura, flex }: { sura: number; flex?: boolean }) {
   return (
@@ -137,7 +170,7 @@ function FixedPage({
       const words = g.pages[page - 1][li].split(' ');
       const size = g.fx.font * (g.shrink[`${page}.${li + 1}`] ?? 1);
       return words.map((w, i) => (
-        <Word key={i} size={size} family={qcfFamily(page)} color={INK}>
+        <Word key={i} size={size} family={qcfFamily(page)} color={INK} room={ROOM_PRINT}>
           {w}
         </Word>
       ));
@@ -147,14 +180,14 @@ function FixedPage({
     l.tokens.forEach((t, ti) => {
       if (t.k === 'n') {
         out.push(
-          <Word key={ti} size={size} family={HAFS_FAMILY} color={MARK}>
+          <Word key={ti} size={size} family={HAFS_FAMILY} color={MARK} room={ROOM_HAFS}>
             {ar(ayahNumber(t.g))}
           </Word>,
         );
       } else {
         tokenWords(text, t).forEach((w, wi) =>
           out.push(
-            <Word key={`${ti}.${wi}`} size={size} family={HAFS_FAMILY} color={INK}>
+            <Word key={`${ti}.${wi}`} size={size} family={HAFS_FAMILY} color={INK} room={ROOM_HAFS}>
               {w}
             </Word>,
           ),
@@ -186,7 +219,7 @@ function FixedPage({
           if (l.t === 'b')
             return (
               <View key={i} style={[styles.fxRow, { justifyContent: 'center' }]}>
-                <Word size={20} family={HAFS_FAMILY} color={INK}>
+                <Word size={20} family={HAFS_FAMILY} color={INK} room={ROOM_HAFS}>
                   {BASMALA}
                 </Word>
               </View>
@@ -216,12 +249,17 @@ function FlexPage({ page, text, level, bottomPad }: { page: number; text: readon
   const size = FLEX_BASE * FONT_LEVELS[level];
   const blocks: ReactNode[] = [];
   let para: ReactNode[] = [];
+  // One item per word (not one paragraph Text): a paragraph clips the ink of the
+  // words at its own edges — the tail of every line's last word. Lines are justified
+  // per line (space-between, at least a space apart); the paragraph's last line is
+  // packed to its start by the growing spacer. Line pitch stays 2.05 em.
   const flush = (key: string) => {
     if (!para.length) return;
     blocks.push(
-      <Text key={key} allowFontScaling={false} style={[styles.flexPara, { fontSize: size, lineHeight: size * 2.05 }]}>
+      <View key={key} style={[styles.flexPara, { columnGap: size * NBSP_EM * 1.2, rowGap: size * FLEX_ROW_GAP_EM }]}>
         {para}
-      </Text>,
+        <View style={{ flexGrow: 1 }} />
+      </View>,
     );
     para = [];
   };
@@ -240,14 +278,18 @@ function FlexPage({ page, text, level, bottomPad }: { page: number; text: readon
       l.tokens.forEach((t, ti) => {
         if (t.k === 'n') {
           para.push(
-            <Text key={`${i}.${ti}`} style={{ color: MARK }}>
-              {' '}
-              {ar(ayahNumber(t.g))}{' '}
-            </Text>,
+            <Word key={`${i}.${ti}`} size={size} family={HAFS_FAMILY} color={MARK} room={ROOM_HAFS}>
+              {ar(ayahNumber(t.g))}
+            </Word>,
           );
         } else {
-          const words = tokenWords(text, t).join(' ');
-          para.push(para.length ? ' ' + words : words);
+          tokenWords(text, t).forEach((w, wi) =>
+            para.push(
+              <Word key={`${i}.${ti}.${wi}`} size={size} family={HAFS_FAMILY} color={INK} room={ROOM_HAFS}>
+                {w}
+              </Word>,
+            ),
+          );
         }
       });
     }
@@ -256,7 +298,8 @@ function FlexPage({ page, text, level, bottomPad }: { page: number; text: readon
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ paddingTop: 56, paddingHorizontal: 18, paddingBottom: bottomPad }}
+      // Wide enough for the farthest Hafs mark at the line edges (0.93 em) at every size.
+      contentContainerStyle={{ paddingTop: 56, paddingHorizontal: Math.max(18, size * 0.95), paddingBottom: bottomPad }}
       showsVerticalScrollIndicator={false}
       overScrollMode="never"
     >
@@ -309,6 +352,6 @@ const styles = StyleSheet.create({
   },
   hdInner: { borderWidth: 1, borderColor: colors.borderSand2, borderRadius: 7, paddingVertical: 1, alignItems: 'center' },
   hdText: { fontFamily: fonts.display, fontSize: 15, color: colors.primaryTeal, lineHeight: 26 },
-  flexPara: { fontFamily: HAFS_FAMILY, color: INK, textAlign: 'justify', writingDirection: 'rtl', marginBottom: 6 },
+  flexPara: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   flexBasm: { fontFamily: HAFS_FAMILY, color: INK, textAlign: 'center', marginBottom: 6 },
 });

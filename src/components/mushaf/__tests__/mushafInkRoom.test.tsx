@@ -2,12 +2,14 @@
  * Regression (a student's report, 2026-11-21): in the downloaded Madinah mushaf
  * the start of some words was cut off — the first diacritics half shown, the
  * hamza/alef of «إِبْرَٰهِيمَ» / «ٱلْأَرْضُ» missing, an initial ي with one dot.
- * The page fonts draw up to 0.68 em past a word's advance on its start side and
- * Android clips a Text to its own content box. Every drawn word therefore carries
- * no-break spaces of ink room on both sides, cancelled by an equal negative margin.
+ * Android clips a Text to its own content box, and the fonts draw past a word's
+ * advance (Madinah ≤ 0.51 em, Hafs marks ≤ 0.93 em — measured over all 604 pages).
+ * Every drawn word therefore carries no-break spaces of ink room on both sides,
+ * cancelled by equal negative margins, in all three modes.
  */
 import { render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
+type Node = ReturnType<Awaited<ReturnType<typeof render>>['getByText']>;
 
 jest.mock('@/mushaf/qcfFonts', () => ({
   qcfFamily: (p: number) => `QCF_P${p}`,
@@ -23,24 +25,46 @@ const glyphs = {
   shrink: {},
   pages: Array.from({ length: 604 }, (_, i) => Array.from({ length: 15 }, (_, l) => `W${i + 1}-${l + 1}a W${i + 1}-${l + 1}b`)),
 };
-const text = Array.from({ length: 6236 }, () => 'ا');
+const text = Array.from({ length: 6236 }, (_, g) => `kalima${g}`);
+const NBSP_EM = 450 / 2048;
 
-test('every Madinah word has ink room on both sides and keeps its place', async () => {
-  const view = await render(
-    <MushafPage page={205} mode="print" level={0} text={text} glyphs={glyphs} packUri="file:///pack" width={360} height={640} />,
-  );
-  const word = view.getByText('W205-10a');
-  // The nearest enclosing host Text: the ink-room box.
+/** The ink-room box around a drawn word: the nearest enclosing host Text. */
+function roomBox(word: Node) {
   let box = word.parent!;
   while (box.type !== 'Text') box = box.parent!;
-  const room = ' '.repeat(4);
-  const kids = box.props.children as unknown[];
-  expect(kids[0]).toBe(room);
-  expect(kids[kids.length - 1]).toBe(room);
+  return box;
+}
 
+function expectRoom(word: Node, spaces: number, size: number) {
+  const box = roomBox(word);
+  const pad = String.fromCharCode(0xa0).repeat(spaces);
+  const kids = box.props.children as unknown[];
+  expect(kids[0]).toBe(pad);
+  expect(kids[kids.length - 1]).toBe(pad);
   const style = StyleSheet.flatten(box.props.style);
   expect(style.fontFamily).toBe('UthmanicHafsV22'); // the spaces' width is known only in this font
-  // 4 Hafs spaces = 4 × 450/2048 em, removed again by the margin so the line doesn't move.
-  expect(style.marginHorizontal).toBeCloseTo(-21 * ((4 * 450) / 2048), 5);
+  expect(style.marginHorizontal).toBeCloseTo(-size * NBSP_EM * spaces, 5);
+  expect(style.paddingVertical).toBeCloseTo(-style.marginVertical, 5);
+}
+
+const base = { level: 0, text, glyphs, packUri: 'file:///pack', width: 360, height: 640 };
+
+test('Madinah words: 3 spaces (0.66 em) of room each side, in place', async () => {
+  const view = await render(<MushafPage {...base} page={205} mode="print" />);
+  const word = view.getByText('W205-10a');
+  expectRoom(word, 3, 21);
   expect(StyleSheet.flatten(word.props.style).fontFamily).toBe('QCF_P205');
+});
+
+test('simplified words: 5 spaces (1.1 em) of room each side', async () => {
+  const view = await render(<MushafPage {...base} page={205} mode="simple" />);
+  const word = view.getAllByText(/^kalima\d+$/)[0];
+  expectRoom(word, 5, StyleSheet.flatten(roomBox(word).props.style).fontSize as number);
+});
+
+test('enlarged reading draws each word in its own box (no paragraph edge to cut a line end)', async () => {
+  const view = await render(<MushafPage {...base} page={205} mode="flex" />);
+  const words = view.getAllByText(/^kalima\d+$/);
+  expect(words.length).toBeGreaterThan(1);
+  for (const w of words.slice(0, 5)) expectRoom(w, 5, 20.5);
 });
