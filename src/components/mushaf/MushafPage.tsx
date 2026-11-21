@@ -45,6 +45,31 @@ if (PAGE_W !== TEXT_W || PAGE_H !== TEXT_H) throw new Error('mushaf text box and
 const LINE_H = PAGE_H / 15;
 const FLEX_BASE = 20.5;
 
+/**
+ * Ink room (2026-11-21, a student's report: word starts, their first diacritics,
+ * the second dot of an initial ي cut off). The Madinah glyphs draw up to 0.68 em
+ * to the RIGHT of their advance — the word's start — and Android's TextView clips
+ * its text to its own content box (padding moves the clip with it). So every drawn
+ * word carries four no-break spaces of the bundled Hafs font on each side (450/2048
+ * em each: 0.88 em of room, no line-break point), and an equal negative margin puts
+ * the word exactly where it was: lines and justification don't move.
+ */
+const INK_ROOM = ' '.repeat(4);
+const INK_ROOM_EM = (4 * 450) / 2048;
+
+function Word({ size, family, color, children }: { size: number; family: string; color: string; children: string }) {
+  return (
+    <Text
+      allowFontScaling={false}
+      style={{ fontFamily: HAFS_FAMILY, fontSize: size, color, marginHorizontal: -size * INK_ROOM_EM }}
+    >
+      {INK_ROOM}
+      <Text style={{ fontFamily: family }}>{children}</Text>
+      {INK_ROOM}
+    </Text>
+  );
+}
+
 function SuraHeader({ sura, flex }: { sura: number; flex?: boolean }) {
   return (
     <View style={[styles.hdOuter, flex && { width: '100%', marginVertical: 10 }]}>
@@ -112,9 +137,9 @@ function FixedPage({
       const words = g.pages[page - 1][li].split(' ');
       const size = g.fx.font * (g.shrink[`${page}.${li + 1}`] ?? 1);
       return words.map((w, i) => (
-        <Text key={i} allowFontScaling={false} style={{ fontFamily: qcfFamily(page), fontSize: size, color: INK }}>
+        <Word key={i} size={size} family={qcfFamily(page)} color={INK}>
           {w}
-        </Text>
+        </Word>
       ));
     }
     const size = FIXED.font * l.shrink;
@@ -122,16 +147,16 @@ function FixedPage({
     l.tokens.forEach((t, ti) => {
       if (t.k === 'n') {
         out.push(
-          <Text key={ti} allowFontScaling={false} style={{ fontFamily: HAFS_FAMILY, fontSize: size, color: MARK }}>
+          <Word key={ti} size={size} family={HAFS_FAMILY} color={MARK}>
             {ar(ayahNumber(t.g))}
-          </Text>,
+          </Word>,
         );
       } else {
         tokenWords(text, t).forEach((w, wi) =>
           out.push(
-            <Text key={`${ti}.${wi}`} allowFontScaling={false} style={{ fontFamily: HAFS_FAMILY, fontSize: size, color: INK }}>
+            <Word key={`${ti}.${wi}`} size={size} family={HAFS_FAMILY} color={INK}>
               {w}
-            </Text>,
+            </Word>,
           ),
         );
       }
@@ -161,9 +186,9 @@ function FixedPage({
           if (l.t === 'b')
             return (
               <View key={i} style={[styles.fxRow, { justifyContent: 'center' }]}>
-                <Text allowFontScaling={false} style={{ fontFamily: HAFS_FAMILY, fontSize: 20, color: INK }}>
+                <Word size={20} family={HAFS_FAMILY} color={INK}>
                   {BASMALA}
-                </Text>
+                </Word>
               </View>
             );
           if (l.t === 'e') return <View key={i} style={styles.fxRow} />;
