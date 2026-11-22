@@ -48,6 +48,7 @@ jest.mock('@/hooks/useLiveComments', () => ({
   useLiveCommentAction: () => ({ mutate: jest.fn(), isPending: false, variables: undefined }),
   useEditLiveComment: () => ({ mutate: jest.fn(), isPending: false }),
   useSetLiveCommentsClosed: () => ({ mutate: jest.fn(), isPending: false }),
+  usePinLiveComment: () => ({ mutate: jest.fn(), isPending: false, variables: undefined }),
 }));
 
 const mockJoin = jest.fn();

@@ -584,7 +584,7 @@ describe('live: edit and close (0182)', () => {
     expect(c.status).toBe(200);
     expect(c.body).toEqual({ ok: true, status: 'live', closed: true });
     const st = await brother.rpc('get_live_comments_state', { p_session: sessionId });
-    expect(st.data).toEqual({ closed: true });
+    expect(st.data).toEqual({ closed: true, pinned: null });
 
     await sleep(10_500); // past the brother's rate limit, so «closed» is what refuses
     const p = await post(brother, 'تجربة: والتعليقات مغلقة', false);
@@ -598,7 +598,7 @@ describe('live: edit and close (0182)', () => {
 
     const o = await control(admin, { action: 'comments_close', sessionId, closed: false });
     expect(o.status).toBe(200);
-    expect((await brother.rpc('get_live_comments_state', { p_session: sessionId })).data).toEqual({ closed: false });
+    expect((await brother.rpc('get_live_comments_state', { p_session: sessionId })).data).toEqual({ closed: false, pinned: null });
     const { data: log } = await service
       .from('live_moderation_log')
       .select('action, detail')
@@ -606,6 +606,56 @@ describe('live: edit and close (0182)', () => {
       .eq('action', 'comments_close');
     expect((log ?? []).map((r: any) => r.detail?.closed)).toEqual(expect.arrayContaining([true, false]));
   }, 120_000);
+});
+
+describe('live: pin one comment (0183)', () => {
+  test('only moderators pin; everyone reads the pinned comment (public shape); edit follows; clear', async () => {
+    const x = await control(brother, { action: 'comment_pin', sessionId, commentId: cSisterHidden });
+    expect(x.status).toBe(403);
+
+    const p = await control(sheikh, { action: 'comment_pin', sessionId, commentId: cSisterHidden });
+    expect(p.status).toBe(200);
+    expect(p.body?.pinned).toMatchObject({ id: cSisterHidden, name: null, gender: 'f' });
+    expect(p.body?.pinned).not.toHaveProperty('mine');
+
+    const st = await brother.rpc('get_live_comments_state', { p_session: sessionId });
+    expect(st.error).toBeNull();
+    expect((st.data as any).pinned).toMatchObject({ id: cSisterHidden, name: null });
+    expect(JSON.stringify(st.data)).not.toContain('user_id');
+
+    // The author edits it (comments are open again): the pinned text follows.
+    const e = await control(sisterHidden, { action: 'comment_edit', sessionId, commentId: cSisterHidden, text: 'تجربة: نص مثبّت معدّل' });
+    expect(e.status).toBe(200);
+    expect(((await brother.rpc('get_live_comments_state', { p_session: sessionId })).data as any).pinned)
+      .toMatchObject({ id: cSisterHidden, text: 'تجربة: نص مثبّت معدّل', edited: true });
+
+    const c = await control(admin, { action: 'comment_pin', sessionId, commentId: null });
+    expect(c.status).toBe(200);
+    expect(c.body).toEqual({ ok: true, status: 'live', pinned: null });
+    expect(((await brother.rpc('get_live_comments_state', { p_session: sessionId })).data as any).pinned).toBeNull();
+
+    const bad = await control(sheikh, { action: 'comment_pin', sessionId, commentId: '00000000-0000-4000-8000-000000000000' });
+    expect(bad.status).toBe(404);
+  });
+
+  test('a pinned comment that gets deleted leaves the pin; pins are logged', async () => {
+    await sleep(10_500);
+    const h = await post(sheikh, 'تجربة: سيُثبّت ثم يُحذف', false);
+    expect(h.status).toBe(200);
+    const id = h.body?.comment?.id as string;
+    expect((await control(sheikh, { action: 'comment_pin', sessionId, commentId: id })).status).toBe(200);
+    expect(((await brother.rpc('get_live_comments_state', { p_session: sessionId })).data as any).pinned?.id).toBe(id);
+    expect((await control(sheikh, { action: 'comment_delete', sessionId, commentId: id })).status).toBe(200);
+    expect(((await brother.rpc('get_live_comments_state', { p_session: sessionId })).data as any).pinned).toBeNull();
+
+    const { data: log } = await service
+      .from('live_moderation_log')
+      .select('action, target_identity')
+      .eq('session_id', sessionId)
+      .eq('action', 'comment_pin');
+    expect((log ?? []).length).toBeGreaterThanOrEqual(3);
+    expect((log ?? []).every((r: any) => r.target_identity === null)).toBe(true);
+  }, 60_000);
 });
 
 // ---------------------------------------------------------------------------------

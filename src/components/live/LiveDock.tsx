@@ -311,6 +311,47 @@ function MicButton({
   );
 }
 
+/**
+ * 0183 (owner 2026-11-22): the same microphone toggle, round and compact, inside
+ * the comments sheet — a speaker / moderator opens and closes his mic without
+ * closing the list (the sheet covers the dock).
+ */
+export function MicToggle({
+  on,
+  busy,
+  disabled = false,
+  onToggle,
+}: {
+  on: boolean;
+  busy: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  const off = busy || disabled;
+  return (
+    <Pressable
+      onPress={off ? undefined : onToggle}
+      accessibilityRole="button"
+      accessibilityState={{ checked: on, busy, disabled: off }}
+      accessibilityLabel={on ? LIVE_P4_COPY.micCloseA11y : LIVE_P4_COPY.micOpenA11y}
+      hitSlop={4}
+      style={({ pressed }) => [
+        { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+        on
+          ? [{ backgroundColor: colors.primaryTeal }, shadows.button]
+          : { backgroundColor: colors.surfaceInset, borderWidth: 1, borderColor: colors.borderSand2 },
+        { opacity: disabled ? 0.45 : busy ? 0.6 : pressed ? 0.85 : 1 },
+      ]}
+    >
+      {busy ? (
+        <ActivityIndicator size="small" color={on ? colors.onTealPrimary : colors.primaryTeal} />
+      ) : (
+        <Feather name={on ? 'mic' : 'mic-off'} size={19} color={on ? colors.onTealPrimary : colors.textSlate} />
+      )}
+    </Pressable>
+  );
+}
+
 /** A speaker returns himself to listening (D1). */
 function StepDownSheet({
   visible,

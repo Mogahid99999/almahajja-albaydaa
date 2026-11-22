@@ -26,13 +26,15 @@ import {
   getLiveCommentsState,
   postLiveComment,
   setLiveCommentAnswered,
+  setLiveCommentPinned,
   setLiveCommentsClosed,
   type LiveComment,
   type LiveCommentKind,
   type LiveCommentsMessage,
+  type LiveCommentsState,
 } from '@/api/liveComments';
 import { queryKeys } from '@/constants/queryKeys';
-import { applyCommentsMessage, capComments, countUnseen } from '@/lib/liveCommentsCache';
+import { applyCommentsMessage, applyStateMessage, capComments, countUnseen } from '@/lib/liveCommentsCache';
 import { onLiveComments } from '@/stores/liveStore';
 
 const EMPTY: readonly LiveComment[] = [];
@@ -40,6 +42,23 @@ const NONE: ReadonlySet<string> = new Set();
 
 /** Updates received while a read of that session is in flight (replayed on its result). */
 const inflight = new Map<string, Set<LiveCommentsMessage[]>>();
+
+/** Same replay for the state read (0183: a pin broadcast mid-read is not lost). */
+const stateInflight = new Map<string, Set<LiveCommentsMessage[]>>();
+
+async function fetchState(sessionId: string): Promise<LiveCommentsState> {
+  const buffer: LiveCommentsMessage[] = [];
+  let set = stateInflight.get(sessionId);
+  if (!set) stateInflight.set(sessionId, (set = new Set()));
+  set.add(buffer);
+  try {
+    const state = await getLiveCommentsState(sessionId);
+    return buffer.reduce<LiveCommentsState>(applyStateMessage, state);
+  } finally {
+    set.delete(buffer);
+    if (!set.size) stateInflight.delete(sessionId);
+  }
+}
 
 async function fetchComments(sessionId: string): Promise<LiveComment[]> {
   const buffer: LiveCommentsMessage[] = [];
@@ -55,12 +74,20 @@ async function fetchComments(sessionId: string): Promise<LiveComment[]> {
   }
 }
 
-/** One update → the room's cached list (and any read in flight). */
+/** One update → the room's cached list (and any read in flight) and its state (closed / pinned). */
 export function applyLiveCommentsMessage(qc: QueryClient, sessionId: string, msg: LiveCommentsMessage): void {
-  if (msg.t === 'closed') {
-    qc.setQueryData(queryKeys.liveCommentsState(sessionId), { closed: msg.closed });
-    return;
+  // State first: a delete / edit of the pinned comment changes the pin too.
+  if (msg.t === 'closed' || msg.t === 'pin' || msg.t === 'del' || msg.t === 'edit') {
+    stateInflight.get(sessionId)?.forEach((b) => b.push(msg));
+    const key = queryKeys.liveCommentsState(sessionId);
+    const old = qc.getQueryData<LiveCommentsState>(key);
+    // A delete / edit says nothing about a state never read (no pin to touch).
+    if (old !== undefined || msg.t === 'closed' || msg.t === 'pin') {
+      const next = applyStateMessage(old, msg);
+      if (next !== old) qc.setQueryData(key, next);
+    }
   }
+  if (msg.t === 'closed' || msg.t === 'pin') return;
   inflight.get(sessionId)?.forEach((b) => b.push(msg));
   qc.setQueryData<LiveComment[]>(queryKeys.liveComments(sessionId), (old) =>
     old ? applyCommentsMessage(old, msg) : old,
@@ -91,13 +118,15 @@ const useSeen = create<SeenState>((set, get) => ({
 }));
 
 /**
- * The room's list (oldest first) + the unseen count.
- * `enabled`: I'm in this room and it is connected. `open`: the sheet is showing
- * (everything in it counts as seen).
+ * The room's list (oldest first) + the unseen count + its state (closed, pinned).
+ * `enabled`: read the list (I'm in this room, it is connected, and I need it).
+ * `stateEnabled` (0183): read the small state — every listener needs the pinned
+ * comment in the room, not only those who opened the list. Defaults to `enabled`.
+ * `open`: the sheet is showing (everything in it counts as seen).
  */
 export function useLiveComments(
   sessionId: string | null | undefined,
-  opts: { enabled: boolean; open: boolean },
+  opts: { enabled: boolean; open: boolean; stateEnabled?: boolean },
 ) {
   const qc = useQueryClient();
   const id = sessionId ?? '';
@@ -119,11 +148,11 @@ export function useLiveComments(
   });
   const comments = query.data ?? EMPTY;
 
-  // 0182: closed by a moderator — read with the list, then kept current by {t:'closed'}.
+  // 0182 closed / 0183 pinned — read on (re)connect, then kept current by {t:'closed'|'pin'|'del'|'edit'}.
   const state = useQuery({
     queryKey: queryKeys.liveCommentsState(id),
-    queryFn: () => getLiveCommentsState(id),
-    enabled: opts.enabled && !!sessionId,
+    queryFn: () => fetchState(id),
+    enabled: (opts.stateEnabled ?? opts.enabled) && !!sessionId,
     staleTime: 0,
     gcTime: 5 * 60_000,
     retry: 1,
@@ -148,7 +177,20 @@ export function useLiveComments(
     refetch: query.refetch,
     unseen,
     closed: state.data?.closed === true,
+    pinned: state.data?.pinned ?? null,
   };
+}
+
+/** 0183: a moderator pins a comment for everyone (null = clear the pin). */
+export function usePinLiveComment(sessionId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: string | null) => setLiveCommentPinned(sessionId as string, commentId),
+    networkMode: 'always',
+    onSuccess: (c) => {
+      if (sessionId) applyLiveCommentsMessage(qc, sessionId, { t: 'pin', c });
+    },
+  });
 }
 
 /** Post a comment / question. The stored comment (mine) lands in the list at once. */

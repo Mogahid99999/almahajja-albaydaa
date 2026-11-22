@@ -44,8 +44,11 @@ jest.mock('@/hooks/useLive', () => ({
   useLiveStaffParticipants: () => ({ data: [] }),
 }));
 
-const mockComments: { list: LiveComment[]; unseen: number; closed?: boolean } = { list: [], unseen: 0 };
-const mockCommentsOpts: { enabled: boolean; open: boolean }[] = [];
+const mockComments: { list: LiveComment[]; unseen: number; closed?: boolean; pinned?: LiveComment | null } = {
+  list: [],
+  unseen: 0,
+};
+const mockCommentsOpts: { enabled: boolean; open: boolean; stateEnabled?: boolean }[] = [];
 const mockPost = jest.fn();
 const mockAction = jest.fn();
 jest.mock('@/hooks/useLiveComments', () => ({
@@ -58,8 +61,10 @@ jest.mock('@/hooks/useLiveComments', () => ({
       refetch: jest.fn(),
       unseen: mockComments.unseen,
       closed: mockComments.closed ?? false,
+      pinned: mockComments.pinned ?? null,
     };
   },
+  usePinLiveComment: () => ({ mutate: mockPin, isPending: false, variables: undefined }),
   usePostLiveComment: () => ({ mutate: mockPost, isPending: false }),
   useLiveCommentAction: () => ({ mutate: mockAction, isPending: false, variables: undefined }),
   useEditLiveComment: () => ({ mutate: mockEdit, isPending: false }),
@@ -67,6 +72,7 @@ jest.mock('@/hooks/useLiveComments', () => ({
 }));
 const mockEdit = jest.fn();
 const mockClose = jest.fn();
+const mockPin = jest.fn();
 
 const mockState: Record<string, unknown> = {};
 jest.mock('@/stores/liveStore', () => {
@@ -177,6 +183,8 @@ beforeEach(() => {
   mockSession.current = session;
   mockComments.list = [];
   mockComments.unseen = 0;
+  mockComments.pinned = null;
+  mockPin.mockReset();
   mockCommentsOpts.length = 0;
   mockPost.mockReset();
   mockAction.mockReset();
@@ -193,7 +201,7 @@ test('a listener reads the list live and sends a comment, then a question', asyn
   mockComments.unseen = 3;
   await openComments();
   // The room reads while connected; a listener never sees the staff count.
-  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, open: true });
+  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, stateEnabled: true, open: true });
   expect(screen.queryByText('٣')).toBeNull();
 
   expect(screen.getByText('بارك الله فيكم يا شيخ')).toBeTruthy();
@@ -291,10 +299,11 @@ test('a sister with her name is warned first; «أرسل بدون اسم» sends
 test('LOAD V25: a listener reads the list only after first opening it; the host on join', async () => {
   brother();
   await render(<LiveRoomScreen />);
-  // In the room, connected, sheet never opened → no 500-comment read.
-  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: false, open: false });
+  // In the room, connected, sheet never opened → no 500-comment read; only the
+  // small state (0183: the pinned comment shows in the room for everyone).
+  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: false, stateEnabled: true, open: false });
   await fireEvent.press(screen.getByText('التعليقات'));
-  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, open: true });
+  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, stateEnabled: true, open: true });
 
   mockCommentsOpts.length = 0;
   inRoom({
@@ -302,7 +311,7 @@ test('LOAD V25: a listener reads the list only after first opening it; the host 
     me: { role: 'host', hidden: false, gender: 'm' },
   });
   await render(<LiveRoomScreen />);
-  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, open: false });
+  expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, stateEnabled: true, open: false });
 });
 
 test('staff see the count of new ones and answer / delete / block', async () => {
@@ -457,4 +466,67 @@ test('a listener has no close button', async () => {
   brother();
   await openComments();
   expect(screen.queryByLabelText('إغلاق التعليقات')).toBeNull();
+});
+
+// ─── 0183 (owner 2026-11-22): pinned comment + the mic inside the comments ─────
+
+const host = () =>
+  inRoom({
+    user: { id: 'a1', role: 'sheikh', isGuest: false, displayName: 'الشيخ', gender: 'male' },
+    me: { role: 'host', hidden: false, gender: 'm' },
+  });
+
+test('a pinned comment shows in the room for a listener and opens the comments; no unpin for him', async () => {
+  brother();
+  const p = comment('p1', { text: 'رابط الكتاب في الوصف', name: null });
+  mockComments.pinned = p;
+  mockComments.list = [p];
+  await render(<LiveRoomScreen />);
+  expect(screen.getByText('رابط الكتاب في الوصف')).toBeTruthy();
+  expect(screen.getByText('تعليق مثبّت')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('تعليق مثبّت، اضغط لفتح التعليقات: رابط الكتاب في الوصف'));
+  expect(screen.getByText('التعليقات والأسئلة')).toBeTruthy();
+  expect(screen.queryByLabelText('إلغاء التثبيت')).toBeNull();
+  expect(screen.queryByLabelText('تثبيت')).toBeNull();
+});
+
+test('the host pins a comment from its row and unpins it from the card', async () => {
+  host();
+  mockComments.list = [comment('c1', { text: 'سؤال مهم للجميع' })];
+  await openComments();
+  await fireEvent.press(screen.getByText('سؤال مهم للجميع'));
+  await fireEvent.press(screen.getByLabelText('تثبيت'));
+  expect(mockPin).toHaveBeenLastCalledWith('c1', expect.anything());
+
+  mockComments.pinned = mockComments.list[0];
+  await openComments();
+  await fireEvent.press(screen.getAllByLabelText('إلغاء التثبيت')[0]);
+  expect(mockPin).toHaveBeenLastCalledWith(null, expect.anything());
+});
+
+test('whoever holds a mic toggles it inside the comments; a listener has no mic there', async () => {
+  host();
+  await openComments();
+  // The dock's mic and the one beside the composer.
+  expect(screen.getAllByLabelText('فتح الميكروفون')).toHaveLength(2);
+  await fireEvent.press(screen.getAllByLabelText('فتح الميكروفون').slice(-1)[0]);
+  expect(mockState.setMic).toHaveBeenCalledWith(true);
+
+  // Closed comments for a speaker: no box, but the mic stays at hand.
+  inRoom({
+    user: { id: 'u1', role: 'student', isGuest: false, displayName: 'أحمد', gender: 'male' },
+    me: { role: 'speaker', hidden: false, gender: 'm' },
+  });
+  Object.assign(mockState, { micOn: true });
+  mockComments.closed = true;
+  await openComments();
+  expect(screen.getByText('أُغلقت التعليقات في هذا المجلس')).toBeTruthy();
+  await fireEvent.press(screen.getAllByLabelText('إغلاق الميكروفون').slice(-1)[0]);
+  expect(mockState.setMic).toHaveBeenLastCalledWith(false);
+  mockComments.closed = false;
+
+  brother();
+  Object.assign(mockState, { micOn: false });
+  await openComments();
+  expect(screen.queryByLabelText('فتح الميكروفون')).toBeNull();
 });

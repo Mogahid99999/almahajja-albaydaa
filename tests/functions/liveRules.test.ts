@@ -849,6 +849,7 @@ describe('comments (0147): who may write, delete, answer, block', () => {
   test('comment actions are their own set — never in LIVE_ACTIONS, never the service role\'s', () => {
     expect([...COMMENT_ACTIONS]).toEqual([
       'comment', 'comment_delete', 'comment_answered', 'comment_block', 'comment_edit', 'comments_close',
+      'comment_pin',
     ]);
     for (const a of COMMENT_ACTIONS) {
       expect(isCommentAction(a)).toBe(true);
@@ -1082,5 +1083,40 @@ describe('comments 0182: edit own comment, moderators close the comments', () =>
     expect(LIVE_ERROR_STATUS.comments_closed).toBe(409);
     expect(commentAuditAction('comments_close')).toBe('comments_close');
     expect(commentAuditAction('comment_edit')).toBeNull();
+  });
+});
+
+describe('comments 0183: a moderator pins one comment', () => {
+  const S = '11111111-1111-4111-8111-111111111111';
+  const C = '22222222-2222-4222-8222-222222222222';
+  test('parse: comment_pin takes a comment id, or null to clear the pin', () => {
+    expect(parseLiveCommentRequest({ action: 'comment_pin', sessionId: S, commentId: C })).toEqual({
+      ok: true, value: { action: 'comment_pin', sessionId: S, commentId: C },
+    });
+    expect(parseLiveCommentRequest({ action: 'comment_pin', sessionId: S, commentId: null })).toEqual({
+      ok: true, value: { action: 'comment_pin', sessionId: S, commentId: null },
+    });
+    expect(parseLiveCommentRequest({ action: 'comment_pin', sessionId: S }).ok).toBe(false);
+    expect(parseLiveCommentRequest({ action: 'comment_pin', sessionId: S, commentId: 'x' }).ok).toBe(false);
+  });
+
+  test('who / when: moderators only, green or live; logged', () => {
+    const user = { kind: 'user' as const, appRole: 'student', isGuest: false, isHost: false, liveRole: 'listener' };
+    expect(authorizeCommentAction('comment_pin', user)).toEqual({ ok: false, code: 'forbidden' });
+    expect(authorizeCommentAction('comment_pin', { ...user, liveRole: 'moderator' })).toEqual({ ok: true });
+    expect(authorizeCommentAction('comment_pin', { ...user, isHost: true })).toEqual({ ok: true });
+    expect(authorizeCommentAction('comment_pin', { ...user, isGuest: true, appRole: 'admin' })).toEqual({ ok: false, code: 'forbidden' });
+    expect(preauthorizeCommentAction('comment_pin', { appRole: 'student', isGuest: false })).toEqual({ ok: false, code: 'forbidden' });
+    expect(commentStatusVerdict('comment_pin', 'live')).toEqual({ ok: true });
+    expect(commentStatusVerdict('comment_pin', 'green')).toEqual({ ok: true });
+    expect(commentStatusVerdict('comment_pin', 'ended')).toEqual({ ok: false, code: 'not_live' });
+    expect(commentAuditAction('comment_pin')).toBe('comment_pin');
+  });
+
+  test('broadcast {t:"pin", c} carries the public comment, or null', () => {
+    const c = toPublicComment({ id: C, kind: 'comment', text: 'رابط', name: null, gender: 'm', answered: false, at: '2026-11-22T19:00:00.000Z', user_id: 'x' })!;
+    expect(JSON.parse(commentsMessage({ t: 'pin', c }))).toEqual({ t: 'pin', c });
+    expect(JSON.parse(commentsMessage({ t: 'pin', c: null }))).toEqual({ t: 'pin', c: null });
+    expect(commentsMessage({ t: 'pin', c })).not.toContain('user_id');
   });
 });

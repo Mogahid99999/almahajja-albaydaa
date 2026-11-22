@@ -49,6 +49,7 @@ jest.mock('@/hooks/useLiveComments', () => ({
   useLiveCommentAction: () => ({ mutate: jest.fn(), isPending: false, variables: undefined }),
   useEditLiveComment: () => ({ mutate: jest.fn(), isPending: false }),
   useSetLiveCommentsClosed: () => ({ mutate: jest.fn(), isPending: false }),
+  usePinLiveComment: () => ({ mutate: jest.fn(), isPending: false, variables: undefined }),
 }));
 // The live store as a real zustand store (subscribers re-render), actions mocked.
 jest.mock('@/stores/liveStore', () => {
