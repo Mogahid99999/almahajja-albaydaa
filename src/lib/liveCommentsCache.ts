@@ -9,7 +9,7 @@
  * longer than {@link MAX_LIVE_COMMENTS} (the newest are kept — the server's own
  * read window).
  */
-import type { LiveComment, LiveCommentsMessage } from '@/api/liveComments';
+import type { LiveComment, LiveCommentsMessage, LiveCommentsState } from '@/api/liveComments';
 
 /** Same window as get_live_comments (the 500 newest). */
 export const MAX_LIVE_COMMENTS = 500;
@@ -35,7 +35,7 @@ const time = (c: LiveComment) => {
  *  - ans: «تمت الإجابة» on / off.
  *  - edit (0182): the author's new text in place (same id, same time, «معدّل»);
  *    an unknown id is ignored (the next read has it).
- *  - closed (0182): not a list change (useLiveComments keeps it apart).
+ *  - closed (0182), pin (0183): not a list change (see {@link applyStateMessage}).
  */
 export function applyCommentsMessage(list: readonly LiveComment[], msg: LiveCommentsMessage): LiveComment[] {
   const arr = list as LiveComment[];
@@ -91,4 +91,37 @@ export function countUnseen(list: readonly LiveComment[], seen: ReadonlySet<stri
   let n = 0;
   for (const c of list) if (!c.mine && !seen.has(c.id)) n++;
   return n;
+}
+
+/** No state read yet: open comments, nothing pinned. */
+export const EMPTY_COMMENTS_STATE: LiveCommentsState = { closed: false, pinned: null };
+
+/**
+ * One update → the room's comments state (0182 closed, 0183 pinned). Returns the
+ * SAME object when nothing changed.
+ *  - closed: the flag only (the pin stays).
+ *  - pin: the new pinned comment, or none.
+ *  - del of the pinned comment: no pin (the server cleared it too).
+ *  - edit of the pinned comment: its new text («معدّل»).
+ */
+export function applyStateMessage(
+  state: LiveCommentsState | undefined,
+  msg: LiveCommentsMessage,
+): LiveCommentsState {
+  const cur = state ?? EMPTY_COMMENTS_STATE;
+  switch (msg.t) {
+    case 'closed':
+      return cur.closed === msg.closed ? cur : { ...cur, closed: msg.closed };
+    case 'pin':
+      if (cur.pinned === null && msg.c === null) return cur;
+      return { ...cur, pinned: msg.c };
+    case 'del':
+      return cur.pinned?.id === msg.id ? { ...cur, pinned: null } : cur;
+    case 'edit':
+      if (cur.pinned?.id !== msg.c.id) return cur;
+      if (cur.pinned.text === msg.c.text && !!cur.pinned.edited === !!msg.c.edited) return cur;
+      return { ...cur, pinned: { ...cur.pinned, text: msg.c.text, edited: msg.c.edited ?? true } };
+    default:
+      return cur;
+  }
 }

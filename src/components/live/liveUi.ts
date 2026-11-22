@@ -672,6 +672,11 @@ export const LIVE_COMMENTS_COPY = {
   closedStaff: 'التعليقات مغلقة للحاضرين، ويمكنك أنت الكتابة',
   closeComments: 'إغلاق التعليقات',
   openComments: 'فتح التعليقات',
+  // 0183 (owner 2026-11-22): one pinned comment, in the room and atop the list
+  pin: 'تثبيت',
+  unpin: 'إلغاء التثبيت',
+  pinned: 'تعليق مثبّت',
+  pinnedOpenA11y: 'تعليق مثبّت، اضغط لفتح التعليقات',
 } as const;
 
 /**

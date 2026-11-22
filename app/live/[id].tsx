@@ -108,6 +108,7 @@ import {
 import { useNow } from '@/components/live/LiveHomeCard';
 import { BuddyInviteSheet } from '@/components/live/sheets/BuddyInviteSheet';
 import { CommentsSheet, type CommentsWriteState } from '@/components/live/sheets/CommentsSheet';
+import { PinnedCommentCard } from '@/components/live/PinnedComment';
 import { EndSheet } from '@/components/live/sheets/EndSheet';
 import { GuestSpeakSheet } from '@/components/live/sheets/GuestSpeakSheet';
 import { IdentitySheet } from '@/components/live/sheets/IdentitySheet';
@@ -341,6 +342,8 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   }, [commentsOpen]);
   const comments = useLiveComments(joinedHere ? id : null, {
     enabled: joinedHere && !!me && active && (commentsStaff || commentsOpened),
+    // 0183: everyone in the room reads the small state — the pinned comment shows here.
+    stateEnabled: joinedHere && !!me && active,
     open: commentsOpen,
   });
   const canModerateCmts = joinedHere && canModerateComments(myRole, user);
@@ -565,6 +568,13 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
             </View>
           </View>
 
+          {/* 0183: the comment a moderator pinned for everyone — opens the comments. */}
+          {comments.pinned && joinedHere && !ended ? (
+            <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
+              <PinnedCommentCard c={comments.pinned} variant="room" onPress={() => setCommentsOpen(true)} />
+            </View>
+          ) : null}
+
           {roomConn === 'hostdrop' ? <LiveHoldNote /> : null}
 
           <View
@@ -713,6 +723,8 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
           myName={user?.displayName ?? null}
           canModerate={canModerateCmts}
           closed={comments.closed}
+          pinned={comments.pinned}
+          mic={speak?.kind === 'mic' ? { on: speak.on, busy: speak.busy, disabled: speak.disabled, onToggle: speak.onToggle } : null}
           onGuestGate={() =>
             swapSheet(
               () => setCommentsOpen(false),

@@ -426,7 +426,9 @@ export type LiveControlAction =
   | 'comment_block'
   // 0182
   | 'comment_edit'
-  | 'comments_close';
+  | 'comments_close'
+  // 0183
+  | 'comment_pin';
 
 /**
  * Call live-control: `{ action, ...body }` — body carries `sessionId` and the

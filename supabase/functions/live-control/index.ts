@@ -99,6 +99,11 @@
 //   comments_close      (0182) { sessionId, closed } — host / moderators /
 //                       content managers, green or live → { ok, status, closed };
 //                       broadcast {t:'closed', closed}; logged comments_close.
+//   comment_pin         (0183) { sessionId, commentId: uuid | null } — host /
+//                       moderators / content managers, green or live: pin one
+//                       comment of the session (null = clear) → { ok, status,
+//                       pinned: <public> | null }; broadcast {t:'pin', c};
+//                       logged comment_pin. A deleted comment leaves the pin (SQL).
 //   Comments are up to 1000 characters since 0182 (300 before).
 //   Staff actions are logged (comment_delete by a moderator, comment_answered,
 //   comment_block) with target_identity NULL and only the comment id in detail.
@@ -775,6 +780,23 @@ async function handleComment(authHeader: string, bearer: string, body: unknown):
       result = { closed: r.closed };
       logged = commentAuditAction("comments_close");
       detail = { closed: r.closed };
+      break;
+    }
+
+    case "comment_pin": {
+      const { data, error } = await admin.rpc("live_set_comment_pinned", {
+        p_session: session.id,
+        p_actor: userId,
+        p_comment: r.commentId,
+      });
+      if (error) return failCommentRpc(error.message);
+      const raw = (data as { pinned?: unknown } | null)?.pinned ?? null;
+      const c = raw === null ? null : toPublicComment(raw);
+      if (raw !== null && !c) return fail("server_error", "malformed comment row");
+      message = { t: "pin", c };
+      result = { pinned: c };
+      logged = commentAuditAction("comment_pin");
+      detail = { comment_id: r.commentId };
       break;
     }
 

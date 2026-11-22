@@ -54,7 +54,12 @@ export type LiveCommentsMessage =
   | { t: 'ans'; id: string; answered: boolean }
   // 0182
   | { t: 'edit'; c: LiveComment }
-  | { t: 'closed'; closed: boolean };
+  | { t: 'closed'; closed: boolean }
+  // 0183: the pinned comment, or null when the pin was cleared
+  | { t: 'pin'; c: LiveComment | null };
+
+/** 0182/0183: what the room needs beside the list. */
+export type LiveCommentsState = { closed: boolean; pinned: LiveComment | null };
 
 /** LiveKit data topic of the comment stream (live-control broadcasts, RELIABLE). */
 export const LIVE_COMMENTS_TOPIC = 'comments';
@@ -197,11 +202,31 @@ export async function setLiveCommentsClosed(sessionId: string, closed: boolean):
   await invokeLiveControl('comments_close', { sessionId, closed });
 }
 
-/** 0182: whether the comments are closed (same access as get_live_comments; false when unknown). */
-export async function getLiveCommentsState(sessionId: string): Promise<{ closed: boolean }> {
+/**
+ * 0182: whether the comments are closed; 0183: the pinned comment (same access as
+ * get_live_comments; closed false / pinned null when unknown).
+ */
+export async function getLiveCommentsState(sessionId: string): Promise<LiveCommentsState> {
   const { data, error } = await supabase.rpc('get_live_comments_state' as never, { p_session: sessionId } as never);
   if (error) throw error;
-  return { closed: (data as { closed?: unknown } | null)?.closed === true };
+  const d = data as { closed?: unknown; pinned?: unknown } | null;
+  const pinned = d?.pinned ? toLiveComment(d.pinned) : null;
+  if (pinned) {
+    delete pinned.mine;
+    delete pinned.deleted;
+  }
+  return { closed: d?.closed === true, pinned };
+}
+
+/** 0183: pin a comment of this majlis for everyone (null = clear the pin) — host / moderators / content managers. */
+export async function setLiveCommentPinned(sessionId: string, commentId: string | null): Promise<LiveComment | null> {
+  const d = await invokeLiveControl('comment_pin', { sessionId, commentId });
+  if (d.pinned === null || d.pinned === undefined) return null;
+  const c = toLiveComment(d.pinned);
+  if (!c) throw new LiveControlError('unknown');
+  delete c.mine;
+  delete c.deleted;
+  return c;
 }
 
 /** Soft-delete: the author, or the session's host / moderators / a content manager. Idempotent. */
@@ -327,6 +352,14 @@ export function parseCommentsMessage(payload: Uint8Array): LiveCommentsMessage |
     }
     case 'closed':
       return typeof msg.closed === 'boolean' ? { t: 'closed', closed: msg.closed } : null;
+    case 'pin': {
+      if (msg.c === null) return { t: 'pin', c: null };
+      const c = toLiveComment(msg.c);
+      if (!c) return null;
+      delete c.mine;
+      delete c.deleted;
+      return { t: 'pin', c };
+    }
     default:
       return null;
   }

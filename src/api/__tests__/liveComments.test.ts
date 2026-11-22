@@ -224,6 +224,13 @@ describe('parseCommentsMessage (topic "comments")', () => {
     expect(parseCommentsMessage(bytes({ t: 'closed', closed: 'yes' }))).toBeNull();
   });
 
+  test('0183: pin carries a public comment (never mine), or null to clear', () => {
+    expect(parseCommentsMessage(bytes({ t: 'pin', c: { ...named, mine: true } }))).toEqual({ t: 'pin', c: named });
+    expect(parseCommentsMessage(bytes({ t: 'pin', c: null }))).toEqual({ t: 'pin', c: null });
+    expect(parseCommentsMessage(bytes({ t: 'pin', c: { id: 'nope' } }))).toBeNull();
+    expect(parseCommentsMessage(bytes({ t: 'pin' }))).toBeNull();
+  });
+
   test('del / ans', () => {
     expect(parseCommentsMessage(bytes({ t: 'del', id: C1 }))).toEqual({ t: 'del', id: C1 });
     expect(parseCommentsMessage(bytes({ t: 'ans', id: C1, answered: false }))).toEqual({ t: 'ans', id: C1, answered: false });

@@ -22,8 +22,14 @@
  * 0182 (owner 2026-11-19): «تعديل» on my own comment (the composer turns into
  * «تعديل تعليقك», the row shows «معدّل»); the room's moderators close / reopen the
  * comments («إغلاق التعليقات» / «فتح التعليقات») — while closed only they write.
+ *
+ * 0183 (owner 2026-11-22): a moderator pins one comment («تثبيت» on its row,
+ * «إلغاء التثبيت» on the card) — it shows atop the list for everyone (and in the
+ * room). Whoever holds a microphone (speaker / moderator) gets its toggle beside
+ * the composer, so the mic opens and closes without leaving the list.
  */
 import Feather from '@expo/vector-icons/Feather';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -41,6 +47,7 @@ import { colors, fonts, radius } from '@/constants/theme';
 import {
   useEditLiveComment,
   useLiveCommentAction,
+  usePinLiveComment,
   usePostLiveComment,
   useSetLiveCommentsClosed,
   type LiveCommentAction,
@@ -57,6 +64,8 @@ import {
   sexOf,
   type Sex,
 } from '../liveUi';
+import { MicToggle } from '../LiveDock';
+import { PinnedCommentCard } from '../PinnedComment';
 import { LiveSheet } from './LiveSheet';
 import { SheetButton, SheetError } from './sheetParts';
 
@@ -66,6 +75,9 @@ import { SheetButton, SheetError } from './sheetParts';
  * (reconnecting: the list stays, sending waits).
  */
 export type CommentsWriteState = 'ok' | 'guest' | 'not_live' | 'offline';
+
+/** 0183: my microphone, when I hold one (the dock's `speak` of kind 'mic'). */
+export type CommentsMic = { on: boolean; busy: boolean; disabled?: boolean; onToggle: () => void };
 
 export function CommentsSheet({
   visible,
@@ -81,6 +93,8 @@ export function CommentsSheet({
   canModerate,
   onGuestGate,
   closed = false,
+  pinned = null,
+  mic = null,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -100,6 +114,10 @@ export function CommentsSheet({
   onGuestGate: () => void;
   /** 0182: a moderator closed the comments of this majlis. */
   closed?: boolean;
+  /** 0183: the comment pinned for everyone, or none. */
+  pinned?: LiveComment | null;
+  /** 0183: my microphone toggle (speakers / moderators), or none. */
+  mic?: CommentsMic | null;
 }) {
   const action = useLiveCommentAction(sessionId);
   const [selected, setSelected] = useState<string | null>(null);
@@ -108,6 +126,18 @@ export function CommentsSheet({
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const closeMut = useSetLiveCommentsClosed(sessionId);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const pinMut = usePinLiveComment(sessionId);
+  const [pinError, setPinError] = useState<{ id: string | null; text: string } | null>(null);
+  const pinnedId = pinned?.id ?? null;
+  const pinBusyFor = (id: string | null) => pinMut.isPending && pinMut.variables === id;
+  const pin = (id: string | null) => {
+    if (pinMut.isPending) return;
+    setPinError(null);
+    pinMut.mutate(id, {
+      onSuccess: () => setSelected(null),
+      onError: (e) => setPinError({ id, text: commentErrorText(e, 'act') }),
+    });
+  };
   // Writing (posting or editing) is open to me: open comments, or I moderate them.
   const mayWrite = writeState === 'ok' && (!closed || canModerate);
 
@@ -122,6 +152,7 @@ export function CommentsSheet({
     setRowError(null);
     setEditing(null);
     setCloseError(null);
+    setPinError(null);
     // Open on the newest: a reopen with the same list never changes the
     // content size, and the first one can measure before the list has a height.
     const t = setTimeout(() => {
@@ -215,11 +246,31 @@ export function CommentsSheet({
           </View>
         ) : null}
         {closeError ? <SheetError text={closeError} /> : null}
+        {pinned ? (
+          <View style={{ paddingBottom: 10 }}>
+            <PinnedCommentCard
+              c={pinned}
+              variant="sheet"
+              action={
+                canModerate ? (
+                  <RowAction
+                    glyph={<MaterialCommunityIcons name="pin-off" size={14} color={colors.textSlate} />}
+                    label={COPY.unpin}
+                    busy={pinBusyFor(null)}
+                    disabled={pinMut.isPending}
+                    onPress={() => pin(null)}
+                  />
+                ) : undefined
+              }
+            />
+            {pinError && pinError.id === null ? <SheetError text={pinError.text} /> : null}
+          </View>
+        ) : null}
         <FlatList
           ref={listRef}
           data={comments as LiveComment[]}
           // Rows read the open row / confirm / busy state too.
-          extraData={[selected, confirmBlock, rowError, action.isPending, action.variables]}
+          extraData={[selected, confirmBlock, rowError, action.isPending, action.variables, pinnedId, pinMut.isPending, pinError]}
           keyExtractor={(c) => c.id}
           style={{ flex: 1 }}
           contentContainerStyle={{ gap: 8, paddingBottom: 8, flexGrow: 1 }}
@@ -249,6 +300,7 @@ export function CommentsSheet({
               <CommentRow
                 c={item}
                 open={open}
+                pinned={item.id === pinnedId}
                 onPress={
                   actionable
                     ? () => {
@@ -299,6 +351,21 @@ export function CommentsSheet({
                           onPress={() => run({ type: 'delete', id: item.id })}
                         />
                       ) : null}
+                      {canModerate ? (
+                        <RowAction
+                          glyph={
+                            <MaterialCommunityIcons
+                              name={item.id === pinnedId ? 'pin-off' : 'pin'}
+                              size={14}
+                              color={colors.textSlate}
+                            />
+                          }
+                          label={item.id === pinnedId ? COPY.unpin : COPY.pin}
+                          busy={pinBusyFor(item.id === pinnedId ? null : item.id)}
+                          disabled={pinMut.isPending || action.isPending}
+                          onPress={() => pin(item.id === pinnedId ? null : item.id)}
+                        />
+                      ) : null}
                       {canModerate && !mine ? (
                         <RowAction
                           icon="slash"
@@ -315,6 +382,7 @@ export function CommentsSheet({
                   )
                 ) : null}
                 {rowError?.id === item.id ? <SheetError text={rowError.text} /> : null}
+                {pinError && pinError.id === item.id ? <SheetError text={pinError.text} /> : null}
               </CommentRow>
             );
           }}
@@ -330,6 +398,7 @@ export function CommentsSheet({
           me={me}
           myName={myName}
           onGuestGate={onGuestGate}
+          mic={mic}
           onSent={() => {
             // The cache already holds my post (it rendered before this runs):
             // follow it explicitly, a content-size change may have passed.
@@ -391,11 +460,14 @@ function ListState({
 function CommentRow({
   c,
   open,
+  pinned = false,
   onPress,
   children,
 }: {
   c: LiveComment;
   open: boolean;
+  /** 0183: this is the pinned comment. */
+  pinned?: boolean;
   onPress?: () => void;
   children?: React.ReactNode;
 }) {
@@ -421,6 +493,14 @@ function CommentRow({
           {c.mine ? `${author} · ${COPY.you}` : author}
         </Txt>
         <View style={{ flex: 1 }} />
+        {pinned ? (
+          <MaterialCommunityIcons
+            name="pin"
+            size={13}
+            color={colors.accentBrassMuted}
+            accessibilityLabel={COPY.pinned}
+          />
+        ) : null}
         <Txt size={11} color={colors.textGhost} tabular>
           {c.edited ? `${COPY.edited} · ${arClock(c.at)}` : arClock(c.at)}
         </Txt>
@@ -436,6 +516,7 @@ function CommentRow({
 function RowAction({
   label,
   icon,
+  glyph,
   tone = 'plain',
   busy = false,
   disabled = false,
@@ -443,6 +524,8 @@ function RowAction({
 }: {
   label: string;
   icon?: keyof typeof Feather.glyphMap;
+  /** 0183: an icon from another set (the pin), instead of `icon`. */
+  glyph?: React.ReactNode;
   tone?: 'plain' | 'primary' | 'danger';
   busy?: boolean;
   disabled?: boolean;
@@ -470,6 +553,8 @@ function RowAction({
     >
       {busy ? (
         <ActivityIndicator size="small" color={fg} />
+      ) : glyph ? (
+        glyph
       ) : icon ? (
         <Feather name={icon} size={13} color={fg} />
       ) : null}
@@ -495,6 +580,7 @@ function Composer({
   myName,
   onGuestGate,
   onSent,
+  mic = null,
 }: {
   sessionId: string;
   visible: boolean;
@@ -508,6 +594,8 @@ function Composer({
   myName?: string | null;
   onGuestGate: () => void;
   onSent: () => void;
+  /** 0183: my microphone toggle, at the start of the composer row. */
+  mic?: CommentsMic | null;
 }) {
   const post = usePostLiveComment(sessionId);
   const edit = useEditLiveComment(sessionId);
@@ -552,20 +640,19 @@ function Composer({
       </View>
     );
   }
-  if (writeState === 'ok' && closed) {
+  const micButton = mic ? (
+    <MicToggle on={mic.on} busy={mic.busy} disabled={mic.disabled} onToggle={mic.onToggle} />
+  ) : null;
+  if (writeState !== 'ok' || closed) {
+    // Nothing to write here (closed for me / the green room / reconnecting); my mic stays at hand.
+    const line = writeState === 'ok' ? COPY.closedLine : writeState === 'not_live' ? COPY.notLive : LIVE_COPY.reconnecting;
     return (
-      <View style={{ paddingTop: 12, borderTopWidth: 1, borderColor: colors.borderSand }}>
-        <Txt size={12.5} color={colors.textFaint} align="center" style={{ alignSelf: 'stretch', lineHeight: 20 }}>
-          {COPY.closedLine}
-        </Txt>
-      </View>
-    );
-  }
-  if (writeState !== 'ok') {
-    return (
-      <View style={{ paddingTop: 12, borderTopWidth: 1, borderColor: colors.borderSand }}>
-        <Txt size={12.5} color={colors.textFaint} align="center" style={{ alignSelf: 'stretch', lineHeight: 20 }}>
-          {writeState === 'not_live' ? COPY.notLive : LIVE_COPY.reconnecting}
+      <View
+        style={{ paddingTop: 12, borderTopWidth: 1, borderColor: colors.borderSand, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+      >
+        {micButton}
+        <Txt size={12.5} color={colors.textFaint} align="center" style={{ flex: 1, lineHeight: 20 }}>
+          {line}
         </Txt>
       </View>
     );
@@ -676,6 +763,7 @@ function Composer({
         </View>
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+          {micButton}
           <TextInput
             value={text}
             onChangeText={(t) => {

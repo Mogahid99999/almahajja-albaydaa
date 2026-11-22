@@ -9,7 +9,14 @@
  * newest kept); the staff badge counts neither my own nor already-seen ones.
  */
 import type { LiveComment } from '@/api/liveComments';
-import { MAX_LIVE_COMMENTS, applyCommentsMessage, capComments, countUnseen } from '@/lib/liveCommentsCache';
+import {
+  EMPTY_COMMENTS_STATE,
+  MAX_LIVE_COMMENTS,
+  applyCommentsMessage,
+  applyStateMessage,
+  capComments,
+  countUnseen,
+} from '@/lib/liveCommentsCache';
 
 function c(id: string, at: string, over: Partial<LiveComment> = {}): LiveComment {
   return { id, kind: 'comment', text: 'جزاكم الله خيراً', name: 'أحمد', gender: 'm', answered: false, at, ...over };
@@ -92,4 +99,43 @@ test('edit replaces the text in place, keeps mine and the time, marks «معدّ
 test('closed is not a list change', () => {
   const list = [c('a', T1)];
   expect(applyCommentsMessage(list, { t: 'closed', closed: true })).toBe(list);
+});
+
+describe('0183: the room state — closed + the pinned comment', () => {
+  const p = c('p1', T1, { text: 'رابط الكتاب' });
+
+  test('pin / clear; closed keeps the pin', () => {
+    const pinned = applyStateMessage(undefined, { t: 'pin', c: p });
+    expect(pinned).toEqual({ closed: false, pinned: p });
+    const closed = applyStateMessage(pinned, { t: 'closed', closed: true });
+    expect(closed).toEqual({ closed: true, pinned: p });
+    expect(applyStateMessage(closed, { t: 'pin', c: null })).toEqual({ closed: true, pinned: null });
+  });
+
+  test('deleting the pinned comment unpins it; another delete changes nothing (same object)', () => {
+    const s = { closed: false, pinned: p };
+    expect(applyStateMessage(s, { t: 'del', id: 'p1' })).toEqual({ closed: false, pinned: null });
+    expect(applyStateMessage(s, { t: 'del', id: 'other' })).toBe(s);
+  });
+
+  test('editing the pinned comment updates its text («معدّل»); others leave it', () => {
+    const s = { closed: false, pinned: p };
+    expect(applyStateMessage(s, { t: 'edit', c: { ...p, text: 'الرابط الجديد', edited: true } }).pinned).toEqual({
+      ...p,
+      text: 'الرابط الجديد',
+      edited: true,
+    });
+    expect(applyStateMessage(s, { t: 'edit', c: c('x', T2, { edited: true }) })).toBe(s);
+  });
+
+  test('no-ops return the same state; list messages never touch it', () => {
+    expect(applyStateMessage(EMPTY_COMMENTS_STATE, { t: 'pin', c: null })).toBe(EMPTY_COMMENTS_STATE);
+    expect(applyStateMessage(EMPTY_COMMENTS_STATE, { t: 'closed', closed: false })).toBe(EMPTY_COMMENTS_STATE);
+    expect(applyStateMessage(EMPTY_COMMENTS_STATE, { t: 'add', c: p })).toBe(EMPTY_COMMENTS_STATE);
+  });
+
+  test('the list ignores pin messages', () => {
+    const list = [p];
+    expect(applyCommentsMessage(list, { t: 'pin', c: p })).toBe(list);
+  });
 });

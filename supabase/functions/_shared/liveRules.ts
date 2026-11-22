@@ -931,6 +931,8 @@ export const COMMENT_ACTIONS = [
   "comment", "comment_delete", "comment_answered", "comment_block",
   // 0182
   "comment_edit", "comments_close",
+  // 0183
+  "comment_pin",
 ] as const;
 export type CommentAction = (typeof COMMENT_ACTIONS)[number];
 
@@ -945,7 +947,7 @@ export type CommentKind = (typeof COMMENT_KINDS)[number];
 export const COMMENT_MAX_CHARS = 1000;
 /** live_post_comment (0147): one comment per 10 s per user per session. */
 export const COMMENT_RATE_LIMIT_MS = 10_000;
-/** LiveKit data topic of the comment stream (JSON: {t:'add',c} | {t:'del',id} | {t:'ans',id,answered} | 0182: {t:'edit',c} | {t:'closed',closed}). */
+/** LiveKit data topic of the comment stream (JSON: {t:'add',c} | {t:'del',id} | {t:'ans',id,answered} | 0182: {t:'edit',c} | {t:'closed',closed} | 0183: {t:'pin',c|null}). */
 export const COMMENTS_TOPIC = "comments";
 
 export type LiveCommentRequest =
@@ -953,7 +955,9 @@ export type LiveCommentRequest =
   | { action: "comment_delete" | "comment_block"; sessionId: string; commentId: string }
   | { action: "comment_answered"; sessionId: string; commentId: string; answered: boolean }
   | { action: "comment_edit"; sessionId: string; commentId: string; text: string }
-  | { action: "comments_close"; sessionId: string; closed: boolean };
+  | { action: "comments_close"; sessionId: string; closed: boolean }
+  /** 0183: commentId null = clear the pin. */
+  | { action: "comment_pin"; sessionId: string; commentId: string | null };
 
 /**
  * The body of a comment action. The text itself is only type-checked here
@@ -980,6 +984,11 @@ export function parseLiveCommentRequest(
   if (b.action === "comments_close") {
     if (typeof b.closed !== "boolean") return { ok: false, error: "closed required" };
     return { ok: true, value: { action: "comments_close", sessionId, closed: b.closed } };
+  }
+  if (b.action === "comment_pin") {
+    if (b.commentId === null) return { ok: true, value: { action: "comment_pin", sessionId, commentId: null } };
+    if (typeof b.commentId !== "string" || !UUID_RE.test(b.commentId)) return { ok: false, error: "commentId required" };
+    return { ok: true, value: { action: "comment_pin", sessionId, commentId: b.commentId } };
   }
   if (typeof b.commentId !== "string" || !UUID_RE.test(b.commentId)) return { ok: false, error: "commentId required" };
   const commentId = b.commentId;
@@ -1062,6 +1071,7 @@ export function authorizeCommentAction(
     case "comment_answered":
     case "comment_block":
     case "comments_close":
+    case "comment_pin":
       return canModerateComments(actor) ? OK : forbidden;
   }
 }
@@ -1073,7 +1083,9 @@ export function authorizeCommentAction(
  */
 export function commentStatusVerdict(action: CommentAction, status: string): Verdict<"not_live"> {
   if ((action === "comment" || action === "comment_edit") && status !== "live") return { ok: false, code: "not_live" };
-  if (action === "comments_close" && status !== "live" && status !== "green") return { ok: false, code: "not_live" };
+  if ((action === "comments_close" || action === "comment_pin") && status !== "live" && status !== "green") {
+    return { ok: false, code: "not_live" };
+  }
   return OK;
 }
 
@@ -1108,6 +1120,8 @@ export function commentAuditAction(action: CommentAction, ctx: { by?: string | n
       return null;
     case "comments_close":
       return "comments_close";
+    case "comment_pin":
+      return "comment_pin";
     case "comment_delete":
       return ctx.by === "moderator" ? "comment_delete" : null;
     case "comment_answered":
@@ -1162,7 +1176,9 @@ export type CommentsMessage =
   | { t: "del"; id: string }
   | { t: "ans"; id: string; answered: boolean }
   | { t: "edit"; c: PublicLiveComment }
-  | { t: "closed"; closed: boolean };
+  | { t: "closed"; closed: boolean }
+  /** 0183: the pinned comment, or null when the pin was cleared. */
+  | { t: "pin"; c: PublicLiveComment | null };
 
 /** The data message body on topic COMMENTS_TOPIC (UTF-8 JSON). */
 export function commentsMessage(msg: CommentsMessage): string {
@@ -1177,5 +1193,7 @@ export function commentsMessage(msg: CommentsMessage): string {
       return JSON.stringify({ t: "edit", c: msg.c });
     case "closed":
       return JSON.stringify({ t: "closed", closed: msg.closed });
+    case "pin":
+      return JSON.stringify({ t: "pin", c: msg.c });
   }
 }
