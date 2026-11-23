@@ -92,10 +92,10 @@ index 149e907..975c392 100644
        }
  
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-index 196a5d5..78aff03 100644
+index 196a5d5..44781f9 100644
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
 +++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-@@ -6,6 +6,7 @@ import android.app.NotificationManager
+@@ -6,13 +6,17 @@ import android.app.NotificationManager
  import android.app.PendingIntent
  import android.content.Context
  import android.content.Intent
@@ -103,7 +103,17 @@ index 196a5d5..78aff03 100644
  import android.media.AudioManager
  import android.content.pm.ServiceInfo
  import android.graphics.Bitmap
-@@ -90,6 +91,8 @@ class AudioControlsService : MediaSessionService() {
+ import android.graphics.BitmapFactory
+ import android.os.Build
+ import android.os.Bundle
++import android.os.Handler
+ import android.os.IBinder
++import android.os.Looper
++import android.os.Process
+ import androidx.annotation.OptIn
+ import androidx.core.app.NotificationCompat
+ import androidx.media3.common.ForwardingPlayer
+@@ -90,6 +94,8 @@ class AudioControlsService : MediaSessionService() {
  
          ACTION_SEEK_FORWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition + SEEK_INTERVAL_MS)
          ACTION_SEEK_BACKWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition - SEEK_INTERVAL_MS)
@@ -112,7 +122,7 @@ index 196a5d5..78aff03 100644
        }
      }
  
-@@ -151,8 +154,24 @@ class AudioControlsService : MediaSessionService() {
+@@ -151,8 +157,24 @@ class AudioControlsService : MediaSessionService() {
      }
    }
  
@@ -138,7 +148,7 @@ index 196a5d5..78aff03 100644
      return PendingIntent.getActivity(
        this,
        0,
-@@ -189,21 +208,15 @@ class AudioControlsService : MediaSessionService() {
+@@ -189,21 +211,15 @@ class AudioControlsService : MediaSessionService() {
  
      // Older Android system UI expects explicit notification actions for transport controls.
      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
@@ -168,7 +178,7 @@ index 196a5d5..78aff03 100644
        builder.addAction(
          NotificationCompat.Action(
            if (session.player.isPlaying) {
-@@ -215,21 +228,14 @@ class AudioControlsService : MediaSessionService() {
+@@ -215,21 +231,14 @@ class AudioControlsService : MediaSessionService() {
            buildActionPendingIntent(if (session.player.isPlaying) ACTION_PAUSE else ACTION_PLAY)
          )
        )
@@ -197,7 +207,7 @@ index 196a5d5..78aff03 100644
      }
  
      builder.setStyle(style)
-@@ -240,19 +246,19 @@ class AudioControlsService : MediaSessionService() {
+@@ -240,19 +249,19 @@ class AudioControlsService : MediaSessionService() {
      val session = mediaSession ?: return
      val mediaButtons = mutableListOf<CommandButton>()
  
@@ -229,7 +239,7 @@ index 196a5d5..78aff03 100644
      mediaButtons.add(
        CommandButton.Builder(if (isPlaying) CommandButton.ICON_PAUSE else CommandButton.ICON_PLAY)
          .setDisplayName(if (isPlaying) "Pause" else "Play")
-@@ -262,17 +268,15 @@ class AudioControlsService : MediaSessionService() {
+@@ -262,17 +271,15 @@ class AudioControlsService : MediaSessionService() {
          .build()
      )
  
@@ -256,7 +266,7 @@ index 196a5d5..78aff03 100644
  
      session.setCustomLayout(mediaButtons)
      session.setMediaButtonPreferences(mediaButtons)
-@@ -371,7 +375,7 @@ class AudioControlsService : MediaSessionService() {
+@@ -371,7 +378,7 @@ class AudioControlsService : MediaSessionService() {
            updateMetadata(metadata)
          }
          val session = MediaSession.Builder(context, sessionPlayer)
@@ -265,7 +275,7 @@ index 196a5d5..78aff03 100644
            .build()
  
          // Replace the basic media session with a session connected to our playback service.
-@@ -452,7 +456,7 @@ class AudioControlsService : MediaSessionService() {
+@@ -452,7 +459,7 @@ class AudioControlsService : MediaSessionService() {
            updateMetadata(metadata)
          }
          val session = MediaSession.Builder(context, sessionPlayer)
@@ -274,7 +284,29 @@ index 196a5d5..78aff03 100644
            .build()
  
          player.mediaSession.release()
-@@ -559,6 +563,10 @@ class AudioControlsService : MediaSessionService() {
+@@ -510,6 +517,21 @@ class AudioControlsService : MediaSessionService() {
+     notificationManager.cancel(notificationId)
+   }
+ 
++  override fun onTaskRemoved(rootIntent: Intent?) {
++    // المحجّة (owner 2026-11-23): swiping the app away from Recents. A lecture that is PLAYING
++    // keeps playing, as in any audio app. Otherwise the app closes for good: this foreground
++    // service used to keep the process alive (paused lecture), so the next launch reused the old
++    // JS runtime and an OTA update never applied without «إيقاف إجباري». The short grace lets a
++    // live room (live-foreground) send its «leave» first.
++    // Media3's default (super) pauses here — it can't see expo-audio's own notification as
++    // «ongoing» — so a playing lecture skips it and simply goes on.
++    if (currentPlayer?.ref?.isPlaying == true) return
++    hideNotification()
++    stopForeground(STOP_FOREGROUND_REMOVE)
++    stopSelf()
++    Handler(Looper.getMainLooper()).postDelayed({ Process.killProcess(Process.myPid()) }, 2000L)
++  }
++
+   override fun onDestroy() {
+     super.onDestroy()
+ 
+@@ -559,6 +581,10 @@ class AudioControlsService : MediaSessionService() {
      const val ACTION_SEEK_FORWARD = "expo.modules.audio.action.SEEK_FORWARD"
      const val ACTION_SEEK_BACKWARD = "expo.modules.audio.action.SEEK_BACKWARD"
  

@@ -9,7 +9,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.Process
 
 /**
  * Foreground service for a live «الحلقة» session (V23 P3). WebRTC keeps playing only while the
@@ -26,6 +29,8 @@ class LiveForegroundService : Service() {
     const val EXTRA_URL = "url"
     private const val CHANNEL_ID = "live_session"
     private const val NOTIFICATION_ID = 4711
+    /** After a swipe from Recents: time for the room's «leave» to reach the server. */
+    private const val CLOSE_GRACE_MS = 2000L
   }
 
   override fun onBind(intent: Intent?): IBinder? = null
@@ -55,10 +60,15 @@ class LiveForegroundService : Service() {
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    // App swiped away from Recents: the live KEEPS PLAYING (owner 2026-11-06 «الصوت يشتغل في كل
-    // الاحوال»). The process and the JS room survive while this foreground service runs; the
-    // ongoing notification reopens the room, and its «مغادرة» action leaves. (Until 2026-11-06 a
-    // swipe left the live.)
+    // App swiped away from Recents = the app is CLOSED (owner 2026-11-23, reverting 2026-11-06
+    // «the live keeps playing»): leave the room properly (live-control `leave`), then end the
+    // process. Kept alive, the next launch reused the old JS runtime, so an OTA update never
+    // applied without «إيقاف إجباري». The grace lets the leave reach the server.
+    LiveForegroundModule.emitAction("leave")
+    Handler(Looper.getMainLooper()).postDelayed({
+      stopNow()
+      Process.killProcess(Process.myPid())
+    }, CLOSE_GRACE_MS)
     super.onTaskRemoved(rootIntent)
   }
 
