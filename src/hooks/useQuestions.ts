@@ -9,6 +9,7 @@ import {
   getMyLectureQuestions,
   getMyQuestions,
   getPublicQuestions,
+  getQuestionAnswers,
   getQuestionInbox,
   revealQuestionAuthor,
   setQuestionAudience,
@@ -23,6 +24,14 @@ import {
 import { queryKeys } from '@/constants/queryKeys';
 
 const QUESTION_INBOX_ROOT = ['questions', 'inbox'] as const;
+
+/** One question's answer thread (0086) — the same cache AnswerThread reads. */
+export function useQuestionAnswers(questionId: string) {
+  return useQuery({
+    queryKey: queryKeys.questionAnswers(questionId),
+    queryFn: () => getQuestionAnswers(questionId),
+  });
+}
 
 export function usePublicQuestions(
   scope: QuestionScope,

@@ -11,8 +11,11 @@
  * picked up. Updates arriving WHILE a read is in flight are replayed on its
  * result, so a comment broadcast mid-read is never lost.
  *
- * The staff badge («n» new since the list was last opened) keeps the ids already
+ * The badge («n» new since the list was last opened) keeps the ids already
  * seen per session in a tiny module store — it survives minimising the room.
+ * Owner 2026-11-23: everyone gets it. A listener reads no list before first
+ * opening it (LOAD V25), so until then it counts the comments that ARRIVED in
+ * the room (the data messages) — no extra read.
  */
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
@@ -34,7 +37,14 @@ import {
   type LiveCommentsState,
 } from '@/api/liveComments';
 import { queryKeys } from '@/constants/queryKeys';
-import { applyCommentsMessage, applyStateMessage, capComments, countUnseen } from '@/lib/liveCommentsCache';
+import {
+  applyArrival,
+  applyCommentsMessage,
+  applyStateMessage,
+  capComments,
+  countUnseen,
+  countUnseenIds,
+} from '@/lib/liveCommentsCache';
 import { onLiveComments } from '@/stores/liveStore';
 
 const EMPTY: readonly LiveComment[] = [];
@@ -94,26 +104,39 @@ export function applyLiveCommentsMessage(qc: QueryClient, sessionId: string, msg
   );
 }
 
-// ─── «seen» ids for the staff badge ────────────────────────────────────────────
+// ─── «seen» ids for the badge ────────────────────────────────────────────────
 
 type SeenState = {
   sessionId: string | null;
   ids: ReadonlySet<string>;
-  mark: (sessionId: string, ids: readonly string[]) => void;
+  /** Ids that arrived by room message (this session) — the count before any list read. */
+  arrived: ReadonlySet<string>;
+  mark: (sessionId: string, ids: Iterable<string>) => void;
+  arrive: (sessionId: string, msg: LiveCommentsMessage) => void;
 };
 
 const useSeen = create<SeenState>((set, get) => ({
   sessionId: null,
   ids: NONE,
+  arrived: NONE,
   mark: (sessionId, ids) => {
     const cur = get();
-    const base = cur.sessionId === sessionId ? cur.ids : NONE;
+    const same = cur.sessionId === sessionId;
+    const base = same ? cur.ids : NONE;
     let next: Set<string> | null = null;
     for (const id of ids) {
       if (!base.has(id)) (next ??= new Set(base)).add(id);
     }
-    if (next) set({ sessionId, ids: next });
-    else if (cur.sessionId !== sessionId) set({ sessionId, ids: NONE });
+    if (next) set(same ? { ids: next } : { sessionId, ids: next, arrived: NONE });
+    else if (!same) set({ sessionId, ids: NONE, arrived: NONE });
+  },
+  arrive: (sessionId, msg) => {
+    const cur = get();
+    const same = cur.sessionId === sessionId;
+    const base = same ? cur.arrived : NONE;
+    const next = applyArrival(base, msg);
+    if (!same) set({ sessionId, ids: NONE, arrived: next });
+    else if (next !== base) set({ arrived: next });
   },
 }));
 
@@ -134,7 +157,9 @@ export function useLiveComments(
   useEffect(() => {
     if (!sessionId) return undefined;
     return onLiveComments((sid, msg) => {
-      if (sid === sessionId) applyLiveCommentsMessage(qc, sid, msg);
+      if (sid !== sessionId) return;
+      applyLiveCommentsMessage(qc, sid, msg);
+      useSeen.getState().arrive(sid, msg);
     });
   }, [qc, sessionId]);
 
@@ -160,15 +185,21 @@ export function useLiveComments(
 
   const seenSession = useSeen((s) => s.sessionId);
   const seenIds = useSeen((s) => s.ids);
+  const arrived = useSeen((s) => s.arrived);
   const mark = useSeen((s) => s.mark);
   useEffect(() => {
-    if (opts.open && sessionId && comments.length) mark(sessionId, comments.map((c) => c.id));
-  }, [opts.open, sessionId, comments, mark]);
+    if (!opts.open || !sessionId) return;
+    if (comments.length) mark(sessionId, comments.map((c) => c.id));
+    if (seenSession === sessionId && arrived.size) mark(sessionId, arrived);
+  }, [opts.open, sessionId, comments, arrived, seenSession, mark]);
 
-  const unseen = useMemo(
-    () => (opts.open ? 0 : countUnseen(comments, seenSession === sessionId ? seenIds : NONE)),
-    [opts.open, comments, seenSession, sessionId, seenIds],
-  );
+  const listRead = query.data !== undefined;
+  const unseen = useMemo(() => {
+    if (opts.open) return 0;
+    const seen = seenSession === sessionId ? seenIds : NONE;
+    if (listRead) return countUnseen(comments, seen);
+    return seenSession === sessionId ? countUnseenIds(arrived, seen) : 0;
+  }, [opts.open, listRead, comments, seenSession, sessionId, seenIds, arrived]);
 
   return {
     comments,

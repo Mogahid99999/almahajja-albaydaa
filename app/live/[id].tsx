@@ -330,11 +330,12 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
   const micIds = useMemo(() => (isMod ? openMics(people) : []), [isMod, people]);
 
   // «التعليقات والأسئلة» (0147): read on (re)connect, then kept live by the
-  // room's data messages. The host, moderators and staff see how many are new.
+  // room's data messages. Everyone sees how many are new (owner 2026-11-23).
   // LOAD V25: a listener reads the list only once they first open the sheet —
   // a live start used to make every joiner read the 500 newest comments (and
-  // again on every reconnect) though most never open them. Staff and
-  // moderators still read on join: their «n new» badge needs the list.
+  // again on every reconnect) though most never open them; until then the
+  // badge counts the comments that arrived in the room. Staff and moderators
+  // still read on join.
   const commentsStaff = isMod || isStaff;
   const [commentsOpened, setCommentsOpened] = useState(false);
   useEffect(() => {
@@ -656,7 +657,7 @@ function LiveRoom({ collapse }: { collapse: () => void }) {
                     onPress={() => (user?.isGuest ? setGuestReactOpen(true) : setReactOpen((o) => !o))}
                   />
                   <CommentsPill
-                    badge={commentsStaff ? comments.unseen : 0}
+                    badge={comments.unseen}
                     onPress={() => setCommentsOpen(true)}
                   />
                 </View>

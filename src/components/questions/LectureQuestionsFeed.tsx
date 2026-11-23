@@ -20,6 +20,7 @@ import {
 
 import type { LectureFeedQuestion, MyLectureQuestion } from '@/api/questions';
 import { AnswerThread } from '@/components/questions/AnswerThread';
+import { ShareAnswerButton } from '@/components/questions/ShareAnswerButton';
 import { ReportSheet } from '@/components/reports/ReportSheet';
 import { SourceLink } from '@/components/questions/SourceLink';
 import { Card, Txt } from '@/components/ui';
@@ -94,6 +95,7 @@ function QuestionCard({ q, mine, onReport }: { q: Row; mine: boolean; onReport: 
             <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
               جواب الشيخ
             </Txt>
+            <ShareAnswerButton questionId={q.id} questionBody={q.body} fallbackBody={q.answerBody} />
           </View>
           <AnswerThread
             questionId={q.id}

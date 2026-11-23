@@ -13,9 +13,11 @@ import {
   EMPTY_COMMENTS_STATE,
   MAX_LIVE_COMMENTS,
   applyCommentsMessage,
+  applyArrival,
   applyStateMessage,
   capComments,
   countUnseen,
+  countUnseenIds,
 } from '@/lib/liveCommentsCache';
 
 function c(id: string, at: string, over: Partial<LiveComment> = {}): LiveComment {
@@ -137,5 +139,26 @@ describe('0183: the room state — closed + the pinned comment', () => {
   test('the list ignores pin messages', () => {
     const list = [p];
     expect(applyCommentsMessage(list, { t: 'pin', c: p })).toBe(list);
+  });
+});
+
+describe('owner 2026-11-23: the «n new» count for everyone, from the room messages', () => {
+  const none: ReadonlySet<string> = new Set();
+
+  test('an arriving comment counts once; my own never; a delete takes it back', () => {
+    let ids = applyArrival(none, { t: 'add', c: c('a', T1) });
+    ids = applyArrival(ids, { t: 'add', c: c('a', T1) });
+    ids = applyArrival(ids, { t: 'add', c: c('b', T2) });
+    expect(applyArrival(ids, { t: 'add', c: c('m', T3, { mine: true }) })).toBe(ids);
+    expect(countUnseenIds(ids, none)).toBe(2);
+    expect(countUnseenIds(applyArrival(ids, { t: 'del', id: 'a' }), none)).toBe(1);
+  });
+
+  test('seen ids are not counted; other messages change nothing (same set)', () => {
+    const ids = applyArrival(none, { t: 'add', c: c('a', T1) });
+    expect(countUnseenIds(ids, new Set(['a']))).toBe(0);
+    expect(applyArrival(ids, { t: 'del', id: 'zz' })).toBe(ids);
+    expect(applyArrival(ids, { t: 'ans', id: 'a', answered: true })).toBe(ids);
+    expect(applyArrival(ids, { t: 'pin', c: null })).toBe(ids);
   });
 });

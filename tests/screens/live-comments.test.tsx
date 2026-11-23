@@ -200,9 +200,9 @@ test('a listener reads the list live and sends a comment, then a question', asyn
   ];
   mockComments.unseen = 3;
   await openComments();
-  // The room reads while connected; a listener never sees the staff count.
+  // The room reads while connected; owner 2026-11-23: a listener sees the «n new» count too.
   expect(mockCommentsOpts[mockCommentsOpts.length - 1]).toEqual({ enabled: true, stateEnabled: true, open: true });
-  expect(screen.queryByText('٣')).toBeNull();
+  expect(screen.getByLabelText('التعليقات والأسئلة · ٣ جديدة')).toBeTruthy();
 
   expect(screen.getByText('بارك الله فيكم يا شيخ')).toBeTruthy();
   expect(screen.getByText('خالد')).toBeTruthy();
