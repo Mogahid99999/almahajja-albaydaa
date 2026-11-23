@@ -93,6 +93,33 @@ export function countUnseen(list: readonly LiveComment[], seen: ReadonlySet<stri
   return n;
 }
 
+/**
+ * Owner 2026-11-23: everyone sees how many comments are new, not only staff.
+ * A listener does not read the list before first opening it (LOAD V25), so
+ * the count comes from the room's own messages instead: the ids that arrived
+ * while in the room (a delete takes one back). Never my own. Returns the SAME
+ * set when nothing changed.
+ */
+export function applyArrival(ids: ReadonlySet<string>, msg: LiveCommentsMessage): ReadonlySet<string> {
+  if (msg.t === 'add') {
+    if (msg.c.mine || ids.has(msg.c.id)) return ids;
+    return new Set(ids).add(msg.c.id);
+  }
+  if (msg.t === 'del' && ids.has(msg.id)) {
+    const next = new Set(ids);
+    next.delete(msg.id);
+    return next;
+  }
+  return ids;
+}
+
+/** How many arrived ids were not seen yet. */
+export function countUnseenIds(ids: ReadonlySet<string>, seen: ReadonlySet<string>): number {
+  let n = 0;
+  for (const id of ids) if (!seen.has(id)) n++;
+  return n;
+}
+
 /** No state read yet: open comments, nothing pinned. */
 export const EMPTY_COMMENTS_STATE: LiveCommentsState = { closed: false, pinned: null };
 

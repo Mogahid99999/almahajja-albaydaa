@@ -31,6 +31,7 @@ import type {
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { ReportSheet } from '@/components/reports/ReportSheet';
 import { AnswerThread } from '@/components/questions/AnswerThread';
+import { ShareAnswerButton } from '@/components/questions/ShareAnswerButton';
 import { Card, Txt } from '@/components/ui';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -329,6 +330,7 @@ function PublicQuestionCard({ q, onReport }: { q: PublicQuestion; onReport: () =
             <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
               جواب الشيخ
             </Txt>
+            <ShareAnswerButton questionId={q.id} questionBody={q.body} fallbackBody={q.answerBody} />
           </View>
           <AnswerThread
             questionId={q.id}
@@ -525,6 +527,7 @@ function MyQuestionCard({
             <Txt size={11.5} weight="semibold" color={colors.primaryTeal600}>
               جواب الشيخ
             </Txt>
+            <ShareAnswerButton questionId={q.id} questionBody={q.body} fallbackBody={q.answerBody} />
           </View>
           <AnswerThread
             questionId={q.id}

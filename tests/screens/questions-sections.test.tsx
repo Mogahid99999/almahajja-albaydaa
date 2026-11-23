@@ -4,6 +4,7 @@
  * the third is display-only and every card links back to its source lesson.
  */
 import { fireEvent, render } from '@testing-library/react-native';
+import { Share } from 'react-native';
 
 const mockRouter = { back: jest.fn(), push: jest.fn(), replace: jest.fn() };
 jest.mock('expo-router', () => ({ useRouter: () => mockRouter, useLocalSearchParams: () => ({}) }));
@@ -64,7 +65,9 @@ jest.mock('@/hooks/useQuestions', () => ({
     refetch: jest.fn(),
   }),
   useMyLectureQuestions: () => ({ data: [], isLoading: false, refetch: jest.fn() }),
+  useQuestionAnswers: (id: string) => ({ data: mockAnswers[id] }),
 }));
+const mockAnswers: Record<string, { body: string | null }[] | undefined> = {};
 
 import QuestionsScreen from '../../app/(student)/questions';
 
@@ -99,4 +102,18 @@ test('«أسئلة المحاضرات» is display-only, filterable by series, a
   expect(queryByText('هل يدخل في الباب ما يُعلَّق في السيارة؟')).toBeNull();
   await fireEvent.press(getByText('باب المياه'));
   expect(mockRouter.push).toHaveBeenCalledWith('/player/L3');
+});
+
+test('owner 2026-11-23: «مشاركة» shares the question and «جواب الشيخ» apart; none for a voice-only answer', async () => {
+  const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as never);
+  mockAnswers.q2 = [{ body: null }]; // voice only
+  const { getByText, getAllByLabelText } = await render(<QuestionsScreen />);
+  await fireEvent.press(getByText('أسئلة المحاضرات'));
+  const buttons = getAllByLabelText('مشاركة السؤال والجواب');
+  expect(buttons).toHaveLength(1);
+  await fireEvent.press(buttons[0]);
+  const msg = (share.mock.calls[0][0] as { message: string }).message;
+  expect(msg.startsWith('❓ السؤال:\nهل يدخل في الباب ما يُعلَّق في السيارة؟\n\n✅ جواب الشيخ:\nنعم\n\n')).toBe(true);
+  delete mockAnswers.q2;
+  share.mockRestore();
 });
